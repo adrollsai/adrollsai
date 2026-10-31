@@ -121,13 +121,15 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
         }
 
         const data = result.data;
-        const state = data?.state || 'waiting';
+        const rawState = String(data?.state || data?.status || result?.state || result?.status || 'waiting').toLowerCase();
+        const isSuccess = ['success', 'succeeded', 'completed', 'done', 'finish'].includes(rawState);
+        const isFail = ['fail', 'failed', 'error'].includes(rawState);
 
-        if (state === 'fail') {
-            return { state: 'fail', resultUrl: null, error: data?.failMsg || "Task failed on server" };
+        if (isFail) {
+            return { state: 'fail', resultUrl: null, error: data?.failMsg || data?.error || result?.msg || "Task failed on server" };
         }
 
-        if (state === 'success') {
+        if (isSuccess) {
             let resultUrl: string | null = null;
             if (data?.resultJson) {
                 try {
@@ -135,8 +137,8 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
                     const urls = parsed.resultUrls || parsed.result_urls || parsed.fullResultUrls || parsed.urls;
                     if (Array.isArray(urls) && urls.length > 0) {
                         resultUrl = urls[0];
-                    } else if (parsed.url) {
-                        resultUrl = parsed.url;
+                    } else if (parsed.url || parsed.imageUrl || parsed.image_url || parsed.video_url || parsed.videoUrl) {
+                        resultUrl = parsed.url || parsed.imageUrl || parsed.image_url || parsed.video_url || parsed.videoUrl;
                     } else if (parsed.resultObject?.url) {
                         resultUrl = parsed.resultObject.url;
                     } else if (parsed.audio_url || parsed.audioUrl) {
@@ -147,14 +149,22 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
                 }
             }
 
-            if (!resultUrl && data?.resultUrl) {
-                resultUrl = data.resultUrl;
+            // Fallback across all known Kie response structures
+            if (!resultUrl) {
+                const candidateUrls = data?.response?.resultUrls || data?.resultUrls || data?.result_urls || data?.urls;
+                if (Array.isArray(candidateUrls) && candidateUrls.length > 0) {
+                    resultUrl = candidateUrls[0];
+                } else if (data?.resultUrl || data?.imageUrl || data?.image_url || data?.videoUrl || data?.video_url || data?.url) {
+                    resultUrl = data.resultUrl || data.imageUrl || data.image_url || data.videoUrl || data.video_url || data.url;
+                } else if (data?.result?.url || data?.result?.imageUrl || data?.result?.image_url) {
+                    resultUrl = data.result.url || data.result.imageUrl || data.result.image_url;
+                }
             }
 
             return { state: 'success', resultUrl, error: null };
         }
 
-        return { state, resultUrl: null, error: null };
+        return { state: rawState, resultUrl: null, error: null };
 
     } catch (e: any) {
         return { state: 'fail', resultUrl: null, error: e.message };

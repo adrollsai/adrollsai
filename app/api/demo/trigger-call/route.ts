@@ -46,15 +46,33 @@ export async function POST(req: Request) {
         let initialGreeting = '';
         let startingLangLabel = 'Hinglish (Hindi + English)';
 
-        if (langLower.includes('english')) {
+        if (langLower.includes('marathi')) {
+            startingLangLabel = 'Marathi (मराठी)';
+            initialGreeting = `नमस्कार ${prospectName} जी, मी ${companyName} मधून प्रिया बोलतेय, ${projectTitle} प्रोजेक्टबद्दल तुमच्या चौकशीसंदर्भात. मी आपल्याशी दोन मिनिटे बोलू शकते का?`;
+        } else if (langLower.includes('gujarati')) {
+            startingLangLabel = 'Gujarati (ગુજરાતી)';
+            initialGreeting = `નમસ્તે ${prospectName} ભાઈ/બેન, હું ${companyName} તરફથી પ્રિયા વાત કરું છું, ${projectTitle} પ્રોજેક્ટ વિશે તમારી પૂછપરછ બાબતે. શું હું આપની સાથે બે મિનિટ વાત કરી શકું?`;
+        } else if (langLower.includes('telugu')) {
+            startingLangLabel = 'Telugu (తెలుగు)';
+            initialGreeting = `నమస్కారం ${prospectName} గారు, నేను ${companyName} నుండి ప్రియ మాట్లాడుతున్నాను, ${projectTitle} ప్రాజెక్ట్ గురించి మీరు చేసిన ఎంక్వైరీ కోసం. రెండు నిమిషాలు మాట్లాడవచ్చా?`;
+        } else if (langLower.includes('tamil')) {
+            startingLangLabel = 'Tamil (தமிழ்)';
+            initialGreeting = `வணக்கம் ${prospectName} அவர்களே, நான் ${companyName} லிருந்து பிரியா பேசுகிறேன், ${projectTitle} ப்ராஜெக்ட் குறித்த உங்கள் விசாரணைக்காக. இரண்டு நிமிடங்கள் பேசலாமா?`;
+        } else if (langLower.includes('kannada')) {
+            startingLangLabel = 'Kannada (ಕನ್ನಡ)';
+            initialGreeting = `ನಮಸ್ಕಾರ ${prospectName} ಅವರೇ, ನಾನು ${companyName} ಇಂದ ಪ್ರಿಯಾ ಮಾತನಾಡುತ್ತಿದ್ದೇನೆ, ${projectTitle} ಪ್ರಾಜೆಕ್ಟ್ ಬಗ್ಗೆ ನಿಮ್ಮ ವಿಚಾರಣೆಗಾಗಿ. ಎರಡು ನಿಮಿಷ ಮಾತನಾಡಬಹುದೇ?`;
+        } else if (langLower.includes('bengali')) {
+            startingLangLabel = 'Bengali (বাংলা)';
+            initialGreeting = `নমস্কার ${prospectName} বাবু, আমি ${companyName} থেকে প্রিয়া বলছি, ${projectTitle} প্রজেক্ট নিয়ে আপনার অনুসন্ধানের ব্যাপারে। আপনার সাথে কি দু মিনিট কথা বলতে পারি?`;
+        } else if (langLower.includes('punjabi')) {
+            startingLangLabel = 'Punjabi (ਪੰਜਾਬੀ)';
+            initialGreeting = `Sat Sri Akal ${prospectName} ji, main ${companyName} ton Priya gal kar rahi aan ${projectTitle} baare. Ki tussi do minute gal kar sakde ho ji?`;
+        } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
+            startingLangLabel = 'Pure Hindi (हिन्दी)';
+            initialGreeting = `नमस्ते ${prospectName} जी, मैं ${companyName} से प्रिया बात कर रही हूँ, ${projectTitle} प्रोजेक्ट में आपकी रुचि के संदर्भ में। क्या मैं आपसे दो मिनट बात कर सकती हूँ?`;
+        } else if (langLower.includes('english')) {
             startingLangLabel = 'Indian English';
             initialGreeting = `Hello ${prospectName}, this is Priya calling from ${companyName} regarding your inquiry about ${projectTitle}. Do you have a quick minute to speak?`;
-        } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
-            startingLangLabel = 'Pure Hindi';
-            initialGreeting = `नमस्ते ${prospectName} जी, मैं ${companyName} से प्रिया बात कर रही हूँ, ${projectTitle} प्रोजेक्ट में आपकी रुचि के संदर्भ में। क्या मैं आपसे दो मिनट बात कर सकती हूँ?`;
-        } else if (langLower.includes('punjabi')) {
-            startingLangLabel = 'Punjabi';
-            initialGreeting = `Sat Sri Akal ${prospectName} ji, main ${companyName} ton Priya gal kar rahi aan ${projectTitle} baare. Ki tussi do minute gal kar sakde ho ji?`;
         } else {
             startingLangLabel = 'Conversational Hinglish';
             initialGreeting = `Hi ${prospectName} ji, main ${companyName} se Priya baat kar rahi hoon aapki inquiry ke regarding ${projectTitle} project ke liye. Kya main aapse do minute baat kar sakti hoon?`;
@@ -84,7 +102,8 @@ YOUR OBJECTIVES:
 
 CRITICAL MULTILINGUAL CODE-SWITCHING INSTRUCTION:
 - You must START the conversation in ${startingLangLabel} using the exact GREETING provided.
-- DYNAMIC CODE-SWITCHING: If the prospect replies, speaks, or asks to speak in ANY other language (such as English, Hindi, Hinglish, Punjabi, Marathi, Gujarati, Bengali, Tamil, Telugu, Spanish, French, etc.), you must IMMEDIATELY and SMOOTHLY switch to that language for all your following replies!
+- DYNAMIC CODE-SWITCHING: If the prospect replies, speaks, or asks to speak in ANY other language (such as English, Hindi, Hinglish, Punjabi, Marathi, Gujarati, Bengali, Tamil, Telugu, Kannada, etc.), you must IMMEDIATELY and SMOOTHLY switch to that language for all your following replies!
+- DEFAULT TO INDIAN ENGLISH ACCENT: When speaking in English or if the prospect asks to switch to English (e.g. "talk in English", "can you speak in English?", "switch to English"), you MUST speak in a natural, polite, and confident INDIAN ENGLISH accent with authentic Indian cadence and phrasing. Absolutely NEVER speak in an American, British, or robotic Western accent.
 - Never tell the user you cannot speak a language. Seamlessly match the prospect's language choice, accent, and cultural tone while continuing to qualify the lead.
 
 RULES:

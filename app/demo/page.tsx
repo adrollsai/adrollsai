@@ -81,8 +81,23 @@ interface GeneratedVideo {
     duration: number;
     taskId?: string;
     scriptText?: string;
-    scriptCues?: Array<{ start?: number; end?: number; time?: number; text: string }>;
+    scriptCues?: Array<{ start?: number; end?: number; time?: number; text: string; emphasis?: boolean }>;
+    captionStyle?: string;
+    audioUrl?: string;
 }
+
+const POPULAR_INDIAN_LANGUAGES = [
+    { value: 'hinglish', label: 'Hinglish (Hindi + English)' },
+    { value: 'hindi', label: 'Hindi (हिन्दी)' },
+    { value: 'english', label: 'English (Indian English)' },
+    { value: 'punjabi', label: 'Punjabi (ਪੰਜਾਬੀ)' },
+    { value: 'marathi', label: 'Marathi (मराठी)' },
+    { value: 'gujarati', label: 'Gujarati (ગુજરાતી)' },
+    { value: 'telugu', label: 'Telugu (తెలుగు)' },
+    { value: 'tamil', label: 'Tamil (தமிழ்)' },
+    { value: 'kannada', label: 'Kannada (ಕನ್ನಡ)' },
+    { value: 'bengali', label: 'Bengali (বাংলা)' },
+];
 
 const PRESET_PROJECTS = [
     {
@@ -272,8 +287,8 @@ export default function DemoPage() {
     const [projectDescription, setProjectDescription] = useState('Ultra-luxury 3 & 4 BHK residences with sky terraces, private infinity pool, Italian marble finishes, and 24x7 smart concierge.');
     const [prospectName, setProspectName] = useState('Raman');
     const [prospectPhone, setProspectPhone] = useState('');
-    const [videoLanguage, setVideoLanguage] = useState<'hinglish' | 'english' | 'hindi' | 'punjabi'>('hinglish');
-    const [callLanguage, setCallLanguage] = useState<'hinglish' | 'english' | 'hindi' | 'punjabi'>('hinglish');
+    const [videoLanguage, setVideoLanguage] = useState<string>('hinglish');
+    const [callLanguage, setCallLanguage] = useState<string>('hinglish');
     const [voiceName, setVoiceName] = useState('Kore');
     const [websiteUrl, setWebsiteUrl] = useState('');
     const [extractingWebsite, setExtractingWebsite] = useState(false);
@@ -878,23 +893,25 @@ export default function DemoPage() {
                     <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
                     {[
                         { key: 'onboarding', label: 'Onboard', icon: Building2 },
-                        { key: 'generating_assets', label: 'Generating', icon: Sparkles },
                         { key: 'showcase', label: 'Live Demo', icon: Layers },
                         { key: 'pricing_comparison', label: 'Pricing', icon: Award }
                     ].map((m) => {
-                        const stepOrder = ['onboarding', 'generating_assets', 'showcase', 'speed_to_lead', 'pricing_comparison'];
-                        const currentIdx = stepOrder.indexOf(step);
+                        const stepOrder = ['onboarding', 'showcase', 'pricing_comparison'];
+                        const currentIdx = step === 'generating_assets' || step === 'speed_to_lead' ? 1 : stepOrder.indexOf(step);
                         const milestoneIdx = stepOrder.indexOf(m.key);
                         const isDone = currentIdx > milestoneIdx;
-                        const isCurrent = currentIdx === milestoneIdx || (m.key === 'showcase' && step === 'speed_to_lead');
+                        const isCurrent = (m.key === 'onboarding' && step === 'onboarding') ||
+                                          (m.key === 'showcase' && (step === 'showcase' || step === 'speed_to_lead' || step === 'generating_assets')) ||
+                                          (m.key === 'pricing_comparison' && step === 'pricing_comparison');
 
                         return (
                             <button
                                 key={m.key}
                                 type="button"
                                 onClick={() => {
-                                    if (m.key === 'generating_assets' && !isGenerating && !creative && !generatedVideo) {
-                                        toast.info("Please enter property details to generate assets.");
+                                    if (m.key === 'showcase') {
+                                        setStep('showcase');
+                                        playChime('beep');
                                         return;
                                     }
                                     setStep(m.key as any);
@@ -1312,13 +1329,12 @@ export default function DemoPage() {
                                             </div>
                                             <select
                                                 value={videoLanguage}
-                                                onChange={(e) => setVideoLanguage(e.target.value as any)}
+                                                onChange={(e) => setVideoLanguage(e.target.value)}
                                                 className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer truncate"
                                             >
-                                                <option value="hinglish">Hinglish</option>
-                                                <option value="english">English</option>
-                                                <option value="hindi">Hindi</option>
-                                                <option value="punjabi">Punjabi</option>
+                                                {POPULAR_INDIAN_LANGUAGES.map(lang => (
+                                                    <option key={lang.value} value={lang.value}>{lang.label}</option>
+                                                ))}
                                             </select>
                                         </div>
 
@@ -1331,13 +1347,12 @@ export default function DemoPage() {
                                             </div>
                                             <select
                                                 value={callLanguage}
-                                                onChange={(e) => setCallLanguage(e.target.value as any)}
+                                                onChange={(e) => setCallLanguage(e.target.value)}
                                                 className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-800 font-bold focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer truncate"
                                             >
-                                                <option value="hinglish">Hinglish</option>
-                                                <option value="english">English</option>
-                                                <option value="hindi">Hindi</option>
-                                                <option value="punjabi">Punjabi</option>
+                                                {POPULAR_INDIAN_LANGUAGES.map(lang => (
+                                                    <option key={lang.value} value={lang.value}>{lang.label}</option>
+                                                ))}
                                             </select>
                                         </div>
                                     </div>
@@ -1551,7 +1566,7 @@ export default function DemoPage() {
                             </div>
 
                             {/* Luxury Full-Width Action Banner & CTA */}
-                            <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col gap-4">
                                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                                     <span className="font-bold text-slate-700">Instant Execution:</span>
                                     <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-semibold text-[11px] border border-slate-200">
@@ -1571,25 +1586,54 @@ export default function DemoPage() {
                                     </span>
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSkipToLiveDemo('call')}
-                                        className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all border-2 border-slate-300 hover:border-slate-400 shadow-sm active:scale-98 flex items-center justify-center gap-2 cursor-pointer shrink-0"
-                                        title="Skip asset creation and immediately test live AI voice calling & WhatsApp"
-                                    >
-                                        <Phone size={14} className="text-emerald-600" />
-                                        <span>Skip Creation (Test Calling / WhatsApp)</span>
-                                    </button>
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 w-full pt-1">
+                                    {(creative?.imageUrl || generatedVideo?.script) ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleStartCreativeGeneration(false)}
+                                                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 font-extrabold text-xs uppercase tracking-wider transition-all border-2 border-slate-300 hover:border-slate-400 shadow-xs active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                                                title="Re-generate fresh AI creative and video reel with any updated inputs"
+                                            >
+                                                <RefreshCw size={14} className="text-blue-600" />
+                                                <span>Re-generate Assets</span>
+                                            </button>
 
-                                    <button
-                                        onClick={() => handleStartCreativeGeneration(false)}
-                                        className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
-                                    >
-                                        <Sparkles size={16} />
-                                        <span>Generate Assets &amp; Launch Demo</span>
-                                        <ArrowRight size={16} />
-                                    </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setStep('showcase');
+                                                    playChime('beep');
+                                                }}
+                                                className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2.5 cursor-pointer"
+                                            >
+                                                <span>View Live Demo</span>
+                                                <ArrowRight size={16} />
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSkipToLiveDemo('call')}
+                                                className="w-full sm:w-auto px-5 py-3.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all border-2 border-slate-300 hover:border-slate-400 shadow-sm active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+                                                title="Skip asset creation and immediately test live AI voice calling & WhatsApp"
+                                            >
+                                                <Phone size={14} className="text-emerald-600" />
+                                                <span>Skip Creation (Test Calling / WhatsApp)</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => handleStartCreativeGeneration(false)}
+                                                className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 text-white font-extrabold text-xs uppercase tracking-wider transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/35 active:scale-98 flex items-center justify-center gap-2.5 cursor-pointer"
+                                            >
+                                                <Sparkles size={16} />
+                                                <span>Generate Assets &amp; Launch Demo</span>
+                                                <ArrowRight size={16} />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </motion.div>
@@ -1885,69 +1929,139 @@ export default function DemoPage() {
                                                                 className="w-full h-full object-cover"
                                                             />
 
-                                                            {/* Animated Luxury Outro Slate Overlay with Demo Taker Info */}
+                                                            {/* Engaging Viral Captions Layer (Automatic 3rd Day Golden Luxury / AI Edit Style) */}
+                                                            <AnimatePresence mode="wait">
+                                                                {currentActiveCue && !showVideoOutro && (
+                                                                    <motion.div
+                                                                        key={currentActiveCue.text}
+                                                                        initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                                                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                                                        exit={{ opacity: 0, scale: 0.96, y: -4 }}
+                                                                        transition={{ duration: 0.22, ease: "easeOut" }}
+                                                                        className="absolute inset-x-2 bottom-12 z-20 flex justify-center pointer-events-none px-2"
+                                                                    >
+                                                                        <div className="relative text-center max-w-[96%]">
+                                                                            <div className="absolute inset-0 bg-black/60 blur-md rounded-2xl transform scale-105" />
+                                                                            <div className="relative px-3 py-1.5 rounded-xl border border-amber-400/40 bg-slate-950/85 backdrop-blur-md shadow-2xl">
+                                                                                <p 
+                                                                                    className="text-xs sm:text-[13px] font-black tracking-wide leading-snug uppercase text-slate-100 drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]"
+                                                                                    style={{
+                                                                                        fontFamily: "'Outfit', 'Montserrat', 'Noto Sans Devanagari', 'Noto Sans Gurmukhi', sans-serif"
+                                                                                    }}
+                                                                                >
+                                                                                    {currentActiveCue.text.split(' ').map((word, wIdx) => {
+                                                                                        const isHighlight = currentActiveCue.emphasis || /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|মূল্য/i.test(word);
+                                                                                        return (
+                                                                                            <span
+                                                                                                key={wIdx}
+                                                                                                className={isHighlight 
+                                                                                                    ? "text-amber-300 drop-shadow-[0_0_12px_rgba(245,158,11,0.95)] font-black mx-0.5 inline-block" 
+                                                                                                    : "text-slate-100 font-extrabold mx-0.5 inline-block"
+                                                                                                }
+                                                                                            >
+                                                                                                {word}{' '}
+                                                                                            </span>
+                                                                                        );
+                                                                                    })}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </motion.div>
+                                                                )}
+                                                            </AnimatePresence>
+
+                                                            {/* Authentic Remotion Outro Screen with User's Brand Logo & Demo Info */}
                                                             <AnimatePresence>
                                                                 {showVideoOutro && (
                                                                     <motion.div
-                                                                        initial={{ opacity: 0, y: 15 }}
-                                                                        animate={{ opacity: 1, y: 0 }}
-                                                                        exit={{ opacity: 0, y: 15 }}
-                                                                        transition={{ duration: 0.3, ease: 'easeOut' }}
-                                                                        className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/75 to-transparent flex flex-col justify-end p-3.5 text-white z-30 shadow-2xl"
+                                                                        initial={{ opacity: 0, scale: 0.96 }}
+                                                                        animate={{ opacity: 1, scale: 1 }}
+                                                                        exit={{ opacity: 0, scale: 0.96 }}
+                                                                        transition={{ duration: 0.35, ease: 'easeOut' }}
+                                                                        className="absolute inset-0 bg-gradient-to-b from-slate-950 via-[#0B1220] to-slate-950 flex flex-col justify-between p-4 text-white z-30 shadow-2xl overflow-hidden"
                                                                     >
+                                                                        {/* Floating Ambient Glow Orbs */}
+                                                                        <div className="absolute top-10 -left-10 w-44 h-44 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
+                                                                        <div className="absolute bottom-16 -right-10 w-48 h-48 rounded-full bg-blue-500/15 blur-3xl pointer-events-none" />
+
                                                                         {/* Top Floating Replay & Close Controls */}
-                                                                        <div className="absolute top-3 right-3 flex items-center gap-1.5 z-40">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={handleReplayVideo}
-                                                                                className="text-[10px] text-slate-200 hover:text-white flex items-center gap-1 bg-black/50 hover:bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-full cursor-pointer transition-all border border-white/20 shadow-md"
-                                                                                title="Replay Video"
-                                                                            >
-                                                                                <RefreshCw size={10} />
-                                                                                <span>Replay</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => setShowVideoOutro(false)}
-                                                                                className="w-6 h-6 rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-md flex items-center justify-center text-slate-300 hover:text-white text-xs cursor-pointer transition-all border border-white/20 shadow-md"
-                                                                                title="Close Outro"
-                                                                            >
-                                                                                ✕
-                                                                            </button>
+                                                                        <div className="w-full flex items-center justify-between z-40 relative">
+                                                                            <span className="text-[8px] font-black tracking-widest uppercase bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                                <span>✦</span>
+                                                                                <span>OFFICIAL VIDEO OUTRO</span>
+                                                                            </span>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={handleReplayVideo}
+                                                                                    className="text-[10px] text-slate-200 hover:text-white flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-full cursor-pointer transition-all border border-white/20 shadow-md"
+                                                                                    title="Replay Video"
+                                                                                >
+                                                                                    <RefreshCw size={10} />
+                                                                                    <span>Replay</span>
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setShowVideoOutro(false)}
+                                                                                    className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-slate-300 hover:text-white text-xs cursor-pointer transition-all border border-white/20 shadow-md"
+                                                                                    title="Close Outro"
+                                                                                >
+                                                                                    ✕
+                                                                                </button>
+                                                                            </div>
                                                                         </div>
 
-                                                                        {/* Bottom Floating Luxury Glass Card */}
-                                                                        <div className="rounded-2xl bg-slate-900/90 backdrop-blur-md border border-amber-400/35 p-3.5 space-y-2.5 shadow-2xl text-left">
-                                                                            <div className="flex items-center justify-between">
-                                                                                <span className="text-[8px] uppercase tracking-widest font-black text-amber-300 bg-amber-500/20 border border-amber-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                                                    <span>✦</span>
-                                                                                    <span>EXCLUSIVE LAUNCH</span>
-                                                                                </span>
-                                                                                <span className="text-[9px] font-bold text-slate-300 tracking-wider uppercase truncate max-w-[120px]">
-                                                                                    {companyName}
-                                                                                </span>
+                                                                        {/* Center: Brand Logo of Demo Taker + Developer Identity */}
+                                                                        <div className="flex flex-col items-center text-center my-auto z-10 space-y-2.5">
+                                                                            {/* User Taking Demo's Logo */}
+                                                                            <div className="relative group">
+                                                                                <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-400 to-amber-600 opacity-60 blur-sm" />
+                                                                                {logoUrl ? (
+                                                                                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-2 border-2 border-amber-400/80 shadow-2xl flex items-center justify-center overflow-hidden">
+                                                                                        <img 
+                                                                                            src={logoUrl} 
+                                                                                            alt={companyName} 
+                                                                                            className="w-full h-full object-contain"
+                                                                                        />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 flex items-center justify-center text-white text-2xl sm:text-3xl font-black shadow-2xl border-2 border-amber-300/60">
+                                                                                        {companyName.charAt(0).toUpperCase()}
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
 
                                                                             <div>
-                                                                                <h3 className="text-sm font-black text-white leading-tight font-display tracking-tight">
-                                                                                    {projectTitle}
+                                                                                <h3 className="text-base sm:text-lg font-black text-white leading-tight uppercase tracking-tight">
+                                                                                    {companyName}
                                                                                 </h3>
-                                                                                <div className="flex items-center gap-1 text-[10px] text-slate-300 mt-1 truncate">
-                                                                                    <MapPin size={10} className="text-amber-400 shrink-0" />
-                                                                                    <span className="truncate">{location}</span>
-                                                                                </div>
+                                                                                <p className="text-[10px] text-amber-300 font-bold uppercase tracking-wider mt-0.5">
+                                                                                    OFFICIAL DEVELOPER & BUILDER
+                                                                                </p>
                                                                             </div>
 
-                                                                            <div className="flex items-center justify-between pt-1 border-t border-white/10">
-                                                                                <div>
-                                                                                    <span className="text-[8px] uppercase tracking-wider text-slate-400 block font-bold">Starting Price</span>
-                                                                                    <span className="text-base font-black text-amber-300 font-display">
-                                                                                        {projectPrice}
-                                                                                    </span>
+                                                                            {/* Golden Accent Line */}
+                                                                            <div className="w-12 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full my-1" />
+
+                                                                            {/* Project & Price Pill */}
+                                                                            <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm max-w-[210px]">
+                                                                                <p className="text-[11px] font-extrabold text-white truncate">{projectTitle}</p>
+                                                                                <p className="text-[10px] text-amber-300 font-black tracking-wide mt-0.5">
+                                                                                    Starting {projectPrice}
+                                                                                </p>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Bottom Contact Details & WhatsApp CTA */}
+                                                                        <div className="z-10 space-y-2 pt-2 border-t border-white/10">
+                                                                            <div className="space-y-1 text-center">
+                                                                                <div className="flex items-center justify-center gap-1.5 text-[11px] font-black text-white">
+                                                                                    <Phone size={11} className="text-amber-400" />
+                                                                                    <span className="font-mono tracking-wide">+91 {prospectPhone.slice(-10) || '98886 26786'}</span>
                                                                                 </div>
-                                                                                <div className="flex gap-1 text-[8px] font-bold text-amber-200">
-                                                                                    <span className="bg-white/10 px-1.5 py-0.5 rounded">Sky Suites</span>
-                                                                                    <span className="bg-white/10 px-1.5 py-0.5 rounded">Private Pool</span>
+                                                                                <div className="flex items-center justify-center gap-1 text-[9px] text-slate-400 truncate px-2">
+                                                                                    <MapPin size={9} className="text-amber-400 shrink-0" />
+                                                                                    <span className="truncate">{location}</span>
                                                                                 </div>
                                                                             </div>
 
@@ -1960,9 +2074,6 @@ export default function DemoPage() {
                                                                                 <Send size={12} />
                                                                                 <span>Send VIP Brochure to WhatsApp</span>
                                                                             </button>
-                                                                            <div className="text-[9px] text-center text-slate-400 font-medium">
-                                                                                Direct Concierge: <strong className="text-slate-200">+91 {prospectPhone.slice(-10) || '8288835235'}</strong>
-                                                                            </div>
                                                                         </div>
                                                                     </motion.div>
                                                                 )}
@@ -2127,7 +2238,7 @@ export default function DemoPage() {
                                             Outbound AI Voice Closer
                                         </h3>
                                         <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                                            Starts calling in <strong>{callLanguage.toUpperCase()}</strong>. Switches to English, Hindi, or Punjabi automatically if asked.
+                                            Starts calling in <strong>{callLanguage.toUpperCase()}</strong>. Automatically switches to any regional Indian language if asked.
                                         </p>
                                     </div>
 

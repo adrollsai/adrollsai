@@ -41,6 +41,7 @@ export interface CaptionCue {
     start: number;
     end: number;
     text: string;
+    emphasis?: boolean;
 }
 
 export interface GeneratedVideo {
@@ -52,6 +53,8 @@ export interface GeneratedVideo {
     taskId?: string;
     scriptText?: string;
     scriptCues?: CaptionCue[];
+    audioUrl?: string;
+    captionStyle?: string;
 }
 
 import {
@@ -148,7 +151,7 @@ async function generateRealtimeAiCreative(input: CreativeInput, selectedTemplate
                 const refBuffer = Buffer.from(await refRes.arrayBuffer());
                 const refMime = refRes.headers.get('content-type') || 'image/jpeg';
                 const styleAnalysis = await generateText({
-                    model: google('gemini-3.5-flash'),
+                    model: google('gemini-2.5-flash'),
                     messages: [
                         {
                             role: 'user',
@@ -210,7 +213,7 @@ CRITICAL DIRECTIVES:
 - Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 2.`;
 
     const isImg2Img = inputUrls.length > 0;
-    const model = isImg2Img ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-text-to-image';
+    const model = isImg2Img ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image';
     const payload: any = {
         model,
         input: {
@@ -232,24 +235,29 @@ CRITICAL DIRECTIVES:
         console.log(`[Demo AI Creative] Task created: ${taskId}. Polling for completion (up to 85s)...`);
         const startTime = Date.now();
         while (Date.now() - startTime < 85000) {
-            await new Promise(r => setTimeout(r, 2500));
+            await new Promise(r => setTimeout(r, 2000));
             const statusRes = await queryKieTask(taskId);
 
             if (statusRes.state === 'success' && statusRes.resultUrl) {
                 console.log(`[Demo AI Creative] Kie task succeeded! Result URL: ${statusRes.resultUrl}`);
-                const imgBuf = await fetchImageBuffer(statusRes.resultUrl);
-                if (imgBuf) {
-                    const r2Key = `demo-creatives/ai_creative_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
-                    await r2.send(new PutObjectCommand({
-                        Bucket: R2_BUCKET,
-                        Key: r2Key,
-                        Body: imgBuf,
-                        ContentType: 'image/png'
-                    }));
-                    const permanentUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-                    console.log(`[Demo AI Creative] Saved to R2: ${permanentUrl}`);
-                    return permanentUrl;
+                try {
+                    const imgBuf = await fetchImageBuffer(statusRes.resultUrl);
+                    if (imgBuf) {
+                        const r2Key = `demo-creatives/ai_creative_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+                        await r2.send(new PutObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: r2Key,
+                            Body: imgBuf,
+                            ContentType: 'image/png'
+                        }));
+                        const permanentUrl = `${R2_PUBLIC_URL}/${r2Key}`;
+                        console.log(`[Demo AI Creative] Saved to R2: ${permanentUrl}`);
+                        return permanentUrl;
+                    }
+                } catch (r2Err: any) {
+                    console.warn('[Demo AI Creative] R2 upload error, returning direct Kie URL:', r2Err.message);
                 }
+                // Directly return Kie image URL if R2 failed or timed out
                 return statusRes.resultUrl;
             }
 
@@ -266,68 +274,54 @@ CRITICAL DIRECTIVES:
 }
 
 /**
- * Delivers a real-time synthesized 30-second cinematic real estate reel with dynamic multilingual voiceover & motion.
- * Uses createGeminiTTS with authentic Indian cadence and createGrokVideoTask from @/utils/external-apis.
+ * Delivers dynamic script, timed viral captions in the 'goldenLuxury' style (defined for automatic video generation on every 3rd day),
+ * and audio for live in-browser preview without requiring slow server-side video rendering.
  */
-async function generateRealtime30sVideo(input: CreativeInput, imageBuffer?: Buffer | null): Promise<GeneratedVideo | null> {
+async function generateBrowserDemoVideo(input: CreativeInput): Promise<GeneratedVideo> {
     const {
         projectTitle = 'The Grand Crest Luxury Residences',
         companyName = 'Apex Luxury Living',
         location = 'Golf Course Extension, Prime Metro Corridor',
         projectPrice = 'Starting ₹1.85 Cr',
         projectDescription = 'Exclusive luxury villas with sky terraces and infinity pool',
-        projectImageUrl,
         videoLanguage = 'hinglish'
     } = input;
 
-    console.log(`[Realtime 30s Video] Synthesizing custom 30s reel (${videoLanguage}) for "${projectTitle}" (${location}, ${projectPrice})...`);
+    console.log(`[Browser Demo Video] Generating 30s preview metadata (${videoLanguage}) for "${projectTitle}"...`);
 
-    const fallbackVideo: GeneratedVideo = {
-        id: `reel-${Date.now()}`,
-        title: `${projectTitle} - 30s Voiceover Reel`,
-        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_voiceover_reel_1793007112340.mp4',
-        aspectRatio: '9:16',
-        duration: 30,
-        scriptText: `${companyName} lekar aaye hain ${projectTitle} at ${location}. Special launch price starting at ${projectPrice}. Book your VIP preview today!`,
-        scriptCues: [
-            { start: 0, end: 5, text: `${companyName} lekar aaye hain apna sabse prestigious project: ${projectTitle}.` },
-            { start: 5, end: 10, text: `${location} ki prime location par bespoke architecture aur luxury lifestyle.` },
-            { start: 10, end: 15, text: `Yahan aapko milte hain ultra luxury residences with private infinity pool.` },
-            { start: 15, end: 20, text: `Inaugural launch price shuru ho rahi hai sirf ${projectPrice} se!` },
-            { start: 20, end: 25, text: `High capital appreciation aur 0% brokerage ka limited launch privilege.` },
-            { start: 25, end: 30, text: `Limited inventory available — Aaj hi apna private VIP walkthrough schedule karein!` }
-        ]
-    };
+    const { size, type, perk } = parseSpecs(projectDescription, projectTitle);
+    const cleanPrice = projectPrice.replace(/\s*\([^)]*\)/g, '').trim();
+    const langLower = (videoLanguage || 'hinglish').toLowerCase();
+
+    // 1. Language-specific AI prompt & Fallback scripts for all popular Indian languages
+    let scriptText = '';
+    let langInstruction = 'Conversational Indian Hinglish (natural blend of Romanized Hindi and English)';
+
+    if (langLower.includes('marathi')) {
+        langInstruction = 'Fluent, prestigious Marathi in Devanagari script for luxury real estate';
+    } else if (langLower.includes('gujarati')) {
+        langInstruction = 'Persuasive, high-converting Gujarati in Gujarati script for luxury properties';
+    } else if (langLower.includes('telugu')) {
+        langInstruction = 'Prestigious Telugu in Telugu script for high-end luxury real estate';
+    } else if (langLower.includes('tamil')) {
+        langInstruction = 'Eloquent Tamil in Tamil script for luxury residential property';
+    } else if (langLower.includes('kannada')) {
+        langInstruction = 'Regal Kannada in Kannada script for premium luxury homes';
+    } else if (langLower.includes('bengali')) {
+        langInstruction = 'Sophisticated Bengali in Bengali script for luxury living';
+    } else if (langLower.includes('punjabi')) {
+        langInstruction = 'Persuasive Punjabi in Gurmukhi script for luxury residences';
+    } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
+        langInstruction = 'Fluent authentic Hindi in Devanagari script for luxury real estate';
+    } else if (langLower.includes('english')) {
+        langInstruction = 'Sophisticated Indian luxury real estate English';
+    }
 
     try {
-        const logDebug = (msg: string) => {
-            try {
-                fs.appendFileSync(path.join(process.cwd(), 'video_debug.log'), `[${new Date().toISOString()}] ${msg}\n`);
-            } catch { }
-        };
-        logDebug(`Start video generation for "${projectTitle}"`);
-        const { size, type, perk } = parseSpecs(projectDescription, projectTitle);
-        const cleanPrice = projectPrice.replace(/\s*\([^)]*\)/g, '').trim();
-
-        // 1. Dynamic Script in requested language
-        let scriptText = '';
-        let scriptCues: CaptionCue[] = [];
-        const langLower = (videoLanguage || 'hinglish').toLowerCase();
-
-        try {
-            console.log(`[Realtime 30s Video] Synthesizing dynamic AI script in ${videoLanguage} for "${projectTitle}"...`);
-            const langInstruction = langLower.includes('hinglish')
-                ? 'Conversational Indian Hinglish (natural blend of Romanized Hindi and English used in luxury Indian real estate video ads, e.g. "lekar aaye hain ultra luxury residences", "prime corridor mein", "aaj hi apna private tour book karein")'
-                : langLower.includes('hindi')
-                    ? 'Fluent authentic Hindi in Devanagari script'
-                    : langLower.includes('punjabi')
-                        ? 'Persuasive Punjabi in Gurmukhi script'
-                        : 'Sophisticated luxury real estate English';
-
-            const scriptGenPromise = generateText({
-                model: google('gemini-2.5-flash'),
-                system: 'You are an elite luxury real estate video director. Write a crisp, high-converting 30-second video voiceover script (~65 to 75 words). It MUST strictly follow the requested language. Do NOT include speaker labels, asterisks, brackets, or stage directions. Output ONLY the raw spoken words.',
-                prompt: `Write a 30-second luxury property voiceover script:
+        const scriptPromise = generateText({
+            model: google('gemini-2.5-flash'),
+            system: 'You are an elite luxury real estate commercial director. Write a punchy, high-converting 30-second video voiceover script (60 to 70 words). Strictly follow the requested language. Do NOT include speaker labels, asterisks, brackets, or stage directions. Output ONLY the raw spoken words.',
+            prompt: `Write a 30-second luxury property voiceover script:
 Company: ${companyName}
 Project: ${projectTitle}
 Location: ${location}
@@ -335,378 +329,123 @@ Starting Price: ${cleanPrice}
 Unit Specs: ${size} ${type}
 Key Privilege: ${perk}
 Description: ${projectDescription}
-Language: ${langInstruction}
+Language: ${langInstruction}`
+        });
 
-Keep it between 65 and 75 words so it reads at a natural 30-second cadence. Hook in the first 3 seconds, highlight luxury features and price, and end with an urgent CTA to book a private VIP preview visit.`
-            });
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('AI script generation timed out')), 6000)
+        );
 
-            const scriptGenTimeout = new Promise<null>((_, reject) =>
-                setTimeout(() => reject(new Error('AI script generation timed out')), 15000)
-            );
-
-            const aiScriptRes = await Promise.race([scriptGenPromise, scriptGenTimeout]) as any;
-            if (aiScriptRes && aiScriptRes.text) {
-                const cleanedScript = aiScriptRes.text.replace(/[*#_\[\]()]/g, '').trim();
-                if (cleanedScript.length > 50) {
-                    scriptText = cleanedScript;
-                    console.log(`[Realtime 30s Video] Dynamic AI script created: "${scriptText.slice(0, 80)}..."`);
-                }
-            }
-        } catch (scriptErr: any) {
-            console.warn(`[Realtime 30s Video] Dynamic script generation fallback to template: ${scriptErr.message}`);
-        }
-
-        if (!scriptText) {
-            if (langLower.includes('hinglish')) {
-                scriptText = `${companyName} lekar aaye hain apna sabse premium project, ${projectTitle}, ${location} ki prime location par. Yahan aapko milte hain ultra luxury ${size} ${type}, bespoke architecture aur world-class ${perk}. Special launch offer shuru ho rahi hai sirf ${cleanPrice} se. Aisi prime luxury property aur high returns ka mauka baar-baar nahi milta. Limited units bache hain. Aaj hi apna private VIP preview book karein!`;
-            } else if (langLower.includes('hindi')) {
-                scriptText = `${companyName} प्रस्तुत करते हैं अपना सबसे भव्य प्रोजेक्ट, ${projectTitle}, ${location} की प्राइम लोकेशन में। यहाँ आपको मिलते हैं आलीशान ${size} ${type}, आधुनिक डिज़ाइन और ${perk} जैसी बेहतरीन सुविधाएं। कीमतें शुरू होती हैं मात्र ${cleanPrice} से। अपने सपनों का आशियाना आज ही सुरक्षित करें। सीमित इन्वेंटरी उपलब्ध है। अपना वीआईपी साइट विज़िट बुक करने के लिए आज ही संपर्क करें।`;
-            } else if (langLower.includes('punjabi')) {
-                scriptText = `${companyName} ਲੈ ਕੇ ਆਏ ਨੇ ਆਪਣਾ ਸਭ ਤੋਂ ਸ਼ਾਨਦਾਰ ਪ੍ਰੋਜੈਕਟ ${projectTitle}, ${location} ਦੀ ਪ੍ਰਾਈਮ ਲੋਕੇਸ਼ਨ 'ਤੇ। ਇੱਥੇ ਤੁਹਾਨੂੰ ਮਿਲਣਗੇ ਲਗਜ਼ਰੀ ${size} ${type}, ਬਿਹਤਰੀਨ ਡਿਜ਼ਾਈਨ ਅਤੇ ${perk}। ਕੀਮਤ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ ਸਿਰਫ ${cleanPrice} ਤੋਂ। ਅੱਜ ਹੀ ਸੰਪਰਕ ਕਰੋ ਅਤੇ ਆਪਣਾ ਵੀਆਈਪੀ ਪ੍ਰਿਵਿਊ ਬੁੱਕ ਕਰੋ ਜੀ।`;
-            } else {
-                scriptText = `Welcome to ${projectTitle} by ${companyName}, prestigiously positioned at ${location}. Offering magnificent ${size} ${type} crafted with bespoke architecture and ${perk}. Special launch pricing starts at just ${cleanPrice}. Elevate your lifestyle with world-class amenities and exceptional connectivity. Contact us today to reserve your private VIP walkthrough preview.`;
+        const aiRes: any = await Promise.race([scriptPromise, timeoutPromise]);
+        if (aiRes && aiRes.text) {
+            const cleaned = aiRes.text.replace(/[*#_\[\]()]/g, '').trim();
+            if (cleaned.length > 40) {
+                scriptText = cleaned;
             }
         }
-
-        // Subtitle cues
-        const sentences = scriptText.match(/[^.!?]+[.!?]+/g) || [scriptText];
-        const cueDuration = 30 / Math.max(1, Math.min(6, sentences.length));
-        scriptCues = sentences.slice(0, 6).map((sent, idx) => ({
-            start: Math.round(idx * cueDuration * 10) / 10,
-            end: Math.round((idx + 1) * cueDuration * 10) / 10,
-            text: sent.trim()
-        }));
-        if (scriptCues.length < 4) {
-            const words = scriptText.split(/\s+/);
-            const chunkSize = Math.ceil(words.length / 6);
-            scriptCues = [];
-            for (let i = 0; i < 6; i++) {
-                const chunk = words.slice(i * chunkSize, (i + 1) * chunkSize).join(' ');
-                if (chunk) {
-                    scriptCues.push({
-                        start: Math.round(i * 5 * 10) / 10,
-                        end: Math.round((i + 1) * 5 * 10) / 10,
-                        text: chunk
-                    });
-                }
-            }
-        }
-
-        // 2. Synthesize Authentic Indian Accent Voiceover via Kie.ai Gemini TTS (Authentic Indian Cadence)
-        let audioBuffer: Buffer | null = null;
-        const isHinglishOrHindi = !videoLanguage || langLower.includes('hinglish') || langLower.includes('hindi');
-        const isPunjabi = langLower.includes('punjabi');
-        const ttsScene = isHinglishOrHindi
-            ? "A confident, polished Indian voiceover artist speaking fluent Indian English and natural conversational Hindi and Hinglish in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, authentic Indian pronunciation, and convincing tone for a high-converting commercial."
-            : isPunjabi
-                ? "A confident, polished North Indian voiceover artist speaking fluent authentic Punjabi and conversational Hinglish in a professional recording studio. Warm, clear, enthusiastic, authentic Indian pronunciation."
-                : "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial.";
-
-        try {
-            console.log(`[Realtime 30s Video] Synthesizing authentic Indian voiceover via Kie.ai Gemini TTS (${videoLanguage})...`);
-            const { taskId: ttsTaskId, error: ttsCreateErr } = await createGeminiTTS({
-                dialogueText: scriptText,
-                speakerName: "Aoede",
-                scene: ttsScene,
-                sampleContext: "High converting luxury marketing video commercial with natural Indian English delivery"
-            });
-
-            if (ttsTaskId) {
-                for (let p = 0; p < 12; p++) {
-                    await new Promise(r => setTimeout(r, 1500));
-                    const ttsStatus = await queryKieTask(ttsTaskId);
-                    if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
-                        const audRes = await fetch(ttsStatus.resultUrl);
-                        if (audRes.ok) {
-                            audioBuffer = Buffer.from(await audRes.arrayBuffer());
-                            console.log(`[Realtime 30s Video] Kie Indian TTS succeeded! (${audioBuffer.length} bytes)`);
-                            break;
-                        }
-                    }
-                    if (ttsStatus.state === 'fail') {
-                        console.warn('[Realtime 30s Video] Kie TTS task failed:', ttsStatus.error);
-                        break;
-                    }
-                }
-            } else if (ttsCreateErr) {
-                console.warn('[Realtime 30s Video] Kie TTS create error:', ttsCreateErr);
-            }
-        } catch (e: any) {
-            console.warn('[Realtime 30s Video] Kie TTS warning:', e.message);
-        }
-
-        // Secondary fallback to direct Google Gemini TTS if Kie TTS was unavailable
-        if (!audioBuffer) {
-            console.log(`[Realtime 30s Video] Secondary fallback to direct Gemini TTS...`);
-            const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-            if (geminiKey) {
-                try {
-                    const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key=${geminiKey}`;
-                    const ttsRes = await fetch(ttsUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: scriptText }] }],
-                            generationConfig: {
-                                responseModalities: ['AUDIO'],
-                                speechConfig: {
-                                    voiceConfig: {
-                                        prebuiltVoiceConfig: { voiceName: 'Aoede' }
-                                    }
-                                }
-                            }
-                        })
-                    });
-                    if (ttsRes.ok) {
-                        const ttsData = await ttsRes.json();
-                        const b64 = ttsData.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-                        if (b64) {
-                            audioBuffer = Buffer.from(b64, 'base64');
-                            console.log(`[Realtime 30s Video] Direct Gemini TTS succeeded! (${audioBuffer.length} bytes)`);
-                        }
-                    }
-                } catch (directTtsErr: any) {
-                    console.warn('[Realtime 30s Video] Direct Gemini TTS error:', directTtsErr.message);
-                }
-            }
-        }
-
-
-        // 3. Resolve Hero Image for Grok Video (Pass ONLY the user's property image, NO Unsplash photos!)
-        const selectedTemplate = input.templateId ? getReferenceTemplate(input.templateId) : null;
-        let heroImgUrl = (projectImageUrl && projectImageUrl.startsWith('http'))
-            ? projectImageUrl
-            : (selectedTemplate?.url && selectedTemplate.url.startsWith('http') ? selectedTemplate.url : LUXURY_FALLBACK_IMAGES[0]);
-
-        // Format hero image to clean 9:16 portrait JPEG on R2 for Kie.ai compatibility
-        try {
-            console.log(`[Realtime 30s Video] Formatting hero image to 9:16 JPEG via ensureJpegImage: ${heroImgUrl}`);
-            heroImgUrl = await ensureJpegImage(heroImgUrl, 'demo-user', '9:16');
-        } catch (convErr: any) {
-            console.warn('[Realtime 30s Video] JPEG conversion warning:', convErr.message);
-        }
-
-        // 4. Launch Dual Concurrent Grok Imagine Video 1.5 Tasks (100% Pure AI Video Motion, NO Still Images!)
-        // Task 1: Exterior drone push on user's property photo + AI-generated luxury double-height living salon stock B-roll
-        // Task 2: AI-generated rooftop infinity pool sunset + twilight master suite terrace stock B-roll
-        console.log(`[Realtime 30s Video] Launching dual Grok AI video tasks via Kie.ai for seamless 30s cinematic commercial...`);
-        let grokVideoBuffer1: Buffer | null = null;
-        let grokVideoBuffer2: Buffer | null = null;
-
-        const multiScenePrompt1 = `A dynamic, photorealistic luxury architectural commercial video reel for ${projectTitle} by ${companyName} in ${location}.
-The video flows smoothly across photorealistic architectural scenes:
-- Scene 1: Opens with an aerial cinema drone camera pushing forward toward the iconic property exterior and entrance from Image 1 in warm natural daylight. Only animate the real architecture visible in Image 1.
-- Scene 2: Cuts smoothly to a photorealistic generic luxury stock interior B-roll of an expansive double-height sunlit living salon with Italian marble, warm sunbeams, and floor-to-ceiling glass windows.
-Shot on 35mm anamorphic cinema lens, natural daylight, photorealistic architectural film, 4K commercial quality. Absolutely NO still photos, NO text overlays, NO titles, NO watermarks, NO cartoons, NO CGI artifacts, silent video.`;
-
-        const multiScenePrompt2 = `A photorealistic luxury architectural stock B-roll commercial video for high-end real estate.
-The video flows across photorealistic amenity scenes:
-- Scene 1: A smooth, elegant cinema camera glide over a private rooftop heated infinity pool with crystal-clear azure water and shimmering reflections at sunset against a luxury skyline.
-- Scene 2: Cut smoothly to a warm twilight view of an opulent master bedroom suite with private sky terrace overlooking ambient city lights.
-Shot on 35mm anamorphic cinema lens, natural sunset lighting, photorealistic 4K architectural film. Absolutely NO still photos, NO text overlays, NO titles, NO watermarks, silent video.`;
-
-        try {
-            const task1Promise = createGrokVideoTask({
-                prompt: multiScenePrompt1,
-                imageUrls: [heroImgUrl],
-                aspectRatio: "9:16",
-                duration: 15,
-                resolution: "480p"
-            });
-
-            const task2Promise = createGrokVideoTask({
-                prompt: multiScenePrompt2,
-                aspectRatio: "9:16",
-                duration: 15,
-                resolution: "480p"
-            });
-
-            const [task1Res, task2Res] = await Promise.all([task1Promise, task2Promise]);
-            const task1Id = task1Res.taskId;
-            const task2Id = task2Res.taskId;
-
-            console.log(`[Realtime 30s Video] Launched Grok Tasks: Clip1=${task1Id}, Clip2=${task2Id}. Polling up to 85s for completion...`);
-
-            const startVideoPoll = Date.now();
-            while (Date.now() - startVideoPoll < 85000) {
-                await new Promise(r => setTimeout(r, 2500));
-
-                if (task1Id && !grokVideoBuffer1) {
-                    const status1 = await queryKieTask(task1Id);
-                    if (status1.state === 'success' && status1.resultUrl) {
-                        console.log(`[Realtime 30s Video] Grok Clip 1 ready! URL: ${status1.resultUrl}`);
-                        const res1 = await fetch(status1.resultUrl);
-                        if (res1.ok) grokVideoBuffer1 = Buffer.from(await res1.arrayBuffer());
-                    }
-                }
-
-                if (task2Id && !grokVideoBuffer2) {
-                    const status2 = await queryKieTask(task2Id);
-                    if (status2.state === 'success' && status2.resultUrl) {
-                        console.log(`[Realtime 30s Video] Grok Clip 2 ready! URL: ${status2.resultUrl}`);
-                        const res2 = await fetch(status2.resultUrl);
-                        if (res2.ok) grokVideoBuffer2 = Buffer.from(await res2.arrayBuffer());
-                    }
-                }
-
-                // If both clips are ready, break immediately!
-                if (grokVideoBuffer1 && grokVideoBuffer2) {
-                    console.log(`[Realtime 30s Video] Both Grok AI clips successfully generated!`);
-                    break;
-                }
-
-                // If clip 1 is ready and 75 seconds have elapsed, proceed with clip 1 to ensure prompt completion
-                if (grokVideoBuffer1 && (Date.now() - startVideoPoll > 75000)) {
-                    console.log(`[Realtime 30s Video] Clip 1 ready, proceeding to assemble AI video reel...`);
-                    break;
-                }
-            }
-        } catch (e: any) {
-            console.warn('[Realtime 30s Video] Grok dual video error:', e.message);
-        }
-
-        // 5. FFmpeg Assembly: 100% PURE AI VIDEO FOOTAGE (ZERO Still Images!)
-        const tmpDir = os.tmpdir();
-        const randId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        const tmpAudPath = path.join(tmpDir, `aud_${randId}.wav`);
-        const tmpOutMp4 = path.join(tmpDir, `reel_${randId}.mp4`);
-        const resolvedFfmpegPath = typeof ffmpegPath === 'string' ? ffmpegPath : (ffmpegPath as any)?.default || 'ffmpeg';
-
-        if (audioBuffer) {
-            fs.writeFileSync(tmpAudPath, audioBuffer);
-        }
-
-        if (grokVideoBuffer1 && grokVideoBuffer2 && audioBuffer) {
-            console.log(`[Realtime 30s Video] Stitching 100% AI Commercial: Grok Clip 1 (Exterior + Living Salon) + Grok Clip 2 (Pool + Master Suite) with Indian Voiceover...`);
-            const tmpGrok1 = path.join(tmpDir, `grok1_${randId}.mp4`);
-            const tmpGrok2 = path.join(tmpDir, `grok2_${randId}.mp4`);
-            fs.writeFileSync(tmpGrok1, grokVideoBuffer1);
-            fs.writeFileSync(tmpGrok2, grokVideoBuffer2);
-
-            await new Promise<void>((resolve, reject) => {
-                const filterComplex = [
-                    "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=25[v0]",
-                    "[1:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=25[v1]",
-                    "[v0][v1]concat=n=2:v=1:a=0[outv]"
-                ].join(';');
-
-                const args = [
-                    '-y',
-                    '-nostats',
-                    '-loglevel', 'error',
-                    '-i', tmpGrok1,
-                    '-i', tmpGrok2,
-                    '-i', tmpAudPath,
-                    '-filter_complex', filterComplex,
-                    '-map', '[outv]',
-                    '-map', '2:a:0',
-                    '-c:v', 'libx264',
-                    '-preset', 'veryfast',
-                    '-pix_fmt', 'yuv420p',
-                    '-crf', '22',
-                    '-c:a', 'aac',
-                    '-b:a', '192k',
-                    '-shortest',
-                    '-movflags', '+faststart',
-                    tmpOutMp4
-                ];
-
-                execFile(resolvedFfmpegPath, args, { maxBuffer: 10 * 1024 * 1024 }, (err) => {
-                    try { fs.unlinkSync(tmpGrok1); } catch { }
-                    try { fs.unlinkSync(tmpGrok2); } catch { }
-                    if (err) return reject(err);
-                    resolve();
-                });
-            });
-
-        } else if (grokVideoBuffer1 && audioBuffer) {
-            console.log(`[Realtime 30s Video] Stitching 100% AI Commercial from Grok Clip 1 (Exterior + AI Living Salon) with Indian Voiceover...`);
-            const tmpGrok1 = path.join(tmpDir, `grok1_${randId}.mp4`);
-            fs.writeFileSync(tmpGrok1, grokVideoBuffer1);
-
-            await new Promise<void>((resolve, reject) => {
-                // Seamless cinematic 30s extension: play clip 1, then smooth reverse return = continuous 30s pure AI motion!
-                const filterComplex = [
-                    "[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1,fps=25[v0]",
-                    "[v0]split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1:a=0[outv]"
-                ].join(';');
-
-                const args = [
-                    '-y',
-                    '-nostats',
-                    '-loglevel', 'error',
-                    '-i', tmpGrok1,
-                    '-i', tmpAudPath,
-                    '-filter_complex', filterComplex,
-                    '-map', '[outv]',
-                    '-map', '1:a:0',
-                    '-c:v', 'libx264',
-                    '-preset', 'veryfast',
-                    '-pix_fmt', 'yuv420p',
-                    '-crf', '22',
-                    '-c:a', 'aac',
-                    '-b:a', '192k',
-                    '-shortest',
-                    '-movflags', '+faststart',
-                    tmpOutMp4
-                ];
-
-                execFile(resolvedFfmpegPath, args, { maxBuffer: 10 * 1024 * 1024 }, (err) => {
-                    try { fs.unlinkSync(tmpGrok1); } catch { }
-                    if (err) return reject(err);
-                    resolve();
-                });
-            });
-
-        } else {
-            console.log('[Realtime 30s Video] Grok video failover: returning premium R2 video asset...');
-            if (!audioBuffer) {
-                return { ...fallbackVideo, scriptText, scriptCues };
-            }
-            return {
-                id: `reel-${randId}`,
-                title: `${projectTitle} - 30s Voiceover Reel`,
-                videoUrl: fallbackVideo.videoUrl,
-                aspectRatio: '9:16',
-                duration: 30,
-                scriptText,
-                scriptCues
-            };
-        }
-
-        // 6. Upload rendered MP4 to Cloudflare R2
-        try { fs.appendFileSync(path.join(process.cwd(), 'video_debug.log'), `FFmpeg finished successfully! File exists: ${fs.existsSync(tmpOutMp4)}\n`); } catch { }
-        const mp4Bytes = fs.readFileSync(tmpOutMp4);
-        const r2Key = `demo-creatives/reel_${randId}.mp4`;
-        await r2.send(new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: r2Key,
-            Body: mp4Bytes,
-            ContentType: 'video/mp4'
-        }));
-
-        const publicVideoUrl = `${R2_PUBLIC_URL}/${r2Key}`;
-        try { fs.appendFileSync(path.join(process.cwd(), 'video_debug.log'), `Uploaded to R2: ${publicVideoUrl}\n`); } catch { }
-        console.log(`[Realtime 30s Video] 30s Video uploaded successfully to R2: ${publicVideoUrl} (${(mp4Bytes.length / (1024 * 1024)).toFixed(2)} MB)`);
-
-        try { fs.unlinkSync(tmpAudPath); } catch { }
-        try { fs.unlinkSync(tmpOutMp4); } catch { }
-
-        return {
-            id: `reel-${randId}`,
-            title: `${projectTitle} - 30s Voiceover Reel`,
-            videoUrl: publicVideoUrl,
-            aspectRatio: '9:16',
-            duration: 30,
-            scriptText,
-            scriptCues
-        };
-
-    } catch (e: any) {
-        try { fs.appendFileSync(path.join(process.cwd(), 'video_debug.log'), `CATCH EXCEPTION: ${e.message}\nStack: ${e.stack}\n`); } catch { }
-        console.error('[Realtime 30s Video] Render pipeline error, returning fallback:', e.message);
-        return fallbackVideo;
+    } catch (e) {
+        console.warn('[Browser Demo Video] Dynamic script generation notice:', e.message);
     }
+
+    // Comprehensive Fallbacks for all popular Indian languages
+    if (!scriptText) {
+        if (langLower.includes('marathi')) {
+            scriptText = `${companyName} सादर करत आहेत ${projectTitle}, ${location} च्या अत्यंत प्राईम लोकेशनवर. येथे मिळतील आलिशान ${size} ${type}, जागतिक दर्जाच्या सोयी आणि ${perk}. सुरुवातीची किंमत फक्त ${cleanPrice} पासून. मर्यादित युनिट्स शिल्लक आहेत. आजच आपली खाजगी व्हीआयपी साइट भेट निश्चित करा!`;
+        } else if (langLower.includes('gujarati')) {
+            scriptText = `${companyName} લાવ્યા છે ભવ્ય પ્રોજેક્ટ ${projectTitle}, ${location} ના પ્રાઇમ લોકેશન પર. અહીં તમને મળશે લક્ઝરી ${size} ${type}, આધુનિક ડિઝાઇન અને ${perk}. પ્રારંભિક કિંમત માત્ર ${cleanPrice} થી શરૂ. મર્યાદિત ઇન્વેન્ટરી ઉપલબ્ધ છે. આજે જ તમારો પ્રાઇવેટ વીઆઇપી વોકથ્રુ બુક કરો!`;
+        } else if (langLower.includes('telugu')) {
+            scriptText = `${companyName} గర్వంగా సమర్పిస్తున్న అత్యంత ప్రతిష్టాత్మక ప్రాజెక్ట్ ${projectTitle}, ${location} లో. ఇక్కడ మీకు లభిస్తాయి లగ్జరీ ${size} ${type}, మరియు ${perk}. ప్రారంభ ధర కేవలం ${cleanPrice} మాత్రమే. పరిమిత యూనిట్లు మాత్రమే అందుబాటులో ఉన్నాయి. ఈరోజే మీ ప్రైవేట్ విఐపి సైట్ విజిట్ బుక్ చేసుకోండి!`;
+        } else if (langLower.includes('tamil')) {
+            scriptText = `${companyName} பெருமையுடன் வழங்கும் பிரம்மாண்டமான ${projectTitle}, ${location} பிரைம் லொகேஷனில். இங்கு உங்களுக்கு கிடைக்கிறது ஆடம்பர ${size} ${type}, மற்றும் ${perk}. தொடக்க விலை வெறும் ${cleanPrice} மட்டுமே. குறிப்பிட்ட வீடுகள் மட்டுமே உள்ளன. இன்றே உங்கள் விஐபி தரிசனத்தை பதிவு செய்யுங்கள்!`;
+        } else if (langLower.includes('kannada')) {
+            scriptText = `${companyName} ಪ್ರಸ್ತುತಪಡಿಸುತ್ತಿದೆ ಅತ್ಯಂತ ಭವ್ಯವಾದ ${projectTitle}, ${location} ನ ಪ್ರೈಮ್ ಲೊಕೇಶನ್‌ನಲ್ಲಿ. ಇಲ್ಲಿ ನಿಮಗೆ ದೊರೆಯಲಿದೆ ಐಷಾರಾಮಿ ${size} ${type}, ಮತ್ತು ${perk}. ಪ್ರಾರಂಭಿಕ ಬೆಲೆ ಕೇವಲ ${cleanPrice} ಮಾತ್ರ. ಸೀಮಿತ ಮನೆಗಳು ಮಾತ್ರ ಲಭ್ಯ. ಇಂದೇ ನಿಮ್ಮ ಖಾಸಗಿ ವಿಐಪಿ ವಿಸಿಟ್ ಕಾಯ್ದಿರಿಸಿ!`;
+        } else if (langLower.includes('bengali')) {
+            scriptText = `${companyName} নিয়ে এলো তাদের অন্যতম সেরা প্রকল্প ${projectTitle}, ${location} এর প্রাইম লোকেশনে। এখানে আপনি পাবেন বিলাসবহুল ${size} ${type}, আধুনিক সুযোগ-সুবিধা এবং ${perk}। প্রারম্ভিক মূল্য মাত্র ${cleanPrice} থেকে শুরু। সীমিত ইউনিট বাকি। আজই আপনার প্রাইভেট ভিআইপি সাইট ভিজিট বুক করুন!`;
+        } else if (langLower.includes('punjabi')) {
+            scriptText = `${companyName} ਲੈ ਕੇ ਆਏ ਨੇ ਆਪਣਾ ਸਭ ਤੋਂ ਸ਼ਾਨਦਾਰ ਪ੍ਰੋਜੈਕਟ ${projectTitle}, ${location} ਦੀ ਪ੍ਰਾਈਮ ਲੋਕੇਸ਼ਨ 'ਤੇ। ਇੱਥੇ ਤੁਹਾਨੂੰ ਮਿਲਣਗੇ ਲਗਜ਼ਰੀ ${size} ${type}, ਬਿਹਤਰੀਨ ਡਿਜ਼ਾਈਨ ਅਤੇ ${perk}। ਕੀਮਤ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ ਸਿਰਫ ${cleanPrice} ਤੋਂ। ਅੱਜ ਹੀ ਸੰਪਰਕ ਕਰੋ ਅਤੇ ਆਪਣਾ ਵੀਆਈਪੀ ਪ੍ਰਿਵਿਊ ਬੁੱਕ ਕਰੋ ਜੀ।`;
+        } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
+            scriptText = `${companyName} प्रस्तुत करते हैं अपना सबसे भव्य प्रोजेक्ट, ${projectTitle}, ${location} की प्राइम लोकेशन में। यहाँ आपको मिलते हैं आलीशान ${size} ${type}, आधुनिक डिज़ाइन और ${perk} जैसी बेहतरीन सुविधाएं। कीमतें शुरू होती हैं मात्र ${cleanPrice} से। सीमित इन्वेंटरी उपलब्ध है। अपना वीआईपी साइट विज़िट आज ही बुक करें।`;
+        } else if (langLower.includes('english')) {
+            scriptText = `Welcome to ${projectTitle} by ${companyName}, prestigiously positioned at ${location}. Offering magnificent ${size} ${type} crafted with bespoke architecture and ${perk}. Special launch pricing starts at just ${cleanPrice}. Limited inventory available. Schedule your private VIP walkthrough preview today.`;
+        } else {
+            // Conversational Hinglish
+            scriptText = `${companyName} lekar aaye hain apna sabse premium project: ${projectTitle}, ${location} ki prime location par. Yahan aapko milte hain ultra luxury ${size} ${type}, bespoke architecture aur ${perk}. Inaugural launch price shuru ho rahi hai sirf ${cleanPrice} se! High appreciation aur zero brokerage offer. Limited units available — Aaj hi apna private VIP walkthrough schedule karein!`;
+        }
+    }
+
+    // 2. Generate Timed Caption Cues in the exact 'goldenLuxury' / AI edit style (Every 3rd Day Automation Style)
+    // 6 synchronized segments spanning 30 seconds with emphasis flags on high-value terms
+    let scriptCues = [];
+    const segmentDuration = 5.0; // 6 segments of 5 seconds each = 30 seconds
+    const words = scriptText.split(/\s+/);
+    const chunkSize = Math.ceil(words.length / 6);
+
+    for (let i = 0; i < 6; i++) {
+        const segWords = words.slice(i * chunkSize, (i + 1) * chunkSize);
+        const segText = segWords.join(' ').trim();
+        if (segText) {
+            const hasEmphasis = /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|मूल्य/i.test(segText);
+            scriptCues.push({
+                start: Math.round(i * segmentDuration * 10) / 10,
+                end: Math.round((i + 1) * segmentDuration * 10) / 10,
+                text: segText,
+                emphasis: hasEmphasis || i === 3 || i === 5
+            });
+        }
+    }
+
+    while (scriptCues.length < 6) {
+        const last = scriptCues[scriptCues.length - 1];
+        const nextStart = last ? last.end : 0;
+        scriptCues.push({
+            start: nextStart,
+            end: Math.min(30, nextStart + 5),
+            text: `Schedule your VIP site visit for ${projectTitle} today!`,
+            emphasis: true
+        });
+    }
+
+    // 3. Synthesize Indian accent voiceover in background if Kie TTS is available
+    let audioUrl = undefined;
+    try {
+        const isHinglishOrHindi = langLower.includes('hinglish') || langLower.includes('hindi');
+        const ttsScene = isHinglishOrHindi
+            ? "A confident, polished Indian voiceover artist speaking fluent Indian English and natural conversational Hindi in a professional recording studio."
+            : "A confident, polished Indian voiceover artist speaking in a professional recording studio with warm, clear, enthusiastic cadence.";
+
+        const { taskId: ttsTaskId } = await createGeminiTTS({
+            dialogueText: scriptText,
+            speakerName: "Aoede",
+            scene: ttsScene,
+            sampleContext: "Luxury real estate video ad commercial"
+        });
+
+        if (ttsTaskId) {
+            for (let p = 0; p < 4; p++) {
+                await new Promise(r => setTimeout(r, 1500));
+                const ttsStatus = await queryKieTask(ttsTaskId);
+                if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
+                    audioUrl = ttsStatus.resultUrl;
+                    console.log(`[Browser Demo Video] Synthesized voiceover audio URL: ${audioUrl}`);
+                    break;
+                }
+            }
+        }
+    } catch (ttsErr) {
+        console.warn('[Browser Demo Video] Quick voiceover synthesis notice:', ttsErr.message);
+    }
+
+    return {
+        id: `reel-${Date.now()}`,
+        title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
+        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_voiceover_reel_1793007112340.mp4',
+        aspectRatio: '9:16',
+        duration: 30,
+        scriptText,
+        scriptCues,
+        audioUrl,
+        captionStyle: 'goldenLuxury'
+    };
 }
 
 /**
@@ -813,7 +552,7 @@ Key Features: ${projectDescription}`
     }
 
     // 3. Launch Video Reel synthesis concurrently
-    const videoPromise = generateRealtime30sVideo(input, bgBuffer1);
+    const videoPromise = generateBrowserDemoVideo(input);
 
     // 4. Launch True AI Creative generation via Kie.ai in parallel
     console.log(`[Creative Engine] Triggering true AI creative generation via Kie.ai...`);
