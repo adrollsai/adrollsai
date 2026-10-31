@@ -492,9 +492,119 @@ export async function POST(request: Request) {
                         const cleanFrom = fromPhone.replace(/\D/g, '');
                         const cleanFromDigits = cleanFrom.slice(-10);
                         const wabaPhoneId = val.metadata?.phone_number_id || '';
-                        const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '';
-                        const isMessageToOfficialBot = !wabaPhoneId || (masterPhoneId && wabaPhoneId === masterPhoneId);
-                        
+                        const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '1185499271314063';
+                        const isMessageToOfficialBot = !wabaPhoneId || wabaPhoneId === '1185499271314063' || (masterPhoneId && wabaPhoneId === masterPhoneId);
+
+                        // =========================================================================
+                        // TOP-LEVEL DAILY CREATIVE APPROVE / EDIT / REVISION FLOW
+                        // (Takes precedence before CRM / Lead state machines)
+                        // =========================================================================
+                        const isDirectApproveBtn = buttonReplyId?.startsWith('approve_creative_');
+                        const isDirectEditBtn = buttonReplyId?.startsWith('edit_creative_');
+                        const trimmedMsg = (messageText || '').trim();
+                        const isApproveText = /^(approve|approved|approve creative|approve and post|publish|publish creative)$/i.test(trimmedMsg);
+                        const isEditText = /^(edit|edit creative|revise|make changes|change creative)$/i.test(trimmedMsg);
+
+                        if (isDirectApproveBtn || isDirectEditBtn) {
+                            const assetId = (isDirectApproveBtn ? buttonReplyId.replace('approve_creative_', '') : buttonReplyId.replace('edit_creative_', '')).trim();
+                            console.log(`[Facebook Webhook] 🎨 Direct Creative Action button: ${buttonReplyId}, assetId: ${assetId}, from: ${cleanFrom}`);
+                            
+                            const { data: targetAsset } = await supabaseAdmin
+                                .from('assets')
+                                .select('*, properties(*)')
+                                .eq('id', assetId)
+                                .maybeSingle();
+
+                            if (targetAsset) {
+                                if (isDirectApproveBtn) {
+                                    await handleCreativeApproval({
+                                        userId: targetAsset.user_id,
+                                        assetId: targetAsset.id,
+                                        fromPhone: cleanFrom
+                                    });
+                                    continue;
+                                } else {
+                                    await handleCreativeEditRequest({
+                                        userId: targetAsset.user_id,
+                                        assetId: targetAsset.id,
+                                        fromPhone: cleanFrom
+                                    });
+                                    continue;
+                                }
+                            }
+                        }
+
+                        if (isApproveText || isEditText) {
+                            // Find matching profile for this phone number
+                            const { data: matchedSenderProfiles } = cleanFromDigits ? await supabaseAdmin
+                                .from('profiles')
+                                .select('id, whatsapp_personal_number, contact_number')
+                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%`)
+                                : { data: [] };
+
+                            if (matchedSenderProfiles && matchedSenderProfiles.length > 0) {
+                                const senderUserIds = matchedSenderProfiles.map((p: any) => p.id);
+                                const { data: pendingAsset } = await supabaseAdmin
+                                    .from('assets')
+                                    .select('id, user_id')
+                                    .in('user_id', senderUserIds)
+                                    .in('status', ['pending_approval', 'editing', 'Draft'])
+                                    .order('created_at', { ascending: false })
+                                    .limit(1)
+                                    .maybeSingle();
+
+                                if (pendingAsset) {
+                                    console.log(`[Facebook Webhook] 🎨 Text-based Creative Action: "${trimmedMsg}", asset: ${pendingAsset.id}, from: ${cleanFrom}`);
+                                    if (isApproveText) {
+                                        await handleCreativeApproval({
+                                            userId: pendingAsset.user_id,
+                                            assetId: pendingAsset.id,
+                                            fromPhone: cleanFrom
+                                        });
+                                        continue;
+                                    } else {
+                                        await handleCreativeEditRequest({
+                                            userId: pendingAsset.user_id,
+                                            assetId: pendingAsset.id,
+                                            fromPhone: cleanFrom
+                                        });
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check if sender has an asset in 'editing' status to receive revision instructions
+                        if (cleanFromDigits) {
+                            const { data: senderProfilesForEdit } = await supabaseAdmin
+                                .from('profiles')
+                                .select('id')
+                                .or(`whatsapp_personal_number.ilike.%${cleanFromDigits}%,contact_number.ilike.%${cleanFromDigits}%`);
+
+                            if (senderProfilesForEdit && senderProfilesForEdit.length > 0) {
+                                const candidateUserIds = senderProfilesForEdit.map((p: any) => p.id);
+                                const { data: activeEditingAsset } = await supabaseAdmin
+                                    .from('assets')
+                                    .select('id, user_id')
+                                    .in('user_id', candidateUserIds)
+                                    .eq('status', 'editing')
+                                    .order('created_at', { ascending: false })
+                                    .limit(1)
+                                    .maybeSingle();
+
+                                if (activeEditingAsset) {
+                                    console.log(`[Facebook Webhook] 🎨 Revision submission for asset ${activeEditingAsset.id} from ${cleanFrom}: "${(messageText || '').slice(0, 100)}..."`);
+                                    await handleCreativeRevisionSubmission({
+                                        userId: activeEditingAsset.user_id,
+                                        instructionText: messageText || '',
+                                        fromPhone: cleanFrom,
+                                        assetId: activeEditingAsset.id
+                                    });
+                                    continue;
+                                }
+                            }
+                        }
+
                         let matchedProfile: any = null;
 
                         // Case A: Message arrived at an organization's own WABA

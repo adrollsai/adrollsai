@@ -355,7 +355,7 @@ async function executeAssetApproval(
   if (!profile || !profile.selected_page_token) {
     const { data: prof } = await supabaseAdmin
       .from('profiles')
-      .select('id, business_name, selected_page_token, selected_page_id, selected_page_name, facebook_token, ig_business_id, linkedin_token, linkedin_id, linkedin_urn')
+      .select('id, business_name, selected_page_token, selected_page_id, selected_page_name, facebook_token, linkedin_token, linkedin_id, linkedin_urn')
       .eq('id', userId)
       .single();
     profile = prof || profile;
@@ -364,7 +364,6 @@ async function executeAssetApproval(
   const fbToken = profile?.selected_page_token || profile?.facebook_token;
   const pageId = profile?.selected_page_id;
   const pageName = profile?.selected_page_name || 'Facebook Page';
-  const igBusinessId = profile?.ig_business_id;
   const liToken = profile?.linkedin_token;
   const liId = profile?.linkedin_id;
   const liUrn = profile?.linkedin_urn || (liId ? `urn:li:person:${liId}` : null);
