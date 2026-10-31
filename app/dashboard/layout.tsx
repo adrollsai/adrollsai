@@ -11,7 +11,6 @@ import { UploadProvider } from '@/utils/UploadContext'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
-    const router = useRouter()
     const pathname = usePathname()
     const impersonateId = searchParams.get('impersonate')
 
@@ -48,74 +47,83 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   useEffect(() => {
     const enforcePaywall = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.user) {
-        router.push('/login')
-        return
-      }
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          router.push('/login')
+          return
+        }
 
-      // Check user's profile
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, client_features')
-        .eq('id', session.user.id)
-        .single()
+        // Check user's profile
+        const { data: userProfile } = await supabase
+          .from('profiles')
+          .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, client_features')
+          .eq('id', session.user.id)
+          .single()
 
-      // Check if user account is disabled by admin
-      const isAccountDisabled = session.user.user_metadata?.is_disabled === true
-      if (isAccountDisabled) {
-        await supabase.auth.signOut()
-        router.push('/login?disabled=true')
-        return
-      }
+        // Check if user account is disabled by admin
+        const isAccountDisabled = session.user.user_metadata?.is_disabled === true
+        if (isAccountDisabled) {
+          await supabase.auth.signOut()
+          router.push('/login?disabled=true')
+          return
+        }
 
-      // Resolve Primary User for subscription check
-      let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
-      let subscriptionValidUntil = userProfile?.subscription_valid_until
-      let onboardingCompleted = userProfile?.onboarding_completed
-      let parentEmail = ''
-      const parentId = userProfile?.parent_id || userProfile?.agency_id
-      if (parentId) {
-          const { data: parentProfile } = await supabase
-            .from('profiles')
-            .select('email, subscription_status, subscription_valid_until, onboarding_completed')
-            .eq('id', parentId)
-            .single()
-          parentEmail = parentProfile?.email?.toLowerCase() || ''
-          subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
-          subscriptionValidUntil = parentProfile?.subscription_valid_until
-          onboardingCompleted = parentProfile?.onboarding_completed
-      }
+        // Resolve Primary User for subscription check
+        let subscriptionStatus = userProfile?.subscription_status?.toLowerCase() || ''
+        let subscriptionValidUntil = userProfile?.subscription_valid_until
+        let onboardingCompleted = userProfile?.onboarding_completed
+        let parentEmail = ''
+        let parentProfile: {
+          email?: string | null
+          subscription_status?: string | null
+          subscription_valid_until?: string | null
+          onboarding_completed?: boolean | null
+          client_features?: { paywall_skipped?: boolean } | null
+        } | null = null
+        const parentId = userProfile?.parent_id || userProfile?.agency_id
+        if (parentId) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('email, subscription_status, subscription_valid_until, onboarding_completed, client_features')
+              .eq('id', parentId)
+              .single()
+            parentProfile = data
+            parentEmail = parentProfile?.email?.toLowerCase() || ''
+            subscriptionStatus = parentProfile?.subscription_status?.toLowerCase() || ''
+            subscriptionValidUntil = parentProfile?.subscription_valid_until
+            onboardingCompleted = parentProfile?.onboarding_completed
+        }
 
-      // Whitelisted emails that do not get trapped by subscription expiry
-      const whitelistedEmails = [
-        'rchopra489@gmail.com',
-        'infobluesquareinfra@gmail.com',
-        'khushiramrealtor@gmail.com',
-        'rajivkumaraggarwal81@gmail.com',
-        'gnrhomes97@gmail.com',
-        'alpinenesthomes01@gmail.com',
-        'meta-reviewer@nobogent.com',
-        'pawan@pipixel.io'
-      ]
-      const userEmail = userProfile?.email?.toLowerCase() || ''
-      const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))
+        // Whitelisted emails that do not get trapped by subscription expiry
+        const whitelistedEmails = [
+          'rchopra489@gmail.com',
+          'infobluesquareinfra@gmail.com',
+          'khushiramrealtor@gmail.com',
+          'rajivkumaraggarwal81@gmail.com',
+          'gnrhomes97@gmail.com',
+          'alpinenesthomes01@gmail.com',
+          'meta-reviewer@nobogent.com',
+          'pawan@pipixel.io'
+        ]
+        const userEmail = userProfile?.email?.toLowerCase() || ''
+        const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))
 
-      // Check if validity has expired
-      const isExpiredChronologically = !!(subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date())
-      if (isExpiredChronologically || subscriptionStatus === 'expired') {
-        setSubscriptionExpiredAlert(true)
-      }
+        // Check if validity has expired
+        const isExpiredChronologically = !!(subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date())
+        if (isExpiredChronologically || subscriptionStatus === 'expired') {
+          setSubscriptionExpiredAlert(true)
+        }
 
-      // Dynamic chronological check (non-whitelisted users get set to expired)
-      if (isExpiredChronologically && !isWhitelisted) {
-          subscriptionStatus = 'expired'
-      }
+        // Dynamic chronological check (non-whitelisted users get set to expired)
+        if (isExpiredChronologically && !isWhitelisted) {
+            subscriptionStatus = 'expired'
+        }
 
-      const hasSkippedPaywall = Boolean(
-        userProfile?.client_features?.paywall_skipped === true ||
-        (parentProfile as any)?.client_features?.paywall_skipped === true
-      )
+        const hasSkippedPaywall = Boolean(
+          userProfile?.client_features?.paywall_skipped === true ||
+          parentProfile?.client_features?.paywall_skipped === true
+        )
       const isPaid = isWhitelisted || 
                      subscriptionStatus === 'active' || 
                      subscriptionStatus === 'trialing' || 
@@ -236,6 +244,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         const isTeamMember = !!(userProfile?.parent_id || userProfile?.agency_id || userProfile?.role === 'team_member')
         setAcceptedTerms(isTeamMember || userProfile?.accepted_terms !== false)
         setIsAuthorized(true)
+      } catch (err) {
+        console.error('[DashboardLayout enforcePaywall error]:', err)
+        setIsAuthorized(true)
+      }
     }
 
     enforcePaywall()
