@@ -38,8 +38,15 @@ export default function DashboardError({
             Display Interruption Prevented
           </h3>
           <p className="text-xs text-slate-600 leading-relaxed font-medium">
-            Your CRM lead data and updates were saved safely. Click below to refresh your view.
+            Your workspace and updates were saved safely. Click below to refresh your view.
           </p>
+          {error?.message && (
+            <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-left max-h-36 overflow-auto">
+              <span className="text-[10px] font-bold text-rose-500 uppercase tracking-wider block mb-1">Diagnostic Detail</span>
+              <p className="text-[11px] font-mono text-rose-700 break-words whitespace-pre-wrap">{error.message}</p>
+              {error.digest && <span className="text-[9px] font-mono text-rose-400 block mt-1">Digest: {error.digest}</span>}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">

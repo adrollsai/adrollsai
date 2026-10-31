@@ -31,7 +31,8 @@ import {
     ImageIcon,
     X,
     Award,
-    Search
+    Search,
+    Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 // @ts-ignore
@@ -168,10 +169,10 @@ export default function OnboardingPage() {
     const [activeProjectIndex, setActiveProjectIndex] = useState(0);
 
     const totalAllocatedVideoSeconds = projects.reduce((total, p) => {
-        return total + p.videos.reduce((pTot, v) => pTot + (Number(v.duration) || 0), 0);
+        return total + ((p.videos || []).reduce((pTot, v) => pTot + (Number(v?.duration) || 0), 0));
     }, 0);
-    const remainingVideoSeconds = Math.max(0, MAX_VIDEO_POOL_SECONDS - totalAllocatedVideoSeconds);
-    const videoProgressPercent = Math.min(100, (totalAllocatedVideoSeconds / MAX_VIDEO_POOL_SECONDS) * 100);
+    const remainingVideoSeconds = Math.max(0, MAX_VIDEO_POOL_SECONDS - (totalAllocatedVideoSeconds || 0));
+    const videoProgressPercent = Math.min(100, (((totalAllocatedVideoSeconds || 0) / MAX_VIDEO_POOL_SECONDS) * 100) || 0);
 
     const handleAddProject = () => {
         const defaultVidDuration = remainingVideoSeconds >= 30 ? 30 : (remainingVideoSeconds >= 15 ? 15 : 0);
@@ -1182,7 +1183,7 @@ export default function OnboardingPage() {
                             <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div className="flex items-center gap-2 text-xs text-slate-500 italic max-w-md">
                                     <Sparkles size={14} className="text-amber-500 shrink-0" />
-                                    <span>"{INSPIRATIONAL_QUOTES[quoteIndex].quote}"</span>
+                                    <span>"{INSPIRATIONAL_QUOTES[quoteIndex]?.quote || ""}"</span>
                                 </div>
 
                                 <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
@@ -1762,12 +1763,12 @@ export default function OnboardingPage() {
                                             ) : projects[activeProjectIndex]?.imageUrl ? (
                                                 <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                                                     <img
-                                                        src={projects[activeProjectIndex].imageUrl}
+                                                        src={projects[activeProjectIndex]?.imageUrl || ''}
                                                         alt=""
                                                         className="absolute inset-0 w-full h-full object-cover blur-md opacity-35 scale-110 pointer-events-none"
                                                     />
                                                     <img
-                                                        src={projects[activeProjectIndex].imageUrl}
+                                                        src={projects[activeProjectIndex]?.imageUrl || ''}
                                                         alt="Product Preview"
                                                         className="relative z-10 max-h-full max-w-full object-contain p-2 rounded-xl transition-transform duration-300 group-hover:scale-102"
                                                     />
@@ -1777,7 +1778,7 @@ export default function OnboardingPage() {
                                                             type="button"
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setImageLightboxUrl(projects[activeProjectIndex].imageUrl);
+                                                                setImageLightboxUrl(projects[activeProjectIndex]?.imageUrl || '');
                                                             }}
                                                             className="px-2.5 py-1.5 rounded-xl bg-white/95 hover:bg-white text-slate-800 text-xs font-bold shadow-md flex items-center gap-1 cursor-pointer transition-transform hover:scale-105"
                                                         >
@@ -1886,7 +1887,7 @@ export default function OnboardingPage() {
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            const hasValidProject = projects.some(p => p.title.trim() && p.description.trim());
+                                            const hasValidProject = projects.some(p => ((p?.title || '').trim()) && ((p?.description || '').trim()));
                                             if (!hasValidProject) {
                                                 toast.error("Please enter a title and description for at least one project, or click 'Skip project setup'.");
                                                 return;
@@ -2288,7 +2289,7 @@ export default function OnboardingPage() {
                                     {/* Quote Callout */}
                                     <div className="mt-5 p-3 rounded-2xl bg-amber-50/80 border border-amber-200/70 text-[11px] text-amber-900 font-medium flex items-start gap-2">
                                         <Sparkles size={14} className="text-amber-600 shrink-0 mt-0.5" />
-                                        <span>"{INSPIRATIONAL_QUOTES[quoteIndex].quote}"</span>
+                                        <span>"{INSPIRATIONAL_QUOTES[quoteIndex]?.quote || ""}"</span>
                                     </div>
                                 </div>
 
