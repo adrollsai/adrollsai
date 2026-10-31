@@ -44,8 +44,14 @@ import {
     Maximize2,
     Trash2,
     ImageIcon,
-    PhoneCall
+    PhoneCall,
+    Palette,
+    SlidersHorizontal,
+    Type
 } from 'lucide-react';
+import { Player } from '@remotion/player';
+import { CaptionsComposition, Caption, Effect, Theme } from '@/remotion/CaptionsComposition';
+import { SUBTITLE_THEMES, ANIMATION_OPTIONS, DEFAULT_SUBTITLE_THEME } from '@/remotion/Constants';
 // @ts-ignore
 import confetti from 'canvas-confetti';
 import { toast } from 'sonner';
@@ -276,6 +282,17 @@ const SERVICE_COMPARISONS = [
     }
 ];
 
+const CAPTION_COLOR_SWATCHES = [
+    '#F59E0B', // Amber Gold
+    '#FFE600', // Hormozi Yellow
+    '#39FF14', // Neon Green
+    '#00EAFF', // Cyber Cyan
+    '#FF007F', // Neon Magenta
+    '#EF4444', // Crimson Red
+    '#FFFFFF', // Crisp White
+    '#A855F7', // Electric Violet
+];
+
 export default function DemoPage() {
     const [step, setStep] = useState<DemoStep>('onboarding');
 
@@ -323,6 +340,49 @@ export default function DemoPage() {
     const [generationStage, setGenerationStage] = useState(0);
     const [creative, setCreative] = useState<GeneratedCreative | null>(null);
     const [generatedVideo, setGeneratedVideo] = useState<GeneratedVideo | null>(null);
+
+    // Remotion AI Caption Studio States
+    const [isMounted, setIsMounted] = useState(false);
+    const [selectedCaptionTheme, setSelectedCaptionTheme] = useState<string>('goldenLuxury');
+    const [captionThemeConfig, setCaptionThemeConfig] = useState<Theme>(DEFAULT_SUBTITLE_THEME);
+    const [captionStudioTab, setCaptionStudioTab] = useState<'styles' | 'animations' | 'custom' | 'subtitles'>('styles');
+    const [editableCues, setEditableCues] = useState<Caption[]>([]);
+    const remotionPlayerRef = useRef<any>(null);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    useEffect(() => {
+        if (generatedVideo?.scriptCues && generatedVideo.scriptCues.length > 0) {
+            setEditableCues(generatedVideo.scriptCues.map((c, i) => ({
+                text: c.text,
+                start: c.start ?? (i * 4.2),
+                end: c.end ?? ((i + 1) * 4.2),
+                emphasis: c.emphasis || i === 0 || i === 3
+            })));
+        } else {
+            setEditableCues([
+                { start: 0.5, end: 4.8, text: `${companyName || 'Nobogent'} presents ${projectTitle || 'Chandigarh Residencies'}`, emphasis: true },
+                { start: 4.8, end: 9.2, text: `Experience bespoke architectural luxury at ${location || 'Prime Metro Corridor'}`, emphasis: false },
+                { start: 9.2, end: 13.5, text: `Ultra luxury residences crafted with panoramic views and world-class amenities`, emphasis: true },
+                { start: 13.5, end: 17.8, text: `Inaugural launch price starting at only ${projectPrice || '₹1.85 Cr'}`, emphasis: true },
+                { start: 17.8, end: 22.0, text: `Exclusive high ROI launch privilege with flexible investor payment plans`, emphasis: false },
+                { start: 22.0, end: 25.8, text: `Limited inventory available — Book your private VIP walkthrough today!`, emphasis: true }
+            ]);
+        }
+    }, [generatedVideo, companyName, projectTitle, location, projectPrice]);
+
+    const handleSelectCaptionTheme = (themeKey: string) => {
+        setSelectedCaptionTheme(themeKey);
+        const baseTheme = SUBTITLE_THEMES[themeKey] || DEFAULT_SUBTITLE_THEME;
+        setCaptionThemeConfig(baseTheme);
+        playChime('beep');
+    };
+
+    const updateCaptionTheme = (updates: Partial<Theme>) => {
+        setCaptionThemeConfig(prev => ({ ...prev, ...updates }));
+    };
 
     // Showcase View States (Clean tabs without numbers)
     const [showcaseTab, setShowcaseTab] = useState<'creative' | 'video' | 'website' | 'call' | 'broadcast' | 'crm'>('creative');
@@ -1893,279 +1953,382 @@ export default function DemoPage() {
                             )}
 
                             {/* TAB 2: 30s VIDEO REEL */}
-                            {showcaseTab === 'video' && (() => {
-                                const activeVideoCues = generatedVideo?.scriptCues && generatedVideo.scriptCues.length > 0
-                                    ? generatedVideo.scriptCues
-                                    : [
-                                        { start: 0, end: 4.8, text: `${companyName} lekar aaye hain apna sabse prestigious project: ${projectTitle}.` },
-                                        { start: 4.8, end: 9.8, text: `${location} ki prime location par bespoke architecture aur luxury lifestyle.` },
-                                        { start: 9.8, end: 14.8, text: `Yahan aapko milte hain ultra luxury residences with private infinity pool.` },
-                                        { start: 14.8, end: 19.8, text: `Inaugural launch price shuru ho rahi hai sirf ${projectPrice} se!` },
-                                        { start: 19.8, end: 24.8, text: `High capital appreciation aur 0% brokerage ka limited launch privilege.` },
-                                        { start: 24.8, end: 30.0, text: `Limited inventory available — Aaj hi apna private VIP walkthrough schedule karein!` }
-                                    ];
-                                const currentActiveCue = activeVideoCues.find(c => {
-                                    const cueStart = c.start ?? c.time ?? 0;
-                                    const cueEnd = c.end ?? (c.time !== undefined ? c.time + 5 : 30);
-                                    return videoCurrentTime >= cueStart && videoCurrentTime < cueEnd;
-                                });
-
-                                return (
-                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                                        <div className="lg:col-span-6 rounded-2xl p-5 bg-slate-50 border border-slate-200 text-center">
-                                            <div className="relative mx-auto w-[250px] sm:w-[270px] aspect-[9/16] rounded-[36px] p-2 bg-slate-900 shadow-2xl overflow-hidden">
-                                                <div className="w-full h-full rounded-[28px] overflow-hidden bg-black relative flex items-center justify-center">
-                                                    {generatedVideo ? (
-                                                        <>
-                                                            <video
-                                                                ref={videoElementRef}
-                                                                src={generatedVideo.videoUrl}
-                                                                controls
-                                                                autoPlay
-                                                                loop={false}
-                                                                playsInline
-                                                                onTimeUpdate={handleVideoTimeUpdate}
-                                                                onEnded={() => setShowVideoOutro(true)}
-                                                                className="w-full h-full object-cover"
-                                                            />
-
-                                                            {/* Engaging Viral Captions Layer (Automatic 3rd Day Golden Luxury / AI Edit Style) */}
-                                                            <AnimatePresence mode="wait">
-                                                                {currentActiveCue && !showVideoOutro && (
-                                                                    <motion.div
-                                                                        key={currentActiveCue.text}
-                                                                        initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                                                                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                                                                        exit={{ opacity: 0, scale: 0.96, y: -4 }}
-                                                                        transition={{ duration: 0.22, ease: "easeOut" }}
-                                                                        className="absolute inset-x-2 bottom-12 z-20 flex justify-center pointer-events-none px-2"
-                                                                    >
-                                                                        <div className="relative text-center max-w-[96%]">
-                                                                            <div className="absolute inset-0 bg-black/60 blur-md rounded-2xl transform scale-105" />
-                                                                            <div className="relative px-3 py-1.5 rounded-xl border border-amber-400/40 bg-slate-950/85 backdrop-blur-md shadow-2xl">
-                                                                                <p 
-                                                                                    className="text-xs sm:text-[13px] font-black tracking-wide leading-snug uppercase text-slate-100 drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]"
-                                                                                    style={{
-                                                                                        fontFamily: "'Outfit', 'Montserrat', 'Noto Sans Devanagari', 'Noto Sans Gurmukhi', sans-serif"
-                                                                                    }}
-                                                                                >
-                                                                                    {currentActiveCue.text.split(' ').map((word, wIdx) => {
-                                                                                        const isHighlight = currentActiveCue.emphasis || /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|মূল্য/i.test(word);
-                                                                                        return (
-                                                                                            <span
-                                                                                                key={wIdx}
-                                                                                                className={isHighlight 
-                                                                                                    ? "text-amber-300 drop-shadow-[0_0_12px_rgba(245,158,11,0.95)] font-black mx-0.5 inline-block" 
-                                                                                                    : "text-slate-100 font-extrabold mx-0.5 inline-block"
-                                                                                                }
-                                                                                            >
-                                                                                                {word}{' '}
-                                                                                            </span>
-                                                                                        );
-                                                                                    })}
-                                                                                </p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </motion.div>
-                                                                )}
-                                                            </AnimatePresence>
-
-                                                            {/* Authentic Remotion Outro Screen with User's Brand Logo & Demo Info */}
-                                                            <AnimatePresence>
-                                                                {showVideoOutro && (
-                                                                    <motion.div
-                                                                        initial={{ opacity: 0, scale: 0.96 }}
-                                                                        animate={{ opacity: 1, scale: 1 }}
-                                                                        exit={{ opacity: 0, scale: 0.96 }}
-                                                                        transition={{ duration: 0.35, ease: 'easeOut' }}
-                                                                        className="absolute inset-0 bg-gradient-to-b from-slate-950 via-[#0B1220] to-slate-950 flex flex-col justify-between p-4 text-white z-30 shadow-2xl overflow-hidden"
-                                                                    >
-                                                                        {/* Floating Ambient Glow Orbs */}
-                                                                        <div className="absolute top-10 -left-10 w-44 h-44 rounded-full bg-amber-500/15 blur-3xl pointer-events-none" />
-                                                                        <div className="absolute bottom-16 -right-10 w-48 h-48 rounded-full bg-blue-500/15 blur-3xl pointer-events-none" />
-
-                                                                        {/* Top Floating Replay & Close Controls */}
-                                                                        <div className="w-full flex items-center justify-between z-40 relative">
-                                                                            <span className="text-[8px] font-black tracking-widest uppercase bg-amber-500/20 text-amber-300 border border-amber-400/40 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                                                                <span>✦</span>
-                                                                                <span>OFFICIAL VIDEO OUTRO</span>
-                                                                            </span>
-                                                                            <div className="flex items-center gap-1.5">
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={handleReplayVideo}
-                                                                                    className="text-[10px] text-slate-200 hover:text-white flex items-center gap-1 bg-black/60 hover:bg-black/80 backdrop-blur-md px-2.5 py-1 rounded-full cursor-pointer transition-all border border-white/20 shadow-md"
-                                                                                    title="Replay Video"
-                                                                                >
-                                                                                    <RefreshCw size={10} />
-                                                                                    <span>Replay</span>
-                                                                                </button>
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => setShowVideoOutro(false)}
-                                                                                    className="w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-slate-300 hover:text-white text-xs cursor-pointer transition-all border border-white/20 shadow-md"
-                                                                                    title="Close Outro"
-                                                                                >
-                                                                                    ✕
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {/* Center: Brand Logo of Demo Taker + Developer Identity */}
-                                                                        <div className="flex flex-col items-center text-center my-auto z-10 space-y-2.5">
-                                                                            {/* User Taking Demo's Logo */}
-                                                                            <div className="relative group">
-                                                                                <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-400 to-amber-600 opacity-60 blur-sm" />
-                                                                                {logoUrl ? (
-                                                                                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white p-2 border-2 border-amber-400/80 shadow-2xl flex items-center justify-center overflow-hidden">
-                                                                                        <img 
-                                                                                            src={logoUrl} 
-                                                                                            alt={companyName} 
-                                                                                            className="w-full h-full object-contain"
-                                                                                        />
-                                                                                    </div>
-                                                                                ) : (
-                                                                                    <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 flex items-center justify-center text-white text-2xl sm:text-3xl font-black shadow-2xl border-2 border-amber-300/60">
-                                                                                        {companyName.charAt(0).toUpperCase()}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            <div>
-                                                                                <h3 className="text-base sm:text-lg font-black text-white leading-tight uppercase tracking-tight">
-                                                                                    {companyName}
-                                                                                </h3>
-                                                                                <p className="text-[10px] text-amber-300 font-bold uppercase tracking-wider mt-0.5">
-                                                                                    OFFICIAL DEVELOPER & BUILDER
-                                                                                </p>
-                                                                            </div>
-
-                                                                            {/* Golden Accent Line */}
-                                                                            <div className="w-12 h-1 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full my-1" />
-
-                                                                            {/* Project & Price Pill */}
-                                                                            <div className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm max-w-[210px]">
-                                                                                <p className="text-[11px] font-extrabold text-white truncate">{projectTitle}</p>
-                                                                                <p className="text-[10px] text-amber-300 font-black tracking-wide mt-0.5">
-                                                                                    Starting {projectPrice}
-                                                                                </p>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {/* Bottom Contact Details & WhatsApp CTA */}
-                                                                        <div className="z-10 space-y-2 pt-2 border-t border-white/10">
-                                                                            <div className="space-y-1 text-center">
-                                                                                <div className="flex items-center justify-center gap-1.5 text-[11px] font-black text-white">
-                                                                                    <Phone size={11} className="text-amber-400" />
-                                                                                    <span className="font-mono tracking-wide">+91 {prospectPhone.slice(-10) || '98886 26786'}</span>
-                                                                                </div>
-                                                                                <div className="flex items-center justify-center gap-1 text-[9px] text-slate-400 truncate px-2">
-                                                                                    <MapPin size={9} className="text-amber-400 shrink-0" />
-                                                                                    <span className="truncate">{location}</span>
-                                                                                </div>
-                                                                            </div>
-
-                                                                            {/* High-Converting WhatsApp Action Button */}
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => handleSendStepWhatsApp('video_preview', `30s Video preview sent to +91 ${prospectPhone.slice(-10)}!`)}
-                                                                                className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs tracking-wide uppercase shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
-                                                                            >
-                                                                                <Send size={12} />
-                                                                                <span>Send VIP Brochure to WhatsApp</span>
-                                                                            </button>
-                                                                        </div>
-                                                                    </motion.div>
-                                                                )}
-                                                            </AnimatePresence>
-                                                        </>
-                                                    ) : isGenerating ? (
-                                                        <div className="p-6 text-center text-white flex flex-col items-center justify-center space-y-3">
-                                                            <Loader2 size={30} className="animate-spin text-blue-400" />
-                                                            <span className="text-xs font-bold">Synthesizing 30s Video Reel</span>
-                                                            <span className="text-[10px] text-slate-400 max-w-[200px]">
-                                                                Rendering 24kHz {videoLanguage.toUpperCase()} voiceover &amp; cinematic motion in background...
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-center p-6 text-white space-y-3 flex flex-col items-center justify-center h-full">
-                                                            <div className="w-12 h-12 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-amber-400 shadow-inner">
-                                                                <Film size={22} />
-                                                            </div>
-                                                            <div>
-                                                                <h4 className="text-xs font-black text-white">Video Reel Skipped</h4>
-                                                                <p className="text-[10px] text-slate-300 mt-0.5 max-w-[190px] mx-auto leading-relaxed">
-                                                                    Synthesize photorealistic AI video motion with {videoLanguage.toUpperCase()} voiceover.
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleStartCreativeGeneration(true)}
-                                                                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-[11px] flex items-center gap-1.5 shadow-md cursor-pointer active:scale-95 transition-all"
-                                                            >
-                                                                <Sparkles size={11} />
-                                                                <span>Generate 30s Reel</span>
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
+                            {showcaseTab === 'video' && (
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                                    {/* Left Column: Remotion Live Video Reel Mockup (5 Cols) */}
+                                    <div className="lg:col-span-5 flex flex-col items-center">
+                                        <div className="relative mx-auto w-full max-w-[280px] sm:max-w-[290px] aspect-[9/16] rounded-[38px] p-2.5 bg-slate-950 shadow-2xl overflow-hidden border-4 border-slate-800">
+                                            {/* Top Dynamic Island / Speaker */}
+                                            <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-900 rounded-full z-30 flex items-center justify-center pointer-events-none">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-slate-950 mr-2" />
+                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/40" />
                                             </div>
 
-                                            {/* Video Controls Toolbar */}
-                                            {generatedVideo && (
-                                                <div className="mt-3 flex items-center justify-center gap-3 text-xs">
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleReplayVideo}
-                                                        className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                                                    >
-                                                        <RefreshCw size={12} />
-                                                        <span>Replay Video</span>
-                                                    </button>
-                                                    <span className="text-slate-300">•</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowVideoOutro(!showVideoOutro)}
-                                                        className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-                                                    >
-                                                        <Eye size={12} />
-                                                        <span>{showVideoOutro ? 'Hide Outro Slate' : 'Show Outro Slate'}</span>
-                                                    </button>
-                                                </div>
-                                            )}
+                                            <div className="w-full h-full rounded-[28px] overflow-hidden bg-black relative flex items-center justify-center">
+                                                {isMounted ? (
+                                                    <Player
+                                                        ref={remotionPlayerRef}
+                                                        component={CaptionsComposition}
+                                                        durationInFrames={900}
+                                                        compositionWidth={1080}
+                                                        compositionHeight={1920}
+                                                        fps={30}
+                                                        controls
+                                                        autoPlay
+                                                        loop
+                                                        style={{ width: '100%', height: '100%', borderRadius: '28px' }}
+                                                        inputProps={{
+                                                            videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
+                                                            audioUrl: generatedVideo?.audioUrl || undefined,
+                                                            captions: editableCues,
+                                                            effects: [
+                                                                { type: 'zoom', start: 0, end: 2.5 },
+                                                                { type: 'border', start: 9.0, end: 12.0 },
+                                                                { type: 'zoom', start: 14.5, end: 17.0 }
+                                                            ],
+                                                            theme: captionThemeConfig,
+                                                            profile: {
+                                                                business_name: companyName || 'Apex Luxury Developments',
+                                                                logo_url: logoUrl || null,
+                                                                phone: prospectPhone || '+91 98886 26786',
+                                                                brand_color: customBrandColor || '#F59E0B',
+                                                                verified: true
+                                                            },
+                                                            isPlayer: true
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <div className="flex flex-col items-center justify-center p-6 text-center text-white space-y-2">
+                                                        <Loader2 size={24} className="animate-spin text-blue-400" />
+                                                        <span className="text-xs font-bold">Mounting Video Player...</span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        <div className="lg:col-span-6 space-y-4">
-                                            <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-3">
-                                                <div className="flex items-center justify-between">
-                                                    <h3 className="text-xs font-bold text-slate-800">WhatsApp Broadcast Copy</h3>
-                                                    <span className="text-[10px] text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded-md">
-                                                        Voiceover: {videoLanguage.toUpperCase()}
-                                                    </span>
-                                                </div>
-
-                                                <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                                    &quot;Hello &#123;&#123;1&#125;&#125;! Here is a 30s walkthrough of <strong>{projectTitle}</strong> in {location} starting at {projectPrice}. Click below to reserve your VIP preview this weekend!&quot;
-                                                </p>
-
-                                                {/* Action Button for Video Tab */}
-                                                <button
-                                                    onClick={() => handleSendStepWhatsApp('video_preview', `30s Video & Broadcast template sent to +91 ${prospectPhone.slice(-10)}!`)}
-                                                    disabled={sendingTabWhatsApp === 'video_preview'}
-                                                    className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
-                                                >
-                                                    {sendingTabWhatsApp === 'video_preview' ? (
-                                                        <Loader2 size={13} className="animate-spin" />
-                                                    ) : (
-                                                        <Send size={13} />
-                                                    )}
-                                                    <span>{generatedVideo ? 'Send Video & Template to My WhatsApp' : 'Send Walkthrough Template to My WhatsApp'}</span>
-                                                </button>
-                                            </div>
+                                        {/* Player Quick Timeline Scrub & Preview Jump */}
+                                        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => remotionPlayerRef.current?.seekTo(0)}
+                                                className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                title="Play from Beginning"
+                                            >
+                                                <RefreshCw size={12} />
+                                                <span>Replay (0s)</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => remotionPlayerRef.current?.seekTo(780)}
+                                                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs border border-amber-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                title="Preview Brand Logo & Outro Card (26s)"
+                                            >
+                                                <Eye size={12} className="text-amber-600" />
+                                                <span>Preview Outro (Logo)</span>
+                                            </button>
                                         </div>
                                     </div>
-                                );
-                            })()}
+
+                                    {/* Right Column: AI Caption Studio (Font Styling & Animation Options - 7 Cols) */}
+                                    <div className="lg:col-span-7 rounded-3xl bg-slate-950 text-white border border-slate-800 shadow-2xl p-5 sm:p-6 flex flex-col space-y-5">
+                                        {/* Studio Header */}
+                                        <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <Sparkles className="text-amber-400 animate-pulse" size={18} />
+                                                    <h3 className="text-base sm:text-lg font-black tracking-tight">AI Caption Studio</h3>
+                                                </div>
+                                                <p className="text-xs text-slate-400 mt-0.5">Real-time viral subtitle typography, animations &amp; styling</p>
+                                            </div>
+                                            <span className="text-[10px] font-extrabold uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-full">
+                                                {selectedCaptionTheme.replace(/([A-Z])/g, ' $1')}
+                                            </span>
+                                        </div>
+
+                                        {/* Navigation Tabs (Styles, Animations, Adjust, Subtitles) */}
+                                        <div className="flex gap-1.5 p-1 bg-white/5 border border-white/5 rounded-2xl">
+                                            {[
+                                                { id: 'styles', label: 'Styles', icon: Palette },
+                                                { id: 'animations', label: 'Animations', icon: Zap },
+                                                { id: 'custom', label: 'Adjust', icon: SlidersHorizontal },
+                                                { id: 'subtitles', label: 'Subtitles', icon: Type }
+                                            ].map((tab) => (
+                                                <button
+                                                    key={tab.id}
+                                                    type="button"
+                                                    onClick={() => setCaptionStudioTab(tab.id as any)}
+                                                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                                                        captionStudioTab === tab.id
+                                                            ? 'bg-blue-600 text-white shadow-md'
+                                                            : 'text-slate-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    <tab.icon size={13} />
+                                                    <span>{tab.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Tab 1: STYLES & PRESETS */}
+                                        {captionStudioTab === 'styles' && (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block mb-2">
+                                                        Viral Subtitle Presets (8 Styles)
+                                                    </label>
+                                                    <div className="grid grid-cols-2 gap-2.5 max-h-[300px] overflow-y-auto pr-1">
+                                                        {Object.entries(SUBTITLE_THEMES).map(([themeKey, themeData]) => {
+                                                            const isSelected = selectedCaptionTheme === themeKey;
+                                                            return (
+                                                                <button
+                                                                    key={themeKey}
+                                                                    type="button"
+                                                                    onClick={() => handleSelectCaptionTheme(themeKey)}
+                                                                    className={`p-3 rounded-2xl border-2 transition-all text-left relative overflow-hidden cursor-pointer ${
+                                                                        isSelected
+                                                                            ? 'border-blue-500 bg-blue-500/15 shadow-md shadow-blue-500/20'
+                                                                            : 'border-white/5 bg-white/5 hover:bg-white/10'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected && (
+                                                                        <div className="absolute top-2 right-2 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                                                                            <Check size={10} className="text-white" strokeWidth={3} />
+                                                                        </div>
+                                                                    )}
+                                                                    <p className={`font-extrabold text-xs capitalize ${isSelected ? 'text-blue-400' : 'text-slate-200'}`}>
+                                                                        {themeKey.replace(/([A-Z])/g, ' $1')}
+                                                                    </p>
+                                                                    <div className="flex items-center gap-1.5 mt-2">
+                                                                        <div
+                                                                            className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-xs"
+                                                                            style={{ backgroundColor: themeData.highlightColor }}
+                                                                            title="Highlight Color"
+                                                                        />
+                                                                        <div
+                                                                            className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-xs"
+                                                                            style={{ backgroundColor: themeData.secondaryHighlightColor || themeData.color }}
+                                                                            title="Secondary Color"
+                                                                        />
+                                                                        <span className="text-[10px] text-slate-400 font-mono capitalize ml-1">
+                                                                            {themeData.animation}
+                                                                        </span>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Tab 2: ANIMATIONS */}
+                                        {captionStudioTab === 'animations' && (
+                                            <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                                                    Select Animation Dynamic
+                                                </label>
+                                                {ANIMATION_OPTIONS.map((anim) => {
+                                                    const isSelected = captionThemeConfig.animation === anim.id;
+                                                    return (
+                                                        <button
+                                                            key={anim.id}
+                                                            type="button"
+                                                            onClick={() => updateCaptionTheme({ animation: anim.id })}
+                                                            className={`w-full p-3 rounded-2xl border-2 transition-all flex items-center justify-between text-left cursor-pointer ${
+                                                                isSelected
+                                                                    ? 'border-blue-500 bg-blue-500/15 shadow-md shadow-blue-500/20'
+                                                                    : 'border-white/5 bg-white/5 hover:bg-white/10'
+                                                                }`}
+                                                        >
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="text-xl p-2 bg-white/5 rounded-xl border border-white/5">
+                                                                    {anim.icon}
+                                                                </span>
+                                                                <div>
+                                                                    <p className={`font-black text-xs ${isSelected ? 'text-blue-400' : 'text-white'}`}>
+                                                                        {anim.label}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                                                                        {anim.description}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                                                                isSelected ? 'border-blue-500 bg-blue-500' : 'border-slate-700'
+                                                            }`}>
+                                                                {isSelected && <Check size={10} className="text-white" strokeWidth={3} />}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Tab 3: CUSTOM ADJUSTMENTS */}
+                                        {captionStudioTab === 'custom' && (
+                                            <div className="space-y-4 max-h-[320px] overflow-y-auto pr-1">
+                                                {/* Vertical Position */}
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                        Vertical Position
+                                                    </label>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {(['top', 'center', 'bottom'] as const).map((pos) => (
+                                                            <button
+                                                                key={pos}
+                                                                type="button"
+                                                                onClick={() => updateCaptionTheme({ position: pos })}
+                                                                className={`py-2 rounded-xl border font-bold text-xs capitalize transition-all cursor-pointer ${
+                                                                    captionThemeConfig.position === pos
+                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
+                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                {pos}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Font Family */}
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                        Typography Font Family
+                                                    </label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {['Outfit', 'Montserrat', 'Roboto', 'Inter'].map((font) => (
+                                                            <button
+                                                                key={font}
+                                                                type="button"
+                                                                onClick={() => updateCaptionTheme({ fontFamily: font })}
+                                                                className={`py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                                                    captionThemeConfig.fontFamily === font
+                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
+                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                }`}
+                                                                style={{ fontFamily: font }}
+                                                            >
+                                                                {font}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Font Size Slider */}
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-1.5">
+                                                        <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                                                            Font Size
+                                                        </label>
+                                                        <span className="text-xs font-mono font-bold text-blue-400">
+                                                            {captionThemeConfig.fontSize || 54}px
+                                                        </span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min="40"
+                                                        max="100"
+                                                        step="2"
+                                                        value={captionThemeConfig.fontSize || 54}
+                                                        onChange={(e) => updateCaptionTheme({ fontSize: parseInt(e.target.value) })}
+                                                        className="w-full accent-blue-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                                                    />
+                                                </div>
+
+                                                {/* Highlight Colors */}
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-2">
+                                                        Viral Highlight Color
+                                                    </label>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {CAPTION_COLOR_SWATCHES.map((color) => (
+                                                            <button
+                                                                key={color}
+                                                                type="button"
+                                                                onClick={() => updateCaptionTheme({ highlightColor: color })}
+                                                                className={`w-7 h-7 rounded-xl border-2 transition-transform active:scale-90 flex items-center justify-center cursor-pointer ${
+                                                                    captionThemeConfig.highlightColor === color ? 'border-white scale-110 shadow-md' : 'border-transparent hover:scale-105'
+                                                                }`}
+                                                                style={{ backgroundColor: color }}
+                                                            >
+                                                                {captionThemeConfig.highlightColor === color && (
+                                                                    <Check size={12} className={color === '#FFFFFF' || color === '#FFE600' ? 'text-black' : 'text-white'} strokeWidth={3} />
+                                                                )}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {/* Box Style */}
+                                                <div>
+                                                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5">
+                                                        Box &amp; Background Styling
+                                                    </label>
+                                                    <div className="grid grid-cols-4 gap-1.5">
+                                                        {(['none', 'shadow', 'badge', 'glass'] as const).map((style) => (
+                                                            <button
+                                                                key={style}
+                                                                type="button"
+                                                                onClick={() => updateCaptionTheme({ boxStyle: style })}
+                                                                className={`py-1.5 rounded-xl border text-[11px] font-bold capitalize transition-all cursor-pointer ${
+                                                                    captionThemeConfig.boxStyle === style
+                                                                        ? 'border-blue-500 bg-blue-500/20 text-blue-400 font-black'
+                                                                        : 'border-white/5 bg-white/5 text-slate-400 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                {style}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Tab 4: SUBTITLES LIST */}
+                                        {captionStudioTab === 'subtitles' && (
+                                            <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+                                                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest block">
+                                                    Timed Caption Segments ({editableCues.length})
+                                                </label>
+                                                {editableCues.map((cue, idx) => (
+                                                    <div key={idx} className="p-2.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5">
+                                                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                                                            <span className="font-bold text-blue-400">#{idx + 1}</span>
+                                                            <span>{cue.start.toFixed(1)}s - {cue.end.toFixed(1)}s</span>
+                                                        </div>
+                                                        <input
+                                                            type="text"
+                                                            value={cue.text}
+                                                            onChange={(e) => {
+                                                                const updated = [...editableCues];
+                                                                updated[idx] = { ...updated[idx], text: e.target.value };
+                                                                setEditableCues(updated);
+                                                            }}
+                                                            className="w-full bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-blue-500"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Bottom In-Browser Live Preview & WhatsApp Action (NO RENDER BUTTON) */}
+                                        <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2 text-xs text-slate-400">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                <span className="font-medium">Live Browser Preview (No rendering wait)</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSendStepWhatsApp('video_preview', `30s Video preview link sent to +91 ${prospectPhone.slice(-10)}!`)}
+                                                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md active:scale-95"
+                                            >
+                                                <Send size={12} />
+                                                <span>Send VIP Preview to WhatsApp</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* TAB 3: WEBSITE */}
                             {showcaseTab === 'website' && (

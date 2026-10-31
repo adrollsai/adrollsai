@@ -1,4 +1,4 @@
-import { AbsoluteFill, OffthreadVideo, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, spring } from 'remotion';
+import { AbsoluteFill, OffthreadVideo, Video, Audio, useVideoConfig, useCurrentFrame, interpolate, spring, Loop } from 'remotion';
 import React from 'react';
 import { loadFont as loadMontserrat } from "@remotion/google-fonts/Montserrat";
 import { loadFont as loadOutfit } from "@remotion/google-fonts/Outfit";
@@ -143,20 +143,22 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                {isPlayer ? (
-                    <Video 
-                        src={videoUrl} 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        volume={audioUrl ? 0.1 : 1.0}
-                    />
-                ) : (
-                    <OffthreadVideo 
-                        src={videoUrl} 
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                        crossOrigin="anonymous" 
-                        volume={audioUrl ? 0.1 : 1.0}
-                    />
-                )}
+                <Loop durationInFrames={450}>
+                    {isPlayer ? (
+                        <Video 
+                            src={videoUrl} 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            volume={audioUrl ? 0 : 0.8}
+                        />
+                    ) : (
+                        <OffthreadVideo 
+                            src={videoUrl} 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            crossOrigin="anonymous" 
+                            volume={audioUrl ? 0 : 0.8}
+                        />
+                    )}
+                </Loop>
             </div>
 
             {/* Glowing Neon Vignette Border */}

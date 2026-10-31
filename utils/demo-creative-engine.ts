@@ -438,7 +438,7 @@ Language: ${langInstruction}`
     return {
         id: `reel-${Date.now()}`,
         title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
-        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/demo_15s_voiceover_reel_1793007112340.mp4',
+        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
         aspectRatio: '9:16',
         duration: 30,
         scriptText,
