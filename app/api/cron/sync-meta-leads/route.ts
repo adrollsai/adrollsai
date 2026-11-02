@@ -572,14 +572,22 @@ async function handleSync(request: Request) {
                 };
 
                 const previousStage = existingLead.pipeline_stage || existingLead.status || 'New Lead';
+                const isAlreadyBooked = existingLead.pipeline_stage === 'Appointment Booked' || !!existingLead.booked_time;
+                const targetStage = isAlreadyBooked ? 'Appointment Booked' : 'New Lead';
+
+                cf.pipeline_stage = targetStage;
+                cf.status = targetStage;
+                cf.lead_status = targetStage;
+                cf.client_status = targetStage;
+
                 const updateLeadData: Record<string, any> = {
                   source: 'Facebook Ads',
-                  pipeline_stage: 'New Lead',
-                  status: 'New Lead',
-                  next_followup: null,
+                  pipeline_stage: targetStage,
+                  status: targetStage,
+                  next_followup: isAlreadyBooked ? existingLead.next_followup : null,
                   custom_fields: cf,
                   updated_at: new Date().toISOString(),
-                  created_at: new Date().toISOString() // Surface reopened lead to the top of the Fresh section
+                  created_at: isAlreadyBooked ? existingLead.created_at : new Date().toISOString()
                 };
 
                 if (leadgenId) {
@@ -647,7 +655,7 @@ async function handleSync(request: Request) {
                     body: `Lead: ${name || existingLead.name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
                     url: `/dashboard/crm/${existingLead.id}`,
                     type: 'new_lead'
-                  }).catch(() => {});
+                  }).then(() => {}).catch(() => {});
                 }
 
                 diagnostics.reopenedLeads++;

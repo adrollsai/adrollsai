@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         const body = await request.json()
         const targetUserId = body.targetUserId || user.id
         const regenerate = body.regenerate === true
-        const service = body.service || '99acres' // '99acres' | 'housing'
+        const service = body.service || '99acres' // '99acres' | 'housing' | 'magicbricks'
 
         // Admin client to bypass RLS
         const supabaseAdmin = createAdminClient(
@@ -35,7 +35,43 @@ export async function POST(request: Request) {
 
         const baseUrl = getBaseUrl(request)
 
-        if (service === 'housing') {
+        if (service === 'magicbricks') {
+            // Read magicbricks token from badges
+            const badges: string[] = Array.isArray(profile.badges) ? profile.badges : []
+            const existingBadge = badges.find(b => typeof b === 'string' && b.startsWith('__WEBHOOK_TOKEN_MAGICBRICKS__:'))
+            const existingToken = existingBadge ? existingBadge.replace('__WEBHOOK_TOKEN_MAGICBRICKS__:', '') : null
+
+            if (existingToken && !regenerate) {
+                return NextResponse.json({
+                    webhookUrl: `${baseUrl}/api/webhooks/magicbricks/${existingToken}`,
+                    endpointUrl: `${baseUrl}/api/webhooks/magicbricks`,
+                    token: existingToken,
+                    apiKey: existingToken
+                })
+            }
+
+            // Generate new token
+            const newToken = randomUUID().replace(/-/g, '')
+            const updatedBadges = badges.filter(b => typeof b !== 'string' || !b.startsWith('__WEBHOOK_TOKEN_MAGICBRICKS__:'))
+            updatedBadges.push(`__WEBHOOK_TOKEN_MAGICBRICKS__:${newToken}`)
+
+            const { error: updateErr } = await supabaseAdmin
+                .from('profiles')
+                .update({ badges: updatedBadges })
+                .eq('id', targetUserId)
+
+            if (updateErr) {
+                console.error('[Generate Webhook Magicbricks] Update error:', updateErr)
+                return NextResponse.json({ error: 'Failed to generate Magicbricks webhook URL' }, { status: 500 })
+            }
+
+            return NextResponse.json({
+                webhookUrl: `${baseUrl}/api/webhooks/magicbricks/${newToken}`,
+                endpointUrl: `${baseUrl}/api/webhooks/magicbricks`,
+                token: newToken,
+                apiKey: newToken
+            })
+        } else if (service === 'housing') {
             // Read housing token from badges
             const badges: string[] = Array.isArray(profile.badges) ? profile.badges : []
             const existingBadge = badges.find(b => typeof b === 'string' && b.startsWith('__WEBHOOK_TOKEN_HOUSING__:'))

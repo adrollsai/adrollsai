@@ -316,8 +316,28 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         defaultCallingLang = 'english';
     }
 
-    const vLower = (voiceName || profile?.voice_gender || '').toLowerCase();
-    const isFemale = !vLower.includes('orion') && !vLower.includes('puck') && !vLower.includes('charon') && !vLower.includes('fenrir') && !vLower.includes('male');
+    // Priority resolution for voice:
+    // 1. If campaign specifies voice_name in audience_filter, respect it!
+    // 2. If prompt/guidance mentions Kabir or male persona, enforce male voice (Charon)
+    // 3. Otherwise use voiceName param if not default, then profile.voice_name, then 'Aoede'
+    let resolvedVoice = voiceName;
+    const isExplicitVoice = voiceName && voiceName !== 'Aoede';
+    if (!isExplicitVoice && campaign?.audience_filter?.voice_name) {
+        resolvedVoice = campaign.audience_filter.voice_name;
+    } else if (!isExplicitVoice && (campGuidanceLower.includes('kabir') || campGuidanceLower.includes('male tone') || campGuidanceLower.includes('distinctly male'))) {
+        resolvedVoice = 'Charon';
+    } else if (!isExplicitVoice && profile?.voice_name) {
+        resolvedVoice = profile.voice_name;
+    }
+
+    if (campGuidanceLower.includes('kabir') || campGuidanceLower.includes('male tone') || campGuidanceLower.includes('distinctly male')) {
+        if (!isMaleVoice(resolvedVoice)) {
+            resolvedVoice = 'Charon';
+        }
+    }
+
+    const vLower = (resolvedVoice || profile?.voice_gender || '').toLowerCase();
+    const isFemale = !isMaleVoice(resolvedVoice, profile?.voice_gender);
 
     const genderGrammarInstruction = isFemale
         ? (defaultCallingLang === 'english'
@@ -471,9 +491,9 @@ ${resolvedQuestionsInstruction}
 `.trim();
 
     const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
-    let chosenVoice = 'Aoede';
-    if (voiceName && validVoiceNames.includes(voiceName)) {
-        chosenVoice = voiceName;
+    let chosenVoice = isFemale ? 'Aoede' : 'Charon';
+    if (resolvedVoice && validVoiceNames.includes(resolvedVoice)) {
+        chosenVoice = resolvedVoice;
     }
 
     const setupPayload = {
@@ -545,7 +565,9 @@ ${resolvedQuestionsInstruction}
         targetProduct,
         leadName,
         leadPhone,
-        voiceName,
+        voiceName: chosenVoice,
+        chosenVoice,
+        isFemale,
         activeQuestionsList: activeQualifyingQuestions,
         defaultLanguage: defaultCallingLang,
         systemInstruction,
@@ -594,6 +616,8 @@ async function prewarmSession(leadId, profileId, campaignId, voiceName = 'Aoede'
     const sendSetup = async () => {
         try {
             const config = await configPromise;
+            poolEntry.configData = config;
+            poolEntry.voiceName = config.chosenVoice || voiceName;
             poolEntry.configData = config;
             if (tempSocket.readyState === ws.OPEN) {
                 console.log(`[PREWARM] Gemini Socket opened. Sending setup payload for lead ${leadId}...`);
@@ -831,11 +855,21 @@ app.all(['/vobiz-status', '/api/voice/vobiz/status-callback'], async (req, res) 
 
 app.post('/prewarm', async (req, res) => {
     try {
-        const { leadId, profileId, campaignId, voiceName } = req.body;
+        let { leadId, profileId, campaignId, voiceName } = req.body;
         if (!leadId || !profileId) {
             return res.status(400).json({ error: 'Missing leadId or profileId in prewarm request.' });
         }
-        console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}`);
+        if (!voiceName && campaignId) {
+            try {
+                const { data: camp } = await supabaseAdmin.from('voice_campaigns').select('audience_filter, custom_prompt, prompt').eq('id', campaignId).maybeSingle();
+                if (camp?.audience_filter?.voice_name) {
+                    voiceName = camp.audience_filter.voice_name;
+                } else if ((camp?.custom_prompt || camp?.prompt || '').toLowerCase().includes('kabir')) {
+                    voiceName = 'Charon';
+                }
+            } catch (cErr) {}
+        }
+        console.log(`[PREWARM] Prewarm request for lead: ${leadId}, profile: ${profileId}, voice: ${voiceName || 'auto'}`);
         const entry = await prewarmSession(leadId, profileId, campaignId, voiceName || 'Aoede');
         if (entry && !entry.setupComplete) {
             await new Promise((resolve) => {
@@ -1673,8 +1707,12 @@ wss.on('connection', (wsConnection, req) => {
                 let sessionConfig;
                 let greetingTurnSent = false;
                 const prewarmed = prewarmedPool.get(leadId);
-                if (prewarmed && !prewarmed.used && prewarmed.tempSocket && prewarmed.tempSocket.readyState === ws.OPEN) {
-                    console.log(`[BRIDGE] Found HOT PRE-WARMED session for lead ${leadId}! setupComplete=${prewarmed.setupComplete}`);
+                const isPrewarmVoiceMatch = prewarmed && (!voiceName || 
+                    (prewarmed.voiceName && prewarmed.voiceName.toLowerCase() === voiceName.toLowerCase()) ||
+                    (isMaleVoice(voiceName) === isMaleVoice(prewarmed.voiceName)));
+
+                if (prewarmed && !prewarmed.used && prewarmed.tempSocket && prewarmed.tempSocket.readyState === ws.OPEN && isPrewarmVoiceMatch) {
+                    console.log(`[BRIDGE] Found HOT PRE-WARMED session for lead ${leadId}! (Voice: ${prewarmed.voiceName}) setupComplete=${prewarmed.setupComplete}`);
                     prewarmed.used = true;
                     prewarmedPool.delete(leadId);
                     geminiSocket = prewarmed.tempSocket;
@@ -1683,7 +1721,12 @@ wss.on('connection', (wsConnection, req) => {
                     geminiSocket.removeAllListeners('close');
                     sessionConfig = prewarmed.configData || (await prewarmed.configPromise);
                 } else {
-                    console.log(`[BRIDGE] No pre-warmed session found for lead ${leadId}. Initializing on-demand (earlyConfig: ${!!earlyConfigPromise})...`);
+                    if (prewarmed && prewarmed.tempSocket) {
+                        console.log(`[BRIDGE] Discarding mismatched prewarmed session for lead ${leadId} (prewarmVoice: ${prewarmed?.voiceName}, requestedVoice: ${voiceName})`);
+                        try { prewarmed.tempSocket.close(); } catch(e) {}
+                        prewarmedPool.delete(leadId);
+                    }
+                    console.log(`[BRIDGE] Initializing on-demand session for lead ${leadId} (voice: ${voiceName}, earlyConfig: ${!!earlyConfigPromise})...`);
                     sessionConfig = await (earlyConfigPromise || buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName));
                     const keyToUse = sessionConfig.geminiApiKey || defaultApiKey;
                     geminiSocket = new ws(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${keyToUse}`);

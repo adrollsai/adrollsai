@@ -36,7 +36,7 @@ export const NOTIFICATION_CATEGORIES: {
   {
     key: 'fresh_lead',
     title: 'Fresh Lead Alerts',
-    description: 'Triggered when a brand-new lead arrives from Meta Ads, Landing Pages, 99acres, or Housing.com.',
+    description: 'Triggered when a brand-new lead arrives from Meta Ads, Landing Pages, 99acres, Housing.com, or Magicbricks.',
     iconName: 'UserPlus',
     badgeText: 'New Lead',
     accentColor: 'blue'

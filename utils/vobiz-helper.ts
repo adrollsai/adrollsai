@@ -248,7 +248,7 @@ export async function triggerVobizOutboundCall(
     }
 
     // Warm up voice bridge & pre-warm Gemini session
-    await warmupVoiceBridge(leadId, profileId, campaignId)
+    await warmupVoiceBridge(leadId, profileId, campaignId, params.voiceName)
 
     // Update lead voice call status in DB
     try {

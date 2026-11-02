@@ -10,7 +10,8 @@ import {
   Link,
   Plug,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  Key
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -74,6 +75,31 @@ export default function PluginsPage() {
   })
   const [isGeneratingHousing, setIsGeneratingHousing] = useState(false)
 
+  // Magicbricks Webhook State
+  const [magicbricksToken, setMagicbricksToken] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.magicbricksToken) return cached.magicbricksToken
+    }
+    return null
+  })
+  const [magicbricksUrl, setMagicbricksUrl] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.magicbricksUrl) return cached.magicbricksUrl
+    }
+    return null
+  })
+  const [magicbricksEndpoint, setMagicbricksEndpoint] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = getCachedValue<any>('plugins_cache')
+      if (cached?.magicbricksEndpoint) return cached.magicbricksEndpoint
+    }
+    return null
+  })
+  const [isGeneratingMagicbricks, setIsGeneratingMagicbricks] = useState(false)
+  const [userEmail, setUserEmail] = useState<string>('')
+
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -82,6 +108,7 @@ export default function PluginsPage() {
         if (!user) { router.push('/'); return }
 
         setUserId(user.id)
+        setUserEmail(user.email || '')
 
         const { data: authProfile } = await supabase
           .from('profiles')
@@ -144,13 +171,30 @@ export default function PluginsPage() {
             setHousingUrl(hUrl)
           }
 
+          // Magicbricks token from badges
+          let mbToken: string | null = null
+          let mbUrl: string | null = null
+          let mbEndpoint: string | null = null
+          const mbBadge = badges.find(b => typeof b === 'string' && b.startsWith('__WEBHOOK_TOKEN_MAGICBRICKS__:'))
+          if (mbBadge) {
+            mbToken = mbBadge.replace('__WEBHOOK_TOKEN_MAGICBRICKS__:', '')
+            mbUrl = `${origin}/api/webhooks/magicbricks/${mbToken}`
+            mbEndpoint = `${origin}/api/webhooks/magicbricks`
+            setMagicbricksToken(mbToken)
+            setMagicbricksUrl(mbUrl)
+            setMagicbricksEndpoint(mbEndpoint)
+          }
+
           // Persist to localStorage cache
           setCachedValue('plugins_cache', {
             businessName: profile.business_name || '',
             webhookToken: token,
             webhookUrl: url,
             housingToken: hToken,
-            housingUrl: hUrl
+            housingUrl: hUrl,
+            magicbricksToken: mbToken,
+            magicbricksUrl: mbUrl,
+            magicbricksEndpoint: mbEndpoint
           })
         }
       } catch (err) {
@@ -163,11 +207,12 @@ export default function PluginsPage() {
     loadProfile()
   }, [router, supabase, impersonateId])
 
-  const handleGenerateWebhook = async (service: '99acres' | 'housing', regenerate = false) => {
-    const serviceName = service === 'housing' ? 'Housing.com' : '99acres'
-    if (regenerate && !confirm(`Regenerating will invalidate the old URL. Any ${serviceName} integration using the old URL will stop working. Continue?`)) return
+  const handleGenerateWebhook = async (service: '99acres' | 'housing' | 'magicbricks', regenerate = false) => {
+    const serviceName = service === 'magicbricks' ? 'Magicbricks' : service === 'housing' ? 'Housing.com' : '99acres'
+    if (regenerate && !confirm(`Regenerating will invalidate the old URL and API Key. Any ${serviceName} integration using the old details will stop working. Continue?`)) return
 
-    if (service === 'housing') setIsGeneratingHousing(true)
+    if (service === 'magicbricks') setIsGeneratingMagicbricks(true)
+    else if (service === 'housing') setIsGeneratingHousing(true)
     else setIsGeneratingWebhook(true)
 
     const effectiveUserId = targetUserId || userId
@@ -180,7 +225,12 @@ export default function PluginsPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to generate webhook')
 
-      if (service === 'housing') {
+      if (service === 'magicbricks') {
+        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+        setMagicbricksToken(data.token)
+        setMagicbricksUrl(data.webhookUrl)
+        setMagicbricksEndpoint(data.endpointUrl || `${origin}/api/webhooks/magicbricks`)
+      } else if (service === 'housing') {
         setHousingToken(data.token)
         setHousingUrl(data.webhookUrl)
       } else {
@@ -188,11 +238,12 @@ export default function PluginsPage() {
         setWebhookUrl(data.webhookUrl)
       }
 
-      toast.success(regenerate ? `${serviceName} Webhook URL regenerated!` : `${serviceName} Webhook URL generated!`)
+      toast.success(regenerate ? `${serviceName} Webhook details regenerated!` : `${serviceName} Webhook details generated!`)
     } catch (err: any) {
       toast.error(err.message || `Failed to generate ${serviceName} webhook URL`)
     } finally {
-      if (service === 'housing') setIsGeneratingHousing(false)
+      if (service === 'magicbricks') setIsGeneratingMagicbricks(false)
+      else if (service === 'housing') setIsGeneratingHousing(false)
       else setIsGeneratingWebhook(false)
     }
   }
@@ -425,6 +476,190 @@ export default function PluginsPage() {
           </div>
         </div>
 
+        {/* Magicbricks Integration Card */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden transition-all hover:shadow-md mb-6">
+          <div className="p-6 sm:p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-red-600 to-rose-700 text-white rounded-2xl flex items-center justify-center font-black text-xl shadow-md shadow-red-500/20">
+                  MB
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-slate-900">Magicbricks Lead Integration</h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Receive property buyer & tenant inquiries from Magicbricks into your CRM
+                  </p>
+                </div>
+              </div>
+              {magicbricksToken && (
+                <span className="flex items-center gap-1.5 text-xs font-bold text-red-700 bg-red-50 px-3 py-1.5 rounded-full border border-red-100 shadow-sm">
+                  <CheckCircle2 size={14} className="text-red-600" /> Active
+                </span>
+              )}
+            </div>
+
+            <div className="bg-slate-50/80 rounded-3xl p-5 border border-slate-100 mb-6">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">How it works</h4>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">1</div>
+                  <p className="text-sm text-slate-600 font-medium">Generate your unique Magicbricks Webhook URL and API Key below</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">2</div>
+                  <p className="text-sm text-slate-600 font-medium">Copy the pre-filled Integration Details below and send them to your Magicbricks account manager</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-red-100 text-red-700 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5">3</div>
+                  <p className="text-sm text-slate-600 font-medium">All new inquiries will flow directly into your CRM with instant auto-assignment, WhatsApp welcome drip, and push notifications</p>
+                </div>
+              </div>
+            </div>
+
+            {!magicbricksToken ? (
+              <button
+                onClick={() => handleGenerateWebhook('magicbricks', false)}
+                disabled={isGeneratingMagicbricks}
+                className="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2.5 transition-all active:scale-[0.98] disabled:opacity-50 shadow-lg shadow-red-600/15"
+              >
+                {isGeneratingMagicbricks ? <Loader2 size={18} className="animate-spin" /> : <Link size={18} />}
+                {isGeneratingMagicbricks ? 'Generating...' : 'Generate Magicbricks Webhook URL & API Key'}
+              </button>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Webhook Endpoint */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Working Endpoint (POST URL)</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-xs font-mono text-slate-700 truncate select-all shadow-sm">
+                        {magicbricksEndpoint || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/magicbricks`}
+                      </div>
+                      <button
+                        onClick={() => {
+                          const url = magicbricksEndpoint || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/magicbricks`
+                          navigator.clipboard.writeText(url)
+                          toast.success('Endpoint URL copied!')
+                        }}
+                        className="shrink-0 bg-red-600 hover:bg-red-700 text-white p-3 rounded-2xl transition-all active:scale-95 shadow-sm"
+                        title="Copy Endpoint URL"
+                      >
+                        <Copy size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* API Key */}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Your API Key / Token</label>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-xs font-mono text-slate-700 truncate select-all shadow-sm">
+                        {magicbricksToken}
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(magicbricksToken || '')
+                          toast.success('API Key copied!')
+                        }}
+                        className="shrink-0 bg-red-600 hover:bg-red-700 text-white p-3 rounded-2xl transition-all active:scale-95 shadow-sm"
+                        title="Copy API Key"
+                      >
+                        <Key size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct URL */}
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Direct Tokenized Webhook URL (Alternative)</label>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-xs font-mono text-slate-700 truncate select-all shadow-sm">
+                      {magicbricksUrl}
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(magicbricksUrl || '')
+                        toast.success('Direct Webhook URL copied!')
+                      }}
+                      className="shrink-0 bg-slate-800 hover:bg-slate-900 text-white p-3 rounded-2xl transition-all active:scale-95 shadow-sm"
+                      title="Copy Direct URL"
+                    >
+                      <Copy size={15} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Pre-filled Magicbricks Support Questionnaire */}
+                <div className="bg-gradient-to-br from-red-50/70 to-orange-50/40 border border-red-200/60 rounded-3xl p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-red-600 text-white flex items-center justify-center font-bold text-[11px]">
+                        ✓
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        Magicbricks Integration Details (Copy & Send)
+                      </h4>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const ep = magicbricksEndpoint || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/magicbricks`
+                        const text = `PUSH API Integration for Magicbricks -\n\n1. CET client or not : Non - CET\n\n2. CRM service provider name : Nobogent CRM\n\n3. Confirm Integration type : PUSH/POST\n\n4. Login Id of user's account : ${userEmail || 'infobluesquareinfra@gmail.com'}\n\n5. Working Endpoint : curl --location '${ep}' \\\n--form 'api_key="${magicbricksToken}"' \\\n--form 'name="Magic Bricks Test Lead"' \\\n--form 'mobile="9876543210"' \\\n--form 'isd="91"' \\\n--form 'email="lead@test.com"' \\\n--form 'project="The Builder"' \\\n--form 'msg="Test 2 BHK Need"'\n\n6. API Key : ${magicbricksToken}\n\n7. URL Parameters :\ncurl --location '${ep}' \\\n--form 'api_key="${magicbricksToken}"' \\\n--form 'name="Magic Bricks Test Lead"' \\\n--form 'mobile="9876543210"' \\\n--form 'isd="91"' \\\n--form 'email="lead@test.com"' \\\n--form 'project="The Builder"' \\\n--form 'msg="Test 2 BHK Need"'`
+                        navigator.clipboard.writeText(text)
+                        toast.success('Magicbricks Integration Template copied! Paste and send to your Magicbricks account rep.')
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
+                    >
+                      <Copy size={13} /> Copy Details
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-600 font-medium mb-3">
+                    Your Magicbricks representative sent an integration questionnaire. Click <strong>Copy Details</strong> above and paste it directly into your email or WhatsApp reply:
+                  </p>
+                  <pre className="bg-slate-900 text-slate-100 p-4 rounded-2xl text-[11px] font-mono leading-relaxed overflow-x-auto select-all whitespace-pre-wrap border border-slate-800">
+{`PUSH API Integration for Magicbricks -
+
+1. CET client or not : Non - CET
+2. CRM service provider name : Nobogent CRM
+3. Confirm Integration type : PUSH/POST
+4. Login Id of user's account : ${userEmail || 'infobluesquareinfra@gmail.com'}
+5. Working Endpoint : ${magicbricksEndpoint || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/magicbricks`}
+6. API Key : ${magicbricksToken}
+7. URL Parameters :
+curl --location '${magicbricksEndpoint || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/webhooks/magicbricks`}' \\
+--form 'api_key="${magicbricksToken}"' \\
+--form 'name="Magic Bricks Test Lead"' \\
+--form 'mobile="9876543210"' \\
+--form 'isd="91"' \\
+--form 'email="lead@test.com"' \\
+--form 'project="The Builder"' \\
+--form 'msg="Test 2 BHK Need"'`}
+                  </pre>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <button
+                    onClick={() => handleGenerateWebhook('magicbricks', true)}
+                    disabled={isGeneratingMagicbricks}
+                    className="text-xs text-slate-500 hover:text-red-600 font-bold py-2 flex items-center gap-1.5 transition-colors"
+                  >
+                    {isGeneratingMagicbricks ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    Regenerate Key & URL
+                  </button>
+                  <a
+                    href={magicbricksUrl || (magicbricksToken ? `/api/webhooks/magicbricks?api_key=${magicbricksToken}` : '#')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-red-600 hover:text-red-700 font-bold py-2 flex items-center gap-1.5 transition-colors"
+                  >
+                    <ExternalLink size={12} /> Test Endpoint
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Coming Soon Plugins */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
           <div className="p-6 sm:p-8">
@@ -433,7 +668,7 @@ export default function PluginsPage() {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { name: 'MagicBricks', color: 'bg-blue-100 text-blue-600 border-blue-200', label: 'MB' },
+                { name: 'Square Yards', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'SY' },
                 { name: 'IndiaMART', color: 'bg-indigo-100 text-indigo-600 border-indigo-200', label: 'IM' },
                 { name: 'JustDial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'JD' },
                 { name: 'Sulekha', color: 'bg-purple-100 text-purple-600 border-purple-200', label: 'SU' },

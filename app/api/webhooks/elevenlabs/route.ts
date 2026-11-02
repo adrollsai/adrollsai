@@ -342,7 +342,7 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
         if (!updateErr && bookingTime) {
             console.log(`[ELEVENLABS WEBHOOK] Call led to booking slot ${bookingTime}. Triggering bookAppointment...`)
-            await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true)
+            await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true, 'voice_ai')
         }
 
         if (updateErr) {

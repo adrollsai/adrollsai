@@ -2387,9 +2387,9 @@ export async function POST(request: Request) {
                                     const catalogueLink = ownerCustomDomain 
                                         ? `https://${ownerCustomDomain}` 
                                         : `${appUrl}/shared/${ownerUserId}`;
-                                    const baseBookingUrl = ownerCustomDomain 
-                                        ? `https://${ownerCustomDomain}` 
-                                        : `${appUrl}/shared/${ownerUserId}`;
+                                    // Custom domains (like deccanrealtors.com) are external static sites without the Next.js booking engine.
+                                    // Always direct appointment bookings to the Nobogent booking engine.
+                                    const baseBookingUrl = `${appUrl}/shared/${ownerUserId}`;
                                     const bookingLink = latestLead?.id 
                                         ? `${baseBookingUrl}/booking/${latestLead.id}` 
                                         : `${baseBookingUrl}/booking`;

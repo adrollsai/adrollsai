@@ -3671,7 +3671,7 @@ export default function FlowsPage() {
                             : val === 'trigger_campaign_audience'
                             ? 'Campaign Audience (Calling Target)'
                             : val === 'portal_lead' 
-                            ? 'Housing.com / 99Acres Lead' 
+                            ? 'Housing / 99Acres / Magicbricks Lead' 
                             : val === 'whatsapp_inbound' 
                             ? 'WhatsApp Inbound Message' 
                             : 'Meta Ad Campaign Lead'
@@ -3693,7 +3693,7 @@ export default function FlowsPage() {
                         <option value="trigger_csv_audience">Custom Uploaded CSV Audience (e.g. HNIs / Investors List)</option>
                         <option value="trigger_custom_audience_group">Custom Audience Group / Segment (e.g. Weekend Site Visit Pool)</option>
                         <option value="meta_ad">Meta Ad Campaign (Facebook / Instagram Lead)</option>
-                        <option value="portal_lead">Housing.com / 99Acres Portal Inbound</option>
+                        <option value="portal_lead">Housing.com / 99Acres / Magicbricks Inbound</option>
                         <option value="whatsapp_inbound">WhatsApp Inbound Message</option>
                         <option value="crm_lead">CRM Lead Stage Trigger</option>
                       </select>

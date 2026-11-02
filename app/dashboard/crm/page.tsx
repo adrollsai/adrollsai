@@ -401,6 +401,16 @@ function CRMPageContent() {
     return customStages
   }, [activeSection, customStages])
 
+  // Auto-validate selectedSpecificStage when activeSection or available stages change
+  useEffect(() => {
+    if (selectedSpecificStage && selectedSpecificStage !== 'ALL' && activeSection !== 'all') {
+      const isValid = availableStagesForSection.some(s => s.name.toLowerCase() === selectedSpecificStage.toLowerCase())
+      if (!isValid) {
+        setSelectedSpecificStage('ALL')
+      }
+    }
+  }, [activeSection, availableStagesForSection, selectedSpecificStage])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
   const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
@@ -1865,7 +1875,7 @@ function CRMPageContent() {
         const leadsToAssign = leads.filter(l => {
             if (l.assigned_to) return false;
             if (l.campaign_id) {
-                const camp = campaigns.find(c => c.id === l.campaign_id);
+                const camp = campaigns.find(c => String(c.id) === String(l.campaign_id) || String(c.meta_campaign_id) === String(l.campaign_id));
                 if (camp && camp.name.trim() === batchCampaign.trim()) return true;
             }
             return l.ad_name === batchCampaign || l.campaign_name === batchCampaign;
@@ -2180,7 +2190,7 @@ END:VCARD\n`
         if (selectedAgentFilter === 'UNASSIGNED') {
           return !l.assigned_to
         }
-        return l.assigned_to === selectedAgentFilter || l.user_id === selectedAgentFilter
+        return l.assigned_to === selectedAgentFilter || (!l.assigned_to && l.user_id === selectedAgentFilter)
       })()
 
       // DATE CREATED PRESET FILTER (Only applied if NO custom date / range is active)
@@ -2217,7 +2227,7 @@ END:VCARD\n`
       // CRM CUSTOM DATE / RANGE FILTER
       const matchCustomDate = (() => {
         if (!crmCustomDate && (!crmStartDate || !crmEndDate)) return true
-        const leadRawDate = l.created_at || l.facebook_created_at || l.last_call_at
+        const leadRawDate = l.facebook_created_at || l.created_at || l.last_call_at
         if (!leadRawDate) return false
         const leadDate = new Date(leadRawDate)
         if (isNaN(leadDate.getTime())) return false
@@ -2306,7 +2316,7 @@ END:VCARD\n`
       const matchCampaign = selectedCampaigns.length === 0 || (() => {
         const cleanSelected = selectedCampaigns.map(c => String(c).trim().toLowerCase())
         if (l.campaign_id) {
-          const camp = campaigns.find(c => c.id === l.campaign_id)
+          const camp = campaigns.find(c => String(c.id) === String(l.campaign_id) || String(c.meta_campaign_id) === String(l.campaign_id))
           if (camp && camp.name && typeof camp.name === 'string' && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
         }
         const leadCamp = getLeadCampaignName(l)
@@ -2316,9 +2326,18 @@ END:VCARD\n`
         return (adName && cleanSelected.includes(adName)) || 
                (campName && cleanSelected.includes(campName))
       })()
-      const matchForm = selectedForm === '' || 
-                        String(l.form_name || '').trim() === selectedForm.trim() || 
-                        String(l.source || '').trim() === selectedForm.trim()
+      const matchForm = selectedForm === '' || (() => {
+        const cleanSelectedForm = selectedForm.trim().toLowerCase()
+        let cf = l.custom_fields
+        if (typeof cf === 'string') {
+          try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
+        }
+        const f1 = String(l.form_name || '').trim().toLowerCase()
+        const f2 = String(l.source || '').trim().toLowerCase()
+        const f3 = String(cf?.form_name || cf?.meta_form_name || '').trim().toLowerCase()
+        const f4 = String(l.form_id || '').trim().toLowerCase()
+        return f1 === cleanSelectedForm || f2 === cleanSelectedForm || f3 === cleanSelectedForm || f4 === cleanSelectedForm
+      })()
       const matchCsvAudience = selectedCsvAudience === '' || 
                                String(l.csv_audience || '').trim() === selectedCsvAudience.trim()
       
@@ -2328,65 +2347,71 @@ END:VCARD\n`
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
+    let cf: any = l.custom_fields
+    if (typeof cf === 'string') {
+      try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
+    }
     const statusLower = (l.status || '').trim().toLowerCase()
     const pipelineLower = (l.pipeline_stage || '').trim().toLowerCase()
-    const s1 = statusLower || pipelineLower || 'new lead'
-    const s2 = pipelineLower || statusLower || 'new lead'
+    const cfStage = (cf?.pipeline_stage || cf?.status || cf?.lead_status || cf?.client_status || '').trim().toLowerCase()
+    const s1 = statusLower || pipelineLower || cfStage || 'new lead'
+    const s2 = pipelineLower || statusLower || cfStage || 'new lead'
+    const s3 = cfStage || pipelineLower || statusLower || 'new lead'
 
     const checkMatch = (s: string) => {
+      const sNorm = s.replace(/_/g, ' ').trim().toLowerCase()
+      const targetNorm = stageName.replace(/_/g, ' ').trim().toLowerCase()
+
       if (stageName === 'New Lead') {
-        return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(s)
+        return ['new lead', 'new', 'fresh', 'uncontacted', ''].includes(sNorm)
       } else if (stageName === 'Contacted') {
-        return ['contacted'].includes(s)
+        return ['contacted', 'contact'].includes(sNorm)
       } else if (stageName === 'Requirement Taken') {
-        return ['requirement taken', 'requirement', 'qualified', 'requirement_taken'].includes(s)
+        return ['requirement taken', 'requirement', 'qualified'].includes(sNorm)
       } else if (stageName === 'Appointment Booked') {
-        return ['appointment booked', 'appointment', 'booked', 'appointment_booked'].includes(s)
+        return ['appointment booked', 'appointment', 'booked'].includes(sNorm)
       } else if (stageName === 'Visit Planned') {
-        return ['visit planned', 'visit plan', 'planned', 'visit_planned'].includes(s)
+        return ['visit planned', 'visit plan', 'planned', 'site visit planned'].includes(sNorm)
       } else if (stageName === 'Visit Done') {
-        return ['visit done', 'appointment done', 'visited', 'site visit done', 'visit_done'].includes(s)
+        return ['visit done', 'appointment done', 'visited', 'site visit done'].includes(sNorm)
       } else if (stageName === 'Revisit Done') {
-        return ['revisit done', 'revisit', 're-visited', 'revisit_done'].includes(s)
+        return ['revisit done', 'revisit', 're visited', 're-visited'].includes(sNorm)
       } else if (stageName === 'Meeting Planned') {
-        return ['meeting planned', 'meeting plan', 'meeting_planned'].includes(s)
+        return ['meeting planned', 'meeting plan'].includes(sNorm)
       } else if (stageName === 'Meeting Done') {
-        return ['meeting done', 'meeting_done'].includes(s)
+        return ['meeting done'].includes(sNorm)
       } else if (stageName === 'Never Picked') {
-        return ['never picked', 'never_picked'].includes(s)
+        return ['never picked', 'dnp', 'not picked'].includes(sNorm)
       } else if (stageName === 'Negotiation') {
-        return ['negotiation', 'negotiating', 'offer'].includes(s)
+        return ['negotiation', 'negotiating', 'offer'].includes(sNorm)
       } else if (stageName === 'Deal/Token') {
-        return ['deal/token', 'deal', 'token', 'closed', 'won', 'deal_token'].includes(s)
+        return ['deal/token', 'deal', 'token', 'closed', 'won', 'deal won'].includes(sNorm)
       } else if (stageName === 'Dealer') {
-        return ['dealer', 'broker', 'channel partner'].includes(s)
+        return ['dealer', 'broker', 'channel partner'].includes(sNorm)
       } else if (stageName === 'Plan Postponed') {
-        return ['plan postponed', 'postponed', 'plan_postponed'].includes(s)
+        return ['plan postponed', 'postponed'].includes(sNorm)
       } else if (stageName === 'Already Purchased') {
-        return ['already purchased', 'purchased', 'already_purchased'].includes(s)
+        return ['already purchased', 'purchased'].includes(sNorm)
       } else if (stageName === 'Lost/NI') {
-        return ['lost/ni', 'lost', 'ni', 'unqualified', 'not interested', 'lost_ni'].includes(s)
+        return ['lost/ni', 'lost', 'ni', 'unqualified', 'not interested', 'junk'].includes(sNorm)
       } else if (stageName === 'Different Requirement') {
-        return ['different requirement', 'different_requirement', 'different req'].includes(s)
+        return ['different requirement', 'different req'].includes(sNorm)
       }
-      return s === stageName.toLowerCase()
+      return sNorm === targetNorm
     }
 
-    return checkMatch(s1) || checkMatch(s2)
+    return checkMatch(s1) || checkMatch(s2) || checkMatch(s3)
   }
 
   // 2. 4 Primary Section Counts (All, Fresh, Ongoing, Not Interested)
   const sectionCounts = useMemo(() => {
-    const isStageFiltered = selectedSpecificStage && selectedSpecificStage !== 'ALL'
-    const matchStage = (l: any) => !isStageFiltered || matchLeadToStage(l, selectedSpecificStage)
-
-    const fresh = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'fresh').length
-    const ongoing = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'ongoing').length
-    const not_interested = leadsMatchingFilters.filter(l => matchStage(l) && categorizeLeadStage(l, customStages) === 'not_interested').length
+    const fresh = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'fresh').length
+    const ongoing = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'ongoing').length
+    const not_interested = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'not_interested').length
     const all = fresh + ongoing + not_interested
 
     return { all, fresh, ongoing, not_interested }
-  }, [leadsMatchingFilters, selectedSpecificStage, customStages])
+  }, [leadsMatchingFilters, customStages])
 
   // Backward compatibility for stageCounts
   const stageCounts: Record<string, number> = useMemo(() => {
@@ -2400,8 +2425,6 @@ END:VCARD\n`
   // 3. Final filtered list based on Active Section and Specific Stage
   const filteredLeads = useMemo(() => {
     const list = leadsMatchingFilters.filter(l => {
-      // If user typed in search box, search across all
-      if (searchQuery.trim() !== '') return true
 
       // 1. Specific Stage Filter (if selected in filter drawer)
       if (selectedSpecificStage && selectedSpecificStage !== 'ALL') {

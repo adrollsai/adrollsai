@@ -755,7 +755,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
             if (!updateErr && bookingTime) {
                 console.log(`[TWILIO STATUS CALLBACK] Call led to booking slot ${bookingTime}. Triggering bookAppointment helper...`)
                 try {
-                    await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true)
+                    await bookAppointment(supabaseAdmin, leadId, bookingTime, lead.user_id, true, 'voice_ai')
                 } catch (bErr) {
                     console.error('[TWILIO STATUS CALLBACK] bookAppointment exception:', bErr)
                 }

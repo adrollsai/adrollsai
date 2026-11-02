@@ -9,7 +9,7 @@ export { isIndianPhoneNumber }
 /**
  * Warms up the Cloud Run Voice Bridge container & pre-warms Gemini session context before Twilio dials.
  */
-export async function warmupVoiceBridge(leadId?: string, profileId?: string, campaignId?: string): Promise<void> {
+export async function warmupVoiceBridge(leadId?: string, profileId?: string, campaignId?: string, voiceName?: string): Promise<void> {
     const bridgeUrl = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app';
     if (bridgeUrl.startsWith('ws')) {
         const httpBase = bridgeUrl.replace(/^ws/, 'http');
@@ -31,7 +31,7 @@ export async function warmupVoiceBridge(leadId?: string, profileId?: string, cam
                 fetch(prewarmUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ leadId, profileId, campaignId })
+                    body: JSON.stringify({ leadId, profileId, campaignId, voiceName })
                 }).catch(pErr => console.warn('[VOICE HELPER] Prewarm request error:', pErr.message));
             }
         } catch (warmupErr: any) {
@@ -404,7 +404,8 @@ export async function bookAppointment(
     leadId: string,
     slot: string,
     profileId: string,
-    bypassHoursCheck = false
+    bypassHoursCheck = false,
+    source: 'voice_ai' | 'web_calendar' | 'admin' = 'web_calendar'
 ): Promise<{ success: boolean; meetLink?: string; error?: string }> {
     try {
         console.log(`[VOICE HELPER] Booking appointment for lead ${leadId} at slot ${slot}...`)
@@ -667,23 +668,33 @@ export async function bookAppointment(
         }
 
         // 4. Update Lead in Supabase
+        const leadUpdatePayload: Record<string, any> = {
+            booked_time: formattedSlot,
+            status: 'Appointment Booked',
+            pipeline_stage: 'Appointment Booked',
+            meet_link: hangoutLink || null,
+            google_calendar_event_id: calendarEventId || null,
+            reminder_24h_sent: false,
+            reminder_4h_sent: false,
+            reminder_1h_sent: false,
+            reminder_15m_sent: false,
+            // Clear any pending AI voice call — human agent handles booked meetings
+            voice_call_scheduled_at: null
+        }
+
+        if (source === 'voice_ai') {
+            leadUpdatePayload.voice_call_status = 'completed';
+            leadUpdatePayload.voice_call_retry_count = 0;
+        } else {
+            // Web calendar or manual booking: do not falsely mark voice call as completed
+            if (lead?.voice_call_status === 'scheduled_retry' || lead?.voice_call_status === 'scheduled_callback' || lead?.voice_call_status === 'calling' || lead?.voice_call_status === 'queued') {
+                leadUpdatePayload.voice_call_status = 'not_called';
+            }
+        }
+
         const { error: updateError } = await supabaseAdmin
             .from('leads')
-            .update({
-                booked_time: formattedSlot,
-                status: 'Appointment Booked',
-                pipeline_stage: 'Appointment Booked',
-                meet_link: hangoutLink || null,
-                google_calendar_event_id: calendarEventId || null,
-                reminder_24h_sent: false,
-                reminder_4h_sent: false,
-                reminder_1h_sent: false,
-                reminder_15m_sent: false,
-                // Clear any pending AI voice call — human agent handles booked meetings
-                voice_call_scheduled_at: null,
-                voice_call_status: 'completed',
-                voice_call_retry_count: 0
-            })
+            .update(leadUpdatePayload)
             .eq('id', leadId)
 
         if (updateError) throw updateError
@@ -721,7 +732,9 @@ export async function bookAppointment(
                 lead.ad_name ? `(${lead.ad_name})` : (lead.form_name ? `(${lead.form_name})` : (lead.campaign_name ? `(${lead.campaign_name})` : ''))
             ].filter(Boolean).join(' ') || 'Direct / Platform';
 
-            const bookingTitle = hangoutLink ? '📅 Appointment Booked!' : '🎙️ Meeting Booked!';
+            const bookingTitle = hangoutLink 
+                ? '📅 Appointment Booked!' 
+                : (source === 'voice_ai' ? '🎙️ Meeting Booked by AI Call!' : '📅 Appointment Scheduled via Calendar!');
             await sendAdminMultiChannelNotification({
                 ownerUserId: lead.user_id,
                 title: bookingTitle,
@@ -731,7 +744,8 @@ export async function bookAppointment(
                 leadPhone: lead.phone,
                 leadName: lead.name,
                 leadId,
-                leadSource: leadSourceStr
+                leadSource: leadSourceStr,
+                skipWhatsApp: true // Suppress duplicate broken alert; step 6b below sends the accurate WhatsApp template
             })
         } catch (notifErr: any) {
             console.error('[VOICE HELPER] Failed to send multi-channel admin alert:', notifErr)
@@ -777,7 +791,12 @@ export async function bookAppointment(
                 minute: '2-digit',
                 hour12: true
             })
-            const historyDesc = `📆 Appointment booked automatically by Voice AI for ${formattedDate}${hangoutLink ? ` (Google Meet: ${hangoutLink})` : ''}`
+            let historyDesc = `📆 Appointment scheduled by prospect via Calendar Booking Page for ${formattedDate}${hangoutLink ? ` (Google Meet: ${hangoutLink})` : ''}`;
+            if (source === 'voice_ai') {
+                historyDesc = `📆 Appointment booked automatically by Voice AI for ${formattedDate}${hangoutLink ? ` (Google Meet: ${hangoutLink})` : ''}`;
+            } else if (source === 'admin') {
+                historyDesc = `📆 Appointment scheduled manually by team member for ${formattedDate}${hangoutLink ? ` (Google Meet: ${hangoutLink})` : ''}`;
+            }
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: leadId,

@@ -118,7 +118,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const numbersPerPage = 8
 
   const [connected, setConnected] = useState(false)
-  const [sources, setSources] = useState<string[]>(['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com'])
+  const [sources, setSources] = useState<string[]>(['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com', 'Magicbricks'])
   const [pipelineStages, setPipelineStages] = useState<string[]>(['New', 'Contacted', 'Qualified', 'Appointment booked', 'Appointment done', 'Closed', 'Unqualified'])
   const [metaCampaigns, setMetaCampaigns] = useState<string[]>([])
   const [csvAudiences, setCsvAudiences] = useState<string[]>([])
@@ -334,7 +334,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       setAllLeads(allFetchedLeads)
 
       const uniqueSources = Array.from(new Set(allFetchedLeads.map(l => l.source).filter(Boolean))) as string[]
-      const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com']
+      const defaultSources = ['Facebook', 'Manual', 'CSV Import', '99acres', 'Housing.com', 'Magicbricks']
       const allSources = Array.from(new Set([...defaultSources, ...uniqueSources]))
 
       const uniqueStages = Array.from(new Set(allFetchedLeads.map(l => l.pipeline_stage).filter(Boolean))) as string[]

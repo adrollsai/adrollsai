@@ -1436,9 +1436,9 @@ export default function DemoPage() {
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
                                                 <label className="block text-[11px] font-bold text-slate-700">
-                                                    AI Call Voice
+                                                    AI Call Language
                                                 </label>
-                                                <span className="text-[9px] font-bold text-emerald-600">Outbound</span>
+                                                <span className="text-[9px] font-bold text-emerald-600">Kabir (Male)</span>
                                             </div>
                                             <select
                                                 value={callLanguage}
@@ -2507,10 +2507,10 @@ export default function DemoPage() {
 
                                     <div>
                                         <h3 className="text-xl font-extrabold text-slate-900">
-                                            Outbound AI Voice Closer
+                                            Outbound AI Voice Closer (Kabir)
                                         </h3>
                                         <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                                            Starts calling in <strong>{callLanguage.toUpperCase()}</strong>. Automatically switches to any regional Indian language if asked.
+                                            Speaking with a calm luxury male voice in <strong>{callLanguage.toUpperCase()}</strong>. Automatically switches to any regional Indian language if asked.
                                         </p>
                                     </div>
 
