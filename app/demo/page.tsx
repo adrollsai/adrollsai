@@ -368,7 +368,7 @@ export default function DemoPage() {
             setEditableCues([
                 { start: 0.5, end: 2.2, text: `IMAGINE LIVING 🏡`, emphasis: true },
                 { start: 2.2, end: 4.2, text: `KING-SIZE LUXURY ✨`, emphasis: true },
-                { start: 4.2, end: 6.2, text: `${companyName || 'NOBOGENT'} PRESENTS`, emphasis: false },
+                { start: 4.2, end: 6.2, text: `${(companyName || 'EXCLUSIVE LIVING').toUpperCase()} PRESENTS`, emphasis: false },
                 { start: 6.2, end: 8.5, text: `${projectTitle || 'CHANDIGARH RESIDENCIES'}`, emphasis: true },
                 { start: 8.5, end: 10.8, text: `IN ${location?.split(',')[0]?.toUpperCase() || 'GOLF COURSE EXTENSION'} 📍`, emphasis: false },
                 { start: 10.8, end: 13.0, text: `BESPOKE SIGNATURE LIVING`, emphasis: false },
@@ -381,6 +381,37 @@ export default function DemoPage() {
             ]);
         }
     }, [generatedVideo, companyName, projectTitle, location, projectPrice]);
+
+    // Background polling for real AI Grok Video task if initiated
+    useEffect(() => {
+        if (!generatedVideo?.taskId || generatedVideo?.videoUrl) return;
+
+        let active = true;
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/demo/video-status?taskId=${encodeURIComponent(generatedVideo.taskId!)}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!active) return;
+
+                if (data.state === 'success' && data.resultUrl) {
+                    clearInterval(pollInterval);
+                    setGeneratedVideo(prev => prev ? { ...prev, videoUrl: data.resultUrl } : null);
+                    toast.success("✦ Real AI Motion Video generated from your photo!");
+                } else if (data.state === 'fail') {
+                    clearInterval(pollInterval);
+                    console.warn('[Demo Video Polling] AI video generation ended:', data.error);
+                }
+            } catch (err) {
+                console.warn('[Demo Video Polling] Network notice:', err);
+            }
+        }, 4500);
+
+        return () => {
+            active = false;
+            clearInterval(pollInterval);
+        };
+    }, [generatedVideo?.taskId, generatedVideo?.videoUrl]);
 
     const handleSelectCaptionTheme = (themeKey: string) => {
         setSelectedCaptionTheme(themeKey);
@@ -927,7 +958,7 @@ export default function DemoPage() {
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
-    const cleanLogoParam = (logoUrl && !logoUrl.startsWith('data:')) ? logoUrl : '';
+    const cleanLogoParam = (logoUrl && !logoUrl.startsWith('data:') && !logoUrl.toLowerCase().includes('nobogent') && !logoUrl.endsWith('/logo.png')) ? logoUrl : '';
     const cleanHeroParam = (projectImageUrl && !projectImageUrl.startsWith('data:')) ? projectImageUrl : '';
     const websitePreviewUrl = `/real-estate-template/index.html?companyName=${encodeURIComponent(companyName)}&projectTitle=${encodeURIComponent(projectTitle)}&projectPrice=${encodeURIComponent(projectPrice)}&location=${encodeURIComponent(location)}&phone=${encodeURIComponent(prospectPhone || '+91 98886 26786')}&logoUrl=${encodeURIComponent(cleanLogoParam)}&heroImage=${encodeURIComponent(cleanHeroParam)}&themeColor=${encodeURIComponent(activeBrandColor)}&accentColor=${encodeURIComponent(activeAccentColor)}`;
 
@@ -2050,8 +2081,8 @@ export default function DemoPage() {
                                                 <div className="w-1.5 h-1.5 rounded-full bg-blue-500/40" />
                                             </div>
 
-                                            <div className="w-full h-full rounded-[28px] overflow-hidden bg-black relative flex items-center justify-center">
-                                                {isMounted ? (
+                                            <div className="w-full h-full rounded-[28px] overflow-hidden bg-slate-950 relative flex items-center justify-center">
+                                                {isMounted && generatedVideo?.videoUrl ? (
                                                     <Player
                                                         ref={remotionPlayerRef}
                                                         component={CaptionsComposition as any}
@@ -2064,7 +2095,7 @@ export default function DemoPage() {
                                                         loop
                                                         style={{ width: '100%', height: '100%', borderRadius: '28px' }}
                                                         inputProps={{
-                                                            videoUrl: generatedVideo?.videoUrl || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
+                                                            videoUrl: generatedVideo.videoUrl,
                                                             imageUrl: projectImageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80',
                                                             creativeUrl: creative?.imageUrl || projectImageUrl || 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1080&q=80',
                                                             audioUrl: generatedVideo?.audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
@@ -2087,55 +2118,128 @@ export default function DemoPage() {
                                                         }}
                                                     />
                                                 ) : (
-                                                    <div className="flex flex-col items-center justify-center p-6 text-center text-white space-y-2">
-                                                        <Loader2 size={24} className="animate-spin text-blue-400" />
-                                                        <span className="text-xs font-bold">Mounting Video Player...</span>
+                                                    /* Sleek Luxury Grok Video Generation Placeholder Loader */
+                                                    <div className="relative w-full h-full flex flex-col items-center justify-between p-5 text-center overflow-hidden bg-slate-950 select-none">
+                                                        {/* Ambient Blurred Backdrop */}
+                                                        {projectImageUrl && (
+                                                            <div 
+                                                                className="absolute inset-0 bg-cover bg-center opacity-25 filter blur-xl scale-125 pointer-events-none"
+                                                                style={{ backgroundImage: `url(${projectImageUrl})` }}
+                                                            />
+                                                        )}
+                                                        <div className="absolute inset-0 bg-gradient-to-b from-slate-950/95 via-slate-950/85 to-slate-950/98 pointer-events-none" />
+
+                                                        {/* Top Status Pill */}
+                                                        <div className="relative z-10 pt-3">
+                                                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-400/25 text-[10px] font-extrabold tracking-wider text-blue-300 uppercase shadow-sm">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
+                                                                Grok 1.5 Video Active
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Center Animated Loader */}
+                                                        <div className="relative z-10 flex flex-col items-center space-y-4 my-auto">
+                                                            <div className="relative">
+                                                                <div className="absolute -inset-3 rounded-3xl bg-gradient-to-tr from-amber-500/30 to-blue-500/30 blur-lg animate-pulse" />
+                                                                <div className="relative w-20 h-20 rounded-2xl bg-slate-900 border border-slate-700/80 flex items-center justify-center shadow-2xl">
+                                                                    <Loader2 size={38} className="text-amber-400 animate-spin" />
+                                                                    <Film size={18} className="absolute text-blue-400" />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="space-y-1 max-w-[210px]">
+                                                                <h4 className="text-sm font-black text-white tracking-tight">AI Video in Progress</h4>
+                                                                <p className="text-[11px] text-slate-400 leading-snug">
+                                                                    Grok model is synthesizing 9:16 cinematic camera flight from your photo...
+                                                                </p>
+                                                            </div>
+
+                                                            {/* Live Production Stages */}
+                                                            <div className="w-full max-w-[215px] bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 text-left space-y-1.5 shadow-inner">
+                                                                <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-400">
+                                                                    <CheckCircle2 size={12} className="shrink-0" />
+                                                                    <span className="truncate">Architectural depth mapped</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[10px] font-bold text-amber-300">
+                                                                    <Loader2 size={12} className="shrink-0 animate-spin" />
+                                                                    <span className="truncate">Synthesizing camera flight...</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500">
+                                                                    <div className="w-3 h-3 rounded-full border border-slate-700 shrink-0" />
+                                                                    <span className="truncate">Syncing {videoLanguage.toUpperCase()} voiceover</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Bottom Auto-Play Notification */}
+                                                        <div className="relative z-10 pb-2">
+                                                            <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 bg-slate-900/90 px-3 py-1 rounded-full border border-slate-800 shadow-sm">
+                                                                <Sparkles size={11} className="text-amber-400" />
+                                                                <span>Video will auto-play once ready</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
 
-                                        {/* Audio & Playback Status Pill */}
-                                        <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100/90 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
-                                            <Volume2 size={12} className="text-blue-600 animate-pulse" />
-                                            <span>Voiceover Active ({videoLanguage.toUpperCase()}) • Tap player controls or button below to unmute</span>
-                                        </div>
+                                        {/* Dynamic Controls & Status (Only active once Grok model generates video) */}
+                                        {generatedVideo?.videoUrl ? (
+                                            <>
+                                                {/* Audio & Playback Status Pill */}
+                                                <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100/90 px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
+                                                    <Volume2 size={12} className="text-blue-600 animate-pulse" />
+                                                    <span>Voiceover Active ({videoLanguage.toUpperCase()}) • Tap controls below to unmute</span>
+                                                </div>
 
-                                        {/* Player Quick Timeline Scrub & Preview Jump */}
-                                        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (remotionPlayerRef.current) {
-                                                        remotionPlayerRef.current.unmute();
-                                                        remotionPlayerRef.current.play();
-                                                    }
-                                                }}
-                                                className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                                                title="Unmute and Play Voiceover"
-                                            >
-                                                <Volume2 size={12} className="text-blue-600" />
-                                                <span>Unmute Audio</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => remotionPlayerRef.current?.seekTo(0)}
-                                                className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                                                title="Play from Beginning"
-                                            >
-                                                <RefreshCw size={12} />
-                                                <span>Replay (0s)</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => remotionPlayerRef.current?.seekTo(780)}
-                                                className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs border border-amber-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
-                                                title="Preview Brand Logo & Outro Card (26s)"
-                                            >
-                                                <Eye size={12} className="text-amber-600" />
-                                                <span>Preview Outro (Logo)</span>
-                                            </button>
-                                        </div>
+                                                {/* Grok AI Video Active Badge */}
+                                                <div className="mt-2 flex items-center justify-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 shadow-2xs">
+                                                    <Sparkles size={12} className="text-emerald-600 animate-pulse" />
+                                                    <span>✦ Real Grok AI Motion Video Active</span>
+                                                </div>
+
+                                                {/* Player Quick Timeline Scrub & Preview Jump */}
+                                                <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (remotionPlayerRef.current) {
+                                                                remotionPlayerRef.current.unmute();
+                                                                remotionPlayerRef.current.play();
+                                                            }
+                                                        }}
+                                                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                        title="Unmute and Play Voiceover"
+                                                    >
+                                                        <Volume2 size={12} className="text-blue-600" />
+                                                        <span>Unmute Audio</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => remotionPlayerRef.current?.seekTo(0)}
+                                                        className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                        title="Play from Beginning"
+                                                    >
+                                                        <RefreshCw size={12} />
+                                                        <span>Replay (0s)</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => remotionPlayerRef.current?.seekTo(780)}
+                                                        className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-xs border border-amber-200 shadow-2xs flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                                                        title="Preview Brand Logo & Outro Card (26s)"
+                                                    >
+                                                        <Eye size={12} className="text-amber-600" />
+                                                        <span>Preview Outro (Logo)</span>
+                                                    </button>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="mt-3 flex items-center justify-center gap-2 text-xs font-semibold text-amber-800 bg-amber-50/90 px-3.5 py-1.5 rounded-full border border-amber-200 shadow-2xs">
+                                                <Loader2 size={13} className="text-amber-600 animate-spin" />
+                                                <span>Grok Video Model in Progress • Auto-plays once ready</span>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Right Column: AI Caption Studio - Crisp Light Themed UI */}
@@ -2484,7 +2588,7 @@ export default function DemoPage() {
                                     </div>
 
                                     <div className="w-full flex justify-center bg-slate-100 p-4 rounded-2xl border border-slate-200 overflow-hidden min-h-[500px]">
-                                        <div className={`transition-all duration-300 rounded-xl overflow-hidden shadow-lg border border-slate-200 bg-white ${websiteDevice === 'desktop' ? 'w-full h-[540px]' : 'w-[375px] h-[540px]'
+                                        <div className={`transition-all duration-300 rounded-xl overflow-hidden shadow-lg border border-slate-200 bg-white ${websiteDevice === 'desktop' ? 'w-full h-[580px]' : 'w-[375px] h-[680px]'
                                             }`}>
                                             <iframe
                                                 src={websitePreviewUrl}

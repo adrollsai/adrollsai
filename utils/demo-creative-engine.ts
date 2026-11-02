@@ -190,7 +190,8 @@ Output a dense single paragraph describing this exact graphic design framework s
     if (refTemplateUrl && refTemplateUrl.startsWith('http') && !inputUrls.includes(refTemplateUrl)) {
         inputUrls.push(refTemplateUrl);
     }
-    if (logoUrl && logoUrl.startsWith('http') && !inputUrls.includes(logoUrl)) {
+    // Only pass genuine client logo, NEVER pass Nobogent internal assets or logos
+    if (logoUrl && logoUrl.startsWith('http') && !inputUrls.includes(logoUrl) && !logoUrl.toLowerCase().includes('nobogent') && !logoUrl.endsWith('/logo.png')) {
         inputUrls.push(logoUrl);
     }
 
@@ -210,7 +211,13 @@ CRITICAL DIRECTIVES:
 - Badge: ${templateBadge}
 - Contact / CTA: ${contactNumber}
 - Typography: Luxury champagne gold and ivory tones, clean Trajan/Bodoni serif headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
-- Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 2.`;
+
+CRITICAL BRANDING & URL RESTRICTIONS:
+- Developer Name: "${companyName}". STRICTLY and ONLY display this exact company name.
+- STRICT PROHIBITION: Do NOT invent, hallucinate, synthesize, or display ANY website URL, domain name, or dot-com address anywhere on the canvas (specifically NEVER display "nobogent.com", or any .com, .in, .ae address). There is NO website URL.
+- NEVER display "nobogent.com", "Nobogent", or any third-party agency name on the ad creative.
+- If no brand logo is provided in IMAGE 3, simply display the Developer name "${companyName}" in clean luxury serif/sans-serif typography at the top.
+- Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 2. Only use the contact number: ${contactNumber}.`;
 
     const isImg2Img = inputUrls.length > 0;
     const model = isImg2Img ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image';
@@ -429,7 +436,7 @@ Language: ${langInstruction}`
     return {
         id: `reel-${Date.now()}`,
         title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
-        videoUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/demo-creatives/clean_silent_luxury_walkthrough.mp4',
+        videoUrl: '', // In browser preview, displays the user's actual property photo & AI creative with smooth cinematic Ken Burns motion
         aspectRatio: '9:16',
         duration: 30,
         scriptText,
@@ -542,7 +549,31 @@ Key Features: ${projectDescription}`
         bgBuffer1 = await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[0]);
     }
 
-    // 3. Launch Video Reel synthesis concurrently
+    // 3. Launch Video Reel synthesis + Grok AI Video task concurrently
+    let grokTaskId: string | undefined = undefined;
+    const videoSourceImage = (projectImageUrl && projectImageUrl.startsWith('http')) 
+        ? projectImageUrl 
+        : (selectedTemplate?.fallbackImage || LUXURY_FALLBACK_IMAGES[0]);
+
+    if (videoSourceImage) {
+        try {
+            console.log(`[Demo Video] Triggering Grok AI Video task using: ${videoSourceImage.slice(0, 80)}...`);
+            const grokRes = await createGrokVideoTask({
+                prompt: `Cinematic ultra-luxury slow camera pan across ${projectTitle}, golden hour warm sunlight, architectural photography, photorealistic 8k, smooth cinematic drone motion`,
+                imageUrls: [videoSourceImage],
+                aspectRatio: "9:16",
+                resolution: "480p",
+                duration: 8
+            });
+            if (grokRes && grokRes.taskId) {
+                grokTaskId = grokRes.taskId;
+                console.log(`[Demo Video] Grok video task ID: ${grokTaskId}`);
+            }
+        } catch (grokErr: any) {
+            console.warn('[Demo Video] Grok video task launch notice:', grokErr.message);
+        }
+    }
+
     const videoPromise = generateBrowserDemoVideo(input);
 
     // 4. Launch True AI Creative generation via Kie.ai in parallel
@@ -737,6 +768,9 @@ Key Features: ${projectDescription}`
 
     // Await the real-time video generation
     const videoResult = await videoPromise;
+    if (grokTaskId) {
+        videoResult.taskId = grokTaskId;
+    }
 
     return {
         creatives: [

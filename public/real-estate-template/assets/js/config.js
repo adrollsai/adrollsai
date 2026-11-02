@@ -181,16 +181,27 @@ window.SITE = {
     savedBranding = {};
   }
 
-  // Extract params with fallback to sessionStorage
-  const companyName = urlParams.get('companyName') || savedBranding.companyName || '';
-  const projectTitle = urlParams.get('projectTitle') || savedBranding.projectTitle || '';
-  const projectPrice = urlParams.get('projectPrice') || savedBranding.projectPrice || '';
-  const location = urlParams.get('location') || savedBranding.location || '';
-  const phone = urlParams.get('phone') || savedBranding.phone || '';
-  const logoUrl = urlParams.get('logoUrl') || savedBranding.logoUrl || '';
-  const heroImage = urlParams.get('heroImage') || savedBranding.heroImage || '';
-  const themeColor = urlParams.get('themeColor') || savedBranding.themeColor || '';
-  const accentColor = urlParams.get('accentColor') || savedBranding.accentColor || '';
+  // Extract params with fallback to sessionStorage only if parameter is omitted from URL
+  const companyName = urlParams.has('companyName') ? (urlParams.get('companyName') || '') : (savedBranding.companyName || '');
+  const projectTitle = urlParams.has('projectTitle') ? (urlParams.get('projectTitle') || '') : (savedBranding.projectTitle || '');
+  const projectPrice = urlParams.has('projectPrice') ? (urlParams.get('projectPrice') || '') : (savedBranding.projectPrice || '');
+  const location = urlParams.has('location') ? (urlParams.get('location') || '') : (savedBranding.location || '');
+  const phone = urlParams.has('phone') ? (urlParams.get('phone') || '') : (savedBranding.phone || '');
+  
+  // Strict logo isolation: If company changed or logoUrl param is explicitly set/empty, do NOT resurrect old logo
+  const isCompanyChanged = savedBranding.companyName && companyName && savedBranding.companyName.trim().toLowerCase() !== companyName.trim().toLowerCase();
+  let logoUrl = urlParams.has('logoUrl')
+    ? (urlParams.get('logoUrl') || '')
+    : (isCompanyChanged ? '' : (savedBranding.logoUrl || ''));
+
+  // Never leak internal Nobogent system logos onto client brand sites
+  if (logoUrl && (logoUrl.toLowerCase().includes('nobogent') || logoUrl.endsWith('/logo.png'))) {
+    logoUrl = '';
+  }
+
+  const heroImage = urlParams.has('heroImage') ? (urlParams.get('heroImage') || '') : (savedBranding.heroImage || '');
+  const themeColor = urlParams.has('themeColor') ? (urlParams.get('themeColor') || '') : (savedBranding.themeColor || '');
+  const accentColor = urlParams.has('accentColor') ? (urlParams.get('accentColor') || '') : (savedBranding.accentColor || '');
 
   // Persist into sessionStorage so all sub-pages (listings, about, property, contact) retain the branding!
   const currentBranding = {
@@ -255,6 +266,12 @@ window.SITE = {
 
   if (logoUrl && logoUrl.startsWith('http')) {
     window.SITE.brand.mark = logoUrl;
+  } else if (companyName) {
+    const initial = (companyName.trim()[0] || 'N').toUpperCase();
+    const primaryCol = themeColor || '#0B1220';
+    const accentCol = accentColor || '#C79A4B';
+    const svgMark = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48"><rect width="48" height="48" rx="12" fill="${primaryCol}"/><text x="24" y="32" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="22" font-weight="800" fill="${accentCol}" text-anchor="middle">${initial}</text></svg>`;
+    window.SITE.brand.mark = `data:image/svg+xml;utf8,${encodeURIComponent(svgMark)}`;
   }
 
   if (phone) {
@@ -303,7 +320,7 @@ window.SITE = {
       }
       const eyebrow = document.querySelector('.hero__copy .eyebrow');
       if (eyebrow) {
-        eyebrow.textContent = `${companyName || 'Nobogent'} • Signature Collection`;
+        eyebrow.textContent = `${companyName || 'Exclusive'} • Signature Collection`;
       }
       const heroSub = document.querySelector('.hero__copy .hero__sub');
       if (heroSub) {
@@ -316,7 +333,7 @@ window.SITE = {
       const badgePrice = document.querySelector('.hero__badge .price');
       if (badgePrice) badgePrice.textContent = projectPrice || '₹1.85 Cr';
 
-      document.title = `${projectTitle} | Luxury Real Estate by ${companyName || 'Nobogent'}`;
+      document.title = `${projectTitle} | Luxury Real Estate${companyName ? ` by ${companyName}` : ''}`;
     }
 
     if (heroImage && heroImage.startsWith('http')) {

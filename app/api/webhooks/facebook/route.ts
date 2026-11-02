@@ -1332,17 +1332,14 @@ export async function POST(request: Request) {
                                         refSourceIdStr === '120253304634360153' || // 'black bg' (Aspiring Agency Owners)
                                         refSourceIdStr === '120253296375070153';   // 'image' (AI Employee / Real Estate)
 
-                                    let hasExistingNobogentRecord = false;
-                                    if (cleanDigitsForCheck.length >= 10) {
-                                        const { count: noboLeadCount } = await supabaseAdmin
-                                            .from('leads')
-                                            .select('id', { count: 'exact', head: true })
-                                            .eq('user_id', 'bc63c065-9bcc-4793-bedc-f0960406425b')
-                                            .ilike('phone', `%${cleanDigitsForCheck}%`);
-                                        hasExistingNobogentRecord = (noboLeadCount || 0) > 0;
-                                    }
+                                    const isDedicatedClientAccount = !!(ownerUserId && 
+                                        ownerUserId !== 'bc63c065-9bcc-4793-bedc-f0960406425b' &&
+                                        ownerUserId !== '91553adf-20b5-4c4c-9614-6b6f89fd0bfd' &&
+                                        ownerUserId !== 'b1645a6d-4b73-41ef-a197-8247d0168905');
 
-                                    if (isNobogentAdOrigin || hasExistingNobogentRecord) {
+                                    // STRICT TENANT ISOLATION: A dedicated client WhatsApp account must NEVER be hijacked or overwritten to Nobogent under any circumstance.
+                                    // Cross-tenant override ONLY applies if this is NOT a dedicated client account AND an explicit Nobogent ad was clicked.
+                                    if (!isDedicatedClientAccount && isNobogentAdOrigin) {
                                         const { data: noboProfile } = await supabaseAdmin
                                             .from('profiles')
                                             .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
