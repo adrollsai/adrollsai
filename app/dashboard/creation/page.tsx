@@ -3,7 +3,7 @@
 import Link from 'next/link'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle, Eye } from 'lucide-react'
+import { Send, Bot, Loader2, Layout, Sparkles, X, Check, Upload, Package, Smartphone, Square, RectangleVertical, ChevronDown, User, RefreshCw, Zap, Plus, CheckCircle, CheckCircle2, Search, Layers, Image as ImageIcon, Video as VideoIcon, Clock, Trash2, Globe, Languages, Mic, AlertCircle, Eye } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { uploadToR2 } from '@/utils/upload-helper'
 import { toast } from 'sonner'
@@ -312,6 +312,24 @@ export default function CreationPage() {
   const [selectedRatio, setSelectedRatio] = useState('3:4')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [isTemplateChooserOpen, setIsTemplateChooserOpen] = useState(false)
+  const [templateSearchQuery, setTemplateSearchQuery] = useState('')
+  const [templateCategoryFilter, setTemplateCategoryFilter] = useState<string>('all')
+
+  const handleSelectTemplateOnly = (templateId: string | null) => {
+    setSelectedTemplate(templateId);
+    setUploadedRefUrl(null);
+    setSelectedUserRefId(null);
+    setSelectedUserRefUrl(null);
+    setIsTemplateChooserOpen(false);
+    if (templateId === null) {
+      toast.success("Applied Auto AI Layout 🪄");
+    } else if (templateId === 'rotate') {
+      toast.success("Applied Rotating Luxury Styles 🔄");
+    } else {
+      const tmpl = TEMPLATES.find(t => t.id === templateId);
+      toast.success(`Selected template: ${tmpl?.name || templateId} 💎`);
+    }
+  };
   const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-5-flare-text-to-image'>('gpt/gpt-image-2-5-flare-text-to-image')
   const [creativeCategory, setCreativeCategory] = useState('')
   
@@ -1924,194 +1942,105 @@ export default function CreationPage() {
                 </button>
             </div>
         ) : (
-            <div className="px-4 flex gap-2 w-full overflow-x-auto scrollbar-hide items-center">
-                 {/* Auto layout button */}
-                 <button 
-                    onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); setSelectedUserRefUrl(null); }}
-                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate === null && uploadedRefUrl === null && selectedUserRefId === null && selectedUserRefUrl === null ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                 >
-                    <Layout size={16} />
-                    <span className="text-[9px] font-bold uppercase tracking-wider">Auto</span>
-                 </button>
-
-                 {/* Rotate Diverse Luxury Styles */}
-                 <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedTemplate('rotate');
-                      setUploadedRefUrl(null);
-                      setSelectedUserRefId(null);
-                      setSelectedUserRefUrl(null);
-                    }}
-                    className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${
-                      selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl
-                        ? 'border-blue-600 bg-blue-50/80 text-blue-600 ring-2 ring-blue-100 shadow-sm'
-                        : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                    title="Rotate Diverse Luxury Styles - AI rotates Dubai styles so designs are never repetitive"
-                 >
-                    <Sparkles size={16} className="text-blue-500 animate-pulse" />
-                    <span className="text-[8px] font-extrabold uppercase text-center leading-tight">Rotate</span>
-                 </button>
-
-                 {/* Curated Dubai Luxury Templates */}
-                 {TEMPLATES.map((tmpl) => {
-                    const isSelected = selectedTemplate === tmpl.id && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl;
-                    return (
-                      <button
-                        key={tmpl.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedTemplate(tmpl.id);
-                          setUploadedRefUrl(null);
-                          setSelectedUserRefId(null);
-                          setSelectedUserRefUrl(null);
-                        }}
-                        className={`flex-shrink-0 w-16 h-16 rounded-[1.25rem] border-2 relative overflow-hidden group transition-all ${
-                          isSelected ? 'border-blue-600 ring-2 ring-blue-500/20 shadow-md scale-95' : 'border-slate-200 hover:border-blue-300'
-                        }`}
-                        title={`${tmpl.name} - ${tmpl.category}`}
-                      >
-                        <img src={tmpl.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" alt={tmpl.name} />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-1">
-                          <span className="text-[7px] text-white font-extrabold truncate leading-none drop-shadow-sm text-left">{tmpl.name.split(' ')[0]}</span>
-                        </div>
-                        {isSelected && (
-                          <div className="absolute top-1 right-1 bg-blue-600 text-white rounded-full p-0.5 shadow-sm">
-                            <Check size={8} strokeWidth={3} />
-                          </div>
+            <div className="px-4 py-1 animate-in fade-in duration-300">
+                <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
+                    {/* Active Selected Style / Status */}
+                    <div 
+                        onClick={() => setIsTemplateChooserOpen(true)}
+                        className="flex items-center gap-3 min-w-0 cursor-pointer group flex-1"
+                        title="Click to browse & choose template in modal"
+                    >
+                        {/* Thumbnail or Icon */}
+                        {templateObj && selectedTemplate && selectedTemplate !== 'rotate' ? (
+                            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-blue-200 bg-slate-100 group-hover:border-blue-400 transition-colors flex-shrink-0 shadow-xs">
+                                <img src={templateObj.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt={templateObj.name} />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <Eye size={12} className="text-white" />
+                                </div>
+                            </div>
+                        ) : activeReferenceUrl && !selectedTemplate ? (
+                            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-purple-200 bg-slate-100 group-hover:border-purple-400 transition-colors flex-shrink-0 shadow-xs">
+                                <img src={activeReferenceUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="Reference" />
+                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <Eye size={12} className="text-white" />
+                                </div>
+                            </div>
+                        ) : selectedTemplate === 'rotate' ? (
+                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                                <Sparkles size={20} className="animate-pulse" />
+                            </div>
+                        ) : (
+                            <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                                <Layout size={20} />
+                            </div>
                         )}
-                      </button>
-                    );
-                 })}
-      
-                 {/* Custom style upload button */}
-                 <div className="relative flex-shrink-0">
-                      <button 
-                         type="button"
-                         onClick={() => {
-                             if (uploadedRefUrl) {
-                                 handleOpenPreview(uploadedRefUrl, "Uploaded Reference Style", "uploaded");
-                             } else {
-                                 refFileInputRef.current?.click();
-                             }
-                         }}
-                         className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all group relative overflow-hidden ${uploadedRefUrl ? 'border-blue-500 ring-2 ring-blue-100 p-0' : 'border-dashed border-slate-200 text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50/30'}`}
-                      >
-                         {uploadedRefUrl ? (
-                             <>
-                                 <img src={uploadedRefUrl} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="ref" />
-                                 <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all duration-300 gap-0.5 z-10">
-                                     <Eye size={12} className="text-white drop-shadow-md" />
-                                     <span className="text-[7px] text-white/95 font-bold uppercase tracking-wider leading-none drop-shadow-sm">Preview</span>
-                                 </div>
-                             </>
-                         ) : (
-                             <>
-                                 {isUploadingRef ? <Loader2 size={16} className="animate-spin text-blue-500" /> : <Upload size={16} />}
-                                 <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Upload</span>
-                             </>
-                         )}
-                       </button>
-                      <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
-                      
-                      {uploadedRefUrl && (
-                         <div className="absolute -top-1.5 -right-1.5 flex gap-1 z-10">
-                            <button 
+
+                        {/* Text info */}
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full ${
+                                    selectedTemplate === 'rotate' 
+                                        ? 'bg-purple-100 text-purple-700' 
+                                        : (selectedTemplate && templateObj)
+                                        ? 'bg-blue-100 text-blue-700' 
+                                        : activeReferenceUrl 
+                                        ? 'bg-indigo-100 text-indigo-700' 
+                                        : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                    {selectedTemplate === 'rotate' ? 'Dynamic' : (selectedTemplate && templateObj) ? templateObj.badge : activeReferenceUrl ? 'Custom Ref' : 'Auto AI'}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-400">Design Template</span>
+                            </div>
+                            <h4 className="text-xs font-black text-slate-800 truncate mt-0.5 group-hover:text-blue-600 transition-colors">
+                                {selectedTemplate === 'rotate' 
+                                    ? 'Rotating Luxury Styles (Non-Repetitive)' 
+                                    : (selectedTemplate && templateObj) 
+                                    ? templateObj.name 
+                                    : activeReferenceUrl 
+                                    ? (selectedUserRefId ? 'Saved Library Reference' : 'Uploaded Custom Style')
+                                    : 'Auto AI Layout (Balanced Aesthetic)'}
+                            </h4>
+                        </div>
+                    </div>
+
+                    {/* Right: Actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
+                        {/* Hidden file input for custom style upload */}
+                        <input type="file" ref={refFileInputRef} onChange={handleReferenceUpload} className="hidden" accept="image/*" />
+
+                        {/* Reset to Auto button if a specific template or custom ref is set */}
+                        {(selectedTemplate || activeReferenceUrl) && (
+                            <button
                                 type="button"
-                                onClick={async (e) => {
-                                    e.stopPropagation();
-                                    try {
-                                        const cat = (creativeCategory || 'Premium').toLowerCase().replace(' ', '_');
-                                        const insertPayload = {
-                                            category: cat,
-                                            url: uploadedRefUrl,
-                                            user_id: targetUserId || userId
-                                        };
-                                        const { data, error } = await supabase
-                                            .from('reference_creatives')
-                                            .insert(insertPayload)
-                                            .select()
-                                            .single();
-                                            
-                                        if (error) throw error;
-                                        
-                                        if (data) {
-                                            setUserReferences(prev => [data, ...prev]);
-                                            setSelectedUserRefId(data.id);
-                                            setSelectedUserRefUrl(data.url || uploadedRefUrl);
-                                            setUploadedRefUrl(null);
-                                            toast.success("Saved to Reference Library! 💎");
-                                        }
-                                    } catch (err: any) {
-                                        console.error(err);
-                                        toast.error("Failed to save reference style: " + err.message);
-                                    }
+                                onClick={() => {
+                                    setSelectedTemplate(null);
+                                    setUploadedRefUrl(null);
+                                    setSelectedUserRefId(null);
+                                    setSelectedUserRefUrl(null);
+                                    toast.info("Reset to Auto AI Layout");
                                 }}
-                                className="bg-emerald-600 text-white rounded-full p-1 shadow-md hover:bg-emerald-700 transition-colors"
-                                title="Save to Library"
+                                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200/60 hover:border-rose-200 transition-all flex items-center gap-1 cursor-pointer"
+                                title="Reset to Auto Layout"
                             >
-                                <Check size={10} strokeWidth={3} />
+                                <X size={13} />
+                                <span className="hidden sm:inline">Reset to Auto</span>
                             </button>
-                            <button 
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setUploadedRefUrl(null); }}
-                                className="bg-slate-800 text-white rounded-full p-1 shadow-md hover:bg-slate-700 transition-colors"
-                                title="Remove Uploaded Style"
-                            >
-                                <X size={10} />
-                            </button>
-                         </div>
-                      )}
-                 </div>
+                        )}
 
-                 {/* Library Gallery Trigger Button */}
-                 <button
-                    type="button"
-                    onClick={() => {
-                        setGalleryTab('all');
-                        setIsGalleryOpen(true);
-                    }}
-                    className={`w-16 h-16 rounded-[1.25rem] border-2 flex flex-col items-center justify-center gap-1 transition-all ${selectedTemplate !== null || selectedUserRefId !== null || selectedUserRefUrl !== null ? 'border-purple-500 bg-purple-50 text-purple-600 shadow-sm' : 'border-dashed border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                 >
-                    <ImageIcon size={16} />
-                    <span className="text-[8px] font-bold text-center px-1 leading-tight uppercase">Library</span>
-                 </button>
-
-                 {/* Active Selected Style Card preview */}
-                 {(activeReferenceUrl || selectedTemplate === 'rotate') && (
-                     <div className="flex items-center gap-2 bg-purple-50/50 border border-purple-100 px-3 py-1.5 rounded-[1.25rem] flex-shrink-0 shadow-sm animate-in slide-in-from-left-2 duration-300">
-                         <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-purple-200 group bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center flex-shrink-0">
-                             {activeReferenceUrl ? (
-                               <>
-                                 <img src={activeReferenceUrl} className="w-full h-full object-cover" alt="selected style" />
-                                 <button
-                                     type="button"
-                                     onClick={() => handleOpenPreview(activeReferenceUrl, "Selected Reference Style", uploadedRefUrl ? "uploaded" : selectedTemplate ? "template" : "userRef", selectedTemplate || selectedUserRefId)}
-                                     className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300"
-                                 >
-                                     <Eye size={12} className="text-white" />
-                                 </button>
-                               </>
-                             ) : (
-                               <Sparkles size={18} className="text-white animate-pulse" />
-                             )}
-                         </div>
-                         <div className="min-w-0">
-                             <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[7px] font-black uppercase tracking-wider">Selected Style</span>
-                             <h4 className="text-[9.5px] font-black text-slate-800 mt-0.5 truncate max-w-[110px] capitalize leading-none">
-                                 {selectedTemplate === 'rotate' ? "Rotating Luxury Styles" : selectedTemplate ? `Template: ${selectedTemplate.replace(/_/g, ' ')}` : selectedUserRefId ? "Library Item" : "Custom Upload"}
-                             </h4>
-                         </div>
-                         <button 
-                             type="button"
-                             onClick={() => { setSelectedTemplate(null); setUploadedRefUrl(null); setSelectedUserRefId(null); setSelectedUserRefUrl(null); }}
-                             className="text-slate-400 hover:text-red-500 p-1 hover:bg-red-50 rounded-full transition-all"
-                         >
-                             <X size={14} />
-                         </button>
-                     </div>
-                 )}
+                        {/* Main Button to open Templates Modal */}
+                        <button
+                            type="button"
+                            onClick={() => setIsTemplateChooserOpen(true)}
+                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer"
+                        >
+                            <Layout size={14} />
+                            <span>Templates Library</span>
+                            <span className="bg-white/25 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none">
+                                {TEMPLATES.length}
+                            </span>
+                        </button>
+                    </div>
+                </div>
             </div>
         )}
       </div>
@@ -3480,117 +3409,309 @@ export default function CreationPage() {
         )}
       </AnimatePresence>
 
-      {/* TEMPLATE CHOOSER MODAL (Always asks user to choose a template before generating) */}
+      {/* TEMPLATES LIBRARY MODAL */}
       <AnimatePresence>
         {isTemplateChooserOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4"
+            className="fixed inset-0 z-[110] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0, y: 10 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
-              className="bg-white w-full max-w-3xl rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
+              className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
             >
               {/* Header */}
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
+              <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
                 <div>
                   <div className="flex items-center gap-2">
                     <Sparkles className="text-blue-600 animate-pulse" size={20} />
-                    <h3 className="text-base font-extrabold text-slate-900">Choose a Design Template</h3>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">Templates & Styles Library</h3>
+                    <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-full">
+                      {TEMPLATES.length} Styles
+                    </span>
                   </div>
-                  <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Select a luxury aesthetic style for this creative, or choose dynamic rotation to ensure your ads never look repetitive.
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Select a luxury design layout for your creatives, enable dynamic rotation, or let AI choose automatically.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsTemplateChooserOpen(false)}
-                  className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all"
+                  className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
-              {/* Template Grid */}
-              <div className="p-6 overflow-y-auto custom-scrollbar space-y-4">
-                {/* 1. Dynamic Rotating Card */}
-                <div
-                  onClick={() => handleSelectTemplateAndGenerate('rotate')}
-                  className="p-4 rounded-2xl border-2 border-blue-500/60 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white hover:border-blue-600 hover:shadow-md transition-all cursor-pointer flex items-center gap-4 group"
-                >
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                    <Sparkles size={28} className="animate-pulse" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-blue-600 text-white shadow-xs">
-                        Recommended
-                      </span>
-                      <span className="text-[10px] font-bold text-blue-700">Non-Repetitive Designs</span>
-                    </div>
-                    <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-blue-700 transition-colors">
-                      Rotate Diverse Luxury Styles
-                    </h4>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5 leading-relaxed">
-                      AI dynamically rotates through all 6 Dubai luxury design systems so each creative receives a distinct composition, lighting, and layout.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="bg-blue-600 group-hover:bg-blue-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all flex-shrink-0"
-                  >
-                    Select & Generate
-                  </button>
+              {/* Search & Category Filter Bar */}
+              <div className="px-5 sm:px-6 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-shrink-0">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={templateSearchQuery}
+                    onChange={(e) => setTemplateSearchQuery(e.target.value)}
+                    placeholder="Search templates (e.g. Waterfront, Penthouse, Editorial, Villa...)"
+                    className="w-full pl-8 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  />
+                  {templateSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setTemplateSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
 
-                {/* 2. The 6 Dubai Templates */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {TEMPLATES.map((tmpl) => (
-                    <div
-                      key={tmpl.id}
-                      onClick={() => handleSelectTemplateAndGenerate(tmpl.id)}
-                      className="p-3.5 rounded-2xl border border-slate-200 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer bg-white flex gap-3.5 group relative"
-                    >
-                      <div className="w-20 h-24 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-100 relative">
-                        <img
-                          src={tmpl.url}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          alt={tmpl.name}
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                      </div>
-                      <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                        <div>
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 truncate">
-                              {tmpl.badge}
-                            </span>
-                          </div>
-                          <h4 className="text-xs font-extrabold text-slate-900 group-hover:text-blue-700 transition-colors leading-snug">
-                            {tmpl.name}
-                          </h4>
-                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">
-                            {tmpl.description}
-                          </p>
-                        </div>
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{tmpl.category}</span>
-                          <span className="text-[10px] font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                            Use Style &rarr;
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                {/* Category Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
+                  {[
+                    { id: 'all', label: `All (${TEMPLATES.length})` },
+                    { id: 'high_converting', label: 'High ROI' },
+                    { id: 'premium', label: 'Editorial' },
+                    { id: 'Waterfront', label: 'Waterfront' },
+                    { id: 'Skyline Living', label: 'Skyline' },
+                    { id: 'Minimalist', label: 'Minimalist' },
+                    { id: 'Direct Response', label: 'Direct Offer' }
+                  ].map(cat => {
+                    const isActive = templateCategoryFilter === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => setTemplateCategoryFilter(cat.id)}
+                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          isActive 
+                            ? 'bg-blue-600 text-white shadow-xs' 
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
+              {/* Template Grid / Content */}
+              <div className="p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-5">
+                {/* 1. Global Presets (Auto AI + Dynamic Rotation) */}
+                {!templateSearchQuery && templateCategoryFilter === 'all' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    {/* Auto Layout Option */}
+                    <div
+                      onClick={() => handleSelectTemplateOnly(null)}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 group relative ${
+                        selectedTemplate === null && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl
+                          ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-100 shadow-sm'
+                          : 'border-slate-200 hover:border-blue-400 bg-white'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                        <Layout size={22} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                            Default AI
+                          </span>
+                          {selectedTemplate === null && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl && (
+                            <span className="text-[10px] font-black text-blue-600 flex items-center gap-1">
+                              <CheckCircle2 size={13} /> Active
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-xs font-black text-slate-900 group-hover:text-blue-700 transition-colors">
+                          Auto AI Layout
+                        </h4>
+                        <p className="text-[10.5px] text-slate-500 font-medium leading-snug mt-0.5">
+                          AI dynamically crafts the optimal composition & typography tailored to your product.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Rotate Dynamic Option */}
+                    <div
+                      onClick={() => handleSelectTemplateOnly('rotate')}
+                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 group relative ${
+                        selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl
+                          ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-100 shadow-sm'
+                          : 'border-slate-200 hover:border-indigo-400 bg-white'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform shadow-xs">
+                        <Sparkles size={22} className="animate-pulse" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1 mb-0.5">
+                          <span className="text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-600 text-white">
+                            Recommended
+                          </span>
+                          {selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl && (
+                            <span className="text-[10px] font-black text-indigo-600 flex items-center gap-1">
+                              <CheckCircle2 size={13} /> Active
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-700 transition-colors">
+                          Rotate Diverse Luxury Styles
+                        </h4>
+                        <p className="text-[10.5px] text-slate-500 font-medium leading-snug mt-0.5">
+                          AI cycles through all Dubai luxury systems so variations never look repetitive.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Grid of Templates */}
+                {(() => {
+                  const filteredTemplates = TEMPLATES.filter(tmpl => {
+                    if (templateCategoryFilter !== 'all') {
+                      if (templateCategoryFilter === 'high_converting' || templateCategoryFilter === 'premium') {
+                        if (tmpl.category?.toLowerCase() !== templateCategoryFilter && tmpl.badge?.toLowerCase() !== templateCategoryFilter) {
+                          // check libraryCategory
+                          const raw = ALL_REFERENCE_TEMPLATES.find(r => r.id === tmpl.id);
+                          if (raw?.libraryCategory !== templateCategoryFilter) return false;
+                        }
+                      } else {
+                        if (tmpl.category !== templateCategoryFilter) return false;
+                      }
+                    }
+                    if (templateSearchQuery.trim()) {
+                      const q = templateSearchQuery.toLowerCase();
+                      const matchName = tmpl.name.toLowerCase().includes(q);
+                      const matchCat = tmpl.category.toLowerCase().includes(q);
+                      const matchBadge = tmpl.badge.toLowerCase().includes(q);
+                      const matchDesc = tmpl.description.toLowerCase().includes(q);
+                      if (!matchName && !matchCat && !matchBadge && !matchDesc) return false;
+                    }
+                    return true;
+                  });
+
+                  if (filteredTemplates.length === 0) {
+                    return (
+                      <div className="py-16 text-center text-slate-400">
+                        <Layout className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                        <p className="text-sm font-bold text-slate-700">No matching templates found</p>
+                        <p className="text-xs text-slate-400 mt-0.5">Try searching for a different keyword or clear your filter.</p>
+                        <button
+                          type="button"
+                          onClick={() => { setTemplateSearchQuery(''); setTemplateCategoryFilter('all'); }}
+                          className="mt-3 px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all"
+                        >
+                          Show All Templates
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {filteredTemplates.map((tmpl) => {
+                        const isSelected = selectedTemplate === tmpl.id && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl;
+                        return (
+                          <div
+                            key={tmpl.id}
+                            onClick={() => handleSelectTemplateOnly(tmpl.id)}
+                            className={`rounded-2xl border-2 transition-all cursor-pointer bg-white flex flex-col overflow-hidden group relative hover:shadow-md ${
+                              isSelected
+                                ? 'border-blue-600 ring-4 ring-blue-500/20 shadow-md'
+                                : 'border-slate-200 hover:border-blue-400'
+                            }`}
+                          >
+                            {/* Image Header with Aspect Ratio */}
+                            <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                              <img
+                                src={tmpl.url}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                alt={tmpl.name}
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent opacity-80" />
+                              
+                              {/* Top Bar on Image: Badge & Preview button */}
+                              <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between z-10">
+                                <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full bg-slate-900/80 backdrop-blur-xs text-white shadow-xs">
+                                  {tmpl.badge}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenPreview(tmpl.url, tmpl.name, 'template', tmpl.id);
+                                  }}
+                                  className="p-1.5 rounded-full bg-slate-900/80 backdrop-blur-xs text-white hover:bg-black transition-colors shadow-xs"
+                                  title="Preview Full Size"
+                                >
+                                  <Eye size={12} />
+                                </button>
+                              </div>
+
+                              {/* Selected Checkmark overlay */}
+                              {isSelected && (
+                                <div className="absolute inset-0 bg-blue-600/20 backdrop-blur-[1px] flex items-center justify-center">
+                                  <div className="bg-blue-600 text-white rounded-full p-2 shadow-lg animate-in zoom-in-75 duration-200">
+                                    <Check size={20} strokeWidth={3} />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Bottom Category Tag */}
+                              <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between text-white text-[9.5px] font-extrabold drop-shadow-sm">
+                                <span className="truncate">{tmpl.category}</span>
+                              </div>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="p-3.5 flex-1 flex flex-col justify-between gap-2.5">
+                              <div>
+                                <h4 className="text-xs font-black text-slate-800 leading-snug group-hover:text-blue-600 transition-colors">
+                                  {tmpl.name}
+                                </h4>
+                                <p className="text-[10.5px] text-slate-500 font-medium mt-1 leading-relaxed line-clamp-2">
+                                  {tmpl.description}
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectTemplateOnly(tmpl.id);
+                                }}
+                                className={`w-full py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                                  isSelected
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600'
+                                }`}
+                              >
+                                {isSelected ? (
+                                  <>
+                                    <Check size={13} strokeWidth={3} />
+                                    <span>Selected Style</span>
+                                  </>
+                                ) : (
+                                  <span>Select Template</span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Footer */}
-              <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between flex-shrink-0">
+              <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
@@ -3599,9 +3720,9 @@ export default function CreationPage() {
                       setGalleryTab('all');
                       setIsGalleryOpen(true);
                     }}
-                    className="text-xs font-bold text-slate-600 hover:text-purple-700 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
+                    className="text-xs font-bold text-slate-600 hover:text-purple-700 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
                   >
-                    <ImageIcon size={14} /> Open Reference Library
+                    <ImageIcon size={14} /> Reference Library
                   </button>
                   <button
                     type="button"
@@ -3609,18 +3730,30 @@ export default function CreationPage() {
                       setIsTemplateChooserOpen(false);
                       refFileInputRef.current?.click();
                     }}
-                    className="text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5"
+                    className="text-xs font-bold text-slate-600 hover:text-blue-600 bg-white border border-slate-200 px-3.5 py-2 rounded-xl transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
                   >
                     <Upload size={14} /> Upload Custom Style
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleSelectTemplateAndGenerate('rotate')}
-                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-1.5"
-                >
-                  <Sparkles size={14} /> Quick Generate (Rotate)
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {(selectedTemplate || activeReferenceUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectTemplateOnly(null)}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-2 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Reset to Auto
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplateChooserOpen(false)}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-black px-5 py-2 rounded-xl shadow-xs transition-all cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>

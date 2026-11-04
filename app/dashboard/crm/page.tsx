@@ -2821,142 +2821,650 @@ END:VCARD\n`
                         <ChevronDown size={14} className={`absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none ${selectedSpecificStage !== 'ALL' ? 'text-white' : 'text-slate-400'}`} />
                     </div>
 
-                    <button 
-                        onClick={() => setShowFilters(!showFilters)}
-                        className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto ${showFilters || selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
-                    >
-                        <Filter size={18} /> Filters {(selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL') && <span className="w-2 h-2 rounded-full bg-blue-400"></span>}
-                    </button>
+                    {(() => {
+                        const activeFiltersCount = [
+                            selectedCampaigns.length > 0,
+                            Boolean(selectedForm),
+                            selectedAgentFilter !== 'ALL',
+                            selectedDateRange !== 'ALL' || Boolean(crmCustomDate) || Boolean(crmStartDate && crmEndDate),
+                            selectedDnpFilter !== 'ALL',
+                            selectedNextActionFilter !== 'ALL',
+                            selectedNextActionType !== 'ALL',
+                            selectedSpecificStage !== 'ALL',
+                        ].filter(Boolean).length;
+
+                        return (
+                            <button 
+                                type="button"
+                                onClick={() => setShowFilters(true)}
+                                className={`px-5 py-3.5 rounded-2xl text-sm font-bold transition-all border flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto cursor-pointer ${
+                                    activeFiltersCount > 0 
+                                        ? 'bg-slate-900 text-white border-slate-900 shadow-sm hover:bg-slate-800' 
+                                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                }`}
+                            >
+                                <Filter size={18} />
+                                <span>Filters</span>
+                                {activeFiltersCount > 0 && (
+                                    <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white text-[11px] font-black leading-none">
+                                        {activeFiltersCount}
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })()}
                 </div>
             </div>
 
-            {showFilters && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pt-3 border-t border-slate-100 animate-in slide-in-from-top-2">
-                    {/* Agent Filter */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Assigned Agent</label>
-                        <select value={selectedAgentFilter} onChange={(e) => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                            <option value="ALL">All Team Members</option>
-                            <option value="UNASSIGNED">Unassigned Only</option>
-                            {team.map(m => (
-                                <option key={m.id} value={m.id}>{m.business_name || m.full_name || m.email || 'Team Member'}</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-                    </div>
+            {/* ACTIVE FILTERS CHIPS BAR */}
+            {(() => {
+                const activeCount = [
+                    selectedCampaigns.length > 0,
+                    Boolean(selectedForm),
+                    selectedAgentFilter !== 'ALL',
+                    selectedDateRange !== 'ALL' || Boolean(crmCustomDate) || Boolean(crmStartDate && crmEndDate),
+                    selectedDnpFilter !== 'ALL',
+                    selectedNextActionFilter !== 'ALL',
+                    selectedNextActionType !== 'ALL',
+                    selectedSpecificStage !== 'ALL',
+                ].filter(Boolean).length;
 
-                    {/* Next Action Timing Filter */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Next Action Schedule</label>
-                        <select value={selectedNextActionFilter} onChange={(e) => setSelectedNextActionFilter(e.target.value as any)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
-                            <option value="ALL">All Next Actions</option>
-                            <option value="TODAY">📅 Due Today</option>
-                            <option value="OVERDUE">⚠️ Overdue Actions</option>
-                            <option value="UPCOMING">⚡ Upcoming / Future</option>
-                            <option value="HAS_ACTION">🔔 Any Scheduled Action</option>
-                            <option value="NO_ACTION">❌ No Action Scheduled</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
-                    </div>
+                const clearAll = () => {
+                    setSelectedCampaigns([]);
+                    setSelectedForm('');
+                    setSelectedAgentFilter('ALL');
+                    setSelectedDateRange('ALL');
+                    setCrmCustomDate('');
+                    setCrmStartDate('');
+                    setCrmEndDate('');
+                    setSelectedDnpFilter('ALL');
+                    setSelectedNextActionFilter('ALL');
+                    setSelectedNextActionType('ALL');
+                    setSelectedSpecificStage('ALL');
+                    setCurrentPage(1);
+                };
 
-                    {/* Next Action Type Filter */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Action Type</label>
-                        <select value={selectedNextActionType} onChange={(e) => setSelectedNextActionType(e.target.value)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
-                            <option value="ALL">All Action Types</option>
-                            <option value="Call">📞 Call</option>
-                            <option value="Visit">🏠 Visit</option>
-                            <option value="Revisit">🔄 Revisit</option>
-                            <option value="Closing Meeting">💼 Closing Meeting</option>
-                            <option value="Home Meeting">🏡 Home Meeting</option>
-                            <option value="WhatsApp">💬 WhatsApp</option>
-                            <option value="Email">✉️ Email</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
-                    </div>
+                if (activeCount === 0) return null;
 
-                    {/* DNP Filter Dropdown */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-rose-500 uppercase mb-1">DNP Status</label>
-                        <select value={selectedDnpFilter} onChange={(e) => setSelectedDnpFilter(e.target.value as any)} className="w-full appearance-none bg-rose-50/60 hover:bg-rose-100/60 border border-rose-200/80 text-rose-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-rose-500/20 transition-all cursor-pointer truncate">
-                            <option value="ALL">All Leads (No DNP Filter)</option>
-                            <option value="DNP_ONLY">🔥 DNP Only</option>
-                            <option value="DNP_1">DNP 1</option>
-                            <option value="DNP_2">DNP 2</option>
-                            <option value="DNP_3PLUS">DNP 3+ (Retry Queue)</option>
-                            <option value="NO_DNP">No DNP</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-rose-400 pointer-events-none" />
-                    </div>
-
-                    {/* Date Range Filter */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Date Created</label>
-                        <select value={selectedDateRange} onChange={(e) => setSelectedDateRange(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200/60 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                            <option value="ALL">All Time</option>
-                            <option value="TODAY">Today</option>
-                            <option value="YESTERDAY">Yesterday</option>
-                            <option value="7D">Last 7 Days</option>
-                            <option value="30D">Last 30 Days</option>
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-                    </div>
-
-                    {/* Custom Date Filter Button */}
-                    <div className="relative flex-1">
-                        <label className="block text-[9px] font-black text-blue-600 uppercase mb-1">Custom Date / Range</label>
+                return (
+                    <div className="flex items-center gap-2 flex-wrap pt-2 animate-in fade-in duration-200">
+                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                            <Filter size={11} /> Active Filters ({activeCount}):
+                        </span>
+                        {selectedCampaigns.length > 0 && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-xs font-bold shadow-2xs">
+                                <span>Campaigns ({selectedCampaigns.length})</span>
+                                <button type="button" onClick={() => setSelectedCampaigns([])} className="hover:text-blue-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedForm && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold shadow-2xs">
+                                <span className="max-w-[150px] truncate">Form: {selectedForm}</span>
+                                <button type="button" onClick={() => setSelectedForm('')} className="hover:text-purple-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedAgentFilter !== 'ALL' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 text-xs font-bold shadow-2xs">
+                                <span>Agent: {selectedAgentFilter === 'UNASSIGNED' ? 'Unassigned' : (team.find(m => m.id === selectedAgentFilter)?.business_name || 'Selected')}</span>
+                                <button type="button" onClick={() => setSelectedAgentFilter('ALL')} className="hover:text-slate-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedSpecificStage !== 'ALL' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold shadow-2xs">
+                                <span>Stage: {selectedSpecificStage}</span>
+                                <button type="button" onClick={() => setSelectedSpecificStage('ALL')} className="hover:text-indigo-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedDnpFilter !== 'ALL' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold shadow-2xs">
+                                <span>DNP: {selectedDnpFilter}</span>
+                                <button type="button" onClick={() => setSelectedDnpFilter('ALL')} className="hover:text-rose-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedNextActionFilter !== 'ALL' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold shadow-2xs">
+                                <span>Action: {selectedNextActionFilter}</span>
+                                <button type="button" onClick={() => setSelectedNextActionFilter('ALL')} className="hover:text-purple-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedNextActionType !== 'ALL' && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold shadow-2xs">
+                                <span>Type: {selectedNextActionType}</span>
+                                <button type="button" onClick={() => setSelectedNextActionType('ALL')} className="hover:text-purple-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {(selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate)) && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold shadow-2xs">
+                                <span>Date: {crmCustomDate ? crmCustomDate : (crmStartDate && crmEndDate) ? `${crmStartDate} → ${crmEndDate}` : selectedDateRange}</span>
+                                <button type="button" onClick={() => { setSelectedDateRange('ALL'); setCrmCustomDate(''); setCrmStartDate(''); setCrmEndDate(''); }} className="hover:text-emerald-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
                         <button
                             type="button"
-                            onClick={() => setIsCrmDatePickerOpen(!isCrmDatePickerOpen)}
-                            className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all border shadow-xs cursor-pointer ${
-                                (crmCustomDate || (crmStartDate && crmEndDate))
-                                    ? 'bg-blue-600 border-blue-600 text-white shadow-md'
-                                    : 'bg-slate-50 border-slate-200/80 text-slate-700 hover:border-blue-400'
-                            }`}
+                            onClick={clearAll}
+                            className="text-xs font-black text-rose-600 hover:text-rose-800 hover:underline px-2 py-0.5 cursor-pointer ml-1"
                         >
-                            <span className="truncate">
-                                {crmCustomDate
-                                    ? `Date: ${crmCustomDate}`
-                                    : (crmStartDate && crmEndDate)
-                                    ? `${crmStartDate} → ${crmEndDate}`
-                                    : 'Pick Custom Date'}
-                            </span>
-                            <Calendar size={13} className={(crmCustomDate || (crmStartDate && crmEndDate)) ? 'text-white' : 'text-blue-600'} />
+                            Reset All
                         </button>
+                    </div>
+                );
+            })()}
 
-                        {isCrmDatePickerOpen && (
-                            <>
-                                <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-40 sm:hidden" onClick={() => setIsCrmDatePickerOpen(false)} />
-                                <div className="fixed inset-x-4 top-24 z-50 bg-white border border-slate-200 rounded-2xl p-4 shadow-2xl space-y-3 sm:absolute sm:inset-auto sm:right-0 sm:top-14 sm:w-72">
-                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                        <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
-                                            <Calendar size={14} className="text-blue-600" /> Filter Leads by Date
-                                        </span>
-                                        <button type="button" onClick={() => setIsCrmDatePickerOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
-                                            <X size={15} />
-                                        </button>
+            {/* CRM ALL FILTERS MODAL */}
+            {showFilters && (
+                <div 
+                    className="fixed inset-0 z-[120] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+                    onClick={() => setShowFilters(false)}
+                >
+                    <div 
+                        className="bg-white w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Modal Header */}
+                        <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-white flex-shrink-0">
+                            <div>
+                                <div className="flex items-center gap-2.5">
+                                    <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                                        <Filter size={20} />
                                     </div>
+                                    <h3 className="text-base sm:text-lg font-black text-slate-900">CRM Filters</h3>
+                                    {(() => {
+                                        const count = [
+                                            selectedCampaigns.length > 0,
+                                            Boolean(selectedForm),
+                                            selectedAgentFilter !== 'ALL',
+                                            selectedDateRange !== 'ALL' || Boolean(crmCustomDate) || Boolean(crmStartDate && crmEndDate),
+                                            selectedDnpFilter !== 'ALL',
+                                            selectedNextActionFilter !== 'ALL',
+                                            selectedNextActionType !== 'ALL',
+                                            selectedSpecificStage !== 'ALL',
+                                        ].filter(Boolean).length;
+                                        if (count === 0) return null;
+                                        return (
+                                            <span className="bg-blue-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full">
+                                                {count} Active
+                                            </span>
+                                        );
+                                    })()}
+                                </div>
+                                <p className="text-xs text-slate-500 font-medium mt-1">
+                                    Filter and segment leads by marketing campaigns, assigned team members, pipeline stages, follow-up actions, and dates.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowFilters(false)}
+                                className="bg-slate-50 hover:bg-slate-100 p-2 rounded-full text-slate-400 hover:text-slate-600 transition-all cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
 
-                                    <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                        {/* Modal Body */}
+                        <div className="p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-5 bg-slate-50/50">
+                            {/* Section 1: Marketing Source & Campaigns */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                    <Target size={14} className="text-blue-600" /> Marketing Source & Campaigns
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Searchable Campaign Filter (Multi-Select) */}
+                                    <div className="relative flex-1" ref={campaignFilterRef}>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">
+                                            Meta Campaigns {selectedCampaigns.length > 0 && `(${selectedCampaigns.length} selected)`}
+                                        </label>
                                         <button
                                             type="button"
-                                            onClick={() => { setCrmDateFilterMode('single'); setCrmStartDate(''); setCrmEndDate(''); }}
-                                            className={`py-1 rounded-lg transition-all cursor-pointer ${crmDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
+                                            onClick={() => {
+                                                setIsCampaignFilterOpen(!isCampaignFilterOpen)
+                                                if (!isCampaignFilterOpen) setCampaignFilterSearch('')
+                                            }}
+                                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
+                                                selectedCampaigns.length > 0 ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200 text-slate-700'
+                                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
+                                            title={selectedCampaigns.length === 0 ? 'All Campaigns' : selectedCampaigns.join(', ')}
                                         >
-                                            Single Date
+                                            <span className="truncate flex-1 flex items-center gap-1.5">
+                                                <span className="truncate">
+                                                    {selectedCampaigns.length === 0
+                                                        ? 'All Campaigns'
+                                                        : selectedCampaigns.length === 1
+                                                            ? selectedCampaigns[0]
+                                                            : `${selectedCampaigns.length} Campaigns Selected`}
+                                                </span>
+                                                {selectedCampaigns.length > 1 && (
+                                                    <span className="bg-blue-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0">
+                                                        {selectedCampaigns.length}
+                                                    </span>
+                                                )}
+                                            </span>
+                                            {selectedCampaigns.length > 0 ? (
+                                                <span
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setSelectedCampaigns([])
+                                                        setCurrentPage(1)
+                                                    }}
+                                                    className="p-0.5 hover:bg-blue-200/60 rounded-md text-blue-600 ml-1 transition-colors shrink-0 cursor-pointer"
+                                                    title="Clear Campaign Filter"
+                                                >
+                                                    <X size={13} />
+                                                </span>
+                                            ) : (
+                                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isCampaignFilterOpen ? 'rotate-180' : ''}`} />
+                                            )}
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => { setCrmDateFilterMode('range'); setCrmCustomDate(''); }}
-                                            className={`py-1 rounded-lg transition-all cursor-pointer ${crmDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-500'}`}
-                                        >
-                                            Date Range
-                                        </button>
+
+                                        {isCampaignFilterOpen && (
+                                            <div className="mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150">
+                                                {/* Search input */}
+                                                <div className="relative">
+                                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        autoFocus
+                                                        placeholder="Search campaigns..."
+                                                        value={campaignFilterSearch}
+                                                        onChange={(e) => setCampaignFilterSearch(e.target.value)}
+                                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                                                    />
+                                                    {campaignFilterSearch && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setCampaignFilterSearch('')}
+                                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Multi-select quick action header */}
+                                                <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-500">
+                                                    <span>
+                                                        {selectedCampaigns.length > 0
+                                                            ? `${selectedCampaigns.length} of ${uniqueCampaigns.length} selected`
+                                                            : 'Select one or more campaigns'}
+                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const filtered = uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
+                                                                setSelectedCampaigns(Array.from(new Set([...selectedCampaigns, ...filtered])))
+                                                                setCurrentPage(1)
+                                                            }}
+                                                            className="text-blue-600 hover:underline cursor-pointer"
+                                                        >
+                                                            Select All
+                                                        </button>
+                                                        <span className="text-slate-300">•</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedCampaigns([])
+                                                                setCurrentPage(1)
+                                                            }}
+                                                            className="text-slate-400 hover:text-red-500 hover:underline cursor-pointer"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Options List */}
+                                                <div className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedCampaigns([])
+                                                            setCurrentPage(1)
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                                            selectedCampaigns.length === 0 ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
+                                                        }`}
+                                                    >
+                                                        <span>All Campaigns</span>
+                                                        {selectedCampaigns.length === 0 && <CheckCircle2 size={13} />}
+                                                    </button>
+
+                                                    {uniqueCampaigns
+                                                        .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
+                                                        .map((camp, idx) => {
+                                                            const isSelected = selectedCampaigns.includes(camp)
+                                                            const isCampActive = activeCampaignSet.names.has(camp.toLowerCase())
+                                                            return (
+                                                                <div
+                                                                    key={idx}
+                                                                    onClick={() => {
+                                                                        setSelectedCampaigns(prev =>
+                                                                            prev.includes(camp) ? prev.filter(c => c !== camp) : [...prev, camp]
+                                                                        )
+                                                                        setCurrentPage(1)
+                                                                    }}
+                                                                    title={camp}
+                                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer select-none border ${
+                                                                        isSelected
+                                                                            ? 'bg-blue-50/80 text-blue-900 border-blue-200/80 shadow-xs font-black'
+                                                                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-transparent'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={isSelected}
+                                                                            onChange={() => {}}
+                                                                            className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer shrink-0 pointer-events-none"
+                                                                        />
+                                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
+                                                                        {isCampActive && (
+                                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
+                                                                                isSelected ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                            }`}>
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                                                <span>Active</span>
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        })}
+
+                                                    {uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim())).length === 0 && (
+                                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
+                                                            No matching campaigns found
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setIsCampaignFilterOpen(false)}
+                                                        className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
+                                                    >
+                                                        Done
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {crmDateFilterMode === 'single' ? (
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-bold text-slate-500 block">Select Specific Date:</label>
+                                    {/* Searchable Lead Form / Source Filter */}
+                                    <div className="relative flex-1" ref={formFilterRef}>
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Lead Form / Source</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsFormFilterOpen(!isFormFilterOpen)
+                                                if (!isFormFilterOpen) setFormFilterSearch('')
+                                            }}
+                                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
+                                                selectedForm ? 'border-purple-500 bg-purple-50/40 text-purple-900' : 'border-slate-200 text-slate-700'
+                                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
+                                            title={selectedForm || 'All Lead Forms'}
+                                        >
+                                            <span className="truncate flex-1 flex items-center gap-1.5">
+                                                <span className="truncate">{selectedForm ? selectedForm : 'All Lead Forms'}</span>
+                                                {selectedForm && activeFormSet.names.has(selectedForm.toLowerCase()) && (
+                                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                        <span>Active</span>
+                                                    </span>
+                                                )}
+                                            </span>
+                                            {selectedForm ? (
+                                                <span
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setSelectedForm('')
+                                                        setCurrentPage(1)
+                                                    }}
+                                                    className="p-0.5 hover:bg-purple-200/60 rounded-md text-purple-600 ml-1 transition-colors shrink-0"
+                                                    title="Clear Form Filter"
+                                                >
+                                                    <X size={13} />
+                                                </span>
+                                            ) : (
+                                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isFormFilterOpen ? 'rotate-180' : ''}`} />
+                                            )}
+                                        </button>
+
+                                        {isFormFilterOpen && (
+                                            <div className="mt-2 bg-white border border-slate-200 rounded-2xl shadow-lg p-3 space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                                                {/* Search input */}
+                                                <div className="relative">
+                                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        autoFocus
+                                                        placeholder="Search lead forms..."
+                                                        value={formFilterSearch}
+                                                        onChange={(e) => setFormFilterSearch(e.target.value)}
+                                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
+                                                    />
+                                                    {formFilterSearch && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFormFilterSearch('')}
+                                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Options List */}
+                                                <div className="max-h-52 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedForm('')
+                                                            setCurrentPage(1)
+                                                            setIsFormFilterOpen(false)
+                                                        }}
+                                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
+                                                            !selectedForm ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
+                                                        }`}
+                                                    >
+                                                        <span>All Lead Forms</span>
+                                                        {!selectedForm && <CheckCircle2 size={13} />}
+                                                    </button>
+
+                                                    {uniqueForms
+                                                        .filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim()))
+                                                        .map((form, idx) => {
+                                                            const isSelected = selectedForm === form
+                                                            const isFormActive = activeFormSet.names.has(form.toLowerCase())
+                                                            return (
+                                                                <button
+                                                                    key={idx}
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setSelectedForm(form)
+                                                                        setCurrentPage(1)
+                                                                        setIsFormFilterOpen(false)
+                                                                    }}
+                                                                    title={form}
+                                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                                                                        isSelected ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{form}</span>
+                                                                        {isFormActive && (
+                                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
+                                                                                isSelected ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                            }`}>
+                                                                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'} animate-pulse`}></span>
+                                                                                <span>Active</span>
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
+                                                                </button>
+                                                            )
+                                                        })}
+
+                                                    {uniqueForms.filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim())).length === 0 && (
+                                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
+                                                            No matching lead forms found
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 2: Ownership & Pipeline Stage */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                    <Users size={14} className="text-indigo-600" /> Ownership & Pipeline Stage
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Agent Filter */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Assigned Agent</label>
+                                        <select value={selectedAgentFilter} onChange={(e) => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Team Members</option>
+                                            <option value="UNASSIGNED">Unassigned Only</option>
+                                            {team.map(m => (
+                                                <option key={m.id} value={m.id}>{m.business_name || m.full_name || m.email || 'Team Member'}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                                    </div>
+
+                                    {/* Specific Pipeline Stage Filter */}
+                                    <div className="relative flex-1">
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <label className="block text-[10px] font-black text-indigo-600 uppercase">
+                                                {activeSection === 'ongoing' ? 'Filter Ongoing Stage' : activeSection === 'not_interested' ? 'Filter Not Interested Stage' : 'Specific Stage Filter'}
+                                            </label>
+                                            {isAdminLike && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                                                    className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                                >
+                                                    ⚙️ Edit Stages
+                                                </button>
+                                            )}
+                                        </div>
+                                        <select 
+                                            value={selectedSpecificStage} 
+                                            onChange={(e) => {
+                                                setSelectedSpecificStage(e.target.value)
+                                                setCurrentPage(1)
+                                            }} 
+                                            className="w-full appearance-none bg-indigo-50/60 hover:bg-indigo-100/60 border border-indigo-200/80 text-indigo-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer truncate"
+                                        >
+                                            <option value="ALL">All Stages in {activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}</option>
+                                            {availableStagesForSection.map(s => (
+                                                <option key={s.id} value={s.name}>{s.name}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 3: Follow-Up & Call Status */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                    <Clock size={14} className="text-purple-600" /> Actions & Call Status
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    {/* Next Action Timing Filter */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-purple-600 uppercase mb-1.5">Next Action Schedule</label>
+                                        <select value={selectedNextActionFilter} onChange={(e) => setSelectedNextActionFilter(e.target.value as any)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Next Actions</option>
+                                            <option value="TODAY">📅 Due Today</option>
+                                            <option value="OVERDUE">⚠️ Overdue Actions</option>
+                                            <option value="UPCOMING">⚡ Upcoming / Future</option>
+                                            <option value="HAS_ACTION">🔔 Any Scheduled Action</option>
+                                            <option value="NO_ACTION">❌ No Action Scheduled</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
+                                    </div>
+
+                                    {/* Next Action Type Filter */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-purple-600 uppercase mb-1.5">Action Type</label>
+                                        <select value={selectedNextActionType} onChange={(e) => setSelectedNextActionType(e.target.value)} className="w-full appearance-none bg-purple-50/60 hover:bg-purple-100/60 border border-purple-200/80 text-purple-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Action Types</option>
+                                            <option value="Call">📞 Call</option>
+                                            <option value="Visit">🏠 Visit</option>
+                                            <option value="Revisit">🔄 Revisit</option>
+                                            <option value="Closing Meeting">💼 Closing Meeting</option>
+                                            <option value="Home Meeting">🏡 Home Meeting</option>
+                                            <option value="WhatsApp">💬 WhatsApp</option>
+                                            <option value="Email">✉️ Email</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-purple-400 pointer-events-none" />
+                                    </div>
+
+                                    {/* DNP Filter Dropdown */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-rose-500 uppercase mb-1.5">DNP Status</label>
+                                        <select value={selectedDnpFilter} onChange={(e) => setSelectedDnpFilter(e.target.value as any)} className="w-full appearance-none bg-rose-50/60 hover:bg-rose-100/60 border border-rose-200/80 text-rose-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-rose-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Leads (No DNP Filter)</option>
+                                            <option value="DNP_ONLY">🔥 DNP Only</option>
+                                            <option value="DNP_1">DNP 1</option>
+                                            <option value="DNP_2">DNP 2</option>
+                                            <option value="DNP_3PLUS">DNP 3+ (Retry Queue)</option>
+                                            <option value="NO_DNP">No DNP</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-rose-400 pointer-events-none" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 4: Date Created & Custom Date Range */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                    <Calendar size={14} className="text-emerald-600" /> Date Created & Timeline
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Date Range Preset */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Date Created Preset</label>
+                                        <select value={selectedDateRange} onChange={(e) => setSelectedDateRange(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Time</option>
+                                            <option value="TODAY">Today</option>
+                                            <option value="YESTERDAY">Yesterday</option>
+                                            <option value="7D">Last 7 Days</option>
+                                            <option value="30D">Last 30 Days</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                                    </div>
+
+                                    {/* Custom Date Pickers */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="block text-[10px] font-black text-blue-600 uppercase">Custom Specific Date / Range</label>
+                                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setCrmDateFilterMode('single'); setCrmStartDate(''); setCrmEndDate(''); }}
+                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
+                                                >
+                                                    Single
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setCrmDateFilterMode('range'); setCrmCustomDate(''); }}
+                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
+                                                >
+                                                    Range
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {crmDateFilterMode === 'single' ? (
                                             <input
                                                 type="date"
                                                 value={crmCustomDate}
@@ -2967,417 +3475,72 @@ END:VCARD\n`
                                                 }}
                                                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
                                             />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-500 block mb-0.5">Start Date:</label>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-2">
                                                 <input
                                                     type="date"
                                                     value={crmStartDate}
+                                                    placeholder="Start Date"
                                                     onChange={(e) => {
                                                         setCrmStartDate(e.target.value)
                                                         setCrmCustomDate('')
                                                     }}
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
                                                 />
-                                            </div>
-                                            <div>
-                                                <label className="text-[10px] font-bold text-slate-500 block mb-0.5">End Date:</label>
                                                 <input
                                                     type="date"
                                                     value={crmEndDate}
+                                                    placeholder="End Date"
                                                     onChange={(e) => {
                                                         setCrmEndDate(e.target.value)
                                                         setCrmCustomDate('')
                                                     }}
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
                                                 />
                                             </div>
-                                        </div>
-                                    )}
-
-                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setCrmCustomDate('')
-                                                setCrmStartDate('')
-                                                setCrmEndDate('')
-                                                setIsCrmDatePickerOpen(false)
-                                            }}
-                                            className="text-xs font-extrabold text-slate-400 hover:text-slate-600 cursor-pointer"
-                                        >
-                                            Clear Filter
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsCrmDatePickerOpen(false)}
-                                            className="bg-blue-600 text-white px-4 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-blue-500 cursor-pointer"
-                                        >
-                                            Apply Filter
-                                        </button>
+                                        )}
                                     </div>
                                 </div>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Searchable Campaign Filter (Multi-Select) */}
-                    <div className="relative flex-1" ref={campaignFilterRef}>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">
-                            Campaign {selectedCampaigns.length > 0 && `(${selectedCampaigns.length})`}
-                        </label>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsCampaignFilterOpen(!isCampaignFilterOpen)
-                                if (!isCampaignFilterOpen) setCampaignFilterSearch('')
-                            }}
-                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
-                                selectedCampaigns.length > 0 ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200/60 text-slate-700'
-                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
-                            title={selectedCampaigns.length === 0 ? 'All Campaigns' : selectedCampaigns.join(', ')}
-                        >
-                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedCampaigns.length === 0 ? 'All Campaigns' : selectedCampaigns.join(', ')}>
-                                <span className="truncate">
-                                    {selectedCampaigns.length === 0
-                                        ? 'All Campaigns'
-                                        : selectedCampaigns.length === 1
-                                            ? selectedCampaigns[0]
-                                            : `${selectedCampaigns.length} Campaigns Selected`}
-                                </span>
-                                {selectedCampaigns.length === 1 && activeCampaignSet.names.has(selectedCampaigns[0].toLowerCase()) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        <span>Active</span>
-                                    </span>
-                                )}
-                                {selectedCampaigns.length > 1 && (
-                                    <span className="bg-blue-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-md shrink-0">
-                                        {selectedCampaigns.length}
-                                    </span>
-                                )}
-                            </span>
-                            {selectedCampaigns.length > 0 ? (
-                                <span
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSelectedCampaigns([])
-                                        setCurrentPage(1)
-                                    }}
-                                    className="p-0.5 hover:bg-blue-200/60 rounded-md text-blue-600 ml-1 transition-colors shrink-0 cursor-pointer"
-                                    title="Clear Campaign Filter"
-                                >
-                                    <X size={13} />
-                                </span>
-                            ) : (
-                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isCampaignFilterOpen ? 'rotate-180' : ''}`} />
-                            )}
-                        </button>
-
-                        {isCampaignFilterOpen && (
-                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2.5 space-y-2 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
-                                {/* Search input */}
-                                <div className="relative">
-                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        autoFocus
-                                        placeholder="Search campaigns..."
-                                        value={campaignFilterSearch}
-                                        onChange={(e) => setCampaignFilterSearch(e.target.value)}
-                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                                    />
-                                    {campaignFilterSearch && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setCampaignFilterSearch('')}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Multi-select quick action header */}
-                                <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-500">
-                                    <span>
-                                        {selectedCampaigns.length > 0
-                                            ? `${selectedCampaigns.length} of ${uniqueCampaigns.length} campaigns selected`
-                                            : 'Filter by one or multiple campaigns'}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const filtered = uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
-                                                setSelectedCampaigns(Array.from(new Set([...selectedCampaigns, ...filtered])))
-                                                setCurrentPage(1)
-                                            }}
-                                            className="text-blue-600 hover:underline cursor-pointer"
-                                        >
-                                            Select All Filtered
-                                        </button>
-                                        <span className="text-slate-300">•</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedCampaigns([])
-                                                setCurrentPage(1)
-                                            }}
-                                            className="text-slate-400 hover:text-red-500 hover:underline cursor-pointer"
-                                        >
-                                            Clear
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Options List */}
-                                <div className="max-h-72 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedCampaigns([])
-                                            setCurrentPage(1)
-                                        }}
-                                        className={`w-full text-left px-3 py-2 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
-                                            selectedCampaigns.length === 0 ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <span>All Campaigns</span>
-                                        {selectedCampaigns.length === 0 && <CheckCircle2 size={13} />}
-                                    </button>
-
-                                    {uniqueCampaigns
-                                        .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
-                                        .map((camp, idx) => {
-                                            const isSelected = selectedCampaigns.includes(camp)
-                                            const isCampActive = activeCampaignSet.names.has(camp.toLowerCase())
-                                            return (
-                                                <div
-                                                    key={idx}
-                                                    onClick={() => {
-                                                        setSelectedCampaigns(prev =>
-                                                            prev.includes(camp) ? prev.filter(c => c !== camp) : [...prev, camp]
-                                                        )
-                                                        setCurrentPage(1)
-                                                    }}
-                                                    title={camp}
-                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer select-none border ${
-                                                        isSelected
-                                                            ? 'bg-blue-50/80 text-blue-900 border-blue-200/80 shadow-xs font-black'
-                                                            : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-transparent'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isSelected}
-                                                            onChange={() => {}}
-                                                            className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer shrink-0 pointer-events-none"
-                                                        />
-                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{camp}</span>
-                                                        {isCampActive && (
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
-                                                                isSelected ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                            }`}>
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                                <span>Active</span>
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-
-                                    {uniqueCampaigns.filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim())).length === 0 && (
-                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
-                                            No matching campaigns found
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Footer Action Bar */}
-                                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                                    <span className="text-[10px] font-bold text-slate-400">
-                                        Click options to toggle multiple
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsCampaignFilterOpen(false)}
-                                        className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
-                                    >
-                                        Apply & Close
-                                    </button>
-                                </div>
                             </div>
-                        )}
-                    </div>
+                        </div>
 
-                    {/* Searchable Lead Form / Source Filter */}
-                    <div className="relative flex-1" ref={formFilterRef}>
-                        <label className="block text-[9px] font-black text-slate-400 uppercase mb-1">Lead Form / Source</label>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsFormFilterOpen(!isFormFilterOpen)
-                                if (!isFormFilterOpen) setFormFilterSearch('')
-                            }}
-                            className={`w-full bg-slate-50 hover:bg-slate-100/80 border ${
-                                selectedForm ? 'border-purple-500 bg-purple-50/40 text-purple-900' : 'border-slate-200/60 text-slate-700'
-                            } text-xs font-bold rounded-xl py-3 pl-3 pr-3 text-left outline-none focus:ring-4 focus:ring-purple-500/20 transition-all cursor-pointer flex items-center justify-between shadow-xs`}
-                            title={selectedForm || 'All Lead Forms'}
-                        >
-                            <span className="truncate flex-1 flex items-center gap-1.5" title={selectedForm || 'All Lead Forms'}>
-                                <span className="truncate">{selectedForm ? selectedForm : 'All Lead Forms'}</span>
-                                {selectedForm && activeFormSet.names.has(selectedForm.toLowerCase()) && (
-                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                        <span>Active</span>
-                                    </span>
-                                )}
-                            </span>
-                            {selectedForm ? (
-                                <span
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        setSelectedForm('')
-                                        setCurrentPage(1)
-                                    }}
-                                    className="p-0.5 hover:bg-purple-200/60 rounded-md text-purple-600 ml-1 transition-colors shrink-0"
-                                    title="Clear Form Filter"
-                                >
-                                    <X size={13} />
+                        {/* Modal Footer */}
+                        <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex items-center justify-between gap-3 flex-shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedCampaigns([]);
+                                    setSelectedForm('');
+                                    setSelectedAgentFilter('ALL');
+                                    setSelectedDateRange('ALL');
+                                    setCrmCustomDate('');
+                                    setCrmStartDate('');
+                                    setCrmEndDate('');
+                                    setSelectedDnpFilter('ALL');
+                                    setSelectedNextActionFilter('ALL');
+                                    setSelectedNextActionType('ALL');
+                                    setSelectedSpecificStage('ALL');
+                                    setCurrentPage(1);
+                                }}
+                                className="text-xs font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-3.5 py-2 rounded-xl transition-all cursor-pointer"
+                            >
+                                Reset All Filters
+                            </button>
+
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-bold text-slate-500 hidden sm:inline">
+                                    Showing <strong className="text-slate-900 font-black">{filteredLeads.length}</strong> matching leads
                                 </span>
-                            ) : (
-                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${isFormFilterOpen ? 'rotate-180' : ''}`} />
-                            )}
-                        </button>
-
-                        {isFormFilterOpen && (
-                            <div className="absolute left-0 top-full mt-1.5 bg-white border border-slate-200/80 rounded-2xl shadow-2xl z-50 p-2 space-y-1.5 min-w-[320px] sm:min-w-[460px] md:min-w-[540px] max-w-[92vw] sm:max-w-2xl animate-in fade-in zoom-in-95 duration-150">
-                                {/* Search input */}
-                                <div className="relative">
-                                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                    <input
-                                        type="text"
-                                        autoFocus
-                                        placeholder="Search lead forms..."
-                                        value={formFilterSearch}
-                                        onChange={(e) => setFormFilterSearch(e.target.value)}
-                                        className="w-full pl-8 pr-7 py-2 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all"
-                                    />
-                                    {formFilterSearch && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormFilterSearch('')}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    )}
-                                </div>
-
-                                {/* Options List */}
-                                <div className="max-h-72 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedForm('')
-                                            setCurrentPage(1)
-                                            setIsFormFilterOpen(false)
-                                        }}
-                                        className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-extrabold flex items-center justify-between transition-all cursor-pointer ${
-                                            !selectedForm ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <span>All Lead Forms</span>
-                                        {!selectedForm && <CheckCircle2 size={13} />}
-                                    </button>
-
-                                    {uniqueForms
-                                        .filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim()))
-                                        .map((form, idx) => {
-                                            const isSelected = selectedForm === form
-                                            const isFormActive = activeFormSet.names.has(form.toLowerCase())
-                                            return (
-                                                <button
-                                                    key={idx}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedForm(form)
-                                                        setCurrentPage(1)
-                                                        setIsFormFilterOpen(false)
-                                                    }}
-                                                    title={form}
-                                                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
-                                                        isSelected ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                        <span className="whitespace-normal break-words leading-relaxed text-left flex-1">{form}</span>
-                                                        {isFormActive && (
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-2xs ${
-                                                                isSelected ? 'bg-white/20 text-white border border-white/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                            }`}>
-                                                                <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'} animate-pulse`}></span>
-                                                                <span>Active</span>
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {isSelected && <CheckCircle2 size={14} className="shrink-0 mt-0.5" />}
-                                                </button>
-                                            )
-                                        })}
-
-                                    {uniqueForms.filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim())).length === 0 && (
-                                        <div className="py-4 text-center text-xs font-semibold text-slate-400">
-                                            No matching lead forms found
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Specific Pipeline Stage Filter */}
-                    <div className="relative flex-1">
-                        <div className="flex justify-between items-center mb-1">
-                            <label className="block text-[9px] font-black text-indigo-600 uppercase">
-                                {activeSection === 'ongoing' ? 'Filter Ongoing Stage' : activeSection === 'not_interested' ? 'Filter Not Interested Stage' : 'Specific Stage Filter'}
-                            </label>
-                            {isAdminLike && (
                                 <button
                                     type="button"
-                                    onClick={() => router.push(`/dashboard/profile/stages${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-                                    className="text-[9px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer"
+                                    onClick={() => setShowFilters(false)}
+                                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-black px-6 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
                                 >
-                                    ⚙️ Edit Stages
+                                    Apply & View Results
                                 </button>
-                            )}
+                            </div>
                         </div>
-                        <select 
-                            value={selectedSpecificStage} 
-                            onChange={(e) => {
-                                setSelectedSpecificStage(e.target.value)
-                                setCurrentPage(1)
-                            }} 
-                            className="w-full appearance-none bg-indigo-50/60 hover:bg-indigo-100/60 border border-indigo-200/80 text-indigo-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer truncate"
-                        >
-                            <option value="ALL">All Stages in {activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}</option>
-                            {availableStagesForSection.map(s => (
-                                <option key={s.id} value={s.name}>{s.name}</option>
-                            ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
                     </div>
-
-                    {(selectedCampaigns.length > 0 || selectedForm || selectedAgentFilter !== 'ALL' || selectedDateRange !== 'ALL' || crmCustomDate || (crmStartDate && crmEndDate) || selectedDnpFilter !== 'ALL' || selectedNextActionFilter !== 'ALL' || selectedNextActionType !== 'ALL' || selectedSpecificStage !== 'ALL') && (
-                        <div className="col-span-full flex justify-end">
-                            <button onClick={() => { setSelectedCampaigns([]); setSelectedForm(''); setSelectedAgentFilter('ALL'); setSelectedDateRange('ALL'); setCrmCustomDate(''); setCrmStartDate(''); setCrmEndDate(''); setSelectedDnpFilter('ALL'); setSelectedNextActionFilter('ALL'); setSelectedNextActionType('ALL'); setSelectedSpecificStage('ALL'); }} className="px-4 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">Clear All Filters</button>
-                        </div>
-                    )}
                 </div>
             )}
 
