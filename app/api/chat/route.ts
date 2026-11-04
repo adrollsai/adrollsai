@@ -6,7 +6,7 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
-import { getRandomReferenceTemplate } from '@/utils/reference-templates-data';
+import { getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -97,6 +97,8 @@ export async function POST(request: Request) {
         userInstructions, 
         propertyDescription, 
         propertyTitle,       
+        propertyPrice,
+        propertyLocation,
         contactNumber, 
         logoUrl,
         propImages, 
@@ -259,21 +261,56 @@ export async function POST(request: Request) {
         validPropImages = [];
     }
     const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]).map(sanitizeImageUrl) : [];
+
+    let templateMeta = null;
     let effectiveTemplateUrl = templateUrl;
-    if (!effectiveTemplateUrl && !isEdit) {
+    if (effectiveTemplateUrl) {
+      templateMeta = getReferenceTemplate(effectiveTemplateUrl);
+      if (templateMeta && templateMeta.url) {
+        effectiveTemplateUrl = templateMeta.url;
+      }
+    } else if (!isEdit) {
       const userSelected = Array.isArray(currentProfile?.selected_templates) && currentProfile.selected_templates.length > 0
         ? currentProfile.selected_templates
         : undefined;
-      const randomTmpl = getRandomReferenceTemplate(userSelected);
-      effectiveTemplateUrl = randomTmpl.url;
-      logToFile(`[CHAT ROUTE] No template specified: randomly picked user reference design "${randomTmpl.name}" (${randomTmpl.url})`);
+      templateMeta = getRandomReferenceTemplate(userSelected);
+      effectiveTemplateUrl = templateMeta?.url || null;
+      logToFile(`[CHAT ROUTE] No template specified: randomly picked user reference design "${templateMeta?.name}" (${effectiveTemplateUrl})`);
     }
-    const validTemplate = effectiveTemplateUrl && !excludedImages.includes(effectiveTemplateUrl) ? filterImages([effectiveTemplateUrl]).map(sanitizeImageUrl) : [];
-    
-    // Capped at 16 images maximum for GPT 2 model
-    const allInputImages = [...validPropImages, ...validLogo].slice(0, 16);
 
+    const validTemplate = (effectiveTemplateUrl && !excludedImages.includes(effectiveTemplateUrl) && typeof effectiveTemplateUrl === 'string' && effectiveTemplateUrl.startsWith('http')) 
+      ? [sanitizeImageUrl(effectiveTemplateUrl)] 
+      : [];
     const hasReference = validTemplate.length > 0;
+
+    // Build allInputImages ensuring the reference template image is passed to the image-to-image model
+    let allInputImages: string[] = [];
+    const templateRefUrl = hasReference ? validTemplate[0] : null;
+    const singleLogo = (validLogo.length > 0 && !excludeLogo && !validLogo[0].toLowerCase().includes('nobogent') && !validLogo[0].endsWith('/logo.png')) ? validLogo[0] : null;
+
+    if (hasReference && templateRefUrl) {
+      if (validPropImages.length > 0) {
+        // IMAGE 1: User's property photo
+        // IMAGE 2: Reference template ad creative
+        // IMAGE 3: Business logo (if present)
+        allInputImages.push(validPropImages[0]);
+        allInputImages.push(templateRefUrl);
+        if (singleLogo && !allInputImages.includes(singleLogo)) {
+          allInputImages.push(singleLogo);
+        }
+      } else {
+        // No property photo (brand campaign or text-only prompt)
+        // IMAGE 1: Reference template ad creative
+        // IMAGE 2: Business logo (if present)
+        allInputImages.push(templateRefUrl);
+        if (singleLogo && !allInputImages.includes(singleLogo)) {
+          allInputImages.push(singleLogo);
+        }
+      }
+    } else {
+      // No reference template selected
+      allInputImages = [...validPropImages, ...validLogo].slice(0, 16);
+    }
 
     // Multimodal Visual Style Analysis using Gemini if a reference ad image is selected
     let styleDescription = "";
@@ -284,29 +321,20 @@ export async function POST(request: Request) {
         const refRes = await fetch(refUrl);
         if (refRes.ok) {
           const refBuffer = Buffer.from(await refRes.arrayBuffer());
-          const refMimeType = refRes.headers.get('content-type') || 'image/png';
+          const refMimeType = refRes.headers.get('content-type') || 'image/jpeg';
           
           logToFile("Calling Gemini to analyze reference creative style...");
-          const styleAnalysisInstruction = `You are a Master Creative Director & Visual System Architect. 
-Your task is to analyze this reference creative advertisement and deconstruct it into a universal "Graphic Design System Blueprint".
-
-UNIVERSAL TWO-LAYER DECONSTRUCTION METHOD:
-Layer 1 — STRIP & OMIT CONTENT ASSETS (ZERO-ELEMENT-BLEED):
-- Do NOT describe, transcribe, or mention any specific physical building, house, villa, car, human face, specific brand name, telephone number, address, or QR code found in this image. They are content assets and MUST NOT be mentioned.
-
-Layer 2 — FAITHFULLY EXTRACT VISUAL DESIGN BLUEPRINT:
-Deconstruct the visual creative strictly into its 4 universal design parameters:
-1. GRAPHIC CONTAINER & SIGNATURE FRAMING GEOMETRY: Describe the exact layout structure and geometric container shape framing or holding the hero image (e.g. custom icon silhouette, floating card, geometric mask, split container, or full-bleed grid). Explicitly instruct how the hero image should be framed.
+          const styleAnalysisInstruction = `You are a Master Creative Director & Visual System Architect. Analyze this reference luxury advertising creative and deconstruct it into a universal "Graphic Design System Blueprint":
+1. GRAPHIC CONTAINER & SIGNATURE FRAMING GEOMETRY: Describe the exact layout structure and geometric container shape holding or framing the hero image (e.g. custom icon silhouette, floating card, geometric mask, split container, arch, or full-bleed grid). Explicitly instruct how the hero photo should be framed.
 2. COLOR PALETTE & LIGHTING MOOD: Primary background colors, accent colors, translucent pill gradients, contrast ratio, and ambient lighting mood.
-3. HAUTE-COUTURE TYPOGRAPHY SYSTEM: Font pairing styles (e.g., high-fashion serif header like Bodoni/Cormorant or sleek geometric sans-serif like Trajan/Futura), champagne gold foil or crisp ivory-white tones (NEVER cheap flat yellow gradients), wide kerning/letter-spacing for subtext, and text alignment.
-4. DECORATIVE BADGES & ICON PLACEMENT: Placement zones for feature pills, logo stamps, CTA banners, and decorative badge elements.
-
-Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this complete advertising design system so an AI image model can apply this exact layout framework and visual branding to ANY new product.`;
+3. HAUTE-COUTURE TYPOGRAPHY SYSTEM: Font pairing styles (e.g., high-fashion serif header like Bodoni/Cormorant or sleek geometric sans-serif like Trajan/Futura), champagne gold foil or crisp ivory-white tones, wide kerning/letter-spacing, and text alignment.
+4. DECORATIVE BADGES & ICON PLACEMENT: Placement zones for feature pills, logo stamps, starting price ribbons, CTA banners, and decorative badge elements.
+Output a dense single paragraph describing this exact graphic design system so an AI image model can apply this layout framework to any new product.`;
 
           let geminiResult;
           try {
             geminiResult = await generateText({
-              model: google('gemini-3.5-flash'),
+              model: google('gemini-2.5-flash'),
               messages: [
                 {
                   role: 'user',
@@ -325,7 +353,7 @@ Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this com
               ]
             });
           } catch (geminiErr1) {
-            logToFile(`Failed with gemini-3.5-flash: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
+            logToFile(`Failed with gemini-2.5-flash: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
             geminiResult = await generateText({
               model: google('gemini-3-flash-preview'),
               messages: [
@@ -347,7 +375,7 @@ Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this com
             });
           }
           styleDescription = geminiResult.text.trim();
-          logToFile(`Successfully extracted style description from reference creative: ${styleDescription}`);
+          logToFile(`Successfully extracted style description from reference creative: ${styleDescription.slice(0, 100)}...`);
         } else {
           logToFile(`Failed to fetch reference creative file: Status ${refRes.status}`);
         }
@@ -356,12 +384,12 @@ Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this com
       }
     }
 
-    // Call Master Designer LLM if we are NOT in edit mode (handles both reference-guided and promptless generations)
+    // Call Master Designer LLM if we are NOT in edit mode and NO reference template is selected
     const finalContactNumber = contactNumber || profile?.contact_number || '';
     let designerPrompt = "";
-    if (!isEdit) {
+    if (!isEdit && !hasReference) {
       try {
-        logToFile("Calling Gemini Master Designer to compose optimized image generation prompt...");
+        logToFile("Calling Master Designer to compose optimized image generation prompt...");
         
         // Dynamically compute unique visual archetype & human persona for maximum generation variety
         const requestSeed = `${Date.now()}_${Math.random()}_${propertyTitle || ''}_${userInstructions || ''}`;
@@ -381,16 +409,7 @@ Write a structured, single-paragraph VISUAL DESIGN BLUEPRINT describing this com
 
         logToFile(`DYNAMIC VARIATION GENERATED | HasReference: ${hasReference} | Archetype: ${activeArchetype.name} | Persona: ${activePersona.name}`);
 
-        const styleGuidanceSection = hasReference && styleDescription
-          ? `CRITICAL REFERENCE DESIGN BLUEPRINT (Extracted from User Reference Image):
-${styleDescription}
-
-UNIVERSAL MASTER DESIGNER SYNTHESIS INSTRUCTION:
-Synthesize the extracted reference blueprint above into a 5-star luxury social media campaign creative for the user's product.
-- Faithfully preserve and reproduce the reference creative's exact visual layout structure, container framing geometry, color scheme, and typography placement.
-- Place the user's actual property/product photos as the hero visual inside the reference's signature container framing geometry.
-- Render all text in modern, crisp, flat typography with high-contrast legibility.`
-          : `MANDATORY CREATIVE DESIGN BLUEPRINT (FOR VARIETY & UNIQUENESS):
+        const styleGuidanceSection = `MANDATORY CREATIVE DESIGN BLUEPRINT (FOR VARIETY & UNIQUENESS):
 - ${activeArchetype.promptInstructions}
 - LIGHTING & ATMOSPHERE: ${activeArchetype.lighting}.
 - VISUAL COMPOSITION: ${activeArchetype.composition}.
@@ -403,6 +422,8 @@ Here is the information provided by the user:
 - Campaign Type: ${effectiveIsBrandOnly ? 'Brand & Service Campaign (No Specific Product Selected)' : 'Product / Offering Campaign'}
 - Product/Service Title: ${effectiveIsBrandOnly ? 'N/A (Brand / Service Ad)' : (propertyTitle || 'N/A')}
 - Product/Service Description: ${effectiveIsBrandOnly ? 'N/A' : (propertyDescription || 'N/A')}
+${propertyPrice ? `- Starting Price / Price: ${propertyPrice}` : ''}
+${propertyLocation ? `- Location: ${propertyLocation}` : ''}
 - Business Name: ${businessName || 'N/A'}
 - Brand/Business Info: ${cleanBusinessInfo || profile?.mission_statement || 'N/A'}
 - Target Industry: ${industry || 'N/A'}
@@ -470,10 +491,9 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
             ...imageParts
           ];
 
-          let geminiResult;
           try {
-            geminiResult = await generateText({
-              model: google('gemini-3.5-flash'),
+            const { text } = await generateText({
+              model: google('gemini-2.5-flash'),
               messages: [
                 {
                   role: 'user',
@@ -481,9 +501,11 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
                 }
               ]
             });
-          } catch (geminiErr1) {
-            logToFile(`Failed with gemini-3.5-flash for Master Designer: ${(geminiErr1 as Error).message}. Retrying with gemini-3-flash-preview...`);
-            geminiResult = await generateText({
+            designerPrompt = text.trim();
+            logToFile(`Master Designer prompt composed via Gemini 2.5 Flash: ${designerPrompt.slice(0, 100)}...`);
+          } catch (geminiErr: any) {
+            logToFile(`Gemini Master Designer failed: ${geminiErr.message}. Trying preview model...`);
+            const { text } = await generateText({
               model: google('gemini-3-flash-preview'),
               messages: [
                 {
@@ -492,50 +514,74 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
                 }
               ]
             });
+            designerPrompt = text.trim();
           }
-
-          designerPrompt = geminiResult.text.trim();
-          logToFile(`Master Designer generated prompt via Gemini fallback: ${designerPrompt}`);
         }
       } catch (err: any) {
         logToFile(`Error in Master Designer LLM flow: ${err.message}`);
       }
     }
 
-    const referencePreamble = buildReferenceCreativePreamble(validPropImages.length, validLogo.length > 0, hasReference);
-
     let finalImagePrompt = "";
     if (isEdit) {
       finalImagePrompt = `Modify the input image according to these custom instructions: "${userInstructions}". 
 Make the edits clean, professional, and blend seamlessly with the original content. Do NOT add any messy or gibberish text overlays unless explicitly requested. Keep the visual theme intact while applying the edits.`;
-    } else if (hasReference && designerPrompt) {
-      finalImagePrompt = `${referencePreamble}${designerPrompt}`;
     } else if (hasReference) {
-      const promptParts = [
-          referencePreamble,
-          `Create a clean, ultra-premium, agency-level ad creative design using the Graphic Design Blueprint below.`,
-          `CRITICAL QUALITY DIRECTIVES (SEASONED DIRECT-RESPONSE STANDARDS):`,
-          `- PROHIBITION ON CHEAP GRAPHICS & 3D CLIPS: Strictly NEVER enclose images inside oval masks or add floating 3D glass cubes, fake stock market lines, or circular gold ribbon stickers.`,
-          `- CLEAN TYPOGRAPHY: Typography must be modern, flat, clean, and crisp (minimalist geometric sans-serif or elegant high-contrast serif). Avoid fake 3D gold bevel gradients, neon gaming buttons, or lines of circular clip-art icons.`,
-          `- SEAMLESS NATURAL INTEGRATION: Human subjects and product visuals must be seamlessly integrated into natural photorealistic scene lighting, never floating over graphic shapes.`,
-          effectiveIsBrandOnly
-            ? `CRITICAL RULE FOR HERO SUBJECT: No specific product is selected. Focus on high-impact visual commercial imagery representing ${businessName || 'the business'} matching the user's custom instructions.`
-            : `CRITICAL RULE FOR HERO SUBJECT: The building, product, or property MUST come 100% strictly from the provided input photos (or description). Do NOT invent or copy any unrelated subject. Place the user's subject inside the design layout specified below.`,
-          excludeHousePhoto 
-            ? `STRICT NEGATIVE DIRECTIVE: Do NOT render any house, kothi, villa, or building exterior image. Focus on abstract luxury backgrounds, minimalist typography, location map graphics, or lifestyle close-ups.` 
-            : (effectiveIsBrandOnly ? '' : `Use the user's actual product photos as the central visual hero asset of the canvas.`),
-          propertyTitle ? `Subject: ${propertyTitle}` : '',
-          propertyDescription ? `Details/Description: ${propertyDescription}` : '',
-          (businessName && !excludeBusinessInfo) ? `Business Name: ${businessName}` : '',
-          (validLogo.length > 0 && !excludeLogo) ? `Include the provided business logo cleanly in an upper corner as a razor-sharp vector mark. STRICT ANTI-SMUDGE DIRECTIVE: Do NOT smudge, melt, blur, distort, or warp the logo icon or font lettering.` : '',
-          (finalContactNumber && !excludeBusinessInfo) ? `Mandatory Contact Info: Display the contact number "${finalContactNumber}" cleanly and prominently in a sleek, uncluttered footer bar.` : '',
-          `Do NOT add any messy or gibberish text overlays on the image unless explicitly requested. Keep the image clean, professional, and visually focused.`,
-          `IMPORTANT NEGATIVE CONSTRAINT: Do NOT copy any text, barcodes, QR codes, website URLs, or license/RERA numbers directly from the reference image. If the reference creative contains a QR code, license number, or specific website address, omit them entirely from the final generated image.`,
-          (!userInstructions?.toLowerCase().match(/\b(no|exclude|without|dont|don't|remove|skip)\s+(people|humans|person|family|man|woman)\b/i)) ? `Include close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic humans (e.g. a happy customer, team professional, or entrepreneur, depending on the product context) in the foreground showing happy, positive, and smiling facial expressions of joy. Skin must have true-to-life detailing (natural skin pores, fine textures, real skin creases, and subtle micro-details) looking completely authentic, avoiding any plastic, airbrushed, synthetic, or shiny AI-generated look. The ethnicity of the humans must match the geographical region of the business (e.g. South Asian/Indian ethnicity if the business context or product is located in India, Caucasian/Western otherwise).` : '',
-          styleDescription ? `=== EXTRACTED GRAPHIC DESIGN BLUEPRINT (APPLY THIS STYLE FRAMEWORK TO THE USER'S PRODUCT) ===\n${styleDescription}` : '',
-          userInstructions ? `Custom Instructions: ${userInstructions}` : ''
-      ].filter(Boolean);
-      finalImagePrompt = promptParts.join("\n");
+      const tmplName = templateMeta?.name || 'Curated Reference Luxury Design';
+      const tmplCat = templateMeta?.category || 'Ultra Luxury';
+      const tmplBadge = templateMeta?.badge || 'EXCLUSIVE OFFER';
+      const effectiveAspect = aspectRatio || "3:4";
+
+      if (validPropImages.length > 0) {
+        finalImagePrompt = `Create an ultra-premium, agency-level ad creative design in ${effectiveAspect} portrait ratio for Instagram/Meta ad campaigns using the Graphic Design Blueprint below.
+
+=== EXTRACTED GRAPHIC DESIGN BLUEPRINT (APPLY THIS STYLE FRAMEWORK TO THE USER'S PRODUCT/PROPERTY) ===
+${styleDescription || `Style: ${tmplName} (${tmplCat}). Signature layout with prominent starting price ribbon${propertyPrice ? ` (${propertyPrice})` : ''}, modern luxury typography, and urgent CTA ribbon.`}
+
+CRITICAL DIRECTIVES:
+- IMAGE 1 is the user's actual product/property photo: Place this photo as the central visual hero of the canvas inside the reference container framing geometry.
+- IMAGE 2 is the reference creative design blueprint: Faithfully reproduce the exact container framing, layout geometry, typography style, color scheme, and badge placement of IMAGE 2 for the subject in IMAGE 1.
+${effectiveIsBrandOnly ? `- Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `- Subject: ${propertyTitle}` : '')}
+${businessName && !excludeBusinessInfo ? `- Business / Company: ${businessName}` : ''}
+${propertyPrice ? `- Starting Price / Price Badge: ${propertyPrice}` : ''}
+${propertyLocation ? `- Location: ${propertyLocation}` : ''}
+${propertyDescription ? `- Details & Amenities: ${propertyDescription}` : ''}
+- Badge Tag: ${tmplBadge}
+${finalContactNumber && !excludeBusinessInfo ? `- Contact / CTA: ${finalContactNumber}` : ''}
+${userInstructions ? `- Additional Custom Instructions: ${userInstructions}` : ''}
+- Typography: Luxury champagne gold and ivory tones, clean Trajan/Bodoni serif headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
+
+CRITICAL BRANDING & URL RESTRICTIONS:
+${businessName ? `- Business / Developer Name: "${businessName}". STRICTLY and ONLY display this exact company name.` : ''}
+- STRICT PROHIBITION: Do NOT invent, hallucinate, synthesize, or display ANY website URL, domain name, or dot-com address anywhere on the canvas (specifically NEVER display "nobogent.com", or any .com, .in, .ae address). There is NO website URL.
+- NEVER display "nobogent.com", "Nobogent", or any third-party agency name on the ad creative.
+${singleLogo ? `- IMAGE 3 is the official business logo: Place it cleanly in an upper corner as a razor-sharp vector mark. Strictly do NOT smudge, melt, or distort it.` : (businessName ? `- If no brand logo is provided, display the Business name "${businessName}" in clean luxury typography at the top.` : '')}
+- Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 2.${finalContactNumber ? ` Only use the contact number: ${finalContactNumber}.` : ''}`;
+      } else {
+        finalImagePrompt = `Create an ultra-premium, agency-level ad creative design in ${effectiveAspect} portrait ratio for Instagram/Meta ad campaigns using the Graphic Design Blueprint below.
+
+=== EXTRACTED GRAPHIC DESIGN BLUEPRINT (APPLY THIS STYLE FRAMEWORK) ===
+${styleDescription || `Style: ${tmplName} (${tmplCat}). Signature layout with prominent starting price ribbon${propertyPrice ? ` (${propertyPrice})` : ''}, modern typography, and urgent CTA ribbon.`}
+
+CRITICAL DIRECTIVES:
+- IMAGE 1 is the reference creative design blueprint: Faithfully reproduce the exact container framing, layout geometry, typography style, color scheme, and badge placement of IMAGE 1 for the advertised offering.
+${effectiveIsBrandOnly ? `- Subject: Brand Campaign for ${businessName || 'Business'}` : (propertyTitle ? `- Subject: ${propertyTitle}` : '')}
+${businessName && !excludeBusinessInfo ? `- Business / Company: ${businessName}` : ''}
+${propertyPrice ? `- Starting Price / Price Badge: ${propertyPrice}` : ''}
+${propertyLocation ? `- Location: ${propertyLocation}` : ''}
+${propertyDescription ? `- Details & Amenities: ${propertyDescription}` : ''}
+- Badge Tag: ${tmplBadge}
+${finalContactNumber && !excludeBusinessInfo ? `- Contact / CTA: ${finalContactNumber}` : ''}
+${userInstructions ? `- Additional Custom Instructions: ${userInstructions}` : ''}
+- Typography: Luxury champagne gold and ivory tones, clean Trajan/Bodoni serif headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
+
+CRITICAL BRANDING & URL RESTRICTIONS:
+${businessName ? `- Business / Developer Name: "${businessName}". STRICTLY and ONLY display this exact company name.` : ''}
+- STRICT PROHIBITION: Do NOT invent, hallucinate, synthesize, or display ANY website URL, domain name, or dot-com address anywhere on the canvas (specifically NEVER display "nobogent.com", or any .com, .in, .ae address). There is NO website URL.
+- NEVER display "nobogent.com", "Nobogent", or any third-party agency name on the ad creative.
+${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an upper corner as a razor-sharp vector mark. Strictly do NOT smudge, melt, or distort it.` : (businessName ? `- If no brand logo is provided, display the Business name "${businessName}" in clean luxury typography at the top.` : '')}
+- Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 1.${finalContactNumber ? ` Only use the contact number: ${finalContactNumber}.` : ''}`;
+      }
     } else {
       const disambiguationPreamble = buildImageDisambiguationPreamble(validPropImages.length, validLogo.length > 0);
       const fallbackPrompt = [

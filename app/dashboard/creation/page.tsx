@@ -809,6 +809,8 @@ export default function CreationPage() {
             const payload = {
                 propertyTitle: effectiveTitle,
                 propertyDescription: effectiveDescription,
+                propertyPrice: creativeFlow.product?.price || '',
+                propertyLocation: creativeFlow.product?.address || (creativeFlow.product as any)?.location || '',
                 creativeCategory: creativeFlow.creativeCategory || '',
                 styleAesthetic: assignedStyleName,
                 templateUrl: assignedTemplateUrl,
@@ -1541,6 +1543,8 @@ export default function CreationPage() {
         userInstructions: userText,
         propertyDescription: isEditMode ? "" : (prop?.description || ""),
         propertyTitle: isEditMode ? "" : (prop?.title || ""),
+        propertyPrice: isEditMode ? "" : (prop?.price || ""),
+        propertyLocation: isEditMode ? "" : (prop?.address || (prop as any)?.location || ""),
         contactNumber: contactInfo, // Corrected reference
         logoUrl: accountLogo,       // Corrected reference
         propImages: finalPropImages,
