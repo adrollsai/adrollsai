@@ -182,6 +182,10 @@ window.SITE = {
   }
 
   // Extract params with fallback to sessionStorage only if parameter is omitted from URL
+  const targetUserId = urlParams.get('userId') || urlParams.get('u') || urlParams.get('agentId') || urlParams.get('user_id') || '';
+  if (targetUserId) {
+    try { sessionStorage.setItem('nobogent_user_id', targetUserId); } catch(e) {}
+  }
   const companyName = urlParams.has('companyName') ? (urlParams.get('companyName') || '') : (savedBranding.companyName || '');
   const projectTitle = urlParams.has('projectTitle') ? (urlParams.get('projectTitle') || '') : (savedBranding.projectTitle || '');
   const projectPrice = urlParams.has('projectPrice') ? (urlParams.get('projectPrice') || '') : (savedBranding.projectPrice || '');
@@ -396,10 +400,18 @@ window.SITE = {
         document.body.classList.remove('page-transitioning');
         document.body.classList.add('page-leaving');
 
-        // Preserve branding query params on target URL
+        // Preserve branding query params & userId on target URL
         let targetUrl = href;
         const currentQuery = window.location.search;
-        if (currentQuery && !targetUrl.includes('?')) {
+        let storedUserId = targetUserId;
+        if (!storedUserId) {
+          try { storedUserId = sessionStorage.getItem('nobogent_user_id') || ''; } catch (e) {}
+        }
+
+        if (storedUserId && !targetUrl.includes('userId=')) {
+          const sep = targetUrl.includes('?') ? '&' : '?';
+          targetUrl += `${sep}userId=${encodeURIComponent(storedUserId)}`;
+        } else if (currentQuery && !targetUrl.includes('?')) {
           targetUrl += currentQuery;
         }
 

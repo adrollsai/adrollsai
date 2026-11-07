@@ -45,15 +45,50 @@ export function createVoiceTools(supabase: SupabaseClient, userId: string) {
       },
     }),
 
-    prepare_voice_campaign: tool({
-      description: 'Prepares an automated AI voice calling campaign to follow up with leads (e.g., qualifying or booking appointments). Flags for Human-in-the-Loop user approval.',
+    update_default_voice_settings: tool({
+      description: 'Updates the user account DEFAULT 24/7 background calling agent settings (used for auto-calling new inbound leads and ongoing unconnected follow-ups). Changes default voice character, default language, prompt script, or auto-call toggle without launching a bulk campaign.',
       inputSchema: z.object({
-        leadIds: z.array(z.string()).describe('List of lead UUIDs to call'),
-        objective: z.string().default('book_appointment').describe('Call objective: book_appointment, qualify, re_engage, site_visit'),
-        concurrency: z.number().default(2).describe('Number of simultaneous calls (1-5)'),
-        customGreeting: z.string().optional().describe('Personalized greeting or property mention'),
+        voiceName: z.string().optional().describe('Voice model name/character (e.g., "Aoede", "Puck", "Kore", "Fenrir", "Charon", "Aditi")'),
+        defaultCallingLanguage: z.enum(['hinglish', 'english', 'hindi']).optional().describe('Primary language for incoming/new lead calls'),
+        autoCallNewLeads: z.boolean().optional().describe('Whether to automatically place an AI qualification call immediately when a new lead enters the CRM'),
+        systemPromptScript: z.string().optional().describe('The core conversation script and qualification guidelines for the default bot'),
       }),
-      execute: async ({ leadIds, objective, concurrency, customGreeting }) => {
+      execute: async ({ voiceName, defaultCallingLanguage, autoCallNewLeads, systemPromptScript }) => {
+        try {
+          const updatePayload: Record<string, any> = {};
+          if (voiceName !== undefined) updatePayload.voice_name = voiceName;
+          if (defaultCallingLanguage !== undefined) updatePayload.default_calling_language = defaultCallingLanguage;
+          if (autoCallNewLeads !== undefined) updatePayload.auto_call_new_leads = autoCallNewLeads;
+          if (systemPromptScript !== undefined) updatePayload.custom_prompt = systemPromptScript;
+
+          const { error } = await supabase
+            .from('profiles')
+            .update(updatePayload)
+            .eq('id', userId);
+
+          if (error) throw error;
+
+          return {
+            success: true,
+            message: 'Default background calling agent settings updated successfully.',
+            updatedSettings: updatePayload,
+          };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to update default voice settings' };
+        }
+      },
+    }),
+
+    launch_bulk_calling_campaign: tool({
+      description: 'Launches or prepares a separate, on-demand bulk outbound AI calling campaign to a filtered list of leads using a custom one-time campaign script and voice. Kept completely separate from the default ongoing follow-up bot.',
+      inputSchema: z.object({
+        leadIds: z.array(z.string()).describe('Target lead UUIDs to call in this blast'),
+        campaignName: z.string().describe('Campaign name (e.g., "Diwali Luxury Villa Blast", "Weekend Open House")'),
+        customCampaignScript: z.string().describe('The dedicated one-time pitch/script for this bulk campaign'),
+        voiceName: z.string().default('Aoede').describe('Voice character for this campaign'),
+        concurrency: z.number().default(3).describe('Number of simultaneous calls (1-5)'),
+      }),
+      execute: async ({ leadIds, campaignName, customCampaignScript, voiceName, concurrency }) => {
         try {
           const totalCalls = leadIds.length;
           const estimatedCostInr = (totalCalls * 2.5).toFixed(2); // Avg telephony cost
@@ -61,19 +96,21 @@ export function createVoiceTools(supabase: SupabaseClient, userId: string) {
           return {
             success: true,
             requiresApproval: true,
+            campaignName,
             totalCalls,
             concurrency,
             estimatedCost: `₹${estimatedCostInr} INR`,
             actionPayload: {
               actionType: 'bulk_call',
-              title: `Launch Voice Followup Campaign (${totalCalls} leads)`,
-              description: `Autonomous AI calling campaign with objective "${objective}". Concurrency: ${concurrency} parallel calls.`,
+              title: `Launch Calling Campaign: "${campaignName}"`,
+              description: `On-demand blast to ${totalCalls} leads with custom script using voice "${voiceName}". Concurrency: ${concurrency} simultaneous lines.`,
               estimatedCost: `₹${estimatedCostInr}`,
               payload: {
                 leadIds,
-                objective,
+                campaignName,
+                customCampaignScript,
+                voiceName,
                 concurrency,
-                customGreeting,
               },
             },
           };

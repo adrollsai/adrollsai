@@ -28,6 +28,7 @@
     "@capacitor/splash-screen": "^8.0.2",
     "@capacitor/status-bar": "^8.0.3",
     "@ducanh2912/next-pwa": "^10.2.9",
+    "@e2b/code-interpreter": "^2.9.1",
     "@google/genai": "^1.51.0",
     "@google/generative-ai": "^0.24.1",
     "@remotion/bundler": "4.0.460",

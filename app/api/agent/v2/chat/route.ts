@@ -63,9 +63,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
     }
 
+    // Detect if vision or video media is attached in conversation
     const hasVision = messages.some((m: any) =>
-      (typeof m.content === 'string' && m.content.includes('[Attached File') && m.content.includes('(image)')) ||
-      (Array.isArray(m.parts) && m.parts.some((p: any) => p.type === 'image' || p.image))
+      (typeof m.content === 'string' && m.content.includes('[Attached File') && (m.content.includes('(image)') || m.content.includes('(video)'))) ||
+      (Array.isArray(m.parts) && m.parts.some((p: any) => p.type === 'image' || p.image || p.type === 'video' || p.video))
     );
 
     const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, user.id);
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
         },
       });
     } catch (modelErr: any) {
-      console.warn('[Nobo Agent] Primary model failed, falling back to Gemini 2.5 Flash:', modelErr?.message);
+      console.warn('[Nobo Agent] Primary model failed, falling back to Gemini Flash:', modelErr?.message);
       result = streamText({
         model: google('gemini-2.5-flash'),
         system: systemPrompt,

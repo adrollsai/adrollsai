@@ -67,6 +67,9 @@ export async function GET(request: Request, { params }: RouteProps) {
         console.log("[Shared Route] Resolved page:", page ? { id: page.id, title: page.title } : null)
 
         if (!page) {
+            if (slug === 'site' || slug === 'website') {
+                return NextResponse.redirect(new URL(`/website/${encodeURIComponent(identifier)}`, request.url))
+            }
             if (slug === 'index' || slug === 'home' || slug === 'properties' || slug === 'catalog') {
                 console.log(`[Shared Route] No explicit '${slug}' landing page found for ${profile.business_name}. Serving robust properties catalog fallback.`);
                 return getPropertiesCatalog(request, { params: Promise.resolve({ user_id: identifier }) });

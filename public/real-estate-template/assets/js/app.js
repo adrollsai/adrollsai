@@ -25,7 +25,17 @@
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const esc = (str) =>
     String(str == null ? "" : str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const money = (n) => (n || n === 0 ? "$" + Number(n).toLocaleString("en-US") : "—");
+  const money = (n) => {
+    if (typeof n === 'string') {
+      if (n.includes('₹') || n.includes('Cr') || n.includes('Lac') || n.includes('Lakh') || n.includes('AED') || n.includes('$')) {
+        return n;
+      }
+      const parsed = Number(n.replace(/,/g, ''));
+      if (!isNaN(parsed) && parsed > 0) n = parsed;
+      else return n;
+    }
+    return (n || n === 0 ? "$" + Number(n).toLocaleString("en-US") : "—");
+  };
   const num = (n) => Number(n || 0).toLocaleString("en-US");
   const shortMoney = (n) => (n >= 1e6 ? "$" + (n / 1e6).toFixed(n % 1e6 ? 2 : 0).replace(/\.0+$/, "") + "M" : n >= 1e3 ? "$" + Math.round(n / 1e3) + "K" : "$" + n);
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
@@ -470,6 +480,12 @@
         payload.form = form.dataset.form;
         payload.page = currentPage();
         payload.submittedAt = new Date().toISOString();
+        if (SITE && SITE.ownerId) {
+          payload.user_id = SITE.ownerId;
+          if (!payload.message) {
+            payload.message = payload.notes || payload.question || `Inquiry from ${form.dataset.form || 'website form'}`;
+          }
+        }
 
         const endpoint = SITE.forms && SITE.forms.endpoint;
         try {
@@ -546,7 +562,7 @@
       <button class="save-btn js-save${saved ? " is-saved" : ""}" type="button" data-save="${esc(p.id)}"
               aria-pressed="${saved}" aria-label="Save ${esc(p.address)}">${icon("heart")}</button>
       <div class="listing-card__body">
-        <p class="listing-card__price">${money(p.price)}${p.status === "Sold" ? "" : `<small>est. ${money(Math.round(estMonthly(p.price)))}/mo</small>`}</p>
+        <p class="listing-card__price">${esc(p.displayPrice || money(p.price))}${p.status === "Sold" ? "" : `<small>est. ${money(Math.round(estMonthly(p.price)))}/mo</small>`}</p>
         <h3 class="listing-card__title"><a href="property.html?id=${encodeURIComponent(p.id)}">${esc(p.title)}</a></h3>
         <p class="listing-card__addr">${icon("pin")}<span>${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)}</span></p>
         <div class="listing-card__meta">${meta}</div>
@@ -1014,7 +1030,7 @@
               <p class="property-head__addr">${icon("pin")}${esc(p.address)}, ${esc(p.city)}, ${esc(p.state)} ${esc(p.zip)} · MLS ${esc(p.mls)}</p>
             </div>
             <div class="property-head__price">
-              <b>${money(p.price)}</b>
+              <b>${esc(p.displayPrice || money(p.price))}</b>
               <span>${isLand ? "Land parcel" : money(Math.round(estMonthly(p.price))) + "/mo est."} · ${p.days === 1 ? "1 day" : p.days + " days"} on market</span>
             </div>
           </div>
@@ -1203,7 +1219,7 @@
       }
 
       <div class="property-bar" data-property-bar>
-        <div class="property-bar__price">${money(p.price)}<small>${esc(p.address)}</small></div>
+        <div class="property-bar__price">${esc(p.displayPrice || money(p.price))}<small>${esc(p.address)}</small></div>
         <div class="cluster" style="gap:.4rem">
           <a class="btn btn--ghost btn--sm" href="tel:${esc(agent.phone.replace(/[^\d+]/g, ""))}">${icon("phone")} Call</a>
           <a class="btn btn--primary btn--sm" href="#enquire">Book viewing</a>
@@ -1902,9 +1918,62 @@
   }
 
   /* ======================================================================
-     14. Boot
+     14. Boot & Live Dynamic Inventory Loader
      ====================================================================== */
-  function boot() {
+  async function loadNobogentDynamicData() {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      let targetUserId = q.get('userId') || q.get('u') || q.get('agentId') || q.get('user_id');
+      if (targetUserId) {
+        try { sessionStorage.setItem('nobogent_user_id', targetUserId); } catch(e) {}
+      } else {
+        try { targetUserId = sessionStorage.getItem('nobogent_user_id'); } catch(e) {}
+      }
+
+      const domain = q.get('domain') || (!window.location.hostname.includes('localhost') && !window.location.hostname.includes('nobogent.com') && !window.location.hostname.includes('vercel.app') ? window.location.hostname : '');
+
+      if (!targetUserId && !domain) {
+        return;
+      }
+
+      const apiUrl = `/api/public/website-data?${targetUserId ? `userId=${encodeURIComponent(targetUserId)}` : `domain=${encodeURIComponent(domain)}`}`;
+      const res = await fetch(apiUrl);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      if (!data || !data.success) return;
+
+      if (data.site) {
+        window.SITE = {
+          ...window.SITE,
+          ...data.site,
+          brand: { ...(window.SITE.brand || {}), ...(data.site.brand || {}) },
+          contact: { ...(window.SITE.contact || {}), ...(data.site.contact || {}) },
+          colors: { ...(window.SITE.colors || {}), ...(data.site.colors || {}) },
+          forms: { ...(window.SITE.forms || {}), ...(data.site.forms || {}) }
+        };
+      }
+
+      if (Array.isArray(data.properties) && data.properties.length > 0) {
+        window.DATA = window.DATA || {};
+        window.DATA.properties = data.properties;
+      }
+
+      if (Array.isArray(data.site?.agents) && data.site.agents.length > 0) {
+        window.DATA = window.DATA || {};
+        window.DATA.agents = data.site.agents;
+      }
+
+      if (data.site?.brand?.name) {
+        document.title = `${data.site.brand.name} | Verified Real Estate Portfolio`;
+      }
+    } catch (err) {
+      console.warn('[Nobogent Site Engine] Live inventory load notice:', err);
+    }
+  }
+
+  async function boot() {
+    await loadNobogentDynamicData();
     const page = document.body.dataset.page || currentPage().replace(".html", "");
 
     mountHeader();

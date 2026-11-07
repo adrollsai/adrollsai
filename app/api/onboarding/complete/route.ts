@@ -46,21 +46,21 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { 
+        const {
             companyName,
             country,
-            companyDescription, 
-            logoUrl, 
+            companyDescription,
+            logoUrl,
             contactNumber,
             address,
             websiteUrl,
             whatsappNumber,
-            productTitle, 
-            productDescription, 
-            productPrice, 
+            productTitle,
+            productDescription,
+            productPrice,
             productImageUrl,
             selectedTemplates,
-            projects 
+            projects
         } = body;
 
         // 1. Fetch current profile to check existing data
@@ -139,9 +139,9 @@ export async function POST(request: Request) {
         // If no projects provided (skipped product step)
         if (resolvedProjects.length === 0) {
             console.log("[Onboarding API] Product step skipped. Onboarding completed successfully.");
-            return NextResponse.json({ 
-                success: true, 
-                message: 'Onboarding completed successfully without product generation.' 
+            return NextResponse.json({
+                success: true,
+                message: 'Onboarding completed successfully without product generation.'
             });
         }
 
@@ -204,7 +204,7 @@ export async function POST(request: Request) {
 
             // --- A. Generate Image Prompts & Submit Tasks ---
             console.log(`[Onboarding API] Generating ${creativesToGenerate} static creatives for "${proj.title}"...`);
-            
+
             for (let cIdx = 0; cIdx < creativesToGenerate; cIdx++) {
                 // Randomly select one template from the user's selected templates
                 const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
@@ -274,7 +274,7 @@ Requirements:
 
             // --- B. Generate Videos with Specified Durations (5-Min Total Budget) ---
             const projectVideos = Array.isArray(proj.videos) ? proj.videos : [{ duration: 15, customInstructions: '' }];
-            
+
             for (let vIdx = 0; vIdx < projectVideos.length; vIdx++) {
                 const vid = projectVideos[vIdx];
                 const requestedDuration = Number(vid.duration) || 15;
@@ -387,10 +387,13 @@ AVOID
             });
         }
 
-        // 6. Optional: Send WhatsApp notification to Admin if connected
+        // 6. Send WhatsApp notification to Admin & deliver live website link
         const targetWaPhone = whatsappNumber || existingProfile?.contact_number;
         const waPhoneId = existingProfile?.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID;
         const waToken = existingProfile?.whatsapp_access_token || existingProfile?.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN;
+        const liveWebsiteUrl = existingProfile?.custom_domain
+            ? `https://${existingProfile.custom_domain}`
+            : `${baseUrl}/website/${user.id}`;
 
         if (targetWaPhone && waPhoneId && waToken) {
             try {
@@ -403,7 +406,9 @@ AVOID
 Welcome *${resolvedCompanyName}*! We have commenced generation across your projects:
 ${summaryText}
 
-⏱️ *Total Video Duration Allocated*: ${cumulativeVideoSeconds}s / ${MAX_GLOBAL_VIDEO_SECONDS}s (5 Mins Free Budget)
+🌐 *Your Live Luxury Website*:
+${liveWebsiteUrl}
+(Automatically deployed with 15 pages & dynamic inventory sync!)
 
 📲 *How Approvals & Revisions Work*:
 As each creative is synthesized, it will be delivered here with product copy in WhatsApp template format.
@@ -421,16 +426,15 @@ As each creative is synthesized, it will be delivered here with product copy in 
                         text: { body: introMsg }
                     })
                 }).catch(err => console.error("[Onboarding API] WhatsApp alert error:", err));
-            } catch {}
+            } catch { }
         }
 
         console.log("[Onboarding API] Multi-project onboarding completed successfully!");
-        return NextResponse.json({ 
-            success: true, 
+        return NextResponse.json({
+            success: true,
             message: `Onboarding completed for ${resolvedProjects.length} project(s).`,
-            totalVideoSecondsUsed: cumulativeVideoSeconds,
-            remainingVideoSeconds: Math.max(0, MAX_GLOBAL_VIDEO_SECONDS - cumulativeVideoSeconds),
-            summary: generationSummary 
+            liveWebsiteUrl,
+            summary: generationSummary
         });
 
     } catch (error: any) {

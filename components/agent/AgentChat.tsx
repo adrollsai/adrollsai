@@ -33,11 +33,19 @@ import {
   MessageSquare,
   Building2,
   PhoneCall,
+  Globe,
+  Video,
+  Film,
+  Code2,
+  Play,
+  FolderOpen,
+  FileVideo,
 } from 'lucide-react';
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
 import ActionConfirmationCard from './ActionConfirmationCard';
 import ProgressTrackerCard from './ProgressTrackerCard';
+import FileManagerDrawer from './FileManagerDrawer';
 import NoboMascot from './NoboMascot';
 import AgentMarkdown from './AgentMarkdown';
 import { createClient } from '@/utils/supabase/client';
@@ -62,6 +70,34 @@ const QUICK_ACTIONS = [
 
 function getToolDisplayInfo(rawName: string) {
   switch (rawName) {
+    case 'list_user_files':
+      return { label: 'File Manager • Asset Explorer', Icon: FolderOpen };
+    case 'organize_or_move_file':
+      return { label: 'File Manager • Organize & Move', Icon: FolderOpen };
+    case 'delete_user_file':
+      return { label: 'File Manager • Delete Asset', Icon: Trash2 };
+    case 'sandbox_bash_run':
+      return { label: 'E2B Cloud Sandbox • Terminal', Icon: Terminal };
+    case 'sandbox_render_video':
+      return { label: 'Hyperframes • Video Render Engine', Icon: Film };
+    case 'sandbox_write_and_run':
+      return { label: 'E2B Cloud Sandbox • Code Exec', Icon: Code2 };
+    case 'deepseek_web_search':
+      return { label: 'DeepSeek Search • Web Live', Icon: Globe };
+    case 'deepseek_web_fetch':
+      return { label: 'DeepSeek Fetch • Web Reader', Icon: Globe };
+    case 'generate_ai_video_clip':
+      return { label: 'Grok AI Video • Studio', Icon: Video };
+    case 'generate_ai_image':
+      return { label: 'GPT Image 2.5 • Studio', Icon: ImageIcon };
+    case 'update_default_voice_settings':
+      return { label: 'Voice Agent • Default Bot Config', Icon: PhoneCall };
+    case 'launch_bulk_calling_campaign':
+      return { label: 'Voice AI • Outbound Campaign Blast', Icon: PhoneCall };
+    case 'create_whatsapp_template':
+      return { label: 'WhatsApp • Meta Template Generator', Icon: MessageSquare };
+    case 'send_single_whatsapp_message':
+      return { label: 'WhatsApp • 1-on-1 Direct Outreach', Icon: MessageSquare };
     case 'meta_mcp_get_insights':
       return { label: 'Meta Ads • Performance Insights', Icon: BarChart2 };
     case 'meta_mcp_list_campaigns':
@@ -215,6 +251,42 @@ function ToolExecutionCard({ tool, idx, isLoading }: { tool: any; idx: number; i
       {artifact && artifact.type === 'progress_tracker' && (
         <ProgressTrackerCard {...artifact} />
       )}
+
+      {artifact && artifact.type === 'video_player' && (
+        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-md">
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-950 border-b border-slate-800 text-xs text-slate-200">
+            <span className="font-semibold flex items-center gap-1.5 text-blue-400">
+              <Film size={14} />
+              {artifact.title || 'Rendered Video'}
+            </span>
+            {artifact.duration && (
+              <span className="text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded-full font-mono">
+                {artifact.duration}
+              </span>
+            )}
+          </div>
+          <video
+            controls
+            playsInline
+            className="w-full max-h-[360px] bg-black object-contain"
+            src={artifact.videoUrl}
+          />
+        </div>
+      )}
+
+      {artifact && artifact.type === 'image_preview' && (
+        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-md">
+          <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+            <ImageIcon size={14} className="text-violet-400" />
+            {artifact.title || 'Generated Image'}
+          </div>
+          <img
+            src={artifact.imageUrl}
+            alt={artifact.title || 'Preview'}
+            className="w-full max-h-[360px] object-cover"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -224,6 +296,7 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
   const [attachedFile, setAttachedFile] = useState<{ name: string; content: string; type: string } | null>(null);
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [showSessionDrawer, setShowSessionDrawer] = useState(false);
+  const [showFileManager, setShowFileManager] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'tool' | 'error' | 'thought' }>>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('default');
@@ -320,6 +393,7 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
 
     const isSpreadsheet = file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.tsv');
     const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.mov') || file.name.endsWith('.webm');
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -327,9 +401,9 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
       setAttachedFile({
         name: file.name,
         content,
-        type: isSpreadsheet ? 'spreadsheet' : isImage ? 'image' : 'text',
+        type: isSpreadsheet ? 'spreadsheet' : isVideo ? 'video' : isImage ? 'image' : 'text',
       });
-      addLog(`File attached: ${file.name} (${file.size} bytes)`, 'info');
+      addLog(`File attached: ${file.name} (${file.size} bytes, ${isVideo ? 'video' : isImage ? 'image' : 'data'})`, 'info');
       toast.success(`Attached ${file.name}`);
     };
 
@@ -408,6 +482,16 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* File Manager Button */}
+          <button
+            onClick={() => setShowFileManager(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold border border-amber-200 dark:border-amber-900/50 transition"
+            title="Open Asset & File Manager"
+          >
+            <FolderOpen size={14} />
+            <span className="hidden sm:inline">File Manager</span>
+          </button>
+
           {/* New Chat Button */}
           <button
             onClick={handleNewChat}
@@ -615,7 +699,13 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
       <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
         {attachedFile && (
           <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 text-xs">
-            {attachedFile.type === 'spreadsheet' ? <FileSpreadsheet size={14} /> : <ImageIcon size={14} />}
+            {attachedFile.type === 'spreadsheet' ? (
+              <FileSpreadsheet size={14} />
+            ) : attachedFile.type === 'video' ? (
+              <FileVideo size={14} className="text-blue-500" />
+            ) : (
+              <ImageIcon size={14} />
+            )}
             <span className="font-medium truncate max-w-xs">{attachedFile.name}</span>
             <button
               onClick={() => setAttachedFile(null)}
@@ -638,7 +728,7 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
             type="file"
             ref={fileInputRef}
             onChange={handleFileUpload}
-            accept=".csv,.xlsx,.tsv,.txt,image/*"
+            accept=".csv,.xlsx,.tsv,.txt,image/*,video/*"
             className="hidden"
           />
           <button
@@ -691,6 +781,17 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
           )}
         </form>
       </div>
+
+      {/* File & Asset Manager Modal Drawer */}
+      <FileManagerDrawer
+        isOpen={showFileManager}
+        onClose={() => setShowFileManager(false)}
+        userId={impersonateId}
+        onSelectAsset={(url, name) => {
+          setInput((prev) => (prev ? `${prev} [Use Asset: ${name} (${url})]` : `Please use asset: ${name} (${url})`));
+          toast.success(`Selected ${name}`);
+        }}
+      />
     </div>
   );
 }

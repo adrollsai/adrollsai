@@ -16,8 +16,6 @@ import { getPropertyTags } from '@/utils/property-tags'
 import type { DroppedPin } from '@/components/ads/MapLocationPicker'
 import dynamic from 'next/dynamic'
 const MapLocationPicker = dynamic(() => import('@/components/ads/MapLocationPicker'), { ssr: false })
-import DetailedTargetingSelector, { MetaInterest } from '@/components/ads/DetailedTargetingSelector'
-import InstantFormCustomizer, { InstantFormConfig } from '@/components/ads/InstantFormCustomizer'
 
 type Property = { id: string; title: string; price: string; image_url: string; description?: string; configurations?: any; tags?: string[]; images?: string[]; address?: string; name?: string }
 type Asset = { id: string; type: 'image' | 'video'; url: string; property_id?: string; master_creative_id?: string; caption?: string; status?: string; metadata?: any }
@@ -178,27 +176,6 @@ export default function AdsPage() {
   const [isSearchingLocation, setIsSearchingLocation] = useState(false)
   const [locationTab, setLocationTab] = useState<'city' | 'map'>('city')
   const [droppedPins, setDroppedPins] = useState<DroppedPin[]>([])
-
-  // Detailed Targeting & Instant Form Customizer states
-  const [selectedInterests, setSelectedInterests] = useState<MetaInterest[]>([])
-  const [isLoadingPageLeadForms, setIsLoadingPageLeadForms] = useState(false)
-  const [leadFormConfig, setLeadFormConfig] = useState<InstantFormConfig>({
-    mode: 'new',
-    formType: 'HIGHER_INTENT',
-    name: '',
-    headline: 'Get Pricing, Floor Plans & Exclusive Offers',
-    greetingText: 'Please verify your details below to receive the complete pricing sheet and direct developer brochure.',
-    includeCity: true,
-    questions: [],
-    privacyPolicyUrl: 'https://adrolls.in/privacy',
-    privacyPolicyLinkText: 'Privacy Policy',
-    completionTitle: "Thank you! You're all set.",
-    completionBody: "Our property specialist will share the floor plans & brochure on WhatsApp shortly.",
-    completionButtonText: "Visit Website",
-    completionAction: 'website'
-  })
-  const [pageLeadForms, setPageLeadForms] = useState<{ id: string; name: string; status: string }[]>([])
-  const [selectedExistingLeadFormId, setSelectedExistingLeadFormId] = useState<string>('')
 
   const [statsModal, setStatsModal] = useState<{ isOpen: boolean, campaign: Campaign | null, insights: any, loading: boolean }>({ isOpen: false, campaign: null, insights: null, loading: false })
   const [analysisModal, setAnalysisModal] = useState<{
@@ -456,25 +433,6 @@ export default function AdsPage() {
     }
   }, [isModalOpen, selectedAdAccountId])
 
-  useEffect(() => {
-    if (isModalOpen && campaignType === 'instant_form') {
-      const fetchPageForms = async () => {
-        try {
-          setIsLoadingPageLeadForms(true);
-          const res = await fetch(`/api/meta-ads/page-lead-forms${adForm.pageId ? `?pageId=${adForm.pageId}` : ''}${impersonateId ? `${adForm.pageId ? '&' : '?'}impersonate=${impersonateId}` : ''}`);
-          const data = await res.json();
-          if (data.forms) {
-            setPageLeadForms(data.forms);
-          }
-        } catch (e) {
-          console.error("Failed to fetch page lead forms", e);
-        } finally {
-          setIsLoadingPageLeadForms(false);
-        }
-      };
-      fetchPageForms();
-    }
-  }, [isModalOpen, campaignType, adForm.pageId, impersonateId]);
 
 
   // Mandatory Product Selection for Campaign Launch
@@ -2078,14 +2036,23 @@ export default function AdsPage() {
       if (droppedPins.length > 0) {
           formPayload.append('droppedPins', JSON.stringify(droppedPins));
       }
-      if (selectedInterests.length > 0) {
-          formPayload.append('detailedTargeting', JSON.stringify(selectedInterests));
-      }
       if (campaignType === 'instant_form') {
-          formPayload.append('leadFormConfig', JSON.stringify(leadFormConfig));
-          if (leadFormConfig.mode === 'existing' && leadFormConfig.existingFormId) {
-              formPayload.append('existingLeadFormId', leadFormConfig.existingFormId);
-          }
+          const highIntentFormConfig = {
+              mode: 'new',
+              formType: 'HIGHER_INTENT',
+              name: `High Intent Form - ${targetProfile?.business_name || 'Campaign'} - ${Date.now().toString().slice(-6)}`,
+              headline: 'Get Pricing, Floor Plans & Exclusive Offers',
+              greetingText: 'Please verify your details below to receive the complete pricing sheet and direct developer brochure.',
+              includeCity: true,
+              questions: formQuestions,
+              privacyPolicyUrl: autoPrivacyUrl,
+              privacyPolicyLinkText: 'Privacy Policy',
+              completionTitle: "Thank you! You're all set.",
+              completionBody: "Our property specialist will share the floor plans & brochure on WhatsApp shortly.",
+              completionButtonText: "Visit Website",
+              completionAction: 'website'
+          };
+          formPayload.append('leadFormConfig', JSON.stringify(highIntentFormConfig));
       }
 
       const activePixel = pixelId || targetProfile?.pixel_id || (pixels.length > 0 ? pixels[0].id : null);
@@ -6177,12 +6144,6 @@ export default function AdsPage() {
                           )}
                       </div>
 
-                      {/* Detailed Targeting */}
-                      <DetailedTargetingSelector
-                          selectedInterests={selectedInterests}
-                          onInterestsChange={setSelectedInterests}
-                      />
-
                       {/* Run as Remarketing Campaign Toggle */}
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100 flex items-center justify-between mt-4">
                           <div>
@@ -6305,22 +6266,166 @@ export default function AdsPage() {
               </div>
  
               {campaignType === 'instant_form' && (
-                  <div className="mt-4">
-                      <InstantFormCustomizer
-                          config={leadFormConfig}
-                          onChange={setLeadFormConfig}
-                          availableForms={pageLeadForms}
-                          isLoadingForms={isLoadingPageLeadForms}
-                          selectedExistingFormId={selectedExistingLeadFormId}
-                          onSelectExistingFormId={(id) => {
-                              setSelectedExistingLeadFormId(id);
-                              setLeadFormConfig(prev => ({
-                                  ...prev,
-                                  existingFormId: id,
-                                  mode: id ? 'existing' : 'new'
-                              }));
-                          }}
-                      />
+                  <div>
+                      <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                              <Settings2 size={16} /> Lead Form Questions
+                          </label>
+                          <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full border border-blue-200/60 flex items-center gap-1">
+                              🛡️ High Intent Only
+                          </span>
+                      </div>
+                      
+                      <div className="text-[11px] text-slate-500 font-medium mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between">
+                          <span>Pre-filled lead fields: <strong className="text-slate-700">Full Name, Phone, Email, City</strong></span>
+                          <span className="text-[10px] text-blue-600 font-semibold">Review screen enabled</span>
+                      </div>
+
+                      {formQuestions.length > 0 && (
+                          <div className="flex flex-col gap-3 mb-4">
+                              {formQuestions.map((q, idx) => (
+                                  <div key={idx} className="bg-slate-50 border border-slate-200/60 rounded-[1.25rem] p-4 flex justify-between items-center group shadow-sm">
+                                      <div>
+                                          <div className="text-sm font-bold text-slate-800 leading-tight mb-1">{q.label}</div>
+                                          <div className="flex flex-wrap gap-1.5 mt-1">
+                                              <span className="text-[9px] bg-blue-100 text-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                  {q.type === 'MULTIPLE_CHOICE' ? `Multiple Choice` : 'Short Answer'}
+                                              </span>
+                                              {q.type === 'MULTIPLE_CHOICE' && q.options?.map((opt, oIdx) => (
+                                                  <span key={oIdx} className="text-[9px] bg-slate-100 text-slate-500 font-medium px-2 py-0.5 rounded-full">
+                                                      {opt}
+                                                  </span>
+                                              ))}
+                                          </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                          <button 
+                                              type="button"
+                                              onClick={() => { setEditingIdx(idx); setNewQuestion(q); setIsAddingQuestion(true); }} 
+                                              className="bg-white p-2 rounded-full text-slate-400 hover:text-blue-500 shadow-sm border border-slate-100 transition-colors"
+                                          >
+                                              <Settings2 size={14}/>
+                                          </button>
+                                          <button 
+                                              type="button"
+                                              onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== idx))} 
+                                              className="bg-white p-2 rounded-full text-slate-400 hover:text-red-500 shadow-sm border border-slate-100 transition-colors"
+                                          >
+                                              <X size={14}/>
+                                          </button>
+                                      </div>
+                                  </div>
+                              ))}
+                          </div>
+                      )}
+
+                      {(!isAddingQuestion && editingIdx === null) ? (
+                          <div className="flex flex-wrap gap-2">
+                              <button type="button" onClick={() => handleAddPresetQuestion('budget')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                  <PlusCircle size={14}/> Budget
+                              </button>
+                              <button type="button" onClick={() => handleAddPresetQuestion('type')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                  <PlusCircle size={14}/> Property Type
+                              </button>
+                              <button type="button" onClick={() => handleAddPresetQuestion('timeline')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                  <PlusCircle size={14}/> Timeline
+                              </button>
+                              <button type="button" onClick={() => handleAddPresetQuestion('visit')} className="text-xs font-bold bg-blue-50 text-blue-600 px-4 py-2.5 rounded-full hover:bg-blue-100 transition-colors flex items-center gap-1">
+                                  <PlusCircle size={14}/> Visit Time
+                              </button>
+                              <button type="button" onClick={() => setIsAddingQuestion(true)} className="text-xs font-bold bg-slate-100 text-slate-600 px-4 py-2.5 rounded-full hover:bg-slate-200 transition-colors flex items-center gap-1">
+                                  <PlusCircle size={14}/> Custom Question
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="bg-slate-50/80 p-5 rounded-[1.5rem] border border-slate-200 space-y-4 shadow-inner">
+                              <div>
+                                  <input 
+                                      type="text" 
+                                      value={newQuestion.label} 
+                                      onChange={e => setNewQuestion({...newQuestion, label: e.target.value})} 
+                                      className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all" 
+                                      placeholder="Question Text..." 
+                                  />
+                              </div>
+                              <div>
+                                  <select 
+                                      value={newQuestion.type} 
+                                      onChange={e => setNewQuestion({...newQuestion, type: e.target.value as any})} 
+                                      className="w-full bg-white py-3.5 px-4 rounded-2xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/20 outline-none transition-all cursor-pointer"
+                                  >
+                                      <option value="SHORT_ANSWER">Short Answer (Text)</option>
+                                      <option value="MULTIPLE_CHOICE">Multiple Choice</option>
+                                  </select>
+                              </div>
+                              {newQuestion.type === 'MULTIPLE_CHOICE' && (
+                                  <div className="space-y-3">
+                                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Configure Options</label>
+                                      {(newQuestion.options || []).map((opt, oIdx) => (
+                                          <div key={oIdx} className="flex gap-2 items-center">
+                                              <input 
+                                                  type="text" 
+                                                  value={opt} 
+                                                  onChange={e => { 
+                                                      const updated = [...(newQuestion.options || [])]; 
+                                                      updated[oIdx] = e.target.value; 
+                                                      setNewQuestion({...newQuestion, options: updated}); 
+                                                  }} 
+                                                  className="flex-1 bg-white py-3 px-4 rounded-xl text-sm font-medium border border-slate-200 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all" 
+                                                  placeholder={`Option ${oIdx + 1}`} 
+                                              />
+                                              <button 
+                                                  type="button"
+                                                  onClick={() => { 
+                                                      const updated = (newQuestion.options || []).filter((_, i) => i !== oIdx); 
+                                                      setNewQuestion({...newQuestion, options: updated}); 
+                                                  }} 
+                                                  className="p-3 text-slate-400 hover:text-red-500 transition-colors"
+                                              >
+                                                  <X size={16} />
+                                              </button>
+                                          </div>
+                                      ))}
+                                      <button 
+                                          type="button"
+                                          onClick={() => setNewQuestion({...newQuestion, options: [...(newQuestion.options || []), '']})} 
+                                          className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50 transition-all flex items-center justify-center gap-2"
+                                      >
+                                          <PlusCircle size={14} /> Add Another Option
+                                      </button>
+                                  </div>
+                              )}
+                              <div className="flex gap-3 pt-2">
+                                  <button 
+                                      type="button"
+                                      onClick={() => { setIsAddingQuestion(false); setEditingIdx(null); setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); }} 
+                                      className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-50 transition-colors"
+                                  >
+                                      Cancel
+                                  </button>
+                                  <button 
+                                      type="button"
+                                      onClick={() => { 
+                                          if(newQuestion.label){ 
+                                              if (editingIdx !== null) { 
+                                                  const updated = [...formQuestions]; 
+                                                  updated[editingIdx] = newQuestion; 
+                                                  setFormQuestions(updated); 
+                                              } else { 
+                                                  setFormQuestions(prev => [...prev, newQuestion]); 
+                                              } 
+                                              setIsAddingQuestion(false); 
+                                              setEditingIdx(null); 
+                                              setNewQuestion({label: '', type: 'SHORT_ANSWER', options: ['']}); 
+                                          } 
+                                      }} 
+                                      className="flex-1 bg-slate-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors shadow-sm"
+                                  >
+                                      {editingIdx !== null ? 'Update Question' : 'Save Question'}
+                                  </button>
+                              </div>
+                          </div>
+                      )}
                   </div>
               )}
 

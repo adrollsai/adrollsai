@@ -56,7 +56,8 @@ export default function PagesDashboard() {
     const impersonateId = searchParams.get('impersonate')
 
     // Tab state
-    const [activeTab, setActiveTab] = useState<'landing_pages' | 'forms' | 'business_landing'>('landing_pages')
+    const [activeTab, setActiveTab] = useState<'landing_pages' | 'forms' | 'business_landing' | 'website'>('landing_pages')
+    const [websiteDevice, setWebsiteDevice] = useState<'desktop' | 'mobile'>('desktop')
     
     // Main Business Landing Page States
     const [businessLandingEnabled, setBusinessLandingEnabled] = useState(false)
@@ -1738,6 +1739,13 @@ ${cleanContent}
                             <Sparkles size={16} /> Business Landing Page
                             {activeTab === 'business_landing' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
                         </button>
+                        <button 
+                            onClick={() => setActiveTab('website')}
+                            className={`pb-3.5 text-xs sm:text-sm font-semibold flex items-center gap-2 relative transition-colors ${activeTab === 'website' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <Building2 size={16} /> Multi-Page Website <span className="bg-emerald-100 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-1">Live</span>
+                            {activeTab === 'website' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full animate-in slide-in-from-left duration-200"></span>}
+                        </button>
                     </div>
 
                     {/* Tab Panels */}
@@ -2390,6 +2398,127 @@ ${cleanContent}
                                 )
                             }
                         })()}
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'website' && (
+                <div className="animate-in fade-in duration-300 space-y-6">
+                    {/* Top Status & Action Bar */}
+                    <div className="bg-white border border-slate-200/80 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                    Active & Live Synced
+                                </span>
+                                <span className="text-xs font-bold text-slate-500">15-Page High-Converting Architecture</span>
+                            </div>
+                            <h2 className="text-lg font-black text-slate-900 tracking-tight">Your Real Estate Agency Website</h2>
+                            <p className="text-xs text-slate-500">
+                                Automatically deployed on onboarding. Displays your active listings dynamically from your CRM inventory.
+                            </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Device Preview Toggle */}
+                            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                                <button
+                                    onClick={() => setWebsiteDevice('desktop')}
+                                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${websiteDevice === 'desktop' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <Monitor size={14} /> Desktop
+                                </button>
+                                <button
+                                    onClick={() => setWebsiteDevice('mobile')}
+                                    className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${websiteDevice === 'mobile' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    <Smartphone size={14} /> Mobile
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    const siteUrl = customDomain ? `https://${customDomain}` : `${window.location.origin}/website/${targetUserId}`;
+                                    navigator.clipboard.writeText(siteUrl);
+                                    showToast("Website link copied to clipboard!");
+                                }}
+                                className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs"
+                            >
+                                <Copy size={13} /> Copy Link
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    const siteUrl = customDomain ? `https://${customDomain}` : `${window.location.origin}/website/${targetUserId}`;
+                                    const waText = encodeURIComponent(`Hello! Take a look at our luxury real estate portfolio & verified listings: ${siteUrl}`);
+                                    window.open(`https://wa.me/?text=${waText}`, '_blank');
+                                }}
+                                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                            >
+                                <Send size={13} /> Share on WhatsApp
+                            </button>
+
+                            <button
+                                onClick={() => {
+                                    const siteUrl = customDomain ? `https://${customDomain}` : `${window.location.origin}/website/${targetUserId}`;
+                                    window.open(siteUrl, '_blank');
+                                }}
+                                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                            >
+                                <ExternalLink size={13} /> Open Live Site
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Dynamic Sync Explainer Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-start gap-3">
+                            <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+                                <Sparkles size={16} />
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-800">Dynamic Inventory Sync</h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                    When you add or update properties in Nobogent, they instantly appear on your website without any redeployment.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-start gap-3">
+                            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600 shrink-0">
+                                <CheckCircle2 size={16} />
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-800">Automatic Unlisting</h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                    Marking a property Sold or Archived in your CRM removes it from your public site in real time.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-start gap-3">
+                            <div className="p-2 rounded-xl bg-purple-50 text-purple-600 shrink-0">
+                                <MessageSquare size={16} />
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-slate-800">Direct CRM Lead Routing</h4>
+                                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                    All visitor inquiries, valuation forms, and viewing bookings land straight into your Nobogent Leads pipeline.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Interactive Live Preview Frame */}
+                    <div className="w-full flex justify-center bg-slate-100 p-4 sm:p-6 rounded-3xl border border-slate-200 overflow-hidden">
+                        <div className={`transition-all duration-300 rounded-2xl overflow-hidden shadow-2xl border border-slate-300 bg-white ${websiteDevice === 'desktop' ? 'w-full h-[680px]' : 'w-[375px] h-[720px]'}`}>
+                            <iframe
+                                src={`/real-estate-template/index.html?userId=${encodeURIComponent(targetUserId)}`}
+                                title="Luxury Real Estate Template Website"
+                                className="w-full h-full border-0"
+                            />
+                        </div>
                     </div>
                 </div>
             )}

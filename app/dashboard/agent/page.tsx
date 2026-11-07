@@ -77,9 +77,9 @@ function AgentPageContent() {
           </div>
           <div>
             <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              Nobo
+              DeepSeek Harness
               <span className="text-[10px] font-bold uppercase tracking-wider bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400 px-2 py-0.5 rounded-full">
-                Super Admin Access
+                Flash Vision & Sandbox
               </span>
               {impersonatedName && (
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200 dark:border-amber-900">
@@ -89,7 +89,7 @@ function AgentPageContent() {
               )}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Autonomous AI business partner • CRM, Meta Ads MCP, Crons & Scheduling, Supabase & Vercel control.
+              Autonomous DeepSeek Harness • E2B Linux Sandbox (FFmpeg & Code Video), DeepSeek Search & Fetch, Meta MCP, WhatsApp & Dual Voice Engine.
             </p>
           </div>
         </div>
