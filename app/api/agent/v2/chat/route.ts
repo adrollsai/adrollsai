@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
     const url = new URL(req.url);
     const body = await req.json();
-    const { messages, impersonateId: bodyImpersonateId } = body;
+    const { messages, impersonateId: bodyImpersonateId, preferReasoning } = body;
     const requestedImpersonateId = url.searchParams.get('impersonate') || bodyImpersonateId;
 
     let targetUserId = user.id;
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     );
 
     const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, user.id);
-    const model = getAgentModel({ hasVision });
+    const model = await getAgentModel({ hasVision, preferReasoning: Boolean(preferReasoning) });
 
     const modelMessages = await (async () => {
       if (messages.length > 0 && !messages[0].parts) {
@@ -113,6 +113,7 @@ export async function POST(req: Request) {
       sendReasoning: true,
       onError: (err) => {
         console.error('[Nobo Agent Stream Error]:', err);
+        return err instanceof Error ? err.message : String(err || 'An error occurred during generation.');
       },
     });
   } catch (err: any) {

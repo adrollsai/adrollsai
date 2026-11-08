@@ -6,11 +6,14 @@ function getDeepseekApiKey() {
 }
 
 let cachedProvider: ReturnType<typeof createOpenAI> | null = null;
+let lastCheckedKey = '';
+let isKeyValidCache = false;
+let lastCheckTimestamp = 0;
 
 export function getDeepseekProvider() {
   const key = getDeepseekApiKey();
   if (!key) return null;
-  if (!cachedProvider) {
+  if (!cachedProvider || key !== lastCheckedKey) {
     cachedProvider = createOpenAI({
       name: 'deepseek',
       baseURL: 'https://api.deepseek.com',
@@ -21,24 +24,52 @@ export function getDeepseekProvider() {
 }
 
 /**
- * Returns the best model for the current task:
- * - DeepSeek v4.1-Flash / chat for blazing-fast agentic reasoning & execution
- * - DeepSeek-Reasoner for deep Chain-of-Thought
- * - Gemini 2.5/3-Flash for native high-resolution vision (brochures, flyers, site photos)
+ * Checks if the configured DEEPSEEK_API_KEY is active and authorized.
  */
-export function getAgentModel(options: { preferReasoning?: boolean; hasVision?: boolean } = {}) {
+export async function isDeepseekAuthorized(): Promise<boolean> {
+  const key = getDeepseekApiKey();
+  if (!key) return false;
+
+  // Use cached result if recent (60s)
+  if (key === lastCheckedKey && Date.now() - lastCheckTimestamp < 60_000) {
+    return isKeyValidCache;
+  }
+
+  try {
+    const res = await fetch('https://api.deepseek.com/models', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+    });
+
+    isKeyValidCache = res.status === 200;
+    lastCheckedKey = key;
+    lastCheckTimestamp = Date.now();
+    return isKeyValidCache;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Returns the model for the task:
+ * Official DeepSeek API models:
+ * - 'deepseek-flash': DeepSeek-V4.1-Flash (natively supports input_modalities: ["text", "image"])
+ * - 'deepseek-v4-pro': DeepSeek-V4-Pro for pro reasoning
+ * - Seamless fallback to Google Gemini Flash if DeepSeek is unreachable
+ */
+export async function getAgentModel(options: { preferReasoning?: boolean; hasVision?: boolean } = {}) {
   const { preferReasoning = false, hasVision = false } = options;
+  const isAuthorized = await isDeepseekAuthorized();
 
-  if (hasVision) {
-    // Gemini 2.5 Flash has the highest fidelity for vision
-    return google('gemini-2.5-flash');
+  if (isAuthorized) {
+    const provider = getDeepseekProvider();
+    if (provider) {
+      // deepseek-flash natively handles both text and images
+      const modelName = preferReasoning ? 'deepseek-v4-pro' : 'deepseek-flash';
+      return provider.chat(modelName);
+    }
   }
 
-  const provider = getDeepseekProvider();
-  if (provider) {
-    return provider.chat('deepseek-flash');
-  }
-
-  // Fallback to Google Gemini
+  console.warn('[Agent Model] DeepSeek key not authorized, falling back to Gemini Flash.');
   return google('gemini-2.5-flash');
 }

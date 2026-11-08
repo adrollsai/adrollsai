@@ -9,7 +9,6 @@ import {
   Loader2,
   Sparkles,
   Paperclip,
-  Bot,
   User,
   Wrench,
   FileSpreadsheet,
@@ -40,13 +39,19 @@ import {
   Play,
   FolderOpen,
   FileVideo,
+  BrainCircuit,
+  Compass,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Check,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
 import ActionConfirmationCard from './ActionConfirmationCard';
 import ProgressTrackerCard from './ProgressTrackerCard';
 import FileManagerDrawer from './FileManagerDrawer';
-import NoboMascot from './NoboMascot';
 import AgentMarkdown from './AgentMarkdown';
 import { createClient } from '@/utils/supabase/client';
 import { toast } from 'sonner';
@@ -59,39 +64,78 @@ interface ChatSession {
 
 interface AgentChatProps {
   impersonateId?: string | null;
+  impersonatedName?: string | null;
+}
+
+// DeepSeek's iconic geometric whale / dolphin mark
+function DeepSeekIcon({ className = "w-6 h-6" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+      <circle cx="50" cy="50" r="48" fill="#4d6bfe" fillOpacity="0.12" />
+      <path
+        d="M48.2 16C33.8 16.5 21 25.6 15.6 38.8C10.2 52 13.1 67.3 22.8 77.8C32.5 88.3 47.6 92.6 61.2 88.7C74.8 84.8 85.1 73.2 87.2 59.2C88.1 53.3 87.2 47.1 84.6 41.7C82 36.3 77.8 32 72.8 29C65.5 24.6 56.7 22.9 48.2 24.2"
+        stroke="#4d6bfe"
+        strokeWidth="7"
+        strokeLinecap="round"
+      />
+      <path d="M35 56C42 46 58 46 65 56" stroke="#4d6bfe" strokeWidth="7" strokeLinecap="round" />
+      <circle cx="36" cy="46" r="4.5" fill="#4d6bfe" />
+      <circle cx="64" cy="46" r="4.5" fill="#4d6bfe" />
+    </svg>
+  );
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Meta Ads performance & spend (last 25 days)', prompt: 'Connect to Meta Ads MCP, check total spend, impressions, clicks, leads, and cost per lead for the last 25 days, and break down active campaigns.' },
-  { label: 'Follow up with qualified leads', prompt: 'Find all leads in the qualified stage in my CRM and suggest a personalized WhatsApp & call followup strategy.' },
-  { label: 'Create 15s product/service reel script', prompt: 'Search my top catalog offering and generate a high-converting 15-second video script and angle for social media reels.' },
-  { label: 'Preview WhatsApp broadcast message', prompt: 'Create an engaging WhatsApp broadcast template preview with CTA buttons for our latest offering.' },
+  {
+    icon: Film,
+    label: 'Create 15s Property Reel',
+    desc: 'Generate motion graphics & video overlays via Remotion & FFmpeg',
+    prompt: 'Create a high-converting 15-second vertical video reel for our luxury property showcase with animated kinetic captions, brand logo, and WhatsApp CTA button.',
+  },
+  {
+    icon: Rocket,
+    label: 'Launch Meta Ad Campaign',
+    desc: 'Use official Meta MCP to create targeted Instagram Reels ad',
+    prompt: 'Use Meta Ads MCP to inspect active campaigns and launch a high-intent lead generation campaign on Instagram Reels with ₹1,500/day budget.',
+  },
+  {
+    icon: MessageSquare,
+    label: 'WhatsApp Broadcast Template',
+    desc: 'Design and preview high-converting WhatsApp message card',
+    prompt: 'Design an engaging WhatsApp marketing template with personalized name variable, image header, and quick-reply action buttons.',
+  },
+  {
+    icon: PhoneCall,
+    label: 'Configure Voice Calling Agent',
+    desc: 'Update default inbound & new lead follow-up script & voice',
+    prompt: 'Review and update my default AI voice calling agent configuration: set voice to Aditi, configure qualification questions for new leads, and enable auto-call.',
+  },
 ];
 
 function getToolDisplayInfo(rawName: string) {
   switch (rawName) {
+    case 'sandbox_bash_run':
+      return { label: 'E2B Cloud Sandbox • Bash Terminal', Icon: Terminal };
+    case 'sandbox_render_video':
+      return { label: 'Hyperframes • Video Render Engine', Icon: Film };
+    case 'sandbox_write_and_run':
+      return { label: 'E2B Cloud Sandbox • Code Execution', Icon: Code2 };
+    case 'deepseek_web_search':
+      return { label: 'DeepSeek Search • Web Live Intelligence', Icon: Globe };
+    case 'deepseek_web_fetch':
+      return { label: 'DeepSeek Fetch • Web Reader & Scraper', Icon: Globe };
     case 'list_user_files':
       return { label: 'File Manager • Asset Explorer', Icon: FolderOpen };
     case 'organize_or_move_file':
       return { label: 'File Manager • Organize & Move', Icon: FolderOpen };
     case 'delete_user_file':
       return { label: 'File Manager • Delete Asset', Icon: Trash2 };
-    case 'sandbox_bash_run':
-      return { label: 'E2B Cloud Sandbox • Terminal', Icon: Terminal };
-    case 'sandbox_render_video':
-      return { label: 'Hyperframes • Video Render Engine', Icon: Film };
-    case 'sandbox_write_and_run':
-      return { label: 'E2B Cloud Sandbox • Code Exec', Icon: Code2 };
-    case 'deepseek_web_search':
-      return { label: 'DeepSeek Search • Web Live', Icon: Globe };
-    case 'deepseek_web_fetch':
-      return { label: 'DeepSeek Fetch • Web Reader', Icon: Globe };
     case 'generate_ai_video_clip':
-      return { label: 'Grok AI Video • Studio', Icon: Video };
+      return { label: 'Grok AI Video • Motion Studio', Icon: Video };
     case 'generate_ai_image':
-      return { label: 'GPT Image 2.5 • Studio', Icon: ImageIcon };
+      return { label: 'GPT Image 2.5 • Creative Studio', Icon: ImageIcon };
     case 'update_default_voice_settings':
-      return { label: 'Voice Agent • Default Bot Config', Icon: PhoneCall };
+      return { label: 'Voice Agent • Default Inbound Bot Config', Icon: PhoneCall };
     case 'launch_bulk_calling_campaign':
       return { label: 'Voice AI • Outbound Campaign Blast', Icon: PhoneCall };
     case 'create_whatsapp_template':
@@ -114,8 +158,6 @@ function getToolDisplayInfo(rawName: string) {
       return { label: 'WhatsApp • Outreach', Icon: MessageSquare };
     case 'request_human_approval':
       return { label: 'Safety Guard • Human Approval', Icon: ShieldAlert };
-    case 'voice_trigger_call':
-      return { label: 'Voice AI • Telephony Calling', Icon: PhoneCall };
     default:
       return {
         label: rawName.replace(/^tool-/, '').replace(/_/g, ' '),
@@ -133,129 +175,73 @@ function ToolExecutionCard({ tool, idx, isLoading }: { tool: any; idx: number; i
   const output = tool.output !== undefined ? tool.output : tool.result;
   const inputArgs = tool.input !== undefined ? tool.input : tool.args;
 
-  // Determine state with precision
-  const isOutputAvailable =
-    tool.state === 'output-available' ||
-    tool.state === 'result' ||
-    tool.state === 'approval-responded' ||
-    output !== undefined;
-
-  const isError =
-    tool.state === 'output-error' ||
-    (isOutputAvailable && output && (output.success === false || !!output.error));
-
-  const isApprovalRequired =
-    tool.state === 'approval-requested' ||
-    (output?.requiresApproval && output?.actionPayload);
-
-  // Spinner MUST only spin if the stream is currently loading AND no output is available yet
-  const isExecuting = !isOutputAvailable && !isError && !isApprovalRequired && isLoading;
-  const isDone = (isOutputAvailable || !isLoading) && !isError && !isApprovalRequired;
+  const isPending = output === undefined && isLoading;
+  const isSuccess = output && !output.error && output.success !== false;
+  const isError = output && (output.error || output.success === false);
 
   const artifact = output?.artifact || (output?.actionPayload && output?.requiresApproval ? {
     type: 'action_confirmation',
-    actionId: output.actionPayload.payload?.actionId || `act_${idx}`,
+    actionType: output.actionPayload.actionType,
     title: output.actionPayload.title,
     description: output.actionPayload.description,
     estimatedCost: output.actionPayload.estimatedCost,
-    actionType: output.actionPayload.actionType,
     payload: output.actionPayload.payload,
-    status: 'pending',
   } : null);
 
   return (
-    <div key={idx} className="my-2.5 text-xs">
+    <div className="my-2 text-xs">
       <div
         onClick={() => setIsExpanded(!isExpanded)}
-        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all cursor-pointer select-none ${
-          isError
-            ? 'bg-rose-50/80 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-900/50 hover:bg-rose-100/60'
-            : isApprovalRequired
-            ? 'bg-amber-50/80 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900/50 hover:bg-amber-100/60'
-            : isExecuting
-            ? 'bg-blue-50/80 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-900/50'
-            : 'bg-slate-100/90 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border-slate-200/90 dark:border-slate-700/80 hover:bg-slate-200/70 dark:hover:bg-slate-800'
-        }`}
+        className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#16181d] border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition select-none"
       >
-        <div className="shrink-0">
-          {isExecuting ? (
-            <Loader2 size={13} className="text-blue-600 dark:text-blue-400 animate-spin" />
-          ) : isError ? (
-            <AlertCircle size={13} className="text-rose-600 dark:text-rose-400" />
-          ) : isApprovalRequired ? (
-            <ShieldAlert size={13} className="text-amber-600 dark:text-amber-400" />
-          ) : (
-            <CheckCircle2 size={13} className="text-emerald-600 dark:text-emerald-400" />
-          )}
+        <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
+          <Icon size={14} className="text-[#4d6bfe]" />
+          <span className="font-medium text-[11px]">{label}</span>
         </div>
 
-        <span className="font-semibold text-[11px] tracking-tight">{label}</span>
-
-        <span className="text-[10px] ml-1 font-medium">
-          {isExecuting ? (
-            <span className="text-blue-600 dark:text-blue-400">Executing...</span>
+        <div className="flex items-center gap-2">
+          {isPending ? (
+            <span className="flex items-center gap-1 text-[10px] text-[#4d6bfe] font-mono">
+              <Loader2 size={11} className="animate-spin" />
+              Running
+            </span>
           ) : isError ? (
-            <span className="text-rose-600 dark:text-rose-400 font-bold">Failed</span>
-          ) : isApprovalRequired ? (
-            <span className="text-amber-600 dark:text-amber-400 font-bold">Approval Required</span>
+            <span className="flex items-center gap-1 text-[10px] text-rose-500 font-mono">
+              <AlertCircle size={11} />
+              Failed
+            </span>
           ) : (
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ Done</span>
+            <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-mono">
+              <CheckCircle2 size={11} />
+              Done
+            </span>
           )}
-        </span>
-
-        <div className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-1">
-          {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {isExpanded ? <ChevronUp size={12} className="text-slate-400" /> : <ChevronDown size={12} className="text-slate-400" />}
         </div>
       </div>
 
-      {/* Collapsible Details Drawer */}
       {isExpanded && (
-        <div className="mt-2 p-3 rounded-xl bg-slate-900 text-slate-200 text-[11px] border border-slate-800 space-y-2 max-w-xl font-mono animate-in fade-in-50 duration-150">
-          {inputArgs && Object.keys(inputArgs).length > 0 && (
+        <div className="mt-1.5 p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono space-y-2 max-h-56 overflow-y-auto">
+          {inputArgs && (
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
-                Inputs / Parameters:
-              </span>
-              <pre className="p-2 rounded bg-slate-950 overflow-x-auto text-[10px] text-blue-300 leading-snug">
-                {JSON.stringify(inputArgs, null, 2)}
-              </pre>
+              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Inputs:</span>
+              <pre className="text-slate-400 whitespace-pre-wrap">{JSON.stringify(inputArgs, null, 2)}</pre>
             </div>
           )}
-
           {output && (
-            <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
-                Execution Result:
-              </span>
-              <pre className="p-2 rounded bg-slate-950 overflow-x-auto text-[10px] text-emerald-300 leading-snug max-h-48">
-                {JSON.stringify(output, null, 2)}
-              </pre>
+            <div className="border-t border-slate-800 pt-2">
+              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Output:</span>
+              <pre className="text-emerald-400 whitespace-pre-wrap">{JSON.stringify(output, null, 2)}</pre>
             </div>
           )}
         </div>
       )}
 
-      {/* Render interactive rich cards if requested */}
-      {artifact && artifact.type === 'html_sandbox' && (
-        <HtmlArtifactPreview
-          title={artifact.title}
-          html={artifact.html}
-          description={artifact.description}
-        />
-      )}
-
-      {artifact && artifact.type === 'action_confirmation' && (
-        <ActionConfirmationCard artifact={artifact as any} />
-      )}
-
-      {artifact && artifact.type === 'progress_tracker' && (
-        <ProgressTrackerCard {...artifact} />
-      )}
-
+      {/* Artifact Renderers */}
       {artifact && artifact.type === 'video_player' && (
-        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-md">
-          <div className="flex items-center justify-between px-3 py-2 bg-slate-950 border-b border-slate-800 text-xs text-slate-200">
-            <span className="font-semibold flex items-center gap-1.5 text-blue-400">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-black shadow-lg">
+          <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950/90 border-b border-slate-800 text-xs text-slate-200">
+            <span className="font-semibold flex items-center gap-1.5 text-[#4d6bfe]">
               <Film size={14} />
               {artifact.title || 'Rendered Video'}
             </span>
@@ -265,45 +251,51 @@ function ToolExecutionCard({ tool, idx, isLoading }: { tool: any; idx: number; i
               </span>
             )}
           </div>
-          <video
-            controls
-            playsInline
-            className="w-full max-h-[360px] bg-black object-contain"
-            src={artifact.videoUrl}
-          />
+          <video controls playsInline className="w-full max-h-[380px] object-contain" src={artifact.videoUrl} />
         </div>
       )}
 
       {artifact && artifact.type === 'image_preview' && (
-        <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-md">
-          <div className="px-3 py-2 bg-slate-950 border-b border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-lg">
+          <div className="px-3.5 py-2 bg-slate-950 border-b border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-1.5">
             <ImageIcon size={14} className="text-violet-400" />
             {artifact.title || 'Generated Image'}
           </div>
-          <img
-            src={artifact.imageUrl}
-            alt={artifact.title || 'Preview'}
-            className="w-full max-h-[360px] object-cover"
-          />
+          <img src={artifact.imageUrl} alt={artifact.title || 'Preview'} className="w-full max-h-[380px] object-cover" />
         </div>
+      )}
+
+      {artifact && artifact.type === 'html_sandbox' && (
+        <HtmlArtifactPreview title={artifact.title} html={artifact.html} description={artifact.description} />
+      )}
+
+      {artifact && artifact.type === 'action_confirmation' && (
+        <ActionConfirmationCard artifact={artifact as any} />
+      )}
+
+      {artifact && artifact.type === 'progress_tracker' && (
+        <ProgressTrackerCard {...artifact} />
       )}
     </div>
   );
 }
 
-export default function AgentChat({ impersonateId }: AgentChatProps) {
+export default function AgentChat({ impersonateId, impersonatedName }: AgentChatProps) {
   const [input, setInput] = useState('');
   const [attachedFile, setAttachedFile] = useState<{ name: string; content: string; type: string } | null>(null);
-  const [showLogsDrawer, setShowLogsDrawer] = useState(false);
-  const [showSessionDrawer, setShowSessionDrawer] = useState(false);
+  const [deepThinkActive, setDeepThinkActive] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showFileManager, setShowFileManager] = useState(false);
+  const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [executionLogs, setExecutionLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'tool' | 'error' | 'thought' }>>([]);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('default');
-  const [impersonatedBusiness, setImpersonatedBusiness] = useState<string | null>(null);
+  const [impersonatedBusiness, setImpersonatedBusiness] = useState<string | null>(impersonatedName || null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Fetch client details if impersonating
   useEffect(() => {
@@ -329,58 +321,58 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
     fetchProfile();
   }, [impersonateId]);
 
-  // Construct URL with impersonate query param so agent backend switches context
+  // Construct URL with query parameters
   const apiEndpoint = useMemo(() => {
-    return impersonateId ? `/api/agent/v2/chat?impersonate=${encodeURIComponent(impersonateId)}` : '/api/agent/v2/chat';
-  }, [impersonateId]);
+    const params = new URLSearchParams();
+    if (impersonateId) params.append('impersonate', impersonateId);
+    if (deepThinkActive) params.append('reasoning', '1');
+    const qs = params.toString();
+    return qs ? `/api/agent/v2/chat?${qs}` : '/api/agent/v2/chat';
+  }, [impersonateId, deepThinkActive]);
 
   const chatTransport = useMemo(() => {
-    return new DefaultChatTransport({ api: apiEndpoint });
-  }, [apiEndpoint]);
+    return new DefaultChatTransport({
+      api: apiEndpoint,
+      body: {
+        preferReasoning: deepThinkActive,
+      },
+    });
+  }, [apiEndpoint, deepThinkActive]);
 
   const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport: chatTransport,
     onError: (err: any) => {
-      console.error('[Nobo Agent Stream Error]:', err);
-      addLog(`Error encountered: ${err.message || 'Stream interrupted'}`, 'error');
-      toast.error(err.message || 'Failed to get response from Nobo');
+      console.error('[DeepSeek Stream Error]:', err);
+      const msg = err?.message || 'Connection interrupted';
+      addLog(`Stream error: ${msg}`, 'error');
+      toast.error(msg);
     },
   }) as any;
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
   const sessionStorageKey = useMemo(() => {
-    return impersonateId ? `nobogent_agent_sessions_${impersonateId}` : 'nobogent_agent_sessions';
+    return impersonateId ? `deepseek_sessions_${impersonateId}` : 'deepseek_sessions';
   }, [impersonateId]);
 
-  // Load and save sessions in local storage scoped to current impersonated tenant
   useEffect(() => {
     try {
       const saved = localStorage.getItem(sessionStorageKey);
       if (saved) {
-        setSessions(JSON.parse(saved));
-      } else {
-        const initial = [{ id: 'default', title: 'Main Workspace Chat', createdAt: new Date().toISOString() }];
-        setSessions(initial);
-        localStorage.setItem(sessionStorageKey, JSON.stringify(initial));
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSessions(parsed);
+          setActiveSessionId(parsed[0].id);
+        }
       }
-    } catch {}
+    } catch (e) {}
   }, [sessionStorageKey]);
-
-  // Track live execution logs
-  useEffect(() => {
-    if (status === 'submitted') {
-      addLog('User instruction received. Formulating execution plan...', 'thought');
-    } else if (status === 'streaming') {
-      addLog('Executing tools & coordinating response...', 'info');
-    }
-  }, [status]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, status]);
+  }, [messages, isLoading]);
 
   const addLog = (message: string, type: 'info' | 'tool' | 'error' | 'thought' = 'info') => {
     const time = new Date().toLocaleTimeString();
@@ -421,12 +413,16 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
     let fullPrompt = textToSend;
     if (attachedFile) {
       fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 3000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`;
-      addLog(`Dispatched multi-modal task with attached ${attachedFile.name}`, 'info');
+      addLog(`Dispatched task with attached ${attachedFile.name}`, 'info');
       setAttachedFile(null);
     }
 
     setInput('');
-    addLog(`Task: "${textToSend.slice(0, 60)}..."`, 'info');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+
+    addLog(`Task dispatched: "${textToSend.slice(0, 60)}..."`, 'info');
     await sendMessage({ text: fullPrompt });
   };
 
@@ -442,9 +438,8 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
     setActiveSessionId(newId);
     setMessages([]);
     setExecutionLogs([]);
-    addLog('Started new clean task thread.', 'info');
+    addLog('Started fresh task session.', 'info');
     localStorage.setItem(sessionStorageKey, JSON.stringify(updated));
-    setShowSessionDrawer(false);
     toast.success('Started a new conversation');
   };
 
@@ -452,334 +447,402 @@ export default function AgentChat({ impersonateId }: AgentChatProps) {
     if (stop) {
       stop();
       addLog('Execution interrupted by user.', 'error');
-      toast.info('Nobo paused execution');
+      toast.info('DeepSeek paused execution');
     }
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] max-w-5xl mx-auto bg-white dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden relative">
-      {/* Top Header Controls */}
-      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-900/60 backdrop-blur-md">
-        <div className="flex items-center gap-3">
-          <NoboMascot size="sm" state={isLoading ? 'thinking' : 'idle'} />
-          <div>
+    <div className="flex h-full w-full bg-[#fdfdfe] dark:bg-[#0d0e12] text-slate-800 dark:text-slate-100 overflow-hidden font-sans">
+      {/* 1. DeepSeek Signature Sidebar */}
+      <div
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#f8faff] dark:bg-[#111318] border-r border-slate-200/80 dark:border-slate-800/80 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:hidden'
+        }`}
+      >
+        {/* Sidebar Brand & New Chat */}
+        <div className="p-3 border-b border-slate-200/60 dark:border-slate-800/60">
+          <div className="flex items-center justify-between px-1 mb-3">
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Nobo</h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                AI Business Partner
-              </span>
-              {impersonatedBusiness && (
-                <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 dark:bg-violet-950/80 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
-                  <Building2 size={11} />
-                  <span>Viewing: {impersonatedBusiness}</span>
+              <DeepSeekIcon className="w-7 h-7" />
+              <div className="flex items-center gap-1.5">
+                <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
+                  deepseek
                 </span>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400">
-              Autonomous Digital Employee • DeepSeek v4.1 • Meta MCP
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* File Manager Button */}
-          <button
-            onClick={() => setShowFileManager(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300 text-xs font-semibold border border-amber-200 dark:border-amber-900/50 transition"
-            title="Open Asset & File Manager"
-          >
-            <FolderOpen size={14} />
-            <span className="hidden sm:inline">File Manager</span>
-          </button>
-
-          {/* New Chat Button */}
-          <button
-            onClick={handleNewChat}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold transition"
-            title="Start a new clean chat"
-          >
-            <Plus size={14} />
-            <span className="hidden sm:inline">New Task</span>
-          </button>
-
-          {/* History/Sessions toggle */}
-          <button
-            onClick={() => setShowSessionDrawer(!showSessionDrawer)}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-            title="Chat History"
-          >
-            <History size={16} />
-          </button>
-
-          {/* Live Activity Logs Drawer Toggle */}
-          <button
-            onClick={() => setShowLogsDrawer(!showLogsDrawer)}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition ${
-              showLogsDrawer
-                ? 'bg-slate-800 text-white border-slate-700'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-            }`}
-          >
-            <Terminal size={14} className={isLoading ? 'text-emerald-400 animate-pulse' : ''} />
-            <span className="hidden sm:inline">Activity Logs</span>
-            {showLogsDrawer ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Main Message Stream */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto my-auto py-8">
-            <NoboMascot size="lg" state="idle" message={`Hi! I'm Nobo, your AI business partner for ${impersonatedBusiness || 'your company'}.`} className="mb-4" />
-            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">
-              What can I accomplish for you today?
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-              I have direct control over your CRM, Meta Ads via official MCP, WhatsApp broadcasts with live previews, telephony calling, video rendering, and dynamic code execution.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full text-left">
-              {QUICK_ACTIONS.map((action, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSend(action.prompt)}
-                  className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 text-slate-700 dark:text-slate-300 transition group flex flex-col justify-between"
-                >
-                  <span className="text-xs font-semibold group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                    {action.label}
-                  </span>
-                  <ArrowRight size={13} className="text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition self-end mt-2" />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          messages.map((m: any, idx: number) => {
-            const isUser = m.role === 'user';
-            return (
-              <div key={idx} className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                {!isUser && (
-                  <div className="shrink-0 mt-0.5">
-                    <NoboMascot size="sm" state={isLoading && idx === messages.length - 1 ? 'thinking' : 'idle'} />
-                  </div>
-                )}
-
-                {(() => {
-                  const textParts = Array.isArray(m.parts)
-                    ? m.parts
-                        .filter((p: any) => p.type === 'text' && p.text)
-                        .map((p: any) => p.text)
-                        .join('')
-                    : '';
-                  const messageText = (typeof m.content === 'string' && m.content.trim())
-                    ? m.content
-                    : textParts;
-
-                  return (
-                    <div className={`max-w-[90%] sm:max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                      isUser
-                        ? 'bg-blue-600 text-white rounded-br-none shadow-sm'
-                        : 'bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-bl-none border border-slate-200/80 dark:border-slate-800 shadow-xs'
-                    }`}>
-                      {messageText ? (
-                        isUser ? (
-                          <div className="whitespace-pre-wrap">{messageText}</div>
-                        ) : (
-                          <AgentMarkdown content={messageText} />
-                        )
-                      ) : isUser ? (
-                        <div className="whitespace-pre-wrap italic opacity-80">Sent instruction...</div>
-                      ) : null}
-
-                      {!isUser && m.parts && m.parts.map((part: any, pIdx: number) => {
-                        if (part.type === 'tool-invocation') {
-                          return <ToolExecutionCard key={pIdx} tool={part.toolInvocation} idx={pIdx} isLoading={isLoading} />;
-                        }
-                        if (typeof part.type === 'string' && part.type.startsWith('tool-')) {
-                          return <ToolExecutionCard key={pIdx} tool={part} idx={pIdx} isLoading={isLoading} />;
-                        }
-                        return null;
-                      })}
-                    </div>
-                  );
-                })()}
-
-                {isUser && (
-                  <div className="w-7 h-7 rounded-lg bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center shrink-0 mt-0.5">
-                    <User size={14} />
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-
-        {isLoading && (
-          <div className="flex gap-3 justify-start items-center text-slate-400 text-xs py-2">
-            <NoboMascot size="sm" state="thinking" message="Executing multi-step mission..." />
-          </div>
-        )}
-      </div>
-
-      {/* Live Activity & Execution Logs Drawer */}
-      {showLogsDrawer && (
-        <div className="border-t border-slate-200 dark:border-slate-800 bg-slate-950 text-slate-300 p-3 h-48 overflow-y-auto font-mono text-xs space-y-1.5 transition-all animate-in slide-in-from-bottom duration-200">
-          <div className="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px] text-slate-400">
-            <span className="font-bold flex items-center gap-1.5 text-slate-300">
-              <Terminal size={13} className="text-emerald-400" />
-              Live Omni-Agent Execution Journal
-            </span>
-            <span className="text-[10px] text-slate-500">{executionLogs.length} events</span>
-          </div>
-          {executionLogs.length === 0 ? (
-            <p className="text-slate-600 italic py-2">No activity logged yet.</p>
-          ) : (
-            executionLogs.map((log, i) => (
-              <div key={i} className="flex items-start gap-2 text-[11px] leading-tight">
-                <span className="text-slate-500 shrink-0">[{log.time}]</span>
-                <span className={`shrink-0 font-bold uppercase text-[9px] px-1 py-0.2 rounded ${
-                  log.type === 'thought' ? 'bg-violet-900/60 text-violet-300' :
-                  log.type === 'tool' ? 'bg-blue-900/60 text-blue-300' :
-                  log.type === 'error' ? 'bg-rose-900/60 text-rose-300' :
-                  'bg-emerald-900/60 text-emerald-300'
-                }`}>
-                  {log.type}
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#4d6bfe]/10 text-[#4d6bfe]">
+                  {deepThinkActive ? 'R1' : 'V3'}
                 </span>
-                <span className="text-slate-200 break-words flex-1">{log.message}</span>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            </div>
 
-      {/* Chat History Sessions Drawer */}
-      {showSessionDrawer && (
-        <div className="absolute top-14 right-4 z-30 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-3 space-y-2 animate-in fade-in-50 duration-150">
-          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <History size={13} />
-              Saved Chat Threads
-            </h4>
             <button
-              onClick={() => {
-                localStorage.removeItem(sessionStorageKey);
-                setSessions([]);
-                setMessages([]);
-                toast.success('History cleared');
-              }}
-              className="text-[10px] text-rose-500 hover:text-rose-600 flex items-center gap-1"
+              onClick={() => setSidebarOpen(false)}
+              className="md:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
             >
-              <Trash2 size={11} /> Clear
+              <PanelLeftClose size={18} />
             </button>
           </div>
-          <div className="max-h-60 overflow-y-auto space-y-1">
-            {sessions.map((s) => (
+
+          <button
+            onClick={handleNewChat}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white dark:bg-[#1a1d24] border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 text-xs font-semibold hover:border-[#4d6bfe] hover:text-[#4d6bfe] dark:hover:border-[#4d6bfe] shadow-xs transition"
+          >
+            <Plus size={15} />
+            <span>New chat</span>
+          </button>
+        </div>
+
+        {/* Sessions History List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1">
+          <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            Recent Tasks
+          </div>
+          {sessions.length === 0 ? (
+            <div className="px-2 py-6 text-center text-xs text-slate-400">
+              No recent conversations
+            </div>
+          ) : (
+            sessions.map((s) => (
               <button
                 key={s.id}
                 onClick={() => {
                   setActiveSessionId(s.id);
-                  setShowSessionDrawer(false);
+                  if (window.innerWidth < 768) setSidebarOpen(false);
                 }}
-                className={`w-full text-left p-2 rounded-lg text-xs transition ${
+                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left transition group ${
                   activeSessionId === s.id
-                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    ? 'bg-[#4d6bfe]/10 text-[#4d6bfe] font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
                 }`}
               >
-                <div className="truncate">{s.title}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">{new Date(s.createdAt).toLocaleDateString()}</div>
+                <span className="truncate pr-2">{s.title}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const next = sessions.filter((x) => x.id !== s.id);
+                    setSessions(next);
+                    localStorage.setItem(sessionStorageKey, JSON.stringify(next));
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition"
+                >
+                  <Trash2 size={12} />
+                </button>
               </button>
-            ))}
-          </div>
+            ))
+          )}
         </div>
-      )}
 
-      {/* Input Area */}
-      <div className="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        {attachedFile && (
-          <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 text-xs">
-            {attachedFile.type === 'spreadsheet' ? (
-              <FileSpreadsheet size={14} />
-            ) : attachedFile.type === 'video' ? (
-              <FileVideo size={14} className="text-blue-500" />
-            ) : (
-              <ImageIcon size={14} />
-            )}
-            <span className="font-medium truncate max-w-xs">{attachedFile.name}</span>
-            <button
-              onClick={() => setAttachedFile(null)}
-              className="ml-1 text-slate-400 hover:text-rose-500 font-bold"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSend();
-          }}
-          className="flex items-center gap-2"
-        >
-          {/* File Attachment Button */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".csv,.xlsx,.tsv,.txt,image/*,video/*"
-            className="hidden"
-          />
+        {/* Sidebar Bottom Controls */}
+        <div className="p-3 pb-24 md:pb-28 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
+          {/* File Manager Button */}
           <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="p-2.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition shrink-0"
-            title="Attach CSV, Excel, or Image"
+            onClick={() => setShowFileManager(true)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition"
           >
-            <Paperclip size={18} />
+            <FolderOpen size={16} className="text-amber-500" />
+            <span>File & Asset Manager</span>
           </button>
 
-          {/* Voice Input */}
-          <VoiceInputButton
-            onTranscript={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
-          />
+          {/* E2B Sandbox Indicator */}
+          <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              E2B MicroVM Ready
+            </span>
+            <span className="font-mono text-[10px] text-emerald-600/70">Sandboxed</span>
+          </div>
 
-          {/* Main Prompt Input */}
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              impersonatedBusiness
-                ? `Ask Nobo anything for ${impersonatedBusiness}... (e.g. check ad spend, review CPL, draft flyer)`
-                : 'Tell the agent what to do (e.g. check ad spend, launch broadcast, parse CSV)...'
-            }
-            disabled={isLoading}
-            className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition"
-          />
-
-          {/* Submit or Stop Button */}
-          {isLoading ? (
-            <button
-              type="button"
-              onClick={handleInterrupt}
-              className="p-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white transition shrink-0"
-              title="Pause execution"
-            >
-              <Square size={16} className="fill-current" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!input.trim() && !attachedFile}
-              className="p-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600 text-white transition shrink-0 shadow-sm"
-              title="Send task to Nobo"
-            >
-              <Send size={16} />
-            </button>
+          {/* Impersonated Client Badge */}
+          {impersonatedBusiness && (
+            <div className="px-2.5 py-1.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-[11px] text-violet-700 dark:text-violet-300 flex items-center gap-1.5 truncate">
+              <Building2 size={13} className="shrink-0" />
+              <span className="truncate font-semibold">{impersonatedBusiness}</span>
+            </div>
           )}
-        </form>
+        </div>
+      </div>
+
+      {/* 2. Main DeepSeek Chat Canvas */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Top Minimal Bar */}
+        <div className="h-12 border-b border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between px-4 bg-white/70 dark:bg-[#0d0e12]/70 backdrop-blur-md shrink-0">
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              title="Toggle Sidebar"
+            >
+              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+            </button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                DeepSeek Harness
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
+                {deepThinkActive ? 'deepseek-reasoner' : 'deepseek-chat'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowLogsDrawer(!showLogsDrawer)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                showLogsDrawer
+                  ? 'bg-slate-800 text-white border-slate-700'
+                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Terminal size={13} className={isLoading ? 'text-emerald-400 animate-pulse' : ''} />
+              <span className="hidden sm:inline">Logs</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Conversation Stream */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+          <div className="max-w-3xl mx-auto space-y-6">
+            {messages.length === 0 ? (
+              /* DeepSeek Signature Empty State */
+              <div className="py-12 flex flex-col items-center justify-center text-center">
+                <div className="w-16 h-16 rounded-3xl bg-[#4d6bfe]/10 text-[#4d6bfe] flex items-center justify-center mb-4 shadow-sm">
+                  <DeepSeekIcon className="w-10 h-10" />
+                </div>
+
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mb-2">
+                  Hi, I'm DeepSeek.
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                  How can I help you create, automate, or launch today?
+                </p>
+
+                {/* 2x2 Quick Actions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left">
+                  {QUICK_ACTIONS.map((item, i) => {
+                    const ActionIcon = item.icon;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleSend(item.prompt)}
+                        className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#13151b] hover:border-[#4d6bfe] dark:hover:border-[#4d6bfe] hover:shadow-md transition text-left group flex items-start gap-3"
+                      >
+                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#4d6bfe] shrink-0 group-hover:bg-[#4d6bfe] group-hover:text-white transition">
+                          <ActionIcon size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-[#4d6bfe] transition">
+                            {item.label}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">
+                            {item.desc}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              messages.map((m: any, idx: number) => {
+                const isUser = m.role === 'user';
+                return (
+                  <div key={idx} className={`flex gap-3.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    {!isUser && (
+                      <div className="shrink-0 mt-0.5">
+                        <div className="w-7 h-7 rounded-full bg-[#4d6bfe] text-white flex items-center justify-center shadow-xs">
+                          <DeepSeekIcon className="w-5 h-5 text-white" />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={`max-w-[85%] ${isUser ? 'order-1' : ''}`}>
+                      {/* DeepSeek Signature Thinking Process Block */}
+                      {m.reasoning && (
+                        <div className="mb-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/60 dark:bg-[#16181d] p-3 text-xs">
+                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium mb-1.5">
+                            <BrainCircuit size={13} className="text-[#4d6bfe]" />
+                            <span>Thinking Process</span>
+                          </div>
+                          <div className="text-slate-600 dark:text-slate-400 italic font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+                            {m.reasoning}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tool Calls */}
+                      {Array.isArray(m.parts) &&
+                        m.parts
+                          .filter((p: any) => p.type === 'tool-call' || p.type?.startsWith('tool-'))
+                          .map((tool: any, tIdx: number) => (
+                            <ToolExecutionCard key={tIdx} tool={tool} idx={tIdx} isLoading={isLoading} />
+                          ))}
+
+                      {/* Message Content */}
+                      {m.content && (
+                        <div
+                          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                            isUser
+                              ? 'bg-[#eef3ff] dark:bg-[#1b2234] text-slate-900 dark:text-slate-100 font-medium'
+                              : 'bg-transparent text-slate-800 dark:text-slate-200'
+                          }`}
+                        >
+                          <AgentMarkdown content={m.content} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+            {isLoading && (
+              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
+                <Loader2 size={14} className="animate-spin text-[#4d6bfe]" />
+                <span>DeepSeek is thinking...</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 3. DeepSeek Signature Floating Input Dock */}
+        <div className="p-4 pb-24 md:pb-28 shrink-0 bg-gradient-to-t from-white via-white dark:from-[#0d0e12] dark:via-[#0d0e12] to-transparent">
+          <div className="max-w-3xl mx-auto">
+            {/* Attached File Preview Strip */}
+            {attachedFile && (
+              <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 text-xs">
+                {attachedFile.type === 'video' ? (
+                  <FileVideo size={14} className="text-[#4d6bfe]" />
+                ) : attachedFile.type === 'spreadsheet' ? (
+                  <FileSpreadsheet size={14} />
+                ) : (
+                  <ImageIcon size={14} />
+                )}
+                <span className="font-semibold truncate max-w-xs">{attachedFile.name}</span>
+                <button onClick={() => setAttachedFile(null)} className="ml-1 text-slate-400 hover:text-rose-500 font-bold">
+                  ×
+                </button>
+              </div>
+            )}
+
+            {/* Input Box Container */}
+            <div className="relative rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#16181d] shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition focus-within:border-[#4d6bfe] dark:focus-within:border-[#4d6bfe] p-3">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={
+                  impersonatedBusiness
+                    ? `Message DeepSeek for ${impersonatedBusiness}...`
+                    : 'Message DeepSeek (attach video clips, images, or instructions)...'
+                }
+                rows={1}
+                className="w-full resize-none bg-transparent outline-none text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 px-1 py-1 max-h-44"
+              />
+
+              {/* Bottom Buttons Bar Inside Box */}
+              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 dark:border-slate-800/60">
+                <div className="flex items-center gap-1.5">
+                  {/* DeepThink (R1) Toggle Pill */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeepThinkActive(!deepThinkActive);
+                      toast.info(deepThinkActive ? 'Switched to DeepSeek-V3 (Fast Mode)' : 'Activated DeepThink R1 (Deep Reasoning)');
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition ${
+                      deepThinkActive
+                        ? 'bg-[#4d6bfe] text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                    title="DeepThink (R1) - Chain of Thought"
+                  >
+                    <BrainCircuit size={13} />
+                    <span>DeepThink (R1)</span>
+                  </button>
+
+                  {/* Web Search Toggle Pill */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchActive(!searchActive);
+                      toast.info(searchActive ? 'Search disabled' : 'Search enabled');
+                    }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition ${
+                      searchActive
+                        ? 'bg-[#4d6bfe] text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                    title="DeepSeek Web Search"
+                  >
+                    <Globe size={13} />
+                    <span>Search</span>
+                  </button>
+
+                  {/* File Manager Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowFileManager(true)}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    title="File & Asset Manager"
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+
+                  {/* Attach Button */}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".csv,.xlsx,.tsv,.txt,image/*,video/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                    title="Attach Video, Image, or CSV"
+                  >
+                    <Paperclip size={16} />
+                  </button>
+
+                  {/* Voice Input Button */}
+                  <VoiceInputButton onTranscript={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))} />
+                </div>
+
+                {/* Send / Stop Button */}
+                {isLoading ? (
+                  <button
+                    type="button"
+                    onClick={handleInterrupt}
+                    className="w-8 h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow transition"
+                    title="Stop generation"
+                  >
+                    <Square size={14} className="fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSend()}
+                    disabled={!input.trim() && !attachedFile}
+                    className="w-8 h-8 rounded-full bg-[#4d6bfe] hover:bg-[#3d5bfe] disabled:opacity-40 disabled:hover:bg-[#4d6bfe] text-white flex items-center justify-center shadow-md transition"
+                    title="Send message"
+                  >
+                    <Send size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* File & Asset Manager Modal Drawer */}

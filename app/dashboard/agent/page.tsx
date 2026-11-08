@@ -5,7 +5,7 @@ import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import AgentChat from '@/components/agent/AgentChat';
-import { Bot, ShieldCheck, Loader2, Building2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 function AgentPageContent() {
   const router = useRouter();
@@ -62,45 +62,15 @@ function AgentPageContent() {
 
   if (isAuthorized === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-        <Loader2 size={24} className="text-blue-600 animate-spin" />
+      <div className="h-[calc(100vh-64px)] flex items-center justify-center bg-[#fdfdfe] dark:bg-[#0d0e12]">
+        <Loader2 size={28} className="text-[#4d6bfe] animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/50 dark:bg-slate-950 pb-24 pt-4 px-3 sm:px-6">
-      <div className="max-w-5xl mx-auto mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-blue-600/10 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-            <Bot size={18} />
-          </div>
-          <div>
-            <h1 className="text-lg font-black tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              DeepSeek Harness
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-400 px-2 py-0.5 rounded-full">
-                Flash Vision & Sandbox
-              </span>
-              {impersonatedName && (
-                <span className="text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-amber-200 dark:border-amber-900">
-                  <Building2 size={10} />
-                  <span>Client: {impersonatedName}</span>
-                </span>
-              )}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Autonomous DeepSeek Harness • E2B Linux Sandbox (FFmpeg & Code Video), DeepSeek Search & Fetch, Meta MCP, WhatsApp & Dual Voice Engine.
-            </p>
-          </div>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-3 py-1.5 rounded-full">
-          <ShieldCheck size={14} />
-          <span>Super Admin Active</span>
-        </div>
-      </div>
-
-      <AgentChat impersonateId={impersonateId} />
+    <div className="h-[calc(100vh-64px)] w-full overflow-hidden bg-[#fdfdfe] dark:bg-[#0d0e12]">
+      <AgentChat impersonateId={impersonateId} impersonatedName={impersonatedName} />
     </div>
   );
 }
@@ -109,8 +79,8 @@ export default function AgentPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-          <Loader2 size={24} className="text-blue-600 animate-spin" />
+        <div className="h-screen flex items-center justify-center bg-[#fdfdfe] dark:bg-[#0d0e12]">
+          <Loader2 size={28} className="text-[#4d6bfe] animate-spin" />
         </div>
       }
     >
