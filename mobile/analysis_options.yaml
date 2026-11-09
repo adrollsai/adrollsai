@@ -1,0 +1,31 @@
+# Analyzer and lint configuration for the Nobogent mobile app.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+
+linter:
+  rules:
+    always_declare_return_types: true
+    avoid_print: true
+    prefer_final_locals: true
+    use_super_parameters: true
+    avoid_unnecessary_containers: true
+    prefer_const_constructors: true
+    prefer_const_declarations: true
+    sized_box_for_whitespace: true
+    unawaited_futures: true
+
+    # Disabled with intent:
+    #
+    # Named constructor parameters cannot use initializing formals when the
+    # backing field is private, so this lint fires on correct, idiomatic code
+    # throughout the repository layer.
+    prefer_initializing_formals: false
+
+    # Dart 3.9's `?'key': value` map syntax is harder to scan than an explicit
+    # null check when several optional keys sit together in one literal.
+    use_null_aware_elements: false

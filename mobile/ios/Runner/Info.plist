@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Nobogent</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Nobogent</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!--
+	  Permission usage strings.
+
+	  The app currently requests NO permission at runtime, so every optional
+	  string below is commented out rather than declared. App Review rejects
+	  apps that declare usage descriptions for APIs they never call, and an
+	  unnecessary prompt is a bad experience. Uncomment the entry for the
+	  feature when it ships, with wording that says WHY the app needs it.
+	-->
+
+	<!--
+	<key>NSCameraUsageDescription</key>
+	<string>Nobogent uses the camera so you can photograph a property or product to turn into ad creatives.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Nobogent needs access to your photos so you can attach an existing image to a creative.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Nobogent saves generated creatives and videos to your photo library.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nobogent uses the microphone to record a voice brief for the AI agent.</string>
+	-->
+
+	<!-- Deep link for Supabase OAuth / password recovery (NoboEnv.oauthRedirect).
+	     The matching redirect must also be allow-listed in the Supabase dashboard
+	     before an OAuth round-trip can complete. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.nobogent.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nobogent</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- No custom cryptography is implemented, which exempts the app from the
+	     annual export-compliance declaration on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+
+	<!-- Portrait-first, because every screen is a single scrolling column and the
+	     media grids are tuned for it. Landscape is kept enabled so video playback
+	     can rotate; upside-down is excluded on iPhone per HIG convention. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Enables the iOS system "share to Nobogent" affordance for links. -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+</dict>
+</plist>

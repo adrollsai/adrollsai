@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to dart_defines.json (gitignored). These two values are public — the same ones the PWA ships in its browser bundle. Never add SUPABASE_SERVICE_ROLE_KEY or any AI provider key here.",
+  "NOBO_SUPABASE_URL": "https://YOUR-PROJECT-REF.supabase.co",
+  "NOBO_SUPABASE_ANON_KEY": "YOUR-ANON-KEY",
+  "NOBO_API_BASE_URL": "https://app.nobogent.com"
+}
