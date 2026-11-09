@@ -1,5 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
+import { DEEPSEEK_MODELS } from '../models';
 
 function getDeepseekApiKey(): string {
   return (process.env.DEEPSEEK_API_KEY || '').replace(/^["']|["']$/g, '').trim();
@@ -49,7 +50,7 @@ export function createDeepSeekSearchTools() {
                 'Authorization': `Bearer ${apiKey}`,
               },
               body: JSON.stringify({
-                model: 'deepseek-chat',
+                model: DEEPSEEK_MODELS.flash,
                 messages: [
                   {
                     role: 'system',

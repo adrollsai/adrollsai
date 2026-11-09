@@ -747,6 +747,27 @@ export async function bookAppointment(
                 leadSource: leadSourceStr,
                 skipWhatsApp: true // Suppress duplicate broken alert; step 6b below sends the accurate WhatsApp template
             })
+
+            // Also notify assigned agent if lead is assigned to someone other than owner
+            if (lead.assigned_to && lead.assigned_to !== lead.user_id) {
+                try {
+                    await sendAdminMultiChannelNotification({
+                        ownerUserId: lead.assigned_to,
+                        title: bookingTitle,
+                        body: `New appointment scheduled for your assigned lead ${lead.name} (${lead.phone || 'No Phone'}) for ${formattedSlotDate}!\n\n📢 Lead Source: ${leadSourceStr}${hangoutLink ? `\n🔗 Google Meet: ${hangoutLink}` : ''}\n\nPlease check your CRM for complete details.`,
+                        url: `/dashboard/crm/${leadId}`,
+                        type: 'meeting_booked',
+                        leadPhone: lead.phone,
+                        leadName: lead.name,
+                        leadId,
+                        leadSource: leadSourceStr,
+                        skipWhatsApp: true
+                    })
+                    console.log(`[VOICE HELPER] Sent appointment booking alert to assigned agent ${lead.assigned_to}`)
+                } catch (agentNotifErr: any) {
+                    console.warn(`[VOICE HELPER] Error notifying assigned agent ${lead.assigned_to}:`, agentNotifErr?.message)
+                }
+            }
         } catch (notifErr: any) {
             console.error('[VOICE HELPER] Failed to send multi-channel admin alert:', notifErr)
         }

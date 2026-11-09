@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { sendPushNotification } from '@/utils/notification-helper'
+import { sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { createClient } from '@/utils/supabase/server'
 
 export async function POST(request: Request) {
@@ -17,8 +17,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Only allow if the agent is part of the same org (could verify, but relying on frontend for now)
-    await sendPushNotification(agentId, title || "New Lead Assigned", message, url || "/dashboard/crm")
+    // Dispatch full multi-channel notification (in-app, push & email) to the assigned agent
+    await sendAdminMultiChannelNotification({
+      ownerUserId: agentId,
+      title: title || "🎯 Lead Assigned to You!",
+      body: message,
+      url: url || "/dashboard/crm",
+      type: "lead_assigned"
+    })
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error: any) {

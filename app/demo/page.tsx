@@ -314,7 +314,7 @@ export default function DemoPage() {
 
     // Media states
     const [selectedTemplateId, setSelectedTemplateId] = useState('pinterest_pin_0');
-    const [projectImageUrl, setProjectImageUrl] = useState('https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_0.jpg');
+    const [projectImageUrl, setProjectImageUrl] = useState(PRESET_PROJECTS[0].image);
     const [isCustomImageUploaded, setIsCustomImageUploaded] = useState(false);
     const [logoUrl, setLogoUrl] = useState('');
     const [uploadingImage, setUploadingImage] = useState(false);
@@ -569,12 +569,9 @@ export default function DemoPage() {
     const handleSelectTemplate = (templateId: string) => {
         setSelectedTemplateId(templateId);
         const tmpl = getReferenceTemplate(templateId);
-        if (!isCustomImageUploaded) {
-            setProjectImageUrl(tmpl.url);
-        }
         setIsTemplateModalOpen(false);
         playChime('beep');
-        toast.success(`Design Selected: ${tmpl.name}`);
+        toast.success(`Design Blueprint Selected: ${tmpl.name}`);
     };
 
     // Image upload handler using working /api/upload route
@@ -612,12 +609,11 @@ export default function DemoPage() {
         }
     };
 
-    // Remove or reset project image back to the selected template's default
+    // Remove or reset project image back to the preset default
     const handleRemoveProjectImage = () => {
-        const tmpl = getReferenceTemplate(selectedTemplateId);
-        setProjectImageUrl(tmpl.url);
+        setProjectImageUrl(PRESET_PROJECTS[0].image);
         setIsCustomImageUploaded(false);
-        toast.info("Reverted to reference template photo");
+        toast.info("Reverted to property photo");
     };
 
     // Logo upload handler

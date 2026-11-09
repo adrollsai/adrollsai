@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
       const { data: tp, error: tpErr } = await supabaseAdmin
         .from('profiles')
-        .select('id, business_name, email, full_name')
+        .select('id, business_name, email, full_name, business_info')
         .eq('id', targetAgentId)
         .maybeSingle()
 
@@ -428,10 +428,12 @@ export async function POST(req: Request) {
       ).catch((err: any) => console.error('[Bulk Transfer Push Error]:', err))
     ]
 
-    if (targetProfile?.email) {
+    const { resolveNotificationRecipients } = await import('@/utils/email-helper');
+    const { toEmail: resolvedTargetEmail } = resolveNotificationRecipients(targetProfile);
+    if (resolvedTargetEmail) {
       notifPromises.push(
         sendLeadTransferEmail(
-          targetProfile.email,
+          resolvedTargetEmail,
           agentName,
           senderName,
           validLeadIds.length

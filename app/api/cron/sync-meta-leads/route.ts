@@ -734,7 +734,7 @@ async function handleSync(request: Request) {
                   title: "🎯 Lead Assigned to You!",
                   body: `Lead: ${name}\nPhone: ${phone || 'N/A'}\nSource: ${cleanSource}`,
                   url: `/dashboard/crm/${savedLead.id}`,
-                  type: 'new_lead'
+                  type: 'lead_assigned'
                 }).catch(() => {});
               }
 

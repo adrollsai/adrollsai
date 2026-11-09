@@ -106,20 +106,54 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
         );
     }
 
-    const hasVideo = Boolean(videoUrl && (videoUrl.endsWith('.mp4') || videoUrl.endsWith('.mov') || videoUrl.endsWith('.webm')));
+    const hasVideo = Boolean(videoUrl && (
+        videoUrl.includes('.mp4') || 
+        videoUrl.includes('.mov') || 
+        videoUrl.includes('.webm') || 
+        videoUrl.includes('video') || 
+        videoUrl.includes('quickdraw')
+    ));
+
+    // Scene timing partition (within originalDurationInFrames = 780 frames / 26s)
+    // When video is present:
+    // Scene 1: AI Motion Video (0 - 240 frames = 0 - 8s)
+    // Scene 2: Property Architectural Hero (240 - 510 frames = 8 - 17s)
+    // Scene 3: AI Generated Ad Creative (510 - 780 frames = 17 - 26s)
+    const videoSceneEnd = 240;
+    const propertySceneEnd = 510;
     const midFrame = Math.floor(originalDurationInFrames / 2);
-    const isFirstScene = frame < midFrame;
-    const currentSceneImage = isFirstScene
-        ? (imageUrl || profile?.property_image_url || creativeUrl)
-        : (creativeUrl || imageUrl || profile?.property_image_url);
 
-    const kenBurnsScale = isFirstScene
-        ? interpolate(frame, [0, midFrame], [1.02, 1.15], { extrapolateRight: 'clamp' })
-        : interpolate(frame, [midFrame, originalDurationInFrames], [1.04, 1.16], { extrapolateRight: 'clamp' });
+    // Current scene determinations
+    const propertyHeroImage = imageUrl || profile?.property_image_url || creativeUrl;
+    const creativeShowcaseImage = creativeUrl || imageUrl || profile?.property_image_url;
 
-    const kenBurnsY = isFirstScene
-        ? interpolate(frame, [0, midFrame], [0, -20], { extrapolateRight: 'clamp' })
-        : interpolate(frame, [midFrame, originalDurationInFrames], [12, -12], { extrapolateRight: 'clamp' });
+    const isVideoScene = hasVideo && frame < videoSceneEnd;
+    const isCreativeScene = hasVideo 
+        ? (frame >= propertySceneEnd) 
+        : (frame >= midFrame);
+    const activeImage = isCreativeScene ? creativeShowcaseImage : propertyHeroImage;
+
+    // Crossfade opacity calculations
+    const videoOpacity = hasVideo
+        ? interpolate(frame, [videoSceneEnd - 15, videoSceneEnd], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+        : 0;
+
+    const propertySceneOpacity = hasVideo
+        ? interpolate(frame, [videoSceneEnd - 15, videoSceneEnd, propertySceneEnd - 15, propertySceneEnd], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+        : interpolate(frame, [midFrame - 15, midFrame], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+    const creativeSceneOpacity = hasVideo
+        ? interpolate(frame, [propertySceneEnd - 15, propertySceneEnd], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+        : interpolate(frame, [midFrame - 15, midFrame], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+
+    // Smooth Ken Burns camera motion
+    const kenBurnsScale = isCreativeScene
+        ? interpolate(frame, [hasVideo ? propertySceneEnd : midFrame, originalDurationInFrames], [1.02, 1.14], { extrapolateRight: 'clamp' })
+        : interpolate(frame, [hasVideo ? videoSceneEnd : 0, hasVideo ? propertySceneEnd : midFrame], [1.03, 1.15], { extrapolateRight: 'clamp' });
+
+    const kenBurnsY = isCreativeScene
+        ? interpolate(frame, [hasVideo ? propertySceneEnd : midFrame, originalDurationInFrames], [8, -12], { extrapolateRight: 'clamp' })
+        : interpolate(frame, [hasVideo ? videoSceneEnd : 0, hasVideo ? propertySceneEnd : midFrame], [0, -22], { extrapolateRight: 'clamp' });
 
     // Active visual effects calculations
     const activeZoom = effects.find(eff => eff.type === 'zoom' && frame >= eff.start * fps && frame < eff.end * fps);
@@ -162,8 +196,15 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                 position: 'absolute',
                 inset: 0,
             }}>
-                {hasVideo ? (
-                    <Loop durationInFrames={450}>
+                {/* Scene 1: AI Motion Video (when video is available) */}
+                {hasVideo && frame < videoSceneEnd + 15 && (
+                    <div style={{
+                        position: 'absolute',
+                        inset: 0,
+                        opacity: videoOpacity,
+                        zIndex: 2,
+                        transition: 'opacity 0.2s ease'
+                    }}>
                         {isPlayer ? (
                             <Video 
                                 src={videoUrl!} 
@@ -178,15 +219,36 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                                 volume={audioUrl ? 0 : 0.8}
                             />
                         )}
-                    </Loop>
-                ) : (
-                    /* Cinematic Property Showcase with Ken Burns Drift & Ambient Glow */
-                    <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', backgroundColor: '#020617' }}>
-                        {currentSceneImage && (
-                            <>
-                                {/* Ambient blurred backdrop fills the full 9:16 frame */}
+                        {/* Cinematic vignette overlay on video for subtitle contrast */}
+                        <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.5) 100%)',
+                            pointerEvents: 'none',
+                        }} />
+                    </div>
+                )}
+
+                {/* Scene 2 & 3: Cinematic Property Hero & AI Creative Showcase */}
+                {(!hasVideo || frame >= videoSceneEnd - 15) && (
+                    <div style={{ 
+                        width: '100%', 
+                        height: '100%', 
+                        position: 'relative', 
+                        overflow: 'hidden', 
+                        backgroundColor: '#020617',
+                        zIndex: 1 
+                    }}>
+                        {/* Property Hero Scene */}
+                        {propertyHeroImage && (
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                opacity: propertySceneOpacity,
+                                transition: 'opacity 0.3s ease'
+                            }}>
                                 <img 
-                                    src={currentSceneImage} 
+                                    src={propertyHeroImage} 
                                     alt=""
                                     style={{
                                         position: 'absolute',
@@ -198,9 +260,8 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                                         transform: 'scale(1.25)',
                                     }}
                                 />
-                                {/* Sharp foreground with slow, elegant cinematic zoom & pan */}
                                 <img 
-                                    src={currentSceneImage} 
+                                    src={propertyHeroImage} 
                                     alt="Property Scene"
                                     style={{
                                         position: 'absolute',
@@ -211,14 +272,55 @@ export const CaptionsComposition: React.FC<CaptionsCompositionProps> = ({
                                         transform: `scale(${kenBurnsScale}) translateY(${kenBurnsY}px)`,
                                     }}
                                 />
-                                {/* Subtle luxury vignette gradient overlay for text readability */}
                                 <div style={{
                                     position: 'absolute',
                                     inset: 0,
                                     background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.1) 45%, rgba(0,0,0,0.4) 100%)',
                                     pointerEvents: 'none',
                                 }} />
-                            </>
+                            </div>
+                        )}
+
+                        {/* AI Ad Creative Showcase Scene */}
+                        {creativeShowcaseImage && (
+                            <div style={{
+                                position: 'absolute',
+                                inset: 0,
+                                opacity: creativeSceneOpacity,
+                                transition: 'opacity 0.3s ease'
+                            }}>
+                                <img 
+                                    src={creativeShowcaseImage} 
+                                    alt=""
+                                    style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover',
+                                        filter: 'blur(32px) brightness(0.55)',
+                                        transform: 'scale(1.25)',
+                                    }}
+                                />
+                                <img 
+                                    src={creativeShowcaseImage} 
+                                    alt="AI Creative"
+                                    style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'contain',
+                                        transform: `scale(${kenBurnsScale}) translateY(${kenBurnsY}px)`,
+                                    }}
+                                />
+                                <div style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.1) 45%, rgba(0,0,0,0.4) 100%)',
+                                    pointerEvents: 'none',
+                                }} />
+                            </div>
                         )}
                     </div>
                 )}

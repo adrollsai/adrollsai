@@ -585,7 +585,7 @@ CRITICAL RULES:
                 status: 'processing',
                 payload: {
                     type: 'landing_page_generation',
-                    model: 'deepseek-v4.1-flash',
+                    model: 'deepseek-flash',
                     mode,
                     page_id: pageRecord.id,
                     product_name: resolvedProductName,

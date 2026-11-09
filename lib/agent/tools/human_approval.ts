@@ -75,5 +75,49 @@ export function createHumanApprovalTool(supabase: SupabaseClient, userId: string
         }
       },
     }),
+
+    request_user_input: tool({
+      description: 'Requests essential input, preferences, or clarification from the user at any point in an autonomous flow. Immediately sends a push notification to their device so they can provide the answer even if they navigated away or closed the tab.',
+      inputSchema: z.object({
+        question: z.string().describe('The question or decision prompt to ask the user'),
+        context: z.string().optional().describe('Why this input is required for the workflow'),
+        suggestedOptions: z.array(z.string()).optional().describe('Optional list of quick choices/options'),
+      }),
+      execute: async ({ question, context, suggestedOptions }) => {
+        try {
+          const inputRequestId = 'input_' + crypto.randomBytes(6).toString('hex');
+
+          // Send push notification to user device
+          try {
+            await sendPushNotification(
+              userId,
+              '🔔 Nobogent Agent Needs Your Input',
+              question.slice(0, 120),
+              `/dashboard/agent?inputRequestId=${inputRequestId}`
+            );
+          } catch (e: any) {
+            console.warn('[UserInput] Push notification dispatch failed:', e.message);
+          }
+
+          return {
+            success: true,
+            status: 'awaiting_user_input',
+            inputRequestId,
+            question,
+            context,
+            suggestedOptions,
+            artifact: {
+              type: 'user_input_prompt',
+              inputRequestId,
+              question,
+              context,
+              suggestedOptions,
+            },
+          };
+        } catch (err: any) {
+          return { success: false, error: err.message };
+        }
+      },
+    }),
   };
 }

@@ -72,6 +72,66 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+/**
+ * Authorise a domain change.
+ *
+ * This route writes with the service role, so without this check any caller
+ * could attach an arbitrary domain to any account by posting a userId. A
+ * signed-in user may only change their OWN domain, or the domain of a
+ * sub-account inside their own agency.
+ */
+async function authorizeDomainChange(
+  callerRequest: Request,
+  targetUserId: string
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  let callerId: string | null = null;
+
+  // Bearer token first (server-to-server / mobile), then the session cookie.
+  const authHeader = callerRequest.headers.get('authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token) {
+      const { data } = await supabaseAdmin.auth.getUser(token);
+      callerId = data?.user?.id || null;
+    }
+  }
+  if (!callerId) {
+    try {
+      const { createClient: createServerClient } = await import('@/utils/supabase/server');
+      const session = await createServerClient();
+      const { data } = await session.auth.getUser();
+      callerId = data?.user?.id || null;
+    } catch {
+      callerId = null;
+    }
+  }
+
+  if (!callerId) return { ok: false, status: 401, error: 'Authentication required.' };
+  if (callerId === targetUserId) return { ok: true };
+
+  const { data: caller } = await supabaseAdmin
+    .from('profiles')
+    .select('id, role, email, agency_id')
+    .eq('id', callerId)
+    .maybeSingle();
+
+  const isSuperAdmin =
+    caller?.role === 'super_admin' || caller?.email === 'rchopra489@gmail.com';
+  if (isSuperAdmin) return { ok: true };
+
+  if (caller?.agency_id) {
+    const { data: sub } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', targetUserId)
+      .eq('agency_id', caller.agency_id)
+      .maybeSingle();
+    if (sub?.id) return { ok: true };
+  }
+
+  return { ok: false, status: 403, error: 'You can only manage domains for your own account.' };
+}
+
 // --- INITIALIZE AND LINK DOMAIN (POST) ---
 // Directly adds the domain to Vercel and marks it as verified in Supabase
 export async function POST(req: Request) {
@@ -80,6 +140,11 @@ export async function POST(req: Request) {
 
     if (!domain || !userId) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
+    }
+
+    const auth = await authorizeDomainChange(req, userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     // 1. Clean the domain string
@@ -161,6 +226,11 @@ export async function DELETE(req: Request) {
 
     if (!domain || !userId) {
       return NextResponse.json({ error: 'Missing domain or userId' }, { status: 400 });
+    }
+
+    const auth = await authorizeDomainChange(req, userId);
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
     // 1. Remove domain from Vercel Project

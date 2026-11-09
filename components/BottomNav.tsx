@@ -111,7 +111,7 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
-    { name: 'Nobo', icon: Bot, path: '/dashboard/agent' },
+    { name: 'Nobogent', icon: Bot, path: '/dashboard/agent' },
     { name: 'Catalog', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
@@ -127,7 +127,7 @@ export default function BottomNav() {
 
   const navItems = allNavItems.filter(item => {
     // Restrict Nobo strictly to Nobogent super admin account for now
-    if (item.name === 'Nobo') {
+    if (item.name === 'Nobogent') {
       return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
     }
 

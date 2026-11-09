@@ -1,51 +1,55 @@
 'use client';
 
 import * as React from 'react';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import {
   Send,
   Loader2,
-  Sparkles,
   Paperclip,
-  User,
-  Wrench,
-  FileSpreadsheet,
-  ArrowRight,
   Square,
   Plus,
   Terminal,
   ChevronDown,
   ChevronUp,
-  History,
   Trash2,
   Image as ImageIcon,
   CheckCircle2,
   AlertCircle,
-  ShieldAlert,
+  FolderOpen,
+  FolderPlus,
+  FileVideo,
+  FileSpreadsheet,
+  BrainCircuit,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Check,
+  Copy,
+  RotateCcw,
+  Bot,
+  Search,
+  Settings,
+  Download,
+  Film,
+  Globe,
+  Code2,
+  PhoneCall,
+  MessageSquare,
   BarChart2,
   Megaphone,
   PlusCircle,
   Rocket,
   Users,
-  MessageSquare,
-  Building2,
-  PhoneCall,
-  Globe,
-  Video,
-  Film,
-  Code2,
+  ShieldAlert,
+  Wrench,
+  Sparkles,
+  ArrowDown,
+  Layers,
+  Activity,
+  Maximize2,
   Play,
-  FolderOpen,
-  FileVideo,
-  BrainCircuit,
-  Compass,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Check,
-  Copy,
-  ExternalLink,
+  FileEdit,
 } from 'lucide-react';
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
@@ -53,13 +57,28 @@ import ActionConfirmationCard from './ActionConfirmationCard';
 import ProgressTrackerCard from './ProgressTrackerCard';
 import FileManagerDrawer from './FileManagerDrawer';
 import AgentMarkdown from './AgentMarkdown';
+import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
+import HarnessTranscript from './HarnessTranscript';
+import HarnessDetails from './HarnessDetails';
+import { useHarnessSession } from '@/lib/agent/harness/useHarnessSession';
+import { itemsToUIMessages } from '@/lib/agent/harness/projection';
+import { AGENT_MODEL, displayNameFor } from '@/lib/agent/models';
+import { resolveToolPresentation, summarizeToolInput } from '@/lib/agent/presentation';
 import { createClient } from '@/utils/supabase/client';
 import { toast } from 'sonner';
+
+interface WorkspaceFolder {
+  id: string;
+  name: string;
+  createdAt: string;
+}
 
 interface ChatSession {
   id: string;
   title: string;
+  workspaceId: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 interface AgentChatProps {
@@ -67,664 +86,1257 @@ interface AgentChatProps {
   impersonatedName?: string | null;
 }
 
-// DeepSeek's iconic geometric whale / dolphin mark
-function DeepSeekIcon({ className = "w-6 h-6" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <circle cx="50" cy="50" r="48" fill="#4d6bfe" fillOpacity="0.12" />
-      <path
-        d="M48.2 16C33.8 16.5 21 25.6 15.6 38.8C10.2 52 13.1 67.3 22.8 77.8C32.5 88.3 47.6 92.6 61.2 88.7C74.8 84.8 85.1 73.2 87.2 59.2C88.1 53.3 87.2 47.1 84.6 41.7C82 36.3 77.8 32 72.8 29C65.5 24.6 56.7 22.9 48.2 24.2"
-        stroke="#4d6bfe"
-        strokeWidth="7"
-        strokeLinecap="round"
-      />
-      <path d="M35 56C42 46 58 46 65 56" stroke="#4d6bfe" strokeWidth="7" strokeLinecap="round" />
-      <circle cx="36" cy="46" r="4.5" fill="#4d6bfe" />
-      <circle cx="64" cy="46" r="4.5" fill="#4d6bfe" />
-    </svg>
-  );
-}
-
-const QUICK_ACTIONS = [
-  {
-    icon: Film,
-    label: 'Create 15s Property Reel',
-    desc: 'Generate motion graphics & video overlays via Remotion & FFmpeg',
-    prompt: 'Create a high-converting 15-second vertical video reel for our luxury property showcase with animated kinetic captions, brand logo, and WhatsApp CTA button.',
-  },
-  {
-    icon: Rocket,
-    label: 'Launch Meta Ad Campaign',
-    desc: 'Use official Meta MCP to create targeted Instagram Reels ad',
-    prompt: 'Use Meta Ads MCP to inspect active campaigns and launch a high-intent lead generation campaign on Instagram Reels with ₹1,500/day budget.',
-  },
-  {
-    icon: MessageSquare,
-    label: 'WhatsApp Broadcast Template',
-    desc: 'Design and preview high-converting WhatsApp message card',
-    prompt: 'Design an engaging WhatsApp marketing template with personalized name variable, image header, and quick-reply action buttons.',
-  },
-  {
-    icon: PhoneCall,
-    label: 'Configure Voice Calling Agent',
-    desc: 'Update default inbound & new lead follow-up script & voice',
-    prompt: 'Review and update my default AI voice calling agent configuration: set voice to Aditi, configure qualification questions for new leads, and enable auto-call.',
-  },
+const DEFAULT_WORKSPACES: WorkspaceFolder[] = [
+  { id: 'ws_default', name: 'General', createdAt: new Date().toISOString() },
 ];
 
-function getToolDisplayInfo(rawName: string) {
-  switch (rawName) {
-    case 'sandbox_bash_run':
-      return { label: 'E2B Cloud Sandbox • Bash Terminal', Icon: Terminal };
-    case 'sandbox_render_video':
-      return { label: 'Hyperframes • Video Render Engine', Icon: Film };
-    case 'sandbox_write_and_run':
-      return { label: 'E2B Cloud Sandbox • Code Execution', Icon: Code2 };
-    case 'deepseek_web_search':
-      return { label: 'DeepSeek Search • Web Live Intelligence', Icon: Globe };
-    case 'deepseek_web_fetch':
-      return { label: 'DeepSeek Fetch • Web Reader & Scraper', Icon: Globe };
-    case 'list_user_files':
-      return { label: 'File Manager • Asset Explorer', Icon: FolderOpen };
-    case 'organize_or_move_file':
-      return { label: 'File Manager • Organize & Move', Icon: FolderOpen };
-    case 'delete_user_file':
-      return { label: 'File Manager • Delete Asset', Icon: Trash2 };
-    case 'generate_ai_video_clip':
-      return { label: 'Grok AI Video • Motion Studio', Icon: Video };
-    case 'generate_ai_image':
-      return { label: 'GPT Image 2.5 • Creative Studio', Icon: ImageIcon };
-    case 'update_default_voice_settings':
-      return { label: 'Voice Agent • Default Inbound Bot Config', Icon: PhoneCall };
-    case 'launch_bulk_calling_campaign':
-      return { label: 'Voice AI • Outbound Campaign Blast', Icon: PhoneCall };
-    case 'create_whatsapp_template':
-      return { label: 'WhatsApp • Meta Template Generator', Icon: MessageSquare };
-    case 'send_single_whatsapp_message':
-      return { label: 'WhatsApp • 1-on-1 Direct Outreach', Icon: MessageSquare };
-    case 'meta_mcp_get_insights':
-      return { label: 'Meta Ads • Performance Insights', Icon: BarChart2 };
-    case 'meta_mcp_list_campaigns':
-      return { label: 'Meta Ads • Campaign Explorer', Icon: Megaphone };
-    case 'meta_mcp_create_campaign':
-      return { label: 'Meta Ads • Campaign Generator', Icon: PlusCircle };
-    case 'meta_mcp_launch_leadgen_campaign':
-      return { label: 'Meta Ads • LeadGen Launcher', Icon: Rocket };
-    case 'execute_data_code':
-      return { label: 'Data Analytics Engine', Icon: Terminal };
-    case 'get_crm_leads':
-      return { label: 'CRM • Lead Directory', Icon: Users };
-    case 'send_whatsapp_message':
-      return { label: 'WhatsApp • Outreach', Icon: MessageSquare };
-    case 'request_human_approval':
-      return { label: 'Safety Guard • Human Approval', Icon: ShieldAlert };
-    default:
-      return {
-        label: rawName.replace(/^tool-/, '').replace(/_/g, ' '),
-        Icon: Wrench,
-      };
+function formatTimeAgo(isoString: string): string {
+  try {
+    const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+    return `${Math.floor(diff / 86400)}d`;
+  } catch {
+    return 'now';
   }
 }
 
-function ToolExecutionCard({ tool, idx, isLoading }: { tool: any; idx: number; isLoading: boolean }) {
-  const [isExpanded, setIsExpanded] = useState(false);
+function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleCopyMessage, copiedIndex, reload }: any) {
+  try {
+    if (!m || typeof m !== 'object') return null;
+    const isUser = m.role === 'user';
 
-  const rawToolName = tool.toolName || (typeof tool.type === 'string' && tool.type.startsWith('tool-') ? tool.type.slice(5) : 'action');
-  const { label, Icon } = getToolDisplayInfo(rawToolName);
+    if (isUser) {
+      const rawUserText = (typeof m.content === 'string' ? m.content : '') || (typeof m.parts?.[0]?.text === 'string' ? m.parts[0].text : '') || '';
 
-  const output = tool.output !== undefined ? tool.output : tool.result;
-  const inputArgs = tool.input !== undefined ? tool.input : tool.args;
+      // Clean out any raw base64 data preview strings from messages to avoid DOM layout freezes
+      const sanitizedText = rawUserText.replace(/Content preview:\s*data:[^;\n]+;base64,[A-Za-z0-9+/=]+/g, '[Embedded Media Data]');
 
-  const isPending = output === undefined && isLoading;
-  const isSuccess = output && !output.error && output.success !== false;
-  const isError = output && (output.error || output.success === false);
+      const attachmentMatch = sanitizedText.match(/\[Attached File:\s*([^()\]]+)\s*\(([^)]+)\)\]/i);
+      const urlMatch = sanitizedText.match(/URL:\s*(https?:\/\/[^\s\n]+)/i);
 
-  const artifact = output?.artifact || (output?.actionPayload && output?.requiresApproval ? {
-    type: 'action_confirmation',
-    actionType: output.actionPayload.actionType,
-    title: output.actionPayload.title,
-    description: output.actionPayload.description,
-    estimatedCost: output.actionPayload.estimatedCost,
-    payload: output.actionPayload.payload,
-  } : null);
+      // Clean user prompt text without attachment boilerplate
+      let displayText = sanitizedText
+        .replace(/\[Attached File:[^\]]+\]/gi, '')
+        .replace(/URL:\s*https?:\/\/[^\s\n]+/gi, '')
+        .replace(/Instruction:\s*/gi, '')
+        .trim();
 
-  return (
-    <div className="my-2 text-xs">
-      <div
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#16181d] border border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 cursor-pointer transition select-none"
-      >
-        <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-          <Icon size={14} className="text-[#4d6bfe]" />
-          <span className="font-medium text-[11px]">{label}</span>
-        </div>
+      const fileName = attachmentMatch ? attachmentMatch[1].trim() : null;
+      const fileType = attachmentMatch ? attachmentMatch[2].trim() : null;
+      const fileUrl = urlMatch ? urlMatch[1].trim() : null;
 
-        <div className="flex items-center gap-2">
-          {isPending ? (
-            <span className="flex items-center gap-1 text-[10px] text-[#4d6bfe] font-mono">
-              <Loader2 size={11} className="animate-spin" />
-              Running
-            </span>
-          ) : isError ? (
-            <span className="flex items-center gap-1 text-[10px] text-rose-500 font-mono">
-              <AlertCircle size={11} />
-              Failed
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-[10px] text-emerald-500 font-mono">
-              <CheckCircle2 size={11} />
-              Done
-            </span>
-          )}
-          {isExpanded ? <ChevronUp size={12} className="text-slate-400" /> : <ChevronDown size={12} className="text-slate-400" />}
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="mt-1.5 p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-slate-300 font-mono space-y-2 max-h-56 overflow-y-auto">
-          {inputArgs && (
-            <div>
-              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Inputs:</span>
-              <pre className="text-slate-400 whitespace-pre-wrap">{JSON.stringify(inputArgs, null, 2)}</pre>
+      return (
+        <div key={m.id || mIdx} className="my-3 flex justify-end font-sans">
+          <div className="flex flex-col items-end max-w-[80%]">
+            <div
+              className="rounded-[16px] px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
+              style={{
+                background: 'var(--dsw-alias-bg-layer-2)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+                color: 'var(--dsw-alias-label-primary)',
+              }}
+            >
+              {fileName && (
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] dsh-chip dsh-t-xs dsh-mono">
+                  {fileType === 'video' ? <FileVideo size={13} className="dsh-accent" /> : <Paperclip size={13} className="dsh-accent" />}
+                  <span className="font-semibold truncate max-w-[240px]">{fileName}</span>
+                  {fileUrl && (
+                    <a
+                      href={fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 dsh-t-xxxs dsh-accent underline"
+                    >
+                      view
+                    </a>
+                  )}
+                </div>
+              )}
+              {displayText && <AgentMarkdown content={displayText} />}
             </div>
-          )}
-          {output && (
-            <div className="border-t border-slate-800 pt-2">
-              <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Output:</span>
-              <pre className="text-emerald-400 whitespace-pre-wrap">{JSON.stringify(output, null, 2)}</pre>
-            </div>
-          )}
+            <button
+              onClick={() => handleCopyMessage(sanitizedText, mIdx)}
+              className="mt-1 dsh-label-caption dsh-interactive p-0.5"
+              title="Copy"
+            >
+              {copiedIndex === mIdx ? <Check size={12} className="dsh-success" /> : <Copy size={12} />}
+            </button>
+          </div>
         </div>
-      )}
+      );
+    }
 
-      {/* Artifact Renderers */}
-      {artifact && artifact.type === 'video_player' && (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-black shadow-lg">
-          <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950/90 border-b border-slate-800 text-xs text-slate-200">
-            <span className="font-semibold flex items-center gap-1.5 text-[#4d6bfe]">
-              <Film size={14} />
-              {artifact.title || 'Rendered Video'}
-            </span>
-            {artifact.duration && (
-              <span className="text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded-full font-mono">
-                {artifact.duration}
-              </span>
+    // Assistant Message
+    const parts = Array.isArray(m.parts) ? m.parts.filter((p: any) => p && typeof p === 'object') : [];
+    const hasReasoningPart = parts.some((p: any) => p.type === 'reasoning' || p.type === 'thinking');
+
+    let fallbackReasoning = '';
+    let rawText = '';
+    try {
+      rawText = (typeof m.content === 'string' ? m.content : '') || parts.filter((p: any) => p.type === 'text').map((p: any) => typeof p.text === 'string' ? p.text : '').join('') || '';
+      if (!hasReasoningPart && rawText.includes('<think>')) {
+        const thinkMatch = rawText.match(/<think>([\s\S]*?)(?:<\/think>|$)/);
+        if (thinkMatch) {
+          fallbackReasoning = thinkMatch[1].trim();
+          rawText = rawText.replace(/<think>[\s\S]*?(?:<\/think>|$)/, '').trim();
+        }
+      }
+    } catch (e) {}
+    const finalTexts = rawText.replace(/<\/?think>/g, '').trim();
+
+    return (
+      <div key={m.id || mIdx} className="space-y-1 my-3">
+        {fallbackReasoning && <ThinkFeedRow text={fallbackReasoning} />}
+
+        {parts.map((part: any, pIdx: number) => {
+          try {
+            if (!part || typeof part !== 'object') return null;
+            const partType = typeof part.type === 'string' ? part.type : '';
+            if (partType === 'reasoning' || partType === 'thinking') {
+              const thoughtText = typeof part.text === 'string' ? part.text : typeof part.reasoning === 'string' ? part.reasoning : '';
+              if (!thoughtText.trim()) return null;
+              return <ThinkFeedRow key={pIdx} text={thoughtText} />;
+            }
+            if (partType === 'tool-call' || partType === 'tool-invocation' || partType.startsWith('tool-')) {
+              return (
+                <ToolFeedRow
+                  key={pIdx}
+                  tool={part}
+                  isLoading={isLoading && mIdx === messages.length - 1}
+                  onOptionSelect={handleSend}
+                />
+              );
+            }
+          } catch (e) {}
+          return null;
+        })}
+
+        {finalTexts && (
+          <div className="pt-2 dsh-t-prose dsh-label-primary">
+            <AgentMarkdown content={finalTexts} />
+            {!isLoading && (
+              <div className="flex items-center gap-3 pt-2 dsh-label-caption dsh-t-xs">
+                <button onClick={() => handleCopyMessage(finalTexts, mIdx)} className="dsh-interactive" title="Copy">
+                  {copiedIndex === mIdx ? <Check size={13} className="dsh-success" /> : <Copy size={13} />}
+                </button>
+                {mIdx === messages.length - 1 && reload && (
+                  <button onClick={() => reload()} className="dsh-interactive" title="Retry">
+                    <RotateCcw size={13} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
-          <video controls playsInline className="w-full max-h-[380px] object-contain" src={artifact.videoUrl} />
-        </div>
-      )}
-
-      {artifact && artifact.type === 'image_preview' && (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-900 shadow-lg">
-          <div className="px-3.5 py-2 bg-slate-950 border-b border-slate-800 text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-            <ImageIcon size={14} className="text-violet-400" />
-            {artifact.title || 'Generated Image'}
-          </div>
-          <img src={artifact.imageUrl} alt={artifact.title || 'Preview'} className="w-full max-h-[380px] object-cover" />
-        </div>
-      )}
-
-      {artifact && artifact.type === 'html_sandbox' && (
-        <HtmlArtifactPreview title={artifact.title} html={artifact.html} description={artifact.description} />
-      )}
-
-      {artifact && artifact.type === 'action_confirmation' && (
-        <ActionConfirmationCard artifact={artifact as any} />
-      )}
-
-      {artifact && artifact.type === 'progress_tracker' && (
-        <ProgressTrackerCard {...artifact} />
-      )}
-    </div>
-  );
+        )}
+      </div>
+    );
+  } catch (renderErr: any) {
+    console.error('[SafeMessageRenderer] crash on message', mIdx, renderErr);
+    return (
+      <div key={m?.id || mIdx} className="my-2 px-3 py-2 rounded-[8px] dsh-surface-2 dsh-border dsh-t-xs dsh-label-caption dsh-mono">
+        ⚠ Message {mIdx + 1} could not be rendered. <span className="dsh-danger">{String(renderErr?.message || '').slice(0, 80)}</span>
+      </div>
+    );
+  }
 }
 
 export default function AgentChat({ impersonateId, impersonatedName }: AgentChatProps) {
   const [input, setInput] = useState('');
-  const [attachedFile, setAttachedFile] = useState<{ name: string; content: string; type: string } | null>(null);
-  const [deepThinkActive, setDeepThinkActive] = useState(false);
-  const [searchActive, setSearchActive] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<{
+    name: string;
+    url?: string;
+    content?: string;
+    type: string;
+    size?: number;
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showFileManager, setShowFileManager] = useState(false);
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
-  const [executionLogs, setExecutionLogs] = useState<Array<{ time: string; message: string; type: 'info' | 'tool' | 'error' | 'thought' }>>([]);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<'chat' | 'trajectory'>('chat');
+  // The third column of the AppFrame. `activeTab` is kept for the header
+  // control's visual state but the panel is what it actually toggles.
+  const [showDetails, setShowDetails] = useState(false);
+  const [secondsElapsed, setSecondsElapsed] = useState(0);
+
+  // Workspaces state (DeepSeek Harness style)
+  const [workspaces, setWorkspaces] = useState<WorkspaceFolder[]>(DEFAULT_WORKSPACES);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('ws_general');
+  const [showNewWorkspaceModal, setShowNewWorkspaceModal] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Sessions state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>('default');
-  const [impersonatedBusiness, setImpersonatedBusiness] = useState<string | null>(impersonatedName || null);
+  const [activeSessionId, setActiveSessionId] = useState<string>('session_init');
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabled = useRef(true);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Fetch client details if impersonating
-  useEffect(() => {
-    if (!impersonateId) {
-      setImpersonatedBusiness(null);
-      return;
-    }
-    const fetchProfile = async () => {
-      try {
-        const supabase = createClient();
-        const { data } = await supabase
-          .from('profiles')
-          .select('business_name, email')
-          .eq('id', impersonateId)
-          .single();
-        if (data) {
-          setImpersonatedBusiness(data.business_name || data.email);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch impersonated profile', err);
-      }
-    };
-    fetchProfile();
+  const sessionStorageKey = useMemo(() => {
+    return impersonateId ? `nobo_harness_sessions_${impersonateId}` : 'nobo_harness_sessions';
   }, [impersonateId]);
 
-  // Construct URL with query parameters
+  const workspaceStorageKey = useMemo(() => {
+    return impersonateId ? `nobo_harness_workspaces_${impersonateId}` : 'nobo_harness_workspaces';
+  }, [impersonateId]);
+
+  const lastSessionStorageKey = useMemo(() => {
+    return impersonateId ? `nobo_harness_last_sess_${impersonateId}` : 'nobo_harness_last_sess';
+  }, [impersonateId]);
+
+  // Construct API endpoint
   const apiEndpoint = useMemo(() => {
     const params = new URLSearchParams();
     if (impersonateId) params.append('impersonate', impersonateId);
-    if (deepThinkActive) params.append('reasoning', '1');
     const qs = params.toString();
     return qs ? `/api/agent/v2/chat?${qs}` : '/api/agent/v2/chat';
-  }, [impersonateId, deepThinkActive]);
+  }, [impersonateId]);
+
+  // ── durable session log ────────────────────────────────────────────────
+  // When the store is available the conversation lives in the event log and
+  // the UI is a projection over it. When it is not (migration not applied) we
+  // fall back to the previous localStorage behaviour so nothing breaks.
+  const harness = useHarnessSession();
+  const [logSessionId, setLogSessionId] = useState<string | null>(null);
+  const logEnabled = harness.available === true && logSessionId !== null;
+  const projected = harness.state && harness.state.sessionId === logSessionId ? harness.state : null;
 
   const chatTransport = useMemo(() => {
     return new DefaultChatTransport({
       api: apiEndpoint,
       body: {
-        preferReasoning: deepThinkActive,
+        sessionId: logSessionId || undefined,
       },
     });
-  }, [apiEndpoint, deepThinkActive]);
+  }, [apiEndpoint, logSessionId]);
 
-  const { messages, sendMessage, status, stop, setMessages } = useChat({
+  const handleError = useCallback((err: any) => {
+    console.error('[Nobo Harness Error]:', err);
+    toast.error(err?.message || 'Connection interrupted');
+  }, []);
+
+  const { messages, sendMessage, status, stop, setMessages, reload } = useChat({
     transport: chatTransport,
-    onError: (err: any) => {
-      console.error('[DeepSeek Stream Error]:', err);
-      const msg = err?.message || 'Connection interrupted';
-      addLog(`Stream error: ${msg}`, 'error');
-      toast.error(msg);
-    },
+    onError: handleError,
   }) as any;
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
-  const sessionStorageKey = useMemo(() => {
-    return impersonateId ? `deepseek_sessions_${impersonateId}` : 'deepseek_sessions';
-  }, [impersonateId]);
+  // When a run finishes, the turn is in the log — reload the projection so the
+  // live view is replaced by the authoritative replay view.
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    if (wasStreaming.current && !isLoading && logSessionId) {
+      void harness.openSession(logSessionId);
+    }
+    wasStreaming.current = isLoading;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, logSessionId]);
 
+  const setMessagesRef = useRef(setMessages);
+  setMessagesRef.current = setMessages;
+
+  // Load Workspaces and Sessions ONCE on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(sessionStorageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setSessions(parsed);
-          setActiveSessionId(parsed[0].id);
+      const savedWs = localStorage.getItem(workspaceStorageKey);
+      const dummyNames = ['sanjay talwar', 'Himanshu video', 'UST video demo', 'Chess', 'real estate template'];
+      let initialWs = DEFAULT_WORKSPACES;
+      if (savedWs) {
+        const parsedWs = JSON.parse(savedWs);
+        const cleanWs = Array.isArray(parsedWs) ? parsedWs.filter((w: any) => !dummyNames.includes(w.name)) : [];
+        if (cleanWs.length > 0) {
+          initialWs = cleanWs;
         }
       }
+      setWorkspaces(initialWs);
+      setActiveWorkspaceId(initialWs[0]?.id || 'ws_default');
+      localStorage.setItem(workspaceStorageKey, JSON.stringify(initialWs));
+
+      const savedSess = localStorage.getItem(sessionStorageKey);
+      const lastSessionId = localStorage.getItem(lastSessionStorageKey);
+      let targetSessionId = activeSessionId;
+
+      if (savedSess) {
+        const parsedSess = JSON.parse(savedSess);
+        if (Array.isArray(parsedSess) && parsedSess.length > 0) {
+          setSessions(parsedSess);
+          const matched = lastSessionId && parsedSess.find((s: any) => s.id === lastSessionId);
+          targetSessionId = matched ? matched.id : parsedSess[0].id;
+        }
+      }
+
+      setActiveSessionId(targetSessionId);
+
+      // ALWAYS restore messages on initial mount so refreshing/backgrounding never wipes the screen
+      const savedMsgs = localStorage.getItem(`nobo_msg_${targetSessionId}`);
+      if (savedMsgs) {
+        try {
+          const parsed = JSON.parse(savedMsgs);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessagesRef.current(parsed);
+          }
+        } catch (e) {}
+      }
     } catch (e) {}
-  }, [sessionStorageKey]);
+
+    // Request browser notification permission so push alerts pop up smoothly
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []); // Run strictly once on mount to avoid infinite render loops
+
+  // Persist messages so switching tabs or closing app does not lose history
+  // Debounced and skipped during live streaming to prevent blocking main thread
+  useEffect(() => {
+    if (!messages || messages.length === 0 || !activeSessionId) return;
+    if (isLoading) return; // Do not synchronously serialize large JSON arrays during active streaming!
+
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(`nobo_msg_${activeSessionId}`, JSON.stringify(messages));
+        localStorage.setItem(lastSessionStorageKey, activeSessionId);
+      } catch (e) {}
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [messages, activeSessionId, lastSessionStorageKey, isLoading]);
+
+  // Switch session chat messages when activeSessionId changes
+  const currentSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentSessionIdRef.current === null) {
+      currentSessionIdRef.current = activeSessionId;
+      return;
+    }
+    if (currentSessionIdRef.current !== activeSessionId) {
+      currentSessionIdRef.current = activeSessionId;
+      try {
+        localStorage.setItem(lastSessionStorageKey, activeSessionId);
+        const saved = localStorage.getItem(`nobo_msg_${activeSessionId}`);
+        if (saved) {
+          setMessagesRef.current(JSON.parse(saved));
+        } else {
+          setMessagesRef.current([]);
+        }
+      } catch (e) {
+        setMessagesRef.current([]);
+      }
+    }
+  }, [activeSessionId, lastSessionStorageKey]);
+
+  // Auto-recover messages if tab was backgrounded or Chrome reconnected
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (isLoading) return; // Never overwrite while stream is actively receiving chunks
+      if (document.visibilityState === 'visible' && activeSessionId) {
+        try {
+          const saved = localStorage.getItem(`nobo_msg_${activeSessionId}`);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessagesRef.current(parsed);
+            }
+          }
+        } catch (e) {}
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [activeSessionId, isLoading]);
+
+  // Live timer while agent is executing
+  useEffect(() => {
+    if (!isLoading) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setSecondsElapsed((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isLoading]);
+
+  // Smart Auto-Scroll: Detect user scroll up and don't hijack!
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 60;
+    isAutoScrollEnabled.current = atBottom;
+    setShowScrollBottomBtn((prev) => (prev !== !atBottom ? !atBottom : prev));
+  }, []);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (isAutoScrollEnabled.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading]);
 
-  const addLog = (message: string, type: 'info' | 'tool' | 'error' | 'thought' = 'info') => {
-    const time = new Date().toLocaleTimeString();
-    setExecutionLogs((prev) => [...prev.slice(-40), { time, message, type }]);
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+      isAutoScrollEnabled.current = true;
+      setShowScrollBottomBtn(false);
+    }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const isSpreadsheet = file.name.endsWith('.csv') || file.name.endsWith('.xlsx') || file.name.endsWith('.tsv');
-    const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/') || file.name.endsWith('.mp4') || file.name.endsWith('.mov') || file.name.endsWith('.webm');
+    const isImage = file.type.startsWith('image/') || Boolean(file.name.match(/\.(png|jpe?g|webp|gif|svg)$/i));
+    const isVideo = file.type.startsWith('video/') || Boolean(file.name.match(/\.(mp4|mov|webm|mkv|avi)$/i));
+    const fileType = isVideo ? 'video' : isImage ? 'image' : isSpreadsheet ? 'spreadsheet' : 'file';
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
+    // If small text/csv file (< 300KB), read directly as text preview
+    if ((isSpreadsheet || file.type.startsWith('text/')) && file.size < 300_000) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        setAttachedFile({
+          name: file.name,
+          content,
+          type: fileType,
+          size: file.size,
+        });
+        toast.success(`Attached ${file.name}`);
+      };
+      reader.readAsText(file);
+      if (e.target) e.target.value = '';
+      return;
+    }
+
+    // For videos, images, and binary media: stream upload directly to Cloudflare R2
+    setIsUploading(true);
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    const toastId = toast.loading(`Uploading ${file.name} (${sizeMb} MB)...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('folder', 'agent_uploads');
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
       setAttachedFile({
         name: file.name,
-        content,
-        type: isSpreadsheet ? 'spreadsheet' : isVideo ? 'video' : isImage ? 'image' : 'text',
+        url: data.url,
+        type: fileType,
+        size: file.size,
       });
-      addLog(`File attached: ${file.name} (${file.size} bytes, ${isVideo ? 'video' : isImage ? 'image' : 'data'})`, 'info');
-      toast.success(`Attached ${file.name}`);
-    };
+      toast.success(`Attached ${file.name}`, { id: toastId });
+    } catch (err: any) {
+      toast.error(`Upload error: ${err.message}`, { id: toastId });
+    } finally {
+      setIsUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
-    if (isSpreadsheet || file.type.startsWith('text/')) {
-      reader.readAsText(file);
-    } else {
-      reader.readAsDataURL(file);
+  // Register session immediately on prompt
+  const ensureSessionRegistered = (promptText: string) => {
+    const existing = sessions.find((s) => s.id === activeSessionId);
+    if (!existing) {
+      const title = promptText.length > 32 ? promptText.slice(0, 32) + '...' : promptText;
+      const newSession: ChatSession = {
+        id: activeSessionId,
+        title,
+        workspaceId: activeWorkspaceId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const updated = [newSession, ...sessions];
+      setSessions(updated);
+      try {
+        localStorage.setItem(sessionStorageKey, JSON.stringify(updated));
+      } catch (e) {}
     }
   };
 
   const handleSend = async (customPrompt?: string) => {
     const textToSend = customPrompt || input;
-    if ((!textToSend.trim() && !attachedFile) || isLoading) return;
+    if ((!textToSend.trim() && !attachedFile) || isLoading || isUploading) return;
 
     let fullPrompt = textToSend;
     if (attachedFile) {
-      fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 3000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`;
-      addLog(`Dispatched task with attached ${attachedFile.name}`, 'info');
+      if (attachedFile.url) {
+        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${textToSend || 'Please inspect this reference video/file and help me create content based on it.'}`;
+      } else if (attachedFile.content) {
+        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 2000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`;
+      }
       setAttachedFile(null);
     }
+
+    ensureSessionRegistered(textToSend);
+    setSecondsElapsed(0);
+    isAutoScrollEnabled.current = true;
+
+    // ── durable log ──────────────────────────────────────────────────────
+    // Ensure a real session exists BEFORE the request so the turn has somewhere
+    // to land, then pass its id explicitly: React state will not have flushed
+    // by the time we call sendMessage in this same tick.
+    let sid = logSessionId;
+    if (harness.available === true && !sid) {
+      sid = await harness.createSession({ workspaceId: activeWorkspaceId });
+      if (sid) {
+        setActiveSessionId(sid);
+        setLogSessionId(sid);
+      }
+    }
+
+    if (harness.available === true && sid) {
+      // This is the only writer of `user.message`; the route owns everything
+      // the model produces.
+      void harness.appendUserMessage(
+        fullPrompt,
+        attachedFile
+          ? [{ name: attachedFile.name, url: attachedFile.url, type: attachedFile.type, size: attachedFile.size }]
+          : undefined,
+        sid
+      );
+    }
+
+    // Immediately save user prompt to localStorage so tab reload or backgrounding NEVER loses the session
+    try {
+      localStorage.setItem(lastSessionStorageKey, activeSessionId);
+      const userMsg = {
+        id: 'msg_u_' + Date.now(),
+        role: 'user',
+        content: fullPrompt,
+        parts: [{ type: 'text', text: fullPrompt }],
+        createdAt: new Date(),
+      };
+      const existing = Array.isArray(messages) ? messages : [];
+      localStorage.setItem(`nobo_msg_${activeSessionId}`, JSON.stringify([...existing, userMsg]));
+    } catch (e) {}
 
     setInput('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
 
-    addLog(`Task dispatched: "${textToSend.slice(0, 60)}..."`, 'info');
-    await sendMessage({ text: fullPrompt });
+    await sendMessage({ text: fullPrompt }, sid ? { body: { sessionId: sid } } : undefined);
   };
 
-  const handleNewChat = () => {
-    const newId = 'session_' + Date.now();
-    const newSession: ChatSession = {
-      id: newId,
-      title: `Task Thread #${sessions.length + 1}`,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [newSession, ...sessions];
-    setSessions(updated);
-    setActiveSessionId(newId);
-    setMessages([]);
-    setExecutionLogs([]);
-    addLog('Started fresh task session.', 'info');
-    localStorage.setItem(sessionStorageKey, JSON.stringify(updated));
-    toast.success('Started a new conversation');
-  };
+  /**
+   * Open a session. With the log available this loads the projection, which is
+   * the same view a reload or another device would see.
+   */
+  /**
+   * Queue the current prompt as a durable background run.
+   *
+   * Nothing streams here: a worker picks the run up, advances it in bounded
+   * slices, and appends each step to the log. The transcript updates because it
+   * is a projection of that log — so the tab can be closed and the work carries
+   * on. This is how a task gets to run for hours.
+   */
+  const handleStartRun = async () => {
+    if ((!input.trim() && !attachedFile) || isUploading) return;
 
-  const handleInterrupt = () => {
-    if (stop) {
-      stop();
-      addLog('Execution interrupted by user.', 'error');
-      toast.info('DeepSeek paused execution');
+    const textToSend = input;
+    let fullPrompt = textToSend;
+    if (attachedFile) {
+      if (attachedFile.url) {
+        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${
+          textToSend || 'Please inspect this reference and act on it.'
+        }`;
+      } else if (attachedFile.content) {
+        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(
+          0,
+          2000
+        )}\n\nInstruction: ${textToSend || 'Please inspect this file and act on it.'}`;
+      }
+      setAttachedFile(null);
+    }
+
+    let sid = logSessionId;
+    if (harness.available === true && !sid) {
+      sid = await harness.createSession({ workspaceId: activeWorkspaceId });
+      if (sid) {
+        setActiveSessionId(sid);
+        setLogSessionId(sid);
+      }
+    }
+
+    if (!sid) {
+      toast.error('Background runs need the session log — is the database migrated?');
+      return;
+    }
+
+    setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
+    const run = await harness.startRun(fullPrompt);
+    if (run) {
+      toast.success('Queued as a background run — you can close the tab.');
     }
   };
 
+  const handleOpenSession = async (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setSecondsElapsed(0);
+    isAutoScrollEnabled.current = true;
+
+    if (harness.available === true) {
+      setLogSessionId(sessionId);
+      const nextState = await harness.openSession(sessionId);
+      // Rebuild the model context from the log, otherwise the next follow-up
+      // would be asked in isolation with no history.
+      setMessages(nextState ? itemsToUIMessages(nextState.items) : []);
+      return;
+    }
+
+    setLogSessionId(null);
+    try {
+      const saved = localStorage.getItem(`nobo_msg_${sessionId}`);
+      setMessages(saved ? JSON.parse(saved) : []);
+    } catch {
+      setMessages([]);
+    }
+  };
+
+  const handleNewSession = async (targetWsId?: string) => {    const wsId = targetWsId || activeWorkspaceId;
+    setActiveWorkspaceId(wsId);
+    setMessages([]);
+    setSecondsElapsed(0);
+    isAutoScrollEnabled.current = true;
+
+    if (harness.available === true) {
+      const serverId = await harness.createSession({ workspaceId: wsId });
+      if (serverId) {
+        setActiveSessionId(serverId);
+        setLogSessionId(serverId);
+        toast.success('Started a fresh session');
+        return;
+      }
+      // Store reachable but creation failed — fall through to a local session
+      // rather than trapping the user with no way to type.
+    }
+
+    const newId = 'session_' + Date.now();
+    setActiveSessionId(newId);
+    setLogSessionId(null);
+    try {
+      localStorage.setItem(lastSessionStorageKey, newId);
+    } catch (e) {}
+    toast.success('Started a fresh session');
+  };
+
+  const handleCreateWorkspace = async () => {
+    const trimmed = newWorkspaceName.trim();
+    if (!trimmed) return;
+    setNewWorkspaceName('');
+    setShowNewWorkspaceModal(false);
+
+    if (harness.available === true) {
+      await harness.createWorkspace(trimmed);
+      toast.success(`Workspace "${trimmed}" created`);
+      return;
+    }
+
+    const newWs: WorkspaceFolder = {
+      id: 'ws_' + Date.now(),
+      name: trimmed,
+      createdAt: new Date().toISOString(),
+    };
+    const updated = [...workspaces, newWs];
+    setWorkspaces(updated);
+    setActiveWorkspaceId(newWs.id);
+    try {
+      localStorage.setItem(workspaceStorageKey, JSON.stringify(updated));
+    } catch (e) {}
+    toast.success(`Workspace "${trimmed}" created`);
+  };
+
+  const handleDeleteWorkspace = (wsId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const target = workspaces.find((w) => w.id === wsId);
+    let updated = workspaces.filter((w) => w.id !== wsId);
+    if (updated.length === 0) {
+      updated = [{ id: 'ws_default', name: 'General', createdAt: new Date().toISOString() }];
+    }
+    setWorkspaces(updated);
+    try {
+      localStorage.setItem(workspaceStorageKey, JSON.stringify(updated));
+    } catch (e) {}
+
+    // Clean up sessions under this workspace
+    const remainingSessions = sessions.filter((s) => s.workspaceId !== wsId);
+    setSessions(remainingSessions);
+    try {
+      localStorage.setItem(sessionStorageKey, JSON.stringify(remainingSessions));
+    } catch (e) {}
+
+    if (activeWorkspaceId === wsId) {
+      const nextWs = updated[0];
+      setActiveWorkspaceId(nextWs.id);
+      const nextSession = remainingSessions.find((s) => s.workspaceId === nextWs.id);
+      if (nextSession) {
+        setActiveSessionId(nextSession.id);
+      } else {
+        handleNewSession(nextWs.id);
+      }
+    }
+    toast.success(`Deleted workspace "${target?.name || ''}"`);
+  };
+
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (harness.available === true) {
+      await harness.removeSession(id);
+      if (logSessionId === id) {
+        setLogSessionId(null);
+        setMessages([]);
+        await handleNewSession();
+      }
+      return;
+    }
+
+    const updated = sessions.filter((s) => s.id !== id);
+    setSessions(updated);
+    try {
+      localStorage.setItem(sessionStorageKey, JSON.stringify(updated));
+    } catch (e) {}
+    if (activeSessionId === id) {
+      void handleNewSession();
+    }
+  };
+
+  const handleCopyMessage = (text: string, idx: number) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(idx);
+    toast.success('Copied to clipboard');
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  // The event log is authoritative for the session tree once it is available.
+  // The localStorage lists survive only as the pre-migration fallback.
+  const allSessions: ChatSession[] = useMemo(() => {
+    if (harness.available !== true) return sessions;
+    return harness.sessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      workspaceId: s.workspaceId,
+      createdAt: s.updatedAt,
+      updatedAt: s.updatedAt,
+    }));
+  }, [harness.available, harness.sessions, sessions]);
+
+  const allWorkspaces: WorkspaceFolder[] = useMemo(() => {
+    if (harness.available !== true) return workspaces;
+    if (!harness.workspaces.length) return DEFAULT_WORKSPACES;
+    return harness.workspaces.map((w) => ({ id: w.id, name: w.name, createdAt: '' }));
+  }, [harness.available, harness.workspaces, workspaces]);
+
+  const visibleSessions = useMemo(() => {
+    return allSessions.filter((s) => {
+      const matchesWs = s.workspaceId === activeWorkspaceId;
+      if (searchQuery.trim()) {
+        return s.title.toLowerCase().includes(searchQuery.toLowerCase());
+      }
+      return matchesWs;
+    });
+  }, [allSessions, activeWorkspaceId, searchQuery]);
+
+  const activeSessionObj = allSessions.find((s) => s.id === activeSessionId);
+
   return (
-    <div className="flex h-full w-full bg-[#fdfdfe] dark:bg-[#0d0e12] text-slate-800 dark:text-slate-100 overflow-hidden font-sans">
-      {/* 1. DeepSeek Signature Sidebar */}
+    <div className="flex h-full w-full overflow-hidden" style={{ background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }}>
+      {/* 1. DeepSeek Harness Left Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-[#f8faff] dark:bg-[#111318] border-r border-slate-200/80 dark:border-slate-800/80 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:hidden'
         }`}
+        style={{
+          background: 'var(--dsw-alias-bg-layer-1)',
+          borderRight: '1px solid var(--dsw-alias-border-l1)',
+        }}
       >
-        {/* Sidebar Brand & New Chat */}
-        <div className="p-3 border-b border-slate-200/60 dark:border-slate-800/60">
+        {/* Brand & New Session Button */}
+        <div className="p-3" style={{ borderBottom: '1px solid var(--dsw-alias-border-l1)' }}>
           <div className="flex items-center justify-between px-1 mb-3">
             <div className="flex items-center gap-2">
-              <DeepSeekIcon className="w-7 h-7" />
+              <div
+                className="relative flex items-center justify-center w-6 h-6"
+                style={{
+                  borderRadius: 'var(--dsh-radius-sm)',
+                  background: 'var(--dsw-alias-bg-layer-3)',
+                  border: '1px solid var(--dsw-alias-border-l2)',
+                  color: 'var(--dsw-alias-label-secondary)',
+                }}
+              >
+                <Bot size={14} />
+              </div>
               <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
-                  deepseek
+                <span className="dsh-t-s dsh-strong dsh-label-primary tracking-tight">
+                  Nobogent
                 </span>
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#4d6bfe]/10 text-[#4d6bfe]">
-                  {deepThinkActive ? 'R1' : 'V3'}
+                <span
+                  className="dsh-t-xxxs dsh-mono px-1.5 py-[1px] uppercase"
+                  style={{
+                    borderRadius: 'var(--dsh-radius-xs)',
+                    background: 'var(--dsw-alias-bg-layer-3)',
+                    color: 'var(--dsw-alias-label-tertiary)',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Harness
                 </span>
               </div>
             </div>
 
             <button
               onClick={() => setSidebarOpen(false)}
-              className="md:hidden p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              className="p-1"
+              style={{ color: 'var(--dsw-alias-label-tertiary)', borderRadius: 'var(--dsh-radius-sm)' }}
             >
-              <PanelLeftClose size={18} />
+              <PanelLeftClose size={16} />
             </button>
           </div>
 
           <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white dark:bg-[#1a1d24] border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 text-xs font-semibold hover:border-[#4d6bfe] hover:text-[#4d6bfe] dark:hover:border-[#4d6bfe] shadow-xs transition"
+            onClick={() => handleNewSession()}
+            className="w-full flex items-center justify-center gap-2 py-2 px-3 transition dsh-t-s dsh-strong"
+            style={{
+              borderRadius: 'var(--dsh-radius-sm)',
+              background: 'var(--dsw-alias-button-primary-fill)',
+              color: 'var(--dsw-alias-button-primary-text)',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--dsw-alias-button-primary-hover)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--dsw-alias-button-primary-fill)')}
           >
             <Plus size={15} />
-            <span>New chat</span>
+            <span>New session</span>
           </button>
         </div>
 
-        {/* Sessions History List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          <div className="px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            Recent Tasks
-          </div>
-          {sessions.length === 0 ? (
-            <div className="px-2 py-6 text-center text-xs text-slate-400">
-              No recent conversations
-            </div>
-          ) : (
-            sessions.map((s) => (
+        {/* Workspaces Section */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <div className="flex items-center justify-between px-1">
+            <span
+              className="dsh-t-xxs dsh-strong uppercase"
+              style={{ color: 'var(--dsw-alias-label-caption)', letterSpacing: '0.05em' }}
+            >
+              Workspaces
+            </span>
+            <div className="flex items-center gap-2" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
+              <Search size={13} className="cursor-pointer" />
               <button
-                key={s.id}
-                onClick={() => {
-                  setActiveSessionId(s.id);
-                  if (window.innerWidth < 768) setSidebarOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs text-left transition group ${
-                  activeSessionId === s.id
-                    ? 'bg-[#4d6bfe]/10 text-[#4d6bfe] font-semibold'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
+                onClick={() => setShowNewWorkspaceModal(true)}
+                className="dsh-interactive"
+                title="New workspace folder"
               >
-                <span className="truncate pr-2">{s.title}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const next = sessions.filter((x) => x.id !== s.id);
-                    setSessions(next);
-                    localStorage.setItem(sessionStorageKey, JSON.stringify(next));
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition"
-                >
-                  <Trash2 size={12} />
-                </button>
+                <FolderPlus size={13} />
               </button>
-            ))
-          )}
+            </div>
+          </div>
+
+          {/* Folder & Nested Sessions List */}
+          <div className="space-y-2">
+            {allWorkspaces.map((ws) => {
+              const isWsActive = ws.id === activeWorkspaceId;
+              const wsSessions = allSessions.filter((s) => {
+                if (s.workspaceId !== ws.id) return false;
+                if (searchQuery.trim()) {
+                  return s.title.toLowerCase().includes(searchQuery.toLowerCase());
+                }
+                return true;
+              });
+
+              return (
+                <div key={ws.id} className="space-y-1">
+                  {/* Workspace Folder Header */}
+                  <div
+                    onClick={() => setActiveWorkspaceId(ws.id)}
+                    className={`group flex items-center justify-between px-2.5 py-2 rounded-xl text-xs cursor-pointer transition select-none ${
+                      isWsActive
+                        ? 'dsh-selected dsh-border-l2 dsh-label-primary dsh-strong'
+                        : 'dsh-label-tertiary dsh-interactive border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                      <FolderOpen size={14} className={isWsActive ? 'dsh-accent shrink-0' : 'shrink-0 dsh-label-caption'} />
+                      <span className="truncate font-medium">{ws.name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                      {wsSessions.length > 0 && (
+                        <span className="dsh-t-xxxs dsh-mono dsh-chip px-1.5 py-0.5 rounded">
+                          {wsSessions.length}
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNewSession(ws.id);
+                        }}
+                        className="p-1 rounded dsh-label-caption dsh-interactive"
+                        title="New chat in this workspace"
+                      >
+                        <Plus size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteWorkspace(ws.id, e)}
+                        className="p-1 rounded dsh-label-caption dsh-interactive-danger"
+                        title="Delete workspace folder"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Indented Sessions inside this folder */}
+                  {wsSessions.length > 0 && (
+                    <div className="pl-3.5 space-y-0.5 dsh-tree-rail ml-3 py-0.5">
+                      {wsSessions.map((sess) => {
+                        const isSelected = sess.id === activeSessionId;
+                        return (
+                          <div
+                            key={sess.id}
+                            onClick={() => {
+                              setActiveWorkspaceId(ws.id);
+                              void handleOpenSession(sess.id);
+                            }}
+                            className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-[11px] cursor-pointer transition group/sess ${
+                              isSelected
+                                ? 'dsh-selected dsh-label-primary dsh-strong dsh-border-l2'
+                                : 'dsh-label-tertiary dsh-interactive'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                              <MessageSquare
+                                size={12}
+                                className={isSelected ? 'dsh-accent shrink-0' : 'shrink-0 dsh-label-caption'}
+                              />
+                              <span className="truncate">{sess.title}</span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 dsh-label-caption dsh-t-xxxs dsh-mono shrink-0 ml-1">
+                              <span>{formatTimeAgo(sess.createdAt)}</span>
+                              <button
+                                onClick={(e) => handleDeleteSession(sess.id, e)}
+                                className="p-0.5 dsh-label-caption dsh-interactive-danger"
+                                title="Delete chat session"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Sidebar Bottom Controls */}
-        <div className="p-3 pb-24 md:pb-28 border-t border-slate-200/60 dark:border-slate-800/60 space-y-2">
-          {/* File Manager Button */}
+        <div className="p-3 dsh-border-t space-y-1.5 dsh-t-xs dsh-label-tertiary">
           <button
             onClick={() => setShowFileManager(true)}
-            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] dsh-interactive"
           >
-            <FolderOpen size={16} className="text-amber-500" />
+            <FolderOpen size={15} className="dsh-warn" />
             <span>File & Asset Manager</span>
           </button>
 
-          {/* E2B Sandbox Indicator */}
-          <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              E2B MicroVM Ready
-            </span>
-            <span className="font-mono text-[10px] text-emerald-600/70">Sandboxed</span>
-          </div>
-
-          {/* Impersonated Client Badge */}
-          {impersonatedBusiness && (
-            <div className="px-2.5 py-1.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-[11px] text-violet-700 dark:text-violet-300 flex items-center gap-1.5 truncate">
-              <Building2 size={13} className="shrink-0" />
-              <span className="truncate font-semibold">{impersonatedBusiness}</span>
-            </div>
-          )}
+          <a
+            href="/dashboard"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] dsh-label-tertiary dsh-interactive"
+          >
+            <PanelLeftClose size={15} />
+            <span>Exit to Dashboard</span>
+          </a>
         </div>
       </div>
 
-      {/* 2. Main DeepSeek Chat Canvas */}
+      {/* 2. Main Chat Canvas */}
       <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        {/* Top Minimal Bar */}
-        <div className="h-12 border-b border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between px-4 bg-white/70 dark:bg-[#0d0e12]/70 backdrop-blur-md shrink-0">
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-              title="Toggle Sidebar"
-            >
-              {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-            </button>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
-                DeepSeek Harness
+        {/* Top Header Bar */}
+        <div
+          className="h-12 flex items-center justify-between px-4 shrink-0"
+          style={{
+            borderBottom: '1px solid var(--dsw-alias-border-l1)',
+            background: 'var(--dsw-alias-bg-base)',
+          }}
+        >
+          <div className="flex items-center gap-3">
+            {!sidebarOpen && (
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="p-1 rounded-[8px] dsh-label-tertiary dsh-interactive"
+              >
+                <PanelLeftOpen size={16} />
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 max-w-md truncate text-xs">
+              <span className="font-bold text-white truncate">
+                {activeSessionObj?.title || 'New Session'}
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-mono">
-                {deepThinkActive ? 'deepseek-reasoner' : 'deepseek-chat'}
+              <span className="dsh-label-caption dsh-mono hidden sm:inline">
+                • Autonomous Operator
+              </span>
+              <span className="dsh-success dsh-mono dsh-t-xxxs hidden md:inline flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full dsh-success-bg animate-pulse inline-block" />
+                Live
               </span>
             </div>
+          </div>
+
+          {/* Chat | Trajectory — toggles the third column */}
+          <div
+            className="flex items-center gap-1 p-0.5 dsh-t-xs dsh-strong"
+            style={{
+              background: 'var(--dsw-alias-bg-layer-2)',
+              border: '1px solid var(--dsw-alias-border-l1)',
+              borderRadius: 'var(--dsh-radius-sm)',
+            }}
+          >
+            <button
+              onClick={() => {
+                setActiveTab('chat');
+                setShowDetails(false);
+              }}
+              className="px-3 py-1 transition"
+              style={{
+                borderRadius: 'var(--dsh-radius-xs)',
+                background: activeTab === 'chat' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
+                color:
+                  activeTab === 'chat'
+                    ? 'var(--dsw-alias-label-primary)'
+                    : 'var(--dsw-alias-label-tertiary)',
+              }}
+            >
+              Chat
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('trajectory');
+                setShowDetails(true);
+              }}
+              className="px-3 py-1 transition"
+              style={{
+                borderRadius: 'var(--dsh-radius-xs)',
+                background: activeTab === 'trajectory' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
+                color:
+                  activeTab === 'trajectory'
+                    ? 'var(--dsw-alias-label-primary)'
+                    : 'var(--dsw-alias-label-tertiary)',
+              }}
+            >
+              Trajectory
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowLogsDrawer(!showLogsDrawer)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                showLogsDrawer
-                  ? 'bg-slate-800 text-white border-slate-700'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
             >
-              <Terminal size={13} className={isLoading ? 'text-emerald-400 animate-pulse' : ''} />
-              <span className="hidden sm:inline">Logs</span>
+              <span>Session log</span>
+              <Download size={12} />
             </button>
           </div>
         </div>
 
-        {/* Conversation Stream */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
-          <div className="max-w-3xl mx-auto space-y-6">
-            {messages.length === 0 ? (
-              /* DeepSeek Signature Empty State */
-              <div className="py-12 flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 rounded-3xl bg-[#4d6bfe]/10 text-[#4d6bfe] flex items-center justify-center mb-4 shadow-sm">
-                  <DeepSeekIcon className="w-10 h-10" />
+        {/* Chronological Event Feed */}
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-4 py-5 dsh-t-prose"
+        >
+          <div className="max-w-3xl mx-auto space-y-4">
+            {messages.length === 0 && !(logEnabled && (projected?.items.length ?? 0) > 0) ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center font-sans">
+                <div className="w-12 h-12 rounded-[16px] dsh-surface-2 dsh-label-tertiary flex items-center justify-center mb-4">
+                  <Bot size={26} />
                 </div>
-
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight mb-2">
-                  Hi, I'm DeepSeek.
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mb-8">
-                  How can I help you create, automate, or launch today?
+                <h3 className="dsh-t-xl dsh-label-primary mb-2">Nobogent Harness</h3>
+                <p className="dsh-t-s dsh-label-tertiary max-w-sm mb-6">
+                  Autonomous sandbox operator for code-based video compilation, motion graphics, and workflows.
                 </p>
-
-                {/* 2x2 Quick Actions */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full text-left">
-                  {QUICK_ACTIONS.map((item, i) => {
-                    const ActionIcon = item.icon;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => handleSend(item.prompt)}
-                        className="p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-[#13151b] hover:border-[#4d6bfe] dark:hover:border-[#4d6bfe] hover:shadow-md transition text-left group flex items-start gap-3"
-                      >
-                        <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-[#4d6bfe] shrink-0 group-hover:bg-[#4d6bfe] group-hover:text-white transition">
-                          <ActionIcon size={16} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-[#4d6bfe] transition">
-                            {item.label}
-                          </p>
-                          <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">
-                            {item.desc}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left max-w-lg">
+                  <button
+                    onClick={() => handleSend('i want you to make a video for wishing happy diwali to our clients on behalf of nobogent, 15 sec would be enough make it in 9:16')}
+                    className="p-3 rounded-[12px] dsh-surface-2 dsh-border dsh-interactive text-left"
+                  >
+                    <p className="dsh-t-s dsh-strong dsh-label-primary">Happy Diwali Video (9:16)</p>
+                    <p className="dsh-t-xs dsh-label-tertiary mt-0.5">Render 15s vertical motion graphics greeting</p>
+                  </button>
+                  <button
+                    onClick={() => handleSend('Use Meta Ads MCP to inspect active campaigns and launch a high-intent lead generation campaign on Instagram Reels with ₹1,500/day budget.')}
+                    className="p-3 rounded-[12px] dsh-surface-2 dsh-border dsh-interactive text-left"
+                  >
+                    <p className="dsh-t-s dsh-strong dsh-label-primary">Launch Meta Campaign</p>
+                    <p className="dsh-t-xs dsh-label-tertiary mt-0.5">Targeted leadgen on Instagram Reels</p>
+                  </button>
                 </div>
               </div>
+            ) : logEnabled ? (
+              // Log-backed session: the committed transcript is a projection of
+              // the event log, and only the in-flight turn comes from the live
+              // stream. On finish the projection is reloaded and replaces it.
+              <>
+                <HarnessTranscript items={projected?.items ?? []} onOptionSelect={handleSend} />
+                {isLoading && messages.length > 0 && (
+                  <SafeMessageRenderer
+                    m={messages[messages.length - 1]}
+                    mIdx={messages.length - 1}
+                    messages={messages}
+                    isLoading={isLoading}
+                    handleSend={handleSend}
+                    handleCopyMessage={handleCopyMessage}
+                    copiedIndex={copiedIndex}
+                    reload={reload}
+                  />
+                )}
+              </>
             ) : (
-              messages.map((m: any, idx: number) => {
-                const isUser = m.role === 'user';
-                return (
-                  <div key={idx} className={`flex gap-3.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    {!isUser && (
-                      <div className="shrink-0 mt-0.5">
-                        <div className="w-7 h-7 rounded-full bg-[#4d6bfe] text-white flex items-center justify-center shadow-xs">
-                          <DeepSeekIcon className="w-5 h-5 text-white" />
-                        </div>
-                      </div>
-                    )}
-
-                    <div className={`max-w-[85%] ${isUser ? 'order-1' : ''}`}>
-                      {/* DeepSeek Signature Thinking Process Block */}
-                      {m.reasoning && (
-                        <div className="mb-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80 bg-slate-50/60 dark:bg-[#16181d] p-3 text-xs">
-                          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium mb-1.5">
-                            <BrainCircuit size={13} className="text-[#4d6bfe]" />
-                            <span>Thinking Process</span>
-                          </div>
-                          <div className="text-slate-600 dark:text-slate-400 italic font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
-                            {m.reasoning}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Tool Calls */}
-                      {Array.isArray(m.parts) &&
-                        m.parts
-                          .filter((p: any) => p.type === 'tool-call' || p.type?.startsWith('tool-'))
-                          .map((tool: any, tIdx: number) => (
-                            <ToolExecutionCard key={tIdx} tool={tool} idx={tIdx} isLoading={isLoading} />
-                          ))}
-
-                      {/* Message Content */}
-                      {m.content && (
-                        <div
-                          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                            isUser
-                              ? 'bg-[#eef3ff] dark:bg-[#1b2234] text-slate-900 dark:text-slate-100 font-medium'
-                              : 'bg-transparent text-slate-800 dark:text-slate-200'
-                          }`}
-                        >
-                          <AgentMarkdown content={m.content} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
+              messages.map((m: any, mIdx: number) => (
+                <SafeMessageRenderer
+                  key={m?.id || mIdx}
+                  m={m}
+                  mIdx={mIdx}
+                  messages={messages}
+                  isLoading={isLoading}
+                  handleSend={handleSend}
+                  handleCopyMessage={handleCopyMessage}
+                  copiedIndex={copiedIndex}
+                  reload={reload}
+                />
+              ))
             )}
 
+            {/* Deep diving live indicator (Screenshot 2) */}
             {isLoading && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono">
-                <Loader2 size={14} className="animate-spin text-[#4d6bfe]" />
-                <span>DeepSeek is thinking...</span>
+              <div
+                className="flex items-center gap-2 py-2 dsh-t-s"
+                style={{ color: 'var(--dsw-alias-label-tertiary)' }}
+              >
+                <Loader2 size={13} className="animate-spin" />
+                <span className="dsh-tnum">Working… {secondsElapsed}s</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* 3. DeepSeek Signature Floating Input Dock */}
-        <div className="p-4 pb-24 md:pb-28 shrink-0 bg-gradient-to-t from-white via-white dark:from-[#0d0e12] dark:via-[#0d0e12] to-transparent">
+        {/* Floating Jump to Bottom Button */}
+        {showScrollBottomBtn && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-24 right-8 z-30 p-2 rounded-full dsh-btn-primary flex items-center gap-1 text-xs font-mono"
+          >
+            <ArrowDown size={14} />
+            <span>Latest</span>
+          </button>
+        )}
+
+        {/* 3. DeepSeek Signature Input Dock */}
+        <div
+          className="p-4 pb-4 shrink-0"
+          style={{
+            background:
+              'linear-gradient(to top, var(--dsw-alias-bg-base) 60%, transparent)',
+          }}
+        >
           <div className="max-w-3xl mx-auto">
-            {/* Attached File Preview Strip */}
-            {attachedFile && (
-              <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-900/60 text-blue-700 dark:text-blue-300 text-xs">
-                {attachedFile.type === 'video' ? (
-                  <FileVideo size={14} className="text-[#4d6bfe]" />
-                ) : attachedFile.type === 'spreadsheet' ? (
-                  <FileSpreadsheet size={14} />
-                ) : (
-                  <ImageIcon size={14} />
-                )}
-                <span className="font-semibold truncate max-w-xs">{attachedFile.name}</span>
-                <button onClick={() => setAttachedFile(null)} className="ml-1 text-slate-400 hover:text-rose-500 font-bold">
+            {isUploading && (
+              <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-[12px] dsh-chip dsh-accent dsh-t-xs animate-pulse">
+                <Loader2 size={13} className="animate-spin dsh-accent" />
+                <span>Uploading media directly to cloud storage...</span>
+              </div>
+            )}
+
+            {attachedFile && !isUploading && (
+              <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-[12px] dsh-chip dsh-t-xs">
+                {attachedFile.type === 'video' ? <FileVideo size={14} /> : <ImageIcon size={14} />}
+                <span className="truncate max-w-xs">{attachedFile.name}</span>
+                {attachedFile.url && <span className="dsh-t-xxxs dsh-success dsh-mono">(Ready)</span>}
+                <button onClick={() => setAttachedFile(null)} className="dsh-label-caption dsh-interactive-danger">
                   ×
                 </button>
               </div>
             )}
 
-            {/* Input Box Container */}
-            <div className="relative rounded-[24px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#16181d] shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition focus-within:border-[#4d6bfe] dark:focus-within:border-[#4d6bfe] p-3">
+            {/* Background-run status. The worker keeps going when this tab
+                closes; this is just a window onto it. */}
+            {harness.activeRun && (
+              <div
+                className="mb-2 flex items-center gap-2 px-3 py-1.5 dsh-chip dsh-t-xs"
+                style={{ borderRadius: 'var(--dsh-radius-sm)' }}
+              >
+                {harness.runInProgress ? (
+                  <Loader2 size={13} className="animate-spin dsh-accent shrink-0" />
+                ) : harness.activeRun.status === 'failed' ? (
+                  <AlertCircle size={13} className="dsh-danger shrink-0" />
+                ) : (
+                  <CheckCircle2 size={13} className="dsh-success shrink-0" />
+                )}
+                <span className="dsh-strong">
+                  {harness.runInProgress
+                    ? harness.activeRun.status === 'queued'
+                      ? 'Queued for background execution'
+                      : 'Running in background'
+                    : `Background run ${harness.activeRun.status}`}
+                </span>
+                {harness.activeRun.continuations > 0 && (
+                  <span className="dsh-t-xxxs dsh-label-caption dsh-tnum">
+                    slice {harness.activeRun.continuations + 1}
+                  </span>
+                )}
+                {harness.activeRun.error && (
+                  <span className="dsh-t-xxxs dsh-danger truncate max-w-[16rem]">{harness.activeRun.error}</span>
+                )}
+                {harness.runInProgress && !harness.activeRun.cancelRequested && (
+                  <button
+                    onClick={() => void harness.cancelRun()}
+                    className="dsh-t-xxxs dsh-label-tertiary dsh-interactive-danger px-1.5 py-0.5"
+                    style={{ borderRadius: 'var(--dsh-radius-xs)' }}
+                  >
+                    Stop
+                  </button>
+                )}
+                {harness.activeRun.cancelRequested && harness.runInProgress && (
+                  <span className="dsh-t-xxxs dsh-warn">stopping after this step…</span>
+                )}
+              </div>
+            )}
+
+            {/* Rounded Dock Container */}
+            <div
+              className="p-3 transition"
+              style={{
+                background: 'var(--dsw-alias-bg-layer-1)',
+                border: '1px solid var(--dsw-alias-border-l2)',
+                borderRadius: 'var(--dsh-radius-lg)',
+                boxShadow: 'var(--dsw-shadow-lv2)',
+              }}
+            >
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -739,65 +1351,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     handleSend();
                   }
                 }}
-                placeholder={
-                  impersonatedBusiness
-                    ? `Message DeepSeek for ${impersonatedBusiness}...`
-                    : 'Message DeepSeek (attach video clips, images, or instructions)...'
-                }
+                placeholder="Message the agent"
                 rows={1}
-                className="w-full resize-none bg-transparent outline-none text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400 px-1 py-1 max-h-44"
+                className="w-full resize-none bg-transparent outline-none dsh-t-base px-1 py-1 max-h-44"
+                style={{ color: 'var(--dsw-alias-label-primary)' }}
               />
 
-              {/* Bottom Buttons Bar Inside Box */}
-              <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-100 dark:border-slate-800/60">
-                <div className="flex items-center gap-1.5">
-                  {/* DeepThink (R1) Toggle Pill */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeepThinkActive(!deepThinkActive);
-                      toast.info(deepThinkActive ? 'Switched to DeepSeek-V3 (Fast Mode)' : 'Activated DeepThink R1 (Deep Reasoning)');
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition ${
-                      deepThinkActive
-                        ? 'bg-[#4d6bfe] text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                    title="DeepThink (R1) - Chain of Thought"
-                  >
-                    <BrainCircuit size={13} />
-                    <span>DeepThink (R1)</span>
-                  </button>
-
-                  {/* Web Search Toggle Pill */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchActive(!searchActive);
-                      toast.info(searchActive ? 'Search disabled' : 'Search enabled');
-                    }}
-                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition ${
-                      searchActive
-                        ? 'bg-[#4d6bfe] text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                    title="DeepSeek Web Search"
-                  >
-                    <Globe size={13} />
-                    <span>Search</span>
-                  </button>
-
-                  {/* File Manager Button */}
-                  <button
-                    type="button"
-                    onClick={() => setShowFileManager(true)}
-                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    title="File & Asset Manager"
-                  >
-                    <FolderOpen size={16} />
-                  </button>
-
-                  {/* Attach Button */}
+              <div className="flex items-center justify-between pt-2 mt-1 dsh-border-t">
+                <div className="flex items-center gap-2 text-xs">
+                  {/* File attach + */}
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -808,44 +1370,139 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    title="Attach Video, Image, or CSV"
+                    className="p-1 rounded-full dsh-label-tertiary dsh-interactive"
+                    title="Attach file"
                   >
-                    <Paperclip size={16} />
+                    <Plus size={16} />
                   </button>
 
-                  {/* Voice Input Button */}
-                  <VoiceInputButton onTranscript={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))} />
+                  {/* Mode Pill */}
+                  {/* Permission mode — a status chip, not a control. There is no
+                      permission-preset system wired yet, so this must not look
+                      clickable. */}
+                  <span
+                    className="flex items-center gap-1 px-2.5 py-1 dsh-t-xs dsh-mono"
+                    style={{
+                      background: 'var(--dsw-alias-bg-layer-2)',
+                      color: 'var(--dsw-alias-label-tertiary)',
+                      border: '1px solid var(--dsw-alias-border-l1)',
+                      borderRadius: 'var(--dsh-radius-full)',
+                    }}
+                  >
+                    Full access
+                  </span>
                 </div>
 
-                {/* Send / Stop Button */}
-                {isLoading ? (
+                <div className="flex items-center gap-2.5">
+                  {/* Model badge — the agent always runs on the multimodal
+                      flash model, so images attached to a message are seen
+                      directly. Static label, not a control. */}
+                  <span
+                    className="flex items-center gap-1.5 dsh-t-xs dsh-mono"
+                    style={{ color: 'var(--dsw-alias-label-tertiary)' }}
+                    title="Vision-enabled agent model"
+                  >
+                    <span
+                      className="inline-block rounded-full"
+                      style={{ width: 5, height: 5, background: 'var(--dsw-alias-state-success-primary)' }}
+                    />
+                    <span>{displayNameFor(AGENT_MODEL)}</span>
+                  </span>
+
+                  {/* Background run — hands the turn to the worker so it can
+                      keep going after this tab closes. */}
                   <button
                     type="button"
-                    onClick={handleInterrupt}
-                    className="w-8 h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow transition"
-                    title="Stop generation"
+                    onClick={handleStartRun}
+                    disabled={(!input.trim() && !attachedFile) || isUploading || harness.runInProgress}
+                    className="w-7 h-7 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
+                    title="Run in the background (survives closing this tab)"
                   >
-                    <Square size={14} className="fill-current" />
+                    <Rocket size={12} />
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleSend()}
-                    disabled={!input.trim() && !attachedFile}
-                    className="w-8 h-8 rounded-full bg-[#4d6bfe] hover:bg-[#3d5bfe] disabled:opacity-40 disabled:hover:bg-[#4d6bfe] text-white flex items-center justify-center shadow-md transition"
-                    title="Send message"
-                  >
-                    <Send size={14} />
-                  </button>
-                )}
+
+                  {/* Send / Stop Button */}
+                  {isLoading ? (
+                    <button
+                      type="button"
+                      onClick={stop}
+                      className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
+                      title="Stop"
+                    >
+                      <Square size={12} className="fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSend()}
+                      disabled={(!input.trim() && !attachedFile) || isUploading}
+                      className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
+                      title="Send"
+                    >
+                      <Send size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
+            </div>
+
+            {/* Bottom Status Metadata Bar */}
+            <div className="mt-2 text-center dsh-t-xxxs dsh-mono dsh-label-caption truncate">
+              Nobogent Autonomous Operator • Standard mode • Full Access
             </div>
           </div>
         </div>
       </div>
 
-      {/* File & Asset Manager Modal Drawer */}
+      {showDetails && (
+        <HarnessDetails
+          title={projected?.title || activeSessionObj?.title || 'New session'}
+          status={projected?.status || (isLoading ? 'running' : 'idle')}
+          workspaceId={projected?.workspaceId || activeWorkspaceId}
+          items={projected?.items ?? []}
+          logBacked={logEnabled}
+          onClose={() => setShowDetails(false)}
+        />
+      )}
+
+      {/* Create Workspace Folder Modal */}
+      {showNewWorkspaceModal && (
+        <div className="fixed inset-0 z-[110] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm dsh-card rounded-[16px] p-5 space-y-4">
+            <h4 className="dsh-t-s dsh-strong dsh-label-primary flex items-center gap-2">
+              <FolderPlus size={16} className="dsh-accent" />
+              Create Workspace Folder
+            </h4>
+            <input
+              type="text"
+              value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              placeholder="e.g. Diwali Campaigns, Mohali Reels..."
+              className="w-full px-3 py-2 rounded-[12px] dsh-surface-2 dsh-border dsh-t-s outline-none"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateWorkspace();
+              }}
+            />
+            <div className="flex items-center justify-end gap-2 text-xs">
+              <button
+                onClick={() => setShowNewWorkspaceModal(false)}
+                className="px-3 py-1.5 rounded-[10px] dsh-strong dsh-label-tertiary dsh-interactive"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateWorkspace}
+                className="px-3 py-1.5 rounded-[10px] dsh-btn-primary dsh-strong"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File & Asset Manager Drawer */}
       <FileManagerDrawer
         isOpen={showFileManager}
         onClose={() => setShowFileManager(false)}

@@ -47,66 +47,79 @@ export default function ActionConfirmationCard({ artifact, onDecision }: ActionC
     }
   };
 
+  const tone =
+    status === 'approved'
+      ? { edge: 'var(--dsw-alias-state-success-primary)', soft: 'var(--dsw-alias-state-success-tertiary)', text: 'var(--dsw-alias-state-success-primary)' }
+      : status === 'rejected'
+      ? { edge: 'var(--dsw-alias-state-error-primary)', soft: 'var(--dsw-alias-state-error-tertiary)', text: 'var(--dsw-alias-state-error-primary)' }
+      : { edge: 'var(--dsw-alias-state-warn-primary)', soft: 'var(--dsw-alias-state-warn-tertiary)', text: 'var(--dsw-alias-state-warn-secondary)' };
+
   return (
-    <div className={`my-3 p-4 rounded-xl border transition-all ${
-      status === 'approved'
-        ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
-        : status === 'rejected'
-        ? 'border-rose-200 dark:border-rose-800 bg-rose-50/40 dark:bg-rose-950/20 opacity-70'
-        : 'border-amber-200 dark:border-amber-800/80 bg-amber-50/30 dark:bg-amber-950/20 shadow-sm'
-    }`}>
+    <div
+      className="my-3 p-4"
+      style={{
+        borderRadius: 'var(--dsh-radius-md)',
+        border: '1px solid var(--dsw-alias-border-l2)',
+        borderLeft: `2px solid ${tone.edge}`,
+        background: 'var(--dsw-alias-bg-layer-2)',
+        opacity: status === 'rejected' ? 0.7 : 1,
+        boxShadow: status === 'pending' ? 'var(--dsw-shadow-lv1)' : 'none',
+      }}
+    >
       <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg shrink-0 ${
-          status === 'approved'
-            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-400'
-            : status === 'rejected'
-            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-400'
-            : 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-400'
-        }`}>
+        <div
+          className="p-2 shrink-0"
+          style={{ borderRadius: 'var(--dsh-radius-sm)', background: tone.soft, color: tone.text }}
+        >
           <ShieldAlert size={18} />
         </div>
 
         <div className="flex-1">
           <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">{artifact.title}</h4>
+            <h4 className="dsh-t-s dsh-strong dsh-label-primary">{artifact.title}</h4>
             {artifact.estimatedCost && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300">
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full dsh-t-xxxs dsh-strong"
+                style={{ background: 'var(--dsw-alias-state-warn-tertiary)', color: 'var(--dsw-alias-state-warn-secondary)' }}
+              >
                 <Coins size={10} /> Est: {artifact.estimatedCost}
               </span>
             )}
           </div>
 
-          <p className="text-xs text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
+          <p className="dsh-t-s dsh-label-secondary mb-3" style={{ lineHeight: '22px' }}>
             {artifact.description}
           </p>
 
           {status === 'pending' ? (
-            <div className="flex items-center gap-2 pt-2 border-t border-amber-200/60 dark:border-amber-900/40">
+            <div className="flex items-center gap-2 pt-3 dsh-border-t">
               <button
                 disabled={loading}
                 onClick={() => handleDecision('approved')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 dsh-btn-primary dsh-t-s dsh-strong"
+                style={{ borderRadius: 'var(--dsh-radius-sm)' }}
               >
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                Approve & Execute
+                Approve &amp; execute
               </button>
               <button
                 disabled={loading}
                 onClick={() => handleDecision('rejected')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold transition disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 dsh-btn dsh-t-s dsh-strong"
+                style={{ borderRadius: 'var(--dsh-radius-sm)' }}
               >
                 <X size={13} /> Cancel
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 dsh-t-s dsh-strong">
               {status === 'approved' ? (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  <Check size={14} /> Approved & In Progress
+                <span className="dsh-success flex items-center gap-1">
+                  <Check size={14} /> Approved &amp; in progress
                 </span>
               ) : (
-                <span className="text-rose-600 dark:text-rose-400 flex items-center gap-1">
-                  <X size={14} /> Action Cancelled
+                <span className="dsh-danger flex items-center gap-1">
+                  <X size={14} /> Action cancelled
                 </span>
               )}
             </div>

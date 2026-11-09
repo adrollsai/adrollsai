@@ -1,5 +1,14 @@
 'use client';
 
+/**
+ * Markdown renderer for harness prose.
+ *
+ * Uses the DeepSeek Harness markdown scale exactly: base 16px/28px, h1 24/34,
+ * h2 22/32, h3 20/30, h4 16/28, small 14/24, tables 15/25 with a 500-weight
+ * head, inline code 14/22 and code blocks 13/22 on a 12px radius. Weights stop
+ * at 700 (headings) and 600 (strong) — nothing heavier, and no coloured
+ * decoration on headings.
+ */
 import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -10,6 +19,10 @@ interface AgentMarkdownProps {
   className?: string;
 }
 
+const MONO = 'var(--dsh-font-mono)';
+
+const label = (token: string) => ({ color: `var(${token})` });
+
 function CodeBlock({ children, className }: { children: any; className?: string }) {
   const [copied, setCopied] = React.useState(false);
   const codeText = String(children).replace(/\n$/, '');
@@ -17,118 +30,181 @@ function CodeBlock({ children, className }: { children: any; className?: string 
   const language = match ? match[1] : '';
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(codeText);
+    navigator.clipboard.writeText(codeText).catch(() => {});
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 1200);
   };
 
   return (
-    <div className="relative my-3 rounded-xl overflow-hidden border border-slate-700/80 bg-slate-950 text-slate-100 text-xs">
-      <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-900 border-b border-slate-800 text-[11px] text-slate-400">
-        <span className="font-mono uppercase">{language || 'code'}</span>
+    <div
+      className="my-3 overflow-hidden"
+      style={{
+        borderRadius: 'var(--dsh-radius-md)',
+        border: '1px solid var(--dsw-alias-border-l1)',
+        background: 'var(--dsw-alias-markdown-code-block)',
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-3.5 py-1.5"
+        style={{
+          background: 'var(--dsw-alias-markdown-code-block-banner)',
+          borderBottom: '1px solid var(--dsw-alias-border-l1)',
+        }}
+      >
+        <span
+          className="dsh-mono dsh-t-xs uppercase"
+          style={{ ...label('--dsw-alias-label-tertiary'), letterSpacing: '0.04em' }}
+        >
+          {language || 'code'}
+        </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 hover:text-white transition px-1.5 py-0.5 rounded"
+          className="flex items-center gap-1 dsh-t-xs"
+          style={label('--dsw-alias-label-tertiary')}
           title="Copy code"
         >
-          {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+          {copied ? (
+            <Check size={12} style={label('--dsw-alias-state-success-primary')} />
+          ) : (
+            <Copy size={12} />
+          )}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <pre className="p-3.5 overflow-x-auto font-mono text-[12px] leading-relaxed">
-        <code>{children}</code>
+      <pre className="p-3.5 overflow-x-auto" style={{ margin: 0 }}>
+        <code
+          className="dsh-mono"
+          style={{
+            fontSize: 'var(--dsh-text-xs)',
+            lineHeight: '22px',
+            fontFamily: MONO,
+            ...label('--dsw-alias-label-primary'),
+          }}
+        >
+          {children}
+        </code>
       </pre>
     </div>
   );
 }
 
-export default function AgentMarkdown({ content, className = '' }: AgentMarkdownProps) {
+function AgentMarkdownInner({ content, className = '' }: AgentMarkdownProps) {
   if (!content) return null;
 
   return (
-    <div className={`agent-markdown leading-relaxed text-sm space-y-2.5 ${className}`}>
+    <div className={`agent-markdown dsh-t-prose ${className}`} style={label('--dsw-alias-label-primary')}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="text-base font-black text-slate-900 dark:text-slate-50 mt-4 mb-2 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-1.5">
-              <span className="w-1.5 h-4 rounded-full bg-blue-500 shrink-0"></span>
-              <span>{children}</span>
+            <h1
+              className="mt-6 mb-3"
+              style={{
+                fontSize: 'var(--dsh-text-xl)',
+                lineHeight: '34px',
+                fontWeight: 700,
+                ...label('--dsw-alias-label-primary'),
+              }}
+            >
+              {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="text-sm font-extrabold text-slate-900 dark:text-slate-100 mt-3.5 mb-1.5 flex items-center gap-2">
-              <span className="w-1.5 h-3.5 rounded-full bg-indigo-500 shrink-0"></span>
-              <span>{children}</span>
+            <h2
+              className="mt-5 mb-2.5"
+              style={{ fontSize: '22px', lineHeight: '32px', fontWeight: 700, ...label('--dsw-alias-label-primary') }}
+            >
+              {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-2.5 mb-1">
+            <h3
+              className="mt-4 mb-2"
+              style={{ fontSize: 'var(--dsh-text-l)', lineHeight: '30px', fontWeight: 700, ...label('--dsw-alias-label-primary') }}
+            >
               {children}
             </h3>
           ),
+          h4: ({ children }) => (
+            <h4
+              className="mt-3 mb-1.5"
+              style={{ fontSize: 'var(--dsh-text-base)', lineHeight: '28px', fontWeight: 600, ...label('--dsw-alias-label-primary') }}
+            >
+              {children}
+            </h4>
+          ),
           p: ({ children }) => (
-            <p className="my-1.5 text-slate-700 dark:text-slate-300 leading-relaxed">
+            <p style={{ fontSize: 'var(--dsh-text-base)', lineHeight: '28px', margin: '12px 0', ...label('--dsw-alias-label-primary') }}>
               {children}
             </p>
           ),
-          strong: ({ children }) => (
-            <strong className="font-bold text-slate-900 dark:text-white">
-              {children}
-            </strong>
-          ),
-          em: ({ children }) => (
-            <em className="italic text-slate-700 dark:text-slate-300">{children}</em>
-          ),
+          strong: ({ children }) => <strong style={{ fontWeight: 600 }}>{children}</strong>,
+          em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
           ul: ({ children }) => (
-            <ul className="my-2 space-y-1 pl-1">
+            <ul
+              className="list-disc pl-6"
+              style={{ margin: '12px 0', fontSize: 'var(--dsh-text-base)', lineHeight: '28px' }}
+            >
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="my-2 space-y-1 list-decimal list-outside pl-5 text-slate-700 dark:text-slate-300">
+            <ol
+              className="list-decimal list-outside pl-6"
+              style={{ margin: '12px 0', fontSize: 'var(--dsh-text-base)', lineHeight: '28px' }}
+            >
               {children}
             </ol>
           ),
-          li: ({ children }) => (
-            <li className="text-slate-700 dark:text-slate-300 leading-relaxed text-xs sm:text-sm">
-              {children}
-            </li>
-          ),
+          li: ({ children }) => <li style={{ margin: '4px 0' }}>{children}</li>,
           blockquote: ({ children }) => (
-            <blockquote className="border-l-4 border-blue-500 bg-blue-50/60 dark:bg-blue-950/20 px-3.5 py-2 rounded-r-xl my-2.5 text-slate-700 dark:text-slate-300 italic text-xs leading-relaxed">
+            <blockquote
+              className="pl-4 py-1 my-3"
+              style={{
+                borderLeft: '2px solid var(--dsw-alias-border-l3)',
+                ...label('--dsw-alias-label-secondary'),
+              }}
+            >
               {children}
             </blockquote>
           ),
           table: ({ children }) => (
-            <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm bg-white dark:bg-slate-900/90">
-              <table className="min-w-full text-xs text-left divide-y divide-slate-200 dark:divide-slate-800 border-collapse">
+            <div
+              className="overflow-x-auto my-3"
+              style={{
+                borderRadius: 'var(--dsh-radius-md)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+              }}
+            >
+              <table className="min-w-full border-collapse text-left" style={{ fontSize: '15px', lineHeight: '25px' }}>
                 {children}
               </table>
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="bg-slate-100/90 dark:bg-slate-800/90 text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+            <thead
+              style={{
+                background: 'var(--dsw-alias-markdown-code-block-banner)',
+                fontWeight: 500,
+                borderBottom: '1px solid var(--dsw-alias-border-l2)',
+              }}
+            >
               {children}
             </thead>
           ),
           tbody: ({ children }) => (
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-normal">
-              {children}
-            </tbody>
+            <tbody style={{ borderTop: '1px solid var(--dsw-alias-border-l1)' }}>{children}</tbody>
           ),
           tr: ({ children }) => (
-            <tr className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-              {children}
-            </tr>
+            <tr style={{ borderBottom: '1px solid var(--dsw-alias-border-l1)' }}>{children}</tr>
           ),
           th: ({ children }) => (
-            <th className="px-3.5 py-2.5 font-bold text-slate-800 dark:text-slate-200">
+            <th className="px-3.5 py-2" style={{ fontWeight: 500, ...label('--dsw-alias-label-primary') }}>
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="px-3.5 py-2 text-slate-700 dark:text-slate-300 font-medium whitespace-nowrap sm:whitespace-normal">
+            <td className="px-3.5 py-2" style={label('--dsw-alias-label-secondary')}>
               {children}
             </td>
           ),
@@ -139,7 +215,16 @@ export default function AgentMarkdown({ content, className = '' }: AgentMarkdown
             }
             return (
               <code
-                className="px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono text-[11px] font-semibold"
+                className="dsh-mono"
+                style={{
+                  padding: '2px 6px',
+                  borderRadius: 'var(--dsh-radius-xs)',
+                  background: 'var(--dsw-alias-markdown-inline-code)',
+                  fontFamily: MONO,
+                  fontSize: 'var(--dsh-text-s)',
+                  lineHeight: '22px',
+                  ...label('--dsw-alias-label-primary'),
+                }}
                 {...props}
               >
                 {children}
@@ -151,12 +236,15 @@ export default function AgentMarkdown({ content, className = '' }: AgentMarkdown
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 dark:text-blue-400 hover:underline font-medium inline-flex items-center gap-0.5"
+              className="underline"
+              style={label('--dsw-alias-state-business-primary')}
             >
               {children}
             </a>
           ),
-          hr: () => <hr className="my-3 border-slate-200 dark:border-slate-800" />,
+          hr: () => (
+            <hr className="my-4" style={{ border: 0, borderTop: '1px solid var(--dsw-alias-border-l1)' }} />
+          ),
         }}
       >
         {content}
@@ -164,3 +252,14 @@ export default function AgentMarkdown({ content, className = '' }: AgentMarkdown
     </div>
   );
 }
+
+/**
+ * Memoised on `content`.
+ *
+ * This matters more than it looks: the chat re-renders on every streamed token,
+ * and without memoisation ReactMarkdown + remark-gfm re-parse EVERY message in
+ * the transcript each time — that is what makes the tab lag while the agent is
+ * running. With it, only the message currently streaming re-parses.
+ */
+const AgentMarkdown = React.memo(AgentMarkdownInner);
+export default AgentMarkdown;

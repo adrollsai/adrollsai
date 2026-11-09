@@ -219,23 +219,23 @@ export default function FileManagerDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in-50">
-      <div className="relative w-full max-w-4xl h-[85vh] bg-white dark:bg-[#111318] border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-3 sm:p-6 pb-20 sm:pb-24 animate-in fade-in-50">
+      <div className="relative w-full max-w-4xl h-[82vh] max-h-[calc(100vh-120px)] dsh-surface-1 border dsh-border rounded-3xl flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#16181d]">
+        <div className="flex items-center justify-between px-6 py-4 border-b dsh-border dsh-surface-1">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold shadow-xs">
+            <div className="w-9 h-9 rounded-xl dsh-surface-3 dsh-warn flex items-center justify-center font-bold">
               <FolderOpen size={20} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h3 className="dsh-t-s dsh-strong dsh-label-primary flex items-center gap-2">
                 File & Asset Manager
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                <span className="dsh-t-xxxs dsh-mono px-2 py-0.5 rounded-full dsh-surface-3 dsh-label-secondary">
                   {assets.length} items
                 </span>
               </h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Create folders, upload videos and assets, or let DeepSeek organize them automatically.
+              <p className="dsh-t-xs dsh-label-tertiary">
+                Create folders, upload videos and assets, or let Nobo organize them automatically.
               </p>
             </div>
           </div>
@@ -244,9 +244,9 @@ export default function FileManagerDrawer({
             {/* Create Folder Button */}
             <button
               onClick={() => setShowNewFolderModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl dsh-surface-3 dsh-interactive dsh-label-secondary dsh-t-xs dsh-strong transition"
             >
-              <FolderPlus size={14} className="text-[#4d6bfe]" />
+              <FolderPlus size={14} className="dsh-accent" />
               <span>New Folder</span>
             </button>
 
@@ -262,7 +262,7 @@ export default function FileManagerDrawer({
             <button
               onClick={() => fileUploadInputRef.current?.click()}
               disabled={uploading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#4d6bfe] hover:bg-[#3d5bfe] text-white text-xs font-semibold shadow-xs transition disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl dsh-btn-primary dsh-t-xs dsh-strong transition disabled:opacity-50"
             >
               {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
               <span>{uploading ? 'Uploading...' : 'Upload Asset'}</span>
@@ -271,7 +271,7 @@ export default function FileManagerDrawer({
             <button
               onClick={fetchAssets}
               disabled={loading}
-              className="p-1.5 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              className="p-1.5 rounded-xl dsh-label-tertiary dsh-interactive transition"
               title="Refresh"
             >
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -279,7 +279,7 @@ export default function FileManagerDrawer({
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              className="p-1.5 rounded-xl dsh-label-tertiary dsh-interactive transition"
             >
               <X size={18} />
             </button>
@@ -287,17 +287,17 @@ export default function FileManagerDrawer({
         </div>
 
         {/* Filter and Folder Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-[#111318] text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 border-b dsh-border dsh-surface-1 dsh-t-xs">
           {/* Media Types */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          <div className="flex items-center gap-1 dsh-surface-3 p-1 rounded-xl">
             {(['all', 'video', 'image'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setFilterType(t)}
                 className={`px-3 py-1 rounded-lg font-semibold capitalize transition ${
                   filterType === t
-                    ? 'bg-white dark:bg-[#1a1d24] text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                    ? 'dsh-surface-1 dsh-label-primary'
+                    : 'dsh-label-tertiary dsh-interactive'
                 }`}
               >
                 {t === 'all' ? 'All Files' : `${t}s`}
@@ -307,15 +307,15 @@ export default function FileManagerDrawer({
 
           {/* Folder Chips */}
           <div className="flex items-center gap-1.5 overflow-x-auto max-w-lg py-1">
-            <span className="text-[11px] text-slate-400 flex items-center gap-1 mr-1 shrink-0">
+            <span className="dsh-t-xs dsh-label-tertiary flex items-center gap-1 mr-1 shrink-0">
               <Folder size={12} /> Folder:
             </span>
             <button
               onClick={() => setSelectedFolder('All')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 ${
                 selectedFolder === 'All'
-                  ? 'bg-[#4d6bfe] text-white'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  ? 'dsh-btn-primary'
+                  : 'dsh-surface-3 dsh-label-secondary dsh-interactive'
               }`}
             >
               All
@@ -326,8 +326,8 @@ export default function FileManagerDrawer({
                 onClick={() => setSelectedFolder(f)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 ${
                   selectedFolder === f
-                    ? 'bg-[#4d6bfe] text-white'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    ? 'dsh-btn-primary'
+                    : 'dsh-surface-3 dsh-label-secondary dsh-interactive'
                 }`}
               >
                 {f}
@@ -337,17 +337,17 @@ export default function FileManagerDrawer({
         </div>
 
         {/* Media Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 pb-16">
           {loading ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-              <Loader2 className="animate-spin text-[#4d6bfe]" size={26} />
+            <div className="h-full flex flex-col items-center justify-center dsh-label-tertiary gap-2">
+              <Loader2 className="animate-spin dsh-accent" size={26} />
               <p className="text-xs">Loading media assets...</p>
             </div>
           ) : filteredAssets.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-              <FolderOpen size={40} className="text-slate-300 dark:text-slate-700" />
+            <div className="h-full flex flex-col items-center justify-center dsh-label-tertiary gap-2">
+              <FolderOpen size={40} className="dsh-label-caption" />
               <p className="text-xs font-semibold">No assets found in "{selectedFolder}".</p>
-              <p className="text-[11px] text-slate-400">Upload assets using the button above or tell DeepSeek to generate one.</p>
+              <p className="dsh-t-xs dsh-label-tertiary">Upload assets using the button above or tell Nobo to generate one.</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -356,7 +356,7 @@ export default function FileManagerDrawer({
                 return (
                   <div
                     key={asset.id}
-                    className="group relative bg-slate-50 dark:bg-[#16181d] border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition flex flex-col"
+                    className="group relative dsh-surface-1 border dsh-border rounded-2xl overflow-hidden hover:shadow-md transition flex flex-col"
                   >
                     {/* Media Thumbnail */}
                     <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
@@ -384,7 +384,7 @@ export default function FileManagerDrawer({
 
                       {/* Folder Badge */}
                       {asset.metadata?.folder && (
-                        <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-[#4d6bfe]/90 text-white backdrop-blur-xs">
+                        <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded dsh-t-xxxs dsh-strong dsh-btn-primary backdrop-blur-xs">
                           {asset.metadata.folder}
                         </span>
                       )}
@@ -393,23 +393,23 @@ export default function FileManagerDrawer({
                     {/* Meta info */}
                     <div className="p-3 flex-1 flex flex-col justify-between">
                       <div>
-                        <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate" title={asset.caption || 'Untitled'}>
+                        <p className="dsh-t-xs dsh-strong dsh-label-primary truncate" title={asset.caption || 'Untitled'}>
                           {asset.caption || asset.title || 'Untitled Asset'}
                         </p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
+                        <p className="dsh-t-xxxs dsh-label-tertiary mt-0.5">
                           {new Date(asset.created_at).toLocaleDateString()}
                           {asset.metadata?.duration && ` • ${asset.metadata.duration}s`}
                         </p>
                       </div>
 
                       {/* Action Bar */}
-                      <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+                      <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t dsh-border">
                         <button
                           onClick={() => handleCopy(asset.id, asset.url)}
-                          className="text-[11px] font-semibold text-slate-500 hover:text-[#4d6bfe] dark:hover:text-[#4d6bfe] flex items-center gap-1"
+                          className="dsh-t-xs dsh-strong dsh-label-tertiary dsh-interactive flex items-center gap-1"
                           title="Copy Public Link"
                         >
-                          {copiedId === asset.id ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                          {copiedId === asset.id ? <Check size={12} className="dsh-success" /> : <Copy size={12} />}
                           <span>{copiedId === asset.id ? 'Copied' : 'Link'}</span>
                         </button>
 
@@ -420,7 +420,7 @@ export default function FileManagerDrawer({
                                 onSelectAsset(asset.url, asset.caption || 'Asset');
                                 onClose();
                               }}
-                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#4d6bfe] text-white hover:bg-[#3d5bfe] transition"
+                              className="px-2 py-0.5 rounded dsh-t-xxxs dsh-strong dsh-btn-primary transition"
                             >
                               Use
                             </button>
@@ -429,7 +429,7 @@ export default function FileManagerDrawer({
                           {/* Move to Folder Button */}
                           <button
                             onClick={() => setMovingAssetId(movingAssetId === asset.id ? null : asset.id)}
-                            className="p-1 text-slate-400 hover:text-amber-500 transition"
+                            className="p-1 dsh-label-tertiary dsh-interactive transition"
                             title="Move to Folder"
                           >
                             <MoveRight size={12} />
@@ -439,7 +439,7 @@ export default function FileManagerDrawer({
                             href={asset.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                            className="p-1 dsh-label-tertiary dsh-interactive"
                             title="Open URL"
                           >
                             <ExternalLink size={12} />
@@ -447,7 +447,7 @@ export default function FileManagerDrawer({
 
                           <button
                             onClick={() => handleDelete(asset.id)}
-                            className="p-1 text-slate-400 hover:text-rose-500 transition"
+                            className="p-1 dsh-label-tertiary dsh-interactive-danger transition"
                             title="Delete Asset"
                           >
                             <Trash2 size={12} />
@@ -457,13 +457,13 @@ export default function FileManagerDrawer({
 
                       {/* Inline Move Picker */}
                       {movingAssetId === asset.id && (
-                        <div className="mt-2 p-2 rounded-xl bg-slate-100 dark:bg-slate-800 space-y-1.5 animate-in fade-in-50">
-                          <span className="text-[10px] font-bold text-slate-500 block">Move to:</span>
+                        <div className="mt-2 p-2 rounded-xl dsh-surface-3 space-y-1.5 animate-in fade-in-50">
+                          <span className="dsh-t-xxxs dsh-strong dsh-label-tertiary block">Move to:</span>
                           <div className="flex items-center gap-1">
                             <select
                               value={targetFolder}
                               onChange={(e) => setTargetFolder(e.target.value)}
-                              className="flex-1 text-[10px] bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded p-1 text-slate-800 dark:text-slate-200"
+                              className="flex-1 dsh-t-xxxs dsh-surface-1 border dsh-border-l2 rounded p-1 dsh-label-primary"
                             >
                               {customFolders.map((f) => (
                                 <option key={f} value={f}>
@@ -473,7 +473,7 @@ export default function FileManagerDrawer({
                             </select>
                             <button
                               onClick={() => handleMoveFolder(asset.id, targetFolder)}
-                              className="px-2 py-1 rounded bg-[#4d6bfe] text-white text-[10px] font-bold"
+                              className="px-2 py-1 rounded dsh-btn-primary dsh-t-xxxs dsh-strong"
                             >
                               Move
                             </button>
@@ -491,9 +491,9 @@ export default function FileManagerDrawer({
         {/* Create Folder Modal */}
         {showNewFolderModal && (
           <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm bg-white dark:bg-[#16181d] border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <FolderPlus size={16} className="text-[#4d6bfe]" />
+            <div className="w-full max-w-sm dsh-card rounded-2xl p-5 space-y-4">
+              <h4 className="dsh-t-s dsh-strong dsh-label-primary flex items-center gap-2">
+                <FolderPlus size={16} className="dsh-accent" />
                 Create New Folder
               </h4>
               <input
@@ -501,19 +501,19 @@ export default function FileManagerDrawer({
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="Folder name (e.g. Luxury Reels, Raw Video)..."
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-xs text-slate-900 dark:text-slate-100 outline-none focus:border-[#4d6bfe]"
+                className="w-full px-3 py-2 rounded-xl border dsh-border dsh-surface-1 dsh-t-xs dsh-label-primary outline-none"
                 autoFocus
               />
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={() => setShowNewFolderModal(false)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="px-3 py-1.5 rounded-xl dsh-t-xs dsh-strong dsh-label-tertiary dsh-interactive"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleCreateFolder}
-                  className="px-3 py-1.5 rounded-xl bg-[#4d6bfe] hover:bg-[#3d5bfe] text-white text-xs font-semibold"
+                  className="px-3 py-1.5 rounded-xl dsh-btn-primary dsh-t-xs dsh-strong"
                 >
                   Create
                 </button>
@@ -527,17 +527,17 @@ export default function FileManagerDrawer({
           <div className="absolute inset-0 z-50 bg-black/85 flex flex-col items-center justify-center p-4">
             <button
               onClick={() => setPreviewMedia(null)}
-              className="absolute top-4 right-4 p-2 text-white bg-white/10 rounded-full hover:bg-white/20"
+              className="absolute top-4 right-4 p-2 dsh-label-primary dsh-surface-2 dsh-border rounded-full dsh-interactive"
             >
               <X size={20} />
             </button>
             <div className="max-w-2xl w-full">
               {previewMedia.type === 'video' ? (
-                <video controls autoPlay className="w-full max-h-[70vh] rounded-2xl shadow-2xl bg-black" src={previewMedia.url} />
+                <video controls autoPlay className="w-full max-h-[70vh] rounded-2xl bg-black" src={previewMedia.url} />
               ) : (
-                <img src={previewMedia.url} alt={previewMedia.title} className="w-full max-h-[70vh] object-contain rounded-2xl shadow-2xl" />
+                <img src={previewMedia.url} alt={previewMedia.title} className="w-full max-h-[70vh] object-contain rounded-2xl" />
               )}
-              <p className="text-center text-white text-xs mt-3 font-semibold">{previewMedia.title}</p>
+              <p className="text-center dsh-label-primary dsh-t-xs mt-3 dsh-strong">{previewMedia.title}</p>
             </div>
           </div>
         )}

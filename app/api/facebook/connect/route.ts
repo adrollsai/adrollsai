@@ -40,6 +40,10 @@ export async function GET(req: Request) {
         'instagram_content_publish',
         'business_management',
         'ads_management',
+        // Grants access to Meta's official remote ads MCP server
+        // (mcp.facebook.com/ads). It is "Ready to use" at Standard Access, so
+        // requesting it here is enough — no App Review needed to enable it.
+        'ads_mcp_management',
         'pages_manage_ads',
         'pages_read_user_content',
         'leads_retrieval',

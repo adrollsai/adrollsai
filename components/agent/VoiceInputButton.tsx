@@ -83,11 +83,9 @@ export default function VoiceInputButton({ onTranscript, disabled }: VoiceInputB
       type="button"
       disabled={disabled}
       onClick={toggleListening}
-      className={`p-2.5 rounded-full transition-all flex items-center justify-center ${
-        isListening
-          ? 'bg-rose-500 text-white animate-pulse shadow-lg shadow-rose-500/30'
-          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-      } disabled:opacity-50`}
+      className={`p-2.5 rounded-full transition-all flex items-center justify-center disabled:opacity-50 ${
+        isListening ? 'dsh-listening' : 'dsh-btn'
+      }`}
       title={isListening ? 'Stop listening' : 'Speak to agent'}
     >
       {isListening ? <MicOff size={18} /> : <Mic size={18} />}

@@ -13,7 +13,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
   async function getUserMetaCredentials() {
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('facebook_token, ad_account_id, selected_page_token, selected_page_id, business_name, mission_statement')
+      .select('facebook_token, ad_account_id, selected_page_token, selected_page_id, business_name, mission_statement, currency')
       .eq('id', userId)
       .single();
 
@@ -242,7 +242,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
       description: 'Meta Ads MCP: Launches a complete, end-to-end Lead Generation campaign with High Intent Instant Lead Form, custom questions, target locations, ad creatives, and ad set.',
       inputSchema: z.object({
         campaignName: z.string().describe('Campaign name'),
-        dailyBudgetInr: z.number().default(500).describe('Daily budget in INR (e.g. 500)'),
+        dailyBudgetInr: z.number().default(500).describe('Daily budget in the ad account\'s OWN currency (read it from meta_graph_account first: 500 means 500 AED on an AED account, 500 INR on an INR account)'),
         imageUrl: z.string().describe('Public image URL for the ad creative'),
         adCopy: z.object({
           headline: z.string().describe('Ad headline (max 40 chars)'),
@@ -293,6 +293,17 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           if (!pageId) {
             throw new Error('No Facebook Page selected in profile. Please select a page first.');
           }
+
+          // Budgets are denominated in the ad account's own currency. Assuming
+          // INR on an AED/USD account silently creates the wrong daily budget,
+          // which is a real-money mistake, so resolve the currency first.
+          const acctRes = await fetch(
+            `https://graph.facebook.com/${META_GRAPH_VERSION}/${adAccountId}?fields=currency&access_token=${token}`
+          );
+          const acctJson = await acctRes.json();
+          const currency = acctJson?.currency || profile.currency || 'INR';
+          const SYMBOLS: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ' };
+          const fmtMoney = (n: number) => `${SYMBOLS[currency] || `${currency} `}${n.toFixed(2)}`;
 
           // Resolve page token
           let pageAccessToken = profile.selected_page_token;
@@ -491,7 +502,8 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
             imageHash,
             campaignName,
             status,
-            dailyBudget: `₹${dailyBudgetInr}/day`,
+            dailyBudget: `${fmtMoney(dailyBudgetInr)}/day`,
+            currency,
             whatsappRedirectUrl,
             message: `Campaign "${campaignName}" successfully launched on Meta Ads!`,
           };

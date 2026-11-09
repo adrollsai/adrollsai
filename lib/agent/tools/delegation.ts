@@ -21,7 +21,7 @@ export function createDelegationTool() {
       }),
       execute: async ({ agentRole, systemInstructions, task, contextData }) => {
         try {
-          const model = getAgentModel();
+          const model = await getAgentModel();
 
           const system = `
 You are an autonomous specialized sub-agent of Nobogent.

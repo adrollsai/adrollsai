@@ -2,7 +2,16 @@ import crypto from 'crypto';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 
-const KIE_API_KEY = process.env.KIE_API_KEY;
+/**
+ * Read the Kie key lazily, per call.
+ *
+ * This module is imported by agent tools, workers and scripts, some of which
+ * initialise before the environment is loaded. A module-level
+ * `const KIE_API_KEY = process.env.KIE_API_KEY` captures an empty string at
+ * import time and then every generation fails with "KIE_API_KEY is not
+ * configured" even though the key is present.
+ */
+const kieApiKey = () => process.env.KIE_API_KEY;
 const KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask";
 const KIE_VEO_GENERATE_URL = "https://api.kie.ai/api/v1/veo/generate";
 const KIE_VEO_EXTEND_URL = "https://api.kie.ai/api/v1/veo/extend";
@@ -70,14 +79,14 @@ async function fetchWithRetry(url: string, options: any, maxRetries = 3): Promis
  * Updated with robust error handling and standardized return objects.
  */
 export async function createKieTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
-    if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
+    if (!kieApiKey()) return { taskId: null, error: "KIE_API_KEY is not configured." };
     
     try {
         const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${KIE_API_KEY}`
+                'Authorization': `Bearer ${kieApiKey()}`
             },
             body: JSON.stringify(payload)
         });
@@ -105,13 +114,13 @@ export async function createKieTask(payload: any): Promise<{ taskId: string | nu
  * Query task status from Kie.ai (GET /api/v1/jobs/recordInfo)
  */
 export async function queryKieTask(taskId: string): Promise<{ state: string; resultUrl: string | null; error: string | null }> {
-    if (!KIE_API_KEY) return { state: 'fail', resultUrl: null, error: "KIE_API_KEY is not configured." };
+    if (!kieApiKey()) return { state: 'fail', resultUrl: null, error: "KIE_API_KEY is not configured." };
     
     try {
         const response = await fetchWithRetry(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${taskId}`, {
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${KIE_API_KEY}`
+                'Authorization': `Bearer ${kieApiKey()}`
             }
         });
 
@@ -173,6 +182,10 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
 
 /**
  * Helper to generate voiceover audio using google/gemini-3-1-flash-tts via Kie.ai
+ *
+ * Kie's catalogue lists this model as "Gemini 3.1 Flash TTS Preview"; there is
+ * no 3.8 TTS entry. Callers may override `model` (KIE_TTS_MODEL) so a newer
+ * release can be adopted without a code change.
  */
 export async function createGeminiTTS({
     dialogueText,
@@ -180,7 +193,8 @@ export async function createGeminiTTS({
     style = "",
     scene = "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial.",
     sampleContext = "High converting luxury marketing video commercial with natural Indian English delivery",
-    callBackUrl
+    callBackUrl,
+    model = process.env.KIE_TTS_MODEL || "google/gemini-3-1-flash-tts"
 }: {
     dialogueText: string;
     speakerName?: string;
@@ -188,9 +202,10 @@ export async function createGeminiTTS({
     scene?: string;
     sampleContext?: string;
     callBackUrl?: string;
+    model?: string;
 }): Promise<{ taskId: string | null; error: string | null }> {
     const payload: any = {
-        model: "google/gemini-3-1-flash-tts",
+        model,
         input: {
             speakers: [{
                 speaker_id: "Speaker 1",
@@ -228,7 +243,8 @@ export async function createGrokVideoTask({
     aspectRatio = "9:16",
     resolution = "480p",
     duration = 15,
-    callBackUrl
+    callBackUrl,
+    model = process.env.KIE_GROK_VIDEO_MODEL || "grok-imagine-video-1-5-preview"
 }: {
     prompt: string;
     collageImageUrl?: string;
@@ -237,6 +253,7 @@ export async function createGrokVideoTask({
     resolution?: string;
     duration?: number;
     callBackUrl?: string;
+    model?: string;
 }): Promise<{ taskId: string | null; error: string | null }> {
     const inputPayload: any = {
         prompt,
@@ -254,7 +271,7 @@ export async function createGrokVideoTask({
     }
 
     const payload: any = {
-        model: "grok-imagine-video-1-5-preview",
+        model,
         input: inputPayload
     };
 
@@ -1097,7 +1114,7 @@ export async function createKieImageTask(
     aspectRatio: string = "1:1",
     inputUrls?: string[]
 ): Promise<string> {
-    if (!KIE_API_KEY) throw new Error("KIE_API_KEY is not configured.");
+    if (!kieApiKey()) throw new Error("KIE_API_KEY is not configured.");
 
     let effectiveRatio = aspectRatio;
     if (model.startsWith("gpt-image-2-5-flare") && effectiveRatio === "4:5") {
@@ -1116,7 +1133,7 @@ export async function createKieImageTask(
 
     const response = await fetchWithRetry(KIE_CREATE_TASK_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${KIE_API_KEY}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${kieApiKey()}` },
         body: JSON.stringify({ 
             model: model, 
             input: inputPayload 
@@ -1135,14 +1152,14 @@ export async function createKieImageTask(
  * 11. Kie.ai Veo 3.1 Video Generator (Lite Model)
  */
 export async function createVeoTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
-    if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
+    if (!kieApiKey()) return { taskId: null, error: "KIE_API_KEY is not configured." };
     
     try {
         const response = await fetchWithRetry(KIE_VEO_GENERATE_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${KIE_API_KEY}`
+                'Authorization': `Bearer ${kieApiKey()}`
             },
             body: JSON.stringify({
                 ...payload,
@@ -1174,14 +1191,14 @@ export async function createVeoTask(payload: any): Promise<{ taskId: string | nu
  * 12. Kie.ai Veo 3.1 Video Extension (Lite Model)
  */
 export async function extendVeoTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
-    if (!KIE_API_KEY) return { taskId: null, error: "KIE_API_KEY is not configured." };
+    if (!kieApiKey()) return { taskId: null, error: "KIE_API_KEY is not configured." };
     
     try {
         const response = await fetchWithRetry(KIE_VEO_EXTEND_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${KIE_API_KEY}`
+                'Authorization': `Bearer ${kieApiKey()}`
             },
             body: JSON.stringify({
                 ...payload,

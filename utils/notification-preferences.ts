@@ -93,7 +93,7 @@ export const DEFAULT_ADMIN_PREFERENCES: UserNotificationPreferences = {
 }
 
 export const DEFAULT_AGENT_PREFERENCES: UserNotificationPreferences = {
-  fresh_lead: { push: true, email: false, whatsapp: false },
+  fresh_lead: { push: true, email: true, whatsapp: false },
   lead_assigned: { push: true, email: true, whatsapp: false },
   meeting_booked: { push: true, email: true, whatsapp: false },
   expert_escalation: { push: true, email: true, whatsapp: false },
@@ -155,18 +155,7 @@ export function mapEventTypeToKey(type: string = '', title: string = ''): Notifi
   const t = (type || '').toLowerCase()
   const s = (title || '').toLowerCase()
 
-  // 1. Fresh / New Lead
-  if (
-    t === 'fresh_lead' ||
-    t === 'new_lead' ||
-    t === 'lead_event' ||
-    t === 'custom_lead' ||
-    /new.*lead|fresh.*lead|inquiry/i.test(s)
-  ) {
-    return 'fresh_lead'
-  }
-
-  // 2. Lead Assigned / Transferred
+  // 1. Lead Assigned / Transferred
   if (
     t.includes('assign') ||
     t.includes('transfer') ||
@@ -175,7 +164,7 @@ export function mapEventTypeToKey(type: string = '', title: string = ''): Notifi
     return 'lead_assigned'
   }
 
-  // 3. Meeting / Appointment Booked
+  // 2. Meeting / Appointment Booked
   if (
     t.includes('meeting') ||
     t.includes('booking') ||
@@ -185,7 +174,7 @@ export function mapEventTypeToKey(type: string = '', title: string = ''): Notifi
     return 'meeting_booked'
   }
 
-  // 4. Hot Lead / Expert Escalation
+  // 3. Hot Lead / Expert Escalation
   if (
     t.includes('expert') ||
     t.includes('escalat') ||
@@ -195,6 +184,17 @@ export function mapEventTypeToKey(type: string = '', title: string = ''): Notifi
     /expert|callback|urgent|hot lead|interested/i.test(s)
   ) {
     return 'expert_escalation'
+  }
+
+  // 4. Fresh / New Lead
+  if (
+    t === 'fresh_lead' ||
+    t === 'new_lead' ||
+    t === 'lead_event' ||
+    t === 'custom_lead' ||
+    /new.*lead|fresh.*lead|inquiry/i.test(s)
+  ) {
+    return 'fresh_lead'
   }
 
   // 5. Reminders / Followups

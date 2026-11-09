@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { streamText, generateText, tool, convertToModelMessages, stepCountIs } from 'ai';
+import { turnStopConditions } from '@/lib/agent/turn-limits';
 import { google } from '@ai-sdk/google';
 import { z } from 'zod';
 import fs from 'fs';
 import path from 'path';
 
-export const maxDuration = 60;
+// Literal on purpose — Next reads segment config statically.
+export const maxDuration = 300;
 
 const LOG_FILE = path.join(process.cwd(), 'scratch', 'agent_chat_debug.log');
 
@@ -86,7 +88,7 @@ export async function POST(req: Request) {
           ignoreIncompleteToolCalls: true,
         });
       })(),
-      stopWhen: stepCountIs(10),
+      stopWhen: turnStopConditions(Date.now(), 'Agent v1'),
       tools: {
         // ... (tools remain the same)
         get_product_details: tool({

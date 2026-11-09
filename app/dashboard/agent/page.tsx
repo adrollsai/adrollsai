@@ -1,76 +1,21 @@
 'use client';
 
 import * as React from 'react';
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '@/utils/supabase/client';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AgentChat from '@/components/agent/AgentChat';
 import { Loader2 } from 'lucide-react';
+import '../../../lib/ui/dsh-tokens.css';
 
 function AgentPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const impersonateId = searchParams.get('impersonate');
-  const supabase = createClient();
-
-  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
-  const [impersonatedName, setImpersonatedName] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function checkSuperAdmin() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
-        router.push('/login');
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role, email')
-        .eq('id', session.user.id)
-        .single();
-
-      const isSuperAdmin =
-        profile?.role === 'super_admin' ||
-        profile?.email === 'rchopra489@gmail.com' ||
-        session.user.email === 'rchopra489@gmail.com';
-
-      if (!isSuperAdmin) {
-        router.push('/dashboard');
-        return;
-      }
-
-      setIsAuthorized(true);
-
-      // If impersonating, fetch client name for the top badge
-      if (impersonateId) {
-        const { data: clientProfile } = await supabase
-          .from('profiles')
-          .select('business_name, email')
-          .eq('id', impersonateId)
-          .single();
-        if (clientProfile) {
-          setImpersonatedName(clientProfile.business_name || clientProfile.email);
-        }
-      } else {
-        setImpersonatedName(null);
-      }
-    }
-
-    checkSuperAdmin();
-  }, [router, supabase, impersonateId]);
-
-  if (isAuthorized === null) {
-    return (
-      <div className="h-[calc(100vh-64px)] flex items-center justify-center bg-[#fdfdfe] dark:bg-[#0d0e12]">
-        <Loader2 size={28} className="text-[#4d6bfe] animate-spin" />
-      </div>
-    );
-  }
 
   return (
-    <div className="h-[calc(100vh-64px)] w-full overflow-hidden bg-[#fdfdfe] dark:bg-[#0d0e12]">
-      <AgentChat impersonateId={impersonateId} impersonatedName={impersonatedName} />
+    // `.dsh` scopes the harness design tokens (off-white dark surfaces,
+    // neutral chrome, 16px prose) so they never leak into the dashboard UI.
+    <div className="dsh fixed inset-0 z-50 h-screen w-screen overflow-hidden" data-theme="dark">
+      <AgentChat impersonateId={impersonateId} />
     </div>
   );
 }
@@ -79,8 +24,21 @@ export default function AgentPage() {
   return (
     <Suspense
       fallback={
-        <div className="h-screen flex items-center justify-center bg-[#fdfdfe] dark:bg-[#0d0e12]">
-          <Loader2 size={28} className="text-[#4d6bfe] animate-spin" />
+        <div
+          className="dsh fixed inset-0 z-50 flex items-center justify-center"
+          data-theme="dark"
+        >
+          <div
+            className="flex items-center gap-3 p-5 rounded-[16px]"
+            style={{
+              background: 'var(--dsw-alias-bg-layer-2)',
+              border: '1px solid var(--dsw-alias-border-l1)',
+              boxShadow: 'var(--dsw-shadow-lv2)',
+            }}
+          >
+            <Loader2 size={20} className="animate-spin" style={{ color: 'var(--dsw-alias-label-tertiary)' }} />
+            <p className="dsh-t-s dsh-label-secondary">Loading harness…</p>
+          </div>
         </div>
       }
     >

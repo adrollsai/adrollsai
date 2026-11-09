@@ -48,8 +48,20 @@ const TEMPLATE_METADATA = [
     { name: 'Signature Crown Penthouse', cat: 'Ultra Luxury', libCat: 'premium' as const, badge: 'THE CROWN RESIDENCE', desc: 'The most prestigious residence on the top two floors of the tower' }
 ];
 
+const CLEAN_ARCHITECTURAL_PHOTOS = [
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1400&q=80'
+];
+
 export const ALL_REFERENCE_TEMPLATES: ReferenceTemplate[] = TEMPLATE_METADATA.map((meta, i) => {
     const url = `https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_${i}.jpg`;
+    const cleanPhoto = CLEAN_ARCHITECTURAL_PHOTOS[i % CLEAN_ARCHITECTURAL_PHOTOS.length];
     return {
         id: `pinterest_pin_${i}`,
         index: i,
@@ -59,7 +71,7 @@ export const ALL_REFERENCE_TEMPLATES: ReferenceTemplate[] = TEMPLATE_METADATA.ma
         badge: meta.badge,
         description: meta.desc,
         url,
-        fallbackImage: url
+        fallbackImage: cleanPhoto
     };
 });
 

@@ -11,6 +11,7 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { createKieImageTask } from '@/utils/external-apis';
 import { getReferenceTemplate } from '@/utils/reference-templates-data';
+import { DEEPSEEK_MODELS } from './models';
 
 export interface OwnerBotMediaAttachment {
     type: 'image' | 'document';
@@ -68,7 +69,7 @@ const supabaseAdmin = createClient(
 );
 
 /**
- * Text tasks strictly use DeepSeek v4.1-Flash ('deepseek-chat') via OpenAI-compatible chat completions
+ * Text tasks use DEEPSEEK_MODELS.flash via OpenAI-compatible chat completions.
  */
 function getLLMModel() {
     const rawKey = process.env.DEEPSEEK_API_KEY || '';
@@ -81,7 +82,7 @@ function getLLMModel() {
                 apiKey: cleanKey,
                 ...({ compatibility: 'compatible' } as any)
             });
-            return deepseek.chat('deepseek-chat');
+            return deepseek.chat(DEEPSEEK_MODELS.flash);
         } catch {
             // fallback
         }

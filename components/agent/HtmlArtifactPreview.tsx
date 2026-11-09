@@ -10,35 +10,68 @@ interface HtmlArtifactPreviewProps {
   description?: string;
 }
 
+/**
+ * Inline HTML artifact preview, on the token system.
+ *
+ * The old markup used light/dark Tailwind pairs, which under the harness
+ * (data-theme, not the `dark` class) resolved to the light branch — a white
+ * panel inside the dark UI.
+ */
 export default function HtmlArtifactPreview({ title, html, description }: HtmlArtifactPreviewProps) {
   const [showCode, setShowCode] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const iconButton =
+    'p-1 rounded dsh-label-tertiary dsh-interactive';
+
   return (
-    <div className={`my-3 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm transition-all duration-300 ${isExpanded ? 'fixed inset-4 z-50 shadow-2xl flex flex-col' : ''}`}>
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <div className="w-5 h-5 rounded-md bg-blue-100 dark:bg-blue-900/60 flex items-center justify-center text-blue-600 dark:text-blue-400">
+    <div
+      className={`my-3 overflow-hidden transition-all duration-300 ${
+        isExpanded ? 'fixed inset-4 z-50 flex flex-col' : ''
+      }`}
+      style={{
+        border: '1px solid var(--dsw-alias-border-l1)',
+        borderRadius: 'var(--dsh-radius-md)',
+        background: 'var(--dsw-alias-bg-layer-1)',
+        boxShadow: isExpanded ? 'var(--dsw-shadow-lv3)' : 'var(--dsw-shadow-lv1)',
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-3 py-2"
+        style={{
+          background: 'var(--dsw-alias-bg-layer-2)',
+          borderBottom: '1px solid var(--dsw-alias-border-l1)',
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="w-5 h-5 flex items-center justify-center shrink-0 dsh-accent"
+            style={{
+              borderRadius: 'var(--dsh-radius-xs)',
+              background: 'var(--dsw-alias-state-business-tertiary)',
+            }}
+          >
             <Sparkles size={12} />
           </div>
-          <div>
-            <h4 className="text-xs font-semibold text-slate-800 dark:text-slate-200">{title}</h4>
-            {description && <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{description}</p>}
+          <div className="min-w-0">
+            <h4 className="dsh-t-xs dsh-strong dsh-label-primary truncate">{title}</h4>
+            {description && (
+              <p className="dsh-t-xxxs dsh-label-tertiary truncate leading-[14px]">{description}</p>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0 ml-2">
           <button
             onClick={() => setShowCode(!showCode)}
-            className="p-1 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
-            title={showCode ? 'View Preview' : 'View Code'}
+            className={iconButton}
+            title={showCode ? 'View preview' : 'View code'}
           >
             {showCode ? <Eye size={14} /> : <Code size={14} />}
           </button>
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1 rounded text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700 transition"
+            className={iconButton}
             title={isExpanded ? 'Collapse' : 'Expand'}
           >
             {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -46,10 +79,17 @@ export default function HtmlArtifactPreview({ title, html, description }: HtmlAr
         </div>
       </div>
 
-      {/* Content area */}
       <div className={`p-3 overflow-auto ${isExpanded ? 'flex-1' : 'max-h-96'}`}>
         {showCode ? (
-          <pre className="text-[11px] font-mono bg-slate-950 text-slate-200 p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+          <pre
+            className="dsh-mono dsh-t-xs p-3 overflow-x-auto whitespace-pre-wrap"
+            style={{
+              background: 'var(--dsw-alias-markdown-code-block)',
+              borderRadius: 'var(--dsh-radius-sm)',
+              color: 'var(--dsw-alias-label-secondary)',
+              margin: 0,
+            }}
+          >
             {html}
           </pre>
         ) : (
@@ -67,7 +107,8 @@ export default function HtmlArtifactPreview({ title, html, description }: HtmlAr
                 </body>
               </html>
             `}
-            className="w-full min-h-[220px] rounded-lg border-0 bg-transparent"
+            className="w-full min-h-[220px] border-0 bg-transparent"
+            style={{ borderRadius: 'var(--dsh-radius-sm)' }}
             sandbox="allow-scripts"
             title={title}
           />

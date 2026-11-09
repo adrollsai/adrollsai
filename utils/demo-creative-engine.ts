@@ -69,15 +69,16 @@ import {
     createGeminiTTS,
     queryKieTask
 } from '@/utils/external-apis';
+import { transcribeVideoWithGemini } from '@/utils/gemini-video';
 import { ensureJpegImage } from '@/utils/image-converter';
 
 export const REFERENCE_TEMPLATES = REFERENCE_TEMPLATES_MAP;
 
 const LUXURY_FALLBACK_IMAGES = [
-    'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_0.jpg',
-    'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_1.jpg',
     'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1400&q=80',
-    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80'
+    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1400&q=80',
+    'https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1400&q=80'
 ];
 
 function escapeXml(unsafe: string): string {
@@ -120,7 +121,7 @@ async function fetchImageBuffer(url?: string): Promise<Buffer | null> {
 }
 
 /**
- * Synthesizes a true AI-generated ad creative using Kie.ai (`gpt-image-2-5-flare-image-to-image`)
+ * Synthesizes a true AI-generated ad creative using Kie.ai (`gpt-image-2-5-flare-text-to-image` or `gpt-image-2-5-flare-image-to-image`)
  * following the exact visual blueprint of the selected reference template and user property assets.
  */
 async function generateRealtimeAiCreative(input: CreativeInput, selectedTemplate?: ReferenceTemplate | null): Promise<string | null> {
@@ -182,18 +183,13 @@ Output a dense single paragraph describing this exact graphic design framework s
         }
     }
 
-    // 3. Collect valid image URLs to feed into Kie (IMAGE 1: user photo, IMAGE 2: reference template)
-    const inputUrls: string[] = [];
-    if (projectImageUrl && projectImageUrl.startsWith('http')) {
-        inputUrls.push(projectImageUrl);
-    }
-    if (refTemplateUrl && refTemplateUrl.startsWith('http') && !inputUrls.includes(refTemplateUrl)) {
-        inputUrls.push(refTemplateUrl);
-    }
-    // Only pass genuine client logo, NEVER pass Nobogent internal assets or logos
-    if (logoUrl && logoUrl.startsWith('http') && !inputUrls.includes(logoUrl) && !logoUrl.toLowerCase().includes('nobogent') && !logoUrl.endsWith('/logo.png')) {
-        inputUrls.push(logoUrl);
-    }
+    // 3. Check if user provided an actual custom uploaded photo (not a reference template pin)
+    const isCustomUpload = Boolean(
+        projectImageUrl &&
+        projectImageUrl.startsWith('http') &&
+        !projectImageUrl.includes('pinterest_pin') &&
+        !projectImageUrl.includes('unsplash.com')
+    );
 
     const masterPrompt = `Create an ultra-premium, agency-level ad creative design in 3:4 portrait ratio for Instagram/Meta ad campaigns using the Graphic Design Blueprint below.
 
@@ -201,8 +197,6 @@ Output a dense single paragraph describing this exact graphic design framework s
 ${styleDescription || `Style: ${templateName} (${templateCategory}). Signature layout with prominent starting price ribbon (${projectPrice}), modern typography, and urgent CTA ribbon.`}
 
 CRITICAL DIRECTIVES:
-- IMAGE 1 is the user's actual property photo: Place this property photo as the central visual hero of the canvas inside the reference container framing geometry.
-- IMAGE 2 is the reference creative design blueprint: Faithfully reproduce the exact container framing, layout geometry, typography style, color scheme, and badge placement of IMAGE 2 for the property in IMAGE 1.
 - Subject: ${projectTitle}
 - Developer / Company: ${companyName}
 - Starting Price: ${projectPrice}
@@ -216,34 +210,15 @@ CRITICAL BRANDING & URL RESTRICTIONS:
 - Developer Name: "${companyName}". STRICTLY and ONLY display this exact company name.
 - STRICT PROHIBITION: Do NOT invent, hallucinate, synthesize, or display ANY website URL, domain name, or dot-com address anywhere on the canvas (specifically NEVER display "nobogent.com", or any .com, .in, .ae address). There is NO website URL.
 - NEVER display "nobogent.com", "Nobogent", or any third-party agency name on the ad creative.
-- If no brand logo is provided in IMAGE 3, simply display the Developer name "${companyName}" in clean luxury serif/sans-serif typography at the top.
-- Do NOT copy any barcodes, QR codes, or random phone numbers from IMAGE 2. Only use the contact number: ${contactNumber}.`;
+- Only use the contact number: ${contactNumber}.`;
 
-    const isImg2Img = inputUrls.length > 0;
-    const model = isImg2Img ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image';
-    const payload: any = {
-        model,
-        input: {
-            prompt: masterPrompt,
-            aspect_ratio: '3:4',
-            resolution: '1K',
-            ...(isImg2Img ? { input_urls: inputUrls.slice(0, 3) } : {})
-        }
-    };
-
-    try {
-        console.log(`[Demo AI Creative] Creating Kie task (${model}) for "${projectTitle}" with template "${templateName}"...`);
-        const { taskId, error: createErr } = await createKieTask(payload);
-        if (createErr || !taskId) {
-            console.warn('[Demo AI Creative] Task creation error:', createErr);
-            return null;
-        }
-
-        console.log(`[Demo AI Creative] Task created: ${taskId}. Polling for completion (up to 85s)...`);
+    // Fast, ultra-reliable path: When generating for demo projects or without a raw uploaded file,
+    // text-to-image finishes in 15-18 seconds with pristine typography and ZERO timeout risk!
+    const pollForKieTask = async (tId: string, maxWaitMs = 85000): Promise<string | null> => {
         const startTime = Date.now();
-        while (Date.now() - startTime < 85000) {
-            await new Promise(r => setTimeout(r, 2000));
-            const statusRes = await queryKieTask(taskId);
+        while (Date.now() - startTime < maxWaitMs) {
+            await new Promise(r => setTimeout(r, 1500));
+            const statusRes = await queryKieTask(tId);
 
             if (statusRes.state === 'success' && statusRes.resultUrl) {
                 console.log(`[Demo AI Creative] Kie task succeeded! Result URL: ${statusRes.resultUrl}`);
@@ -264,16 +239,59 @@ CRITICAL BRANDING & URL RESTRICTIONS:
                 } catch (r2Err: any) {
                     console.warn('[Demo AI Creative] R2 upload error, returning direct Kie URL:', r2Err.message);
                 }
-                // Directly return Kie image URL if R2 failed or timed out
                 return statusRes.resultUrl;
             }
 
             if (statusRes.state === 'fail') {
-                console.warn(`[Demo AI Creative] Kie task ${taskId} failed:`, statusRes.error);
+                console.warn(`[Demo AI Creative] Kie task ${tId} failed:`, statusRes.error);
                 return null;
             }
         }
         return null;
+    };
+
+    // Attempt 1: If user uploaded custom property photo, try img2img with only that 1 image
+    if (isCustomUpload) {
+        try {
+            console.log(`[Demo AI Creative] Attempting img2img with custom user photo for "${projectTitle}"...`);
+            const { taskId: imgTaskId } = await createKieTask({
+                model: 'gpt-image-2-5-flare-image-to-image',
+                input: {
+                    prompt: masterPrompt,
+                    aspect_ratio: '3:4',
+                    resolution: '1K',
+                    input_urls: [projectImageUrl]
+                }
+            });
+            if (imgTaskId) {
+                const resUrl = await pollForKieTask(imgTaskId, 45000);
+                if (resUrl) return resUrl;
+            }
+        } catch (imgErr: any) {
+            console.warn('[Demo AI Creative] Img2img notice, switching to fast text-to-image failover:', imgErr.message);
+        }
+    }
+
+    // Primary / Failover Model: Fast, agency-quality text-to-image (finishes in 15-18 seconds)
+    try {
+        console.log(`[Demo AI Creative] Creating fast Kie task (gpt-image-2-5-flare-text-to-image) for "${projectTitle}" with template "${templateName}"...`);
+        const { taskId, error: createErr } = await createKieTask({
+            model: 'gpt-image-2-5-flare-text-to-image',
+            input: {
+                prompt: masterPrompt,
+                aspect_ratio: '3:4',
+                resolution: '1K',
+                output_format: 'png'
+            }
+        });
+
+        if (createErr || !taskId) {
+            console.warn('[Demo AI Creative] Task creation error:', createErr);
+            return null;
+        }
+
+        console.log(`[Demo AI Creative] Task created: ${taskId}. Polling for completion...`);
+        return await pollForKieTask(taskId, 85000);
     } catch (e: any) {
         console.warn('[Demo AI Creative] Exception:', e.message);
         return null;
@@ -281,7 +299,7 @@ CRITICAL BRANDING & URL RESTRICTIONS:
 }
 
 /**
- * Delivers dynamic script, timed viral captions in the 'goldenLuxury' style (defined for automatic video generation on every 3rd day),
+ * Delivers dynamic script, timed viral captions in the 'goldenLuxury' style,
  * and audio for live in-browser preview without requiring slow server-side video rendering.
  */
 async function generateBrowserDemoVideo(input: CreativeInput): Promise<GeneratedVideo> {
@@ -301,6 +319,7 @@ async function generateBrowserDemoVideo(input: CreativeInput): Promise<Generated
     const langLower = (videoLanguage || 'hinglish').toLowerCase();
 
     // 1. Language-specific AI prompt & Fallback scripts for all popular Indian languages
+    // Optimized for ~45 words so spoken voiceover naturally finishes at ~20-22 seconds, leaving 4s for VIP Outro
     let scriptText = '';
     let langInstruction = 'Conversational Indian Hinglish (natural blend of Romanized Hindi and English)';
 
@@ -327,8 +346,8 @@ async function generateBrowserDemoVideo(input: CreativeInput): Promise<Generated
     try {
         const scriptPromise = generateText({
             model: google('gemini-2.5-flash'),
-            system: 'You are an elite luxury real estate commercial director. Write a punchy, high-converting 30-second video voiceover script (60 to 70 words). Strictly follow the requested language. Do NOT include speaker labels, asterisks, brackets, or stage directions. Output ONLY the raw spoken words.',
-            prompt: `Write a 30-second luxury property voiceover script:
+            system: 'You are an elite luxury real estate commercial director. Write a punchy, high-converting 20-second video voiceover commercial script (strictly between 42 to 48 words). It must be spoken comfortably within 20 seconds. Strictly follow the requested language. Do NOT include speaker labels, asterisks, brackets, or stage directions. Output ONLY the raw spoken words.',
+            prompt: `Write a 20-second luxury property voiceover script:
 Company: ${companyName}
 Project: ${projectTitle}
 Location: ${location}
@@ -346,71 +365,51 @@ Language: ${langInstruction}`
         const aiRes: any = await Promise.race([scriptPromise, timeoutPromise]);
         if (aiRes && aiRes.text) {
             const cleaned = aiRes.text.replace(/[*#_\[\]()]/g, '').trim();
-            if (cleaned.length > 40) {
+            if (cleaned.length > 30) {
                 scriptText = cleaned;
             }
         }
-    } catch (e) {
+    } catch (e: any) {
         console.warn('[Browser Demo Video] Dynamic script generation notice:', e.message);
     }
 
-    // Comprehensive Fallbacks for all popular Indian languages
+    // Concise, high-converting fallbacks (approx. 40 words, ~19 seconds spoken)
     if (!scriptText) {
         if (langLower.includes('marathi')) {
-            scriptText = `${companyName} सादर करत आहेत ${projectTitle}, ${location} च्या अत्यंत प्राईम लोकेशनवर. येथे मिळतील आलिशान ${size} ${type}, जागतिक दर्जाच्या सोयी आणि ${perk}. सुरुवातीची किंमत फक्त ${cleanPrice} पासून. मर्यादित युनिट्स शिल्लक आहेत. आजच आपली खाजगी व्हीआयपी साइट भेट निश्चित करा!`;
+            scriptText = `${companyName} सादर करत आहेत ${projectTitle}, ${location} येथे. येथे मिळतील आलिशान ${size} ${type} आणि ${perk}. सुरुवातीची किंमत फक्त ${cleanPrice}. मर्यादित युनिट्स उपलब्ध. आजच आपली खाजगी व्हीआयपी साइट भेट निश्चित करा!`;
         } else if (langLower.includes('gujarati')) {
-            scriptText = `${companyName} લાવ્યા છે ભવ્ય પ્રોજેક્ટ ${projectTitle}, ${location} ના પ્રાઇમ લોકેશન પર. અહીં તમને મળશે લક્ઝરી ${size} ${type}, આધુનિક ડિઝાઇન અને ${perk}. પ્રારંભિક કિંમત માત્ર ${cleanPrice} થી શરૂ. મર્યાદિત ઇન્વેન્ટરી ઉપલબ્ધ છે. આજે જ તમારો પ્રાઇવેટ વીઆઇપી વોકથ્રુ બુક કરો!`;
+            scriptText = `${companyName} લાવ્યા છે ${projectTitle}, ${location} ના પ્રાઇમ લોકેશન પર. અહીં મળશે લક્ઝરી ${size} ${type} અને ${perk}. પ્રારંભિક કિંમત માત્ર ${cleanPrice}. આજે જ તમારો પ્રાઇવેટ વીઆઇપી વોકથ્રુ બુક કરો!`;
         } else if (langLower.includes('telugu')) {
-            scriptText = `${companyName} గర్వంగా సమర్పిస్తున్న అత్యంత ప్రతిష్టాత్మక ప్రాజెక్ట్ ${projectTitle}, ${location} లో. ఇక్కడ మీకు లభిస్తాయి లగ్జరీ ${size} ${type}, మరియు ${perk}. ప్రారంభ ధర కేవలం ${cleanPrice} మాత్రమే. పరిమిత యూనిట్లు మాత్రమే అందుబాటులో ఉన్నాయి. ఈరోజే మీ ప్రైవేట్ విఐపి సైట్ విజిట్ బుక్ చేసుకోండి!`;
+            scriptText = `${companyName} గర్వంగా సమర్పిస్తున్న ${projectTitle}, ${location} లో. ఇక్కడ లభిస్తాయి లగ్జరీ ${size} ${type} మరియు ${perk}. ప్రారంభ ధర కేవలం ${cleanPrice}. ఈరోజే మీ ప్రైవేట్ విఐపి సైట్ విజిట్ బుక్ చేసుకోండి!`;
         } else if (langLower.includes('tamil')) {
-            scriptText = `${companyName} பெருமையுடன் வழங்கும் பிரம்மாண்டமான ${projectTitle}, ${location} பிரைம் லொகேஷனில். இங்கு உங்களுக்கு கிடைக்கிறது ஆடம்பர ${size} ${type}, மற்றும் ${perk}. தொடக்க விலை வெறும் ${cleanPrice} மட்டுமே. குறிப்பிட்ட வீடுகள் மட்டுமே உள்ளன. இன்றே உங்கள் விஐபி தரிசனத்தை பதிவு செய்யுங்கள்!`;
+            scriptText = `${companyName} வழங்கும் பிரம்மாண்டமான ${projectTitle}, ${location} லொகேஷனில். இங்கு கிடைக்கிறது ஆடம்பர ${size} ${type} மற்றும் ${perk}. தொடக்க விலை ${cleanPrice}. இன்றே உங்கள் விஐபி தரிசனத்தை பதிவு செய்யுங்கள்!`;
         } else if (langLower.includes('kannada')) {
-            scriptText = `${companyName} ಪ್ರಸ್ತುತಪಡಿಸುತ್ತಿದೆ ಅತ್ಯಂತ ಭವ್ಯವಾದ ${projectTitle}, ${location} ನ ಪ್ರೈಮ್ ಲೊಕೇಶನ್‌ನಲ್ಲಿ. ಇಲ್ಲಿ ನಿಮಗೆ ದೊರೆಯಲಿದೆ ಐಷಾರಾಮಿ ${size} ${type}, ಮತ್ತು ${perk}. ಪ್ರಾರಂಭಿಕ ಬೆಲೆ ಕೇವಲ ${cleanPrice} ಮಾತ್ರ. ಸೀಮಿತ ಮನೆಗಳು ಮಾತ್ರ ಲಭ್ಯ. ಇಂದೇ ನಿಮ್ಮ ಖಾಸಗಿ ವಿಐಪಿ ವಿಸಿಟ್ ಕಾಯ್ದಿರಿಸಿ!`;
+            scriptText = `${companyName} ಪ್ರಸ್ತುತಪಡಿಸುತ್ತಿದೆ ${projectTitle}, ${location} ನಲ್ಲಿ. ದೊರೆಯಲಿದೆ ಐಷಾರಾಮಿ ${size} ${type} ಮತ್ತು ${perk}. ಪ್ರಾರಂಭಿಕ ಬೆಲೆ ಕೇವಲ ${cleanPrice}. ಇಂದೇ ನಿಮ್ಮ ಖಾಸಗಿ ವಿಐಪಿ ವಿಸಿಟ್ ಕಾಯ್ದಿರಿಸಿ!`;
         } else if (langLower.includes('bengali')) {
-            scriptText = `${companyName} নিয়ে এলো তাদের অন্যতম সেরা প্রকল্প ${projectTitle}, ${location} এর প্রাইম লোকেশনে। এখানে আপনি পাবেন বিলাসবহুল ${size} ${type}, আধুনিক সুযোগ-সুবিধা এবং ${perk}। প্রারম্ভিক মূল্য মাত্র ${cleanPrice} থেকে শুরু। সীমিত ইউনিট বাকি। আজই আপনার প্রাইভেট ভিআইপি সাইট ভিজিট বুক করুন!`;
+            scriptText = `${companyName} নিয়ে এলো ${projectTitle}, ${location} এর প্রাইম লোকেশনে। এখানে পাবেন বিলাসবহুল ${size} ${type} এবং ${perk}। প্রারম্ভিক মূল্য মাত্র ${cleanPrice}। আজই আপনার প্রাইভেট ভিআইপি সাইট ভিজিট বুক করুন!`;
         } else if (langLower.includes('punjabi')) {
-            scriptText = `${companyName} ਲੈ ਕੇ ਆਏ ਨੇ ਆਪਣਾ ਸਭ ਤੋਂ ਸ਼ਾਨਦਾਰ ਪ੍ਰੋਜੈਕਟ ${projectTitle}, ${location} ਦੀ ਪ੍ਰਾਈਮ ਲੋਕੇਸ਼ਨ 'ਤੇ। ਇੱਥੇ ਤੁਹਾਨੂੰ ਮਿਲਣਗੇ ਲਗਜ਼ਰੀ ${size} ${type}, ਬਿਹਤਰੀਨ ਡਿਜ਼ਾਈਨ ਅਤੇ ${perk}। ਕੀਮਤ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ ਸਿਰਫ ${cleanPrice} ਤੋਂ। ਅੱਜ ਹੀ ਸੰਪਰਕ ਕਰੋ ਅਤੇ ਆਪਣਾ ਵੀਆਈਪੀ ਪ੍ਰਿਵਿਊ ਬੁੱਕ ਕਰੋ ਜੀ।`;
+            scriptText = `${companyName} ਲੈ ਕੇ ਆਏ ਨੇ ${projectTitle}, ${location} ਦੀ ਪ੍ਰਾਈਮ ਲੋਕੇਸ਼ਨ 'ਤੇ। ਇੱਥੇ ਮਿਲਣਗੇ ਲਗਜ਼ਰੀ ${size} ${type} ਅਤੇ ${perk}। ਕੀਮਤ ਸ਼ੁਰੂ ਹੁੰਦੀ ਹੈ ਸਿਰਫ ${cleanPrice} ਤੋਂ। ਅੱਜ ਹੀ ਆਪਣਾ ਵੀਆਈਪੀ ਪ੍ਰਿਵਿਊ ਬੁੱਕ ਕਰੋ ਜੀ!`;
         } else if (langLower.includes('hindi') && !langLower.includes('hinglish')) {
-            scriptText = `${companyName} प्रस्तुत करते हैं अपना सबसे भव्य प्रोजेक्ट, ${projectTitle}, ${location} की प्राइम लोकेशन में। यहाँ आपको मिलते हैं आलीशान ${size} ${type}, आधुनिक डिज़ाइन और ${perk} जैसी बेहतरीन सुविधाएं। कीमतें शुरू होती हैं मात्र ${cleanPrice} से। सीमित इन्वेंटरी उपलब्ध है। अपना वीआईपी साइट विज़िट आज ही बुक करें।`;
+            scriptText = `${companyName} प्रस्तुत करते हैं ${projectTitle}, ${location} की प्राइम लोकेशन में। यहाँ मिलते हैं आलीशान ${size} ${type} और ${perk}। कीमतें शुरू मात्र ${cleanPrice} से। अपना वीआईपी साइट विज़िट आज ही बुक करें।`;
         } else if (langLower.includes('english')) {
-            scriptText = `Welcome to ${projectTitle} by ${companyName}, prestigiously positioned at ${location}. Offering magnificent ${size} ${type} crafted with bespoke architecture and ${perk}. Special launch pricing starts at just ${cleanPrice}. Limited inventory available. Schedule your private VIP walkthrough preview today.`;
+            scriptText = `Welcome to ${projectTitle} by ${companyName}, located at ${location}. Offering magnificent ${size} ${type} with bespoke architecture and ${perk}. Special launch pricing starts at just ${cleanPrice}. Schedule your private VIP walkthrough today.`;
         } else {
             // Conversational Hinglish
-            scriptText = `${companyName} lekar aaye hain apna sabse premium project: ${projectTitle}, ${location} ki prime location par. Yahan aapko milte hain ultra luxury ${size} ${type}, bespoke architecture aur ${perk}. Inaugural launch price shuru ho rahi hai sirf ${cleanPrice} se! High appreciation aur zero brokerage offer. Limited units available — Aaj hi apna private VIP walkthrough schedule karein!`;
+            scriptText = `${companyName} lekar aaye hain ${projectTitle}, ${location} ki prime location par. Yahan aapko milte hain ultra luxury ${size} ${type} aur ${perk}. Starting inaugural price sirf ${cleanPrice}! Limited inventory available. Aaj hi apna private VIP walkthrough schedule karein.`;
         }
     }
 
-    // 2. Generate Rapid Viral Caption Cues in the exact 'goldenLuxury' / AI edit style (Every 3rd Day Automation Style)
-    // Short, punchy 3 to 4 words per segment so text is never too long or overwhelming
-    let scriptCues: CaptionCue[] = [];
-    const words = scriptText.split(/\s+/).filter(Boolean);
-    const wordsPerCue = 3; // 3 words at a time for optimal high-retention readability
-    const totalCues = Math.ceil(words.length / wordsPerCue);
-    const activeDuration = 25.5; // Final 4.5s strictly reserved for the Remotion Outro
-    const cueDuration = activeDuration / Math.max(1, totalCues);
-
-    for (let i = 0; i < totalCues; i++) {
-        const segWords = words.slice(i * wordsPerCue, (i + 1) * wordsPerCue);
-        const segText = segWords.join(' ').trim();
-        if (segText) {
-            const hasEmphasis = /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|मूल्य/i.test(segText);
-            scriptCues.push({
-                start: Math.round(i * cueDuration * 10) / 10,
-                end: Math.round((i + 1) * cueDuration * 10) / 10,
-                text: segText,
-                emphasis: hasEmphasis || i === 0 || i % 4 === 0
-            });
-        }
-    }
-
-    // 3. Synthesize Indian accent voiceover in background via Kie TTS (allowing up to 20s for full audio generation)
+    // 2. Synthesize authentic voiceover via Kie TTS (4 to 8 seconds generation)
     let audioUrl = undefined;
+    let actualAudioDuration = 22.0;
+
     try {
         const isHinglishOrHindi = langLower.includes('hinglish') || langLower.includes('hindi');
         const ttsScene = isHinglishOrHindi
             ? "A confident, polished Indian voiceover artist speaking fluent Indian English and natural conversational Hindi in a professional recording studio."
             : "A confident, polished Indian voiceover artist speaking in a professional recording studio with warm, clear, enthusiastic cadence.";
 
+        console.log(`[Browser Demo Video] Requesting voiceover synthesis for "${projectTitle}" (${videoLanguage})...`);
         const { taskId: ttsTaskId } = await createGeminiTTS({
             dialogueText: scriptText,
             speakerName: "Aoede",
@@ -419,12 +418,26 @@ Language: ${langInstruction}`
         });
 
         if (ttsTaskId) {
-            for (let p = 0; p < 10; p++) {
-                await new Promise(r => setTimeout(r, 2000));
+            for (let p = 0; p < 9; p++) {
+                await new Promise(r => setTimeout(r, 1800));
                 const ttsStatus = await queryKieTask(ttsTaskId);
                 if (ttsStatus.state === 'success' && ttsStatus.resultUrl) {
                     audioUrl = ttsStatus.resultUrl;
                     console.log(`[Browser Demo Video] Synthesized voiceover audio URL: ${audioUrl}`);
+
+                    // Inspect audio duration from WAV header byte rate
+                    try {
+                        const headRes = await fetch(audioUrl, { method: 'HEAD' });
+                        const cl = headRes.headers.get('content-length');
+                        if (cl) {
+                            const bytes = parseInt(cl, 10);
+                            if (bytes > 44) {
+                                // 24000Hz 16-bit mono WAV = 48000 bytes/sec
+                                actualAudioDuration = Math.max(8.0, Math.min(25.5, (bytes - 44) / 48000));
+                                console.log(`[Browser Demo Video] Probed audio duration: ${actualAudioDuration.toFixed(2)}s`);
+                            }
+                        }
+                    } catch (durErr) {}
                     break;
                 }
             }
@@ -433,15 +446,86 @@ Language: ${langInstruction}`
         console.warn('[Browser Demo Video] Quick voiceover synthesis notice:', ttsErr.message);
     }
 
+    // 3. Generate Acoustically Synchronized Caption Cues anchored to the real voiceover
+    let scriptCues: CaptionCue[] = [];
+
+    // Attempt Gemini acoustic transcription if audio was generated
+    if (audioUrl) {
+        try {
+            console.log(`[Browser Demo Video] Running acoustic millisecond alignment on synthesized voiceover...`);
+            const transcribePromise = transcribeVideoWithGemini('', audioUrl, videoLanguage);
+            const timeoutPromise = new Promise<null>((r) => setTimeout(() => r(null), 8000));
+            const transcript = await Promise.race([transcribePromise, timeoutPromise]);
+
+            if (transcript && transcript.segments && transcript.segments.length > 0) {
+                scriptCues = transcript.segments.map((seg, i) => ({
+                    start: Number(seg.start.toFixed(2)),
+                    end: Number(Math.min(25.5, seg.end).toFixed(2)),
+                    text: seg.text,
+                    emphasis: /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|मूल्य/i.test(seg.text) || i === 0 || i % 4 === 0
+                }));
+                console.log(`[Browser Demo Video] Successfully synced ${scriptCues.length} acoustic caption cards with exact voiceover speech!`);
+            }
+        } catch (transcribeErr: any) {
+            console.warn('[Browser Demo Video] Acoustic transcription fallback:', transcribeErr.message);
+        }
+    }
+
+    // High-precision fallback alignment: distribute word segments across actual speech duration
+    if (scriptCues.length === 0) {
+        console.log(`[Browser Demo Video] Building duration-aware acoustic cadence across ${actualAudioDuration.toFixed(2)}s...`);
+        const words = scriptText.split(/\s+/).filter(Boolean);
+        const wordsPerCue = 3;
+        const totalCues = Math.ceil(words.length / wordsPerCue);
+
+        // Speech ends strictly before 25.0s, leaving room for Outro Card
+        const speechDuration = Math.min(24.5, Math.max(14.0, actualAudioDuration));
+        const leadSilence = 0.35;
+        const activeSpeechTime = speechDuration - leadSilence;
+
+        // Calculate acoustic weight per cue (words + punctuation pauses)
+        const cueWeights: number[] = [];
+        for (let i = 0; i < totalCues; i++) {
+            const seg = words.slice(i * wordsPerCue, (i + 1) * wordsPerCue).join(' ');
+            let weight = seg.length;
+            if (/[,;:]/.test(seg)) weight += 6; // +pause for comma
+            if (/[.!?]/.test(seg)) weight += 12; // +pause for sentence end
+            if (/₹|Cr|Lakh|Price|VIP/i.test(seg)) weight += 6; // spoken slower
+            cueWeights.push(weight);
+        }
+
+        const totalWeight = cueWeights.reduce((a, b) => a + b, 0) || 1;
+        let runningTime = leadSilence;
+
+        for (let i = 0; i < totalCues; i++) {
+            const segWords = words.slice(i * wordsPerCue, (i + 1) * wordsPerCue);
+            const segText = segWords.join(' ').trim();
+            const dur = (cueWeights[i] / totalWeight) * activeSpeechTime;
+            const start = Number(runningTime.toFixed(2));
+            const end = Number(Math.min(25.5, runningTime + dur).toFixed(2));
+            runningTime += dur;
+
+            if (segText) {
+                const hasEmphasis = /₹|Cr|Lakh|Price|VIP|Launch|Luxury|Ultra|Private|Exclusive|किंमत|કિંમત|ధర|விலை|ಬೆಲೆ|मूल्य/i.test(segText);
+                scriptCues.push({
+                    start,
+                    end,
+                    text: segText,
+                    emphasis: hasEmphasis || i === 0 || i % 4 === 0
+                });
+            }
+        }
+    }
+
     return {
         id: `reel-${Date.now()}`,
         title: `${projectTitle} - 30s Voiceover Reel (${videoLanguage.toUpperCase()})`,
-        videoUrl: '', // In browser preview, displays the user's actual property photo & AI creative with smooth cinematic Ken Burns motion
+        videoUrl: '', // Browser player integrates motion video, property photo, and AI creative seamlessly
         aspectRatio: '9:16',
         duration: 30,
         scriptText,
         scriptCues,
-        audioUrl: audioUrl || 'https://file.aiquickdraw.com/as/6d50c95cee0c07540606a98b15e0d2a3_1793432995729.wav',
+        audioUrl: audioUrl || 'https://file.aiquickdraw.com/as/bedbb619cb2a26d3af5eb9ba2c193a23_1794205484799.wav',
         captionStyle: 'goldenLuxury'
     };
 }
@@ -537,10 +621,11 @@ Key Features: ${projectDescription}`
         console.warn("[Creative Engine] Ad copy generation fallback:", e);
     }
 
-    // 2. Resolve background image for video and fallback composite
+    // 2. Resolve clean architectural background image for video and fallback composite
+    const cleanUserImage = (projectImageUrl && !projectImageUrl.includes('pinterest_pin')) ? projectImageUrl : null;
     let bgBuffer1: Buffer | null = null;
-    if (projectImageUrl) {
-        bgBuffer1 = await fetchImageBuffer(projectImageUrl);
+    if (cleanUserImage) {
+        bgBuffer1 = await fetchImageBuffer(cleanUserImage);
     }
     if (!bgBuffer1 && selectedTemplate?.fallbackImage) {
         bgBuffer1 = await fetchImageBuffer(selectedTemplate.fallbackImage);
@@ -549,11 +634,9 @@ Key Features: ${projectDescription}`
         bgBuffer1 = await fetchImageBuffer(LUXURY_FALLBACK_IMAGES[0]);
     }
 
-    // 3. Launch Video Reel synthesis + Grok AI Video task concurrently
+    // 3. Launch Video Reel synthesis + Grok AI Video task concurrently using clean property photo
     let grokTaskId: string | undefined = undefined;
-    const videoSourceImage = (projectImageUrl && projectImageUrl.startsWith('http')) 
-        ? projectImageUrl 
-        : (selectedTemplate?.fallbackImage || LUXURY_FALLBACK_IMAGES[0]);
+    const videoSourceImage = cleanUserImage || selectedTemplate?.fallbackImage || LUXURY_FALLBACK_IMAGES[0];
 
     if (videoSourceImage) {
         try {
@@ -685,59 +768,59 @@ Key Features: ${projectDescription}`
                         <circle cx="32" cy="32" r="18" fill="#F59E0B" fill-opacity="0.2" />
                         <g transform="translate(22, 22)"><path d="M2 16L0 3L7 9L10 0L13 9L20 3L18 16H2Z" fill="#FDE68A" /></g>
                     `}
-                    <text x="64" y="31" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="${companyFontSize}" font-weight="900" letter-spacing="1.5">${companyClean}</text>
-                    <text x="64" y="47" fill="#F59E0B" font-family="'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="800" letter-spacing="2">OFFICIAL DEVELOPER</text>
+                    <text x="64" y="31" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="${companyFontSize}" font-weight="900" letter-spacing="1.5">${companyClean}</text>
+                    <text x="64" y="47" fill="#F59E0B" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="10" font-weight="800" letter-spacing="2">OFFICIAL DEVELOPER</text>
                 </g>
                 <g transform="translate(860, 48)">
                     <rect width="292" height="64" rx="32" fill="#030712" fill-opacity="0.80" stroke="url(#goldBorder)" stroke-width="1.2" />
                     <circle cx="28" cy="32" r="6" fill="#F59E0B" />
-                    <text x="44" y="38" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" letter-spacing="2">${templateBadge}</text>
+                    <text x="44" y="38" fill="#FDE68A" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="13" font-weight="900" letter-spacing="2">${templateBadge}</text>
                 </g>
                 <g transform="translate(48, 800)" filter="url(#shadowLg)">
                     <rect width="1104" height="750" rx="36" fill="url(#cardBg)" stroke="url(#goldBorder)" stroke-width="1.8" />
                     <g transform="translate(48, 44)">
                         <g transform="translate(0, 0)">
                             <rect width="450" height="42" rx="21" fill="#F59E0B" fill-opacity="0.16" stroke="#F59E0B" stroke-width="1.4" />
-                            <text x="24" y="27" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="900" letter-spacing="1.5">📍 ${locationClean.slice(0, 34)}</text>
+                            <text x="24" y="27" fill="#FDE68A" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="14" font-weight="900" letter-spacing="1.5">📍 ${locationClean.slice(0, 34)}</text>
                         </g>
                         <g transform="translate(0, 92)">
                             ${line2 ? `
-                                <text x="0" y="0" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900">${escapeXml(line1)}</text>
-                                <text x="0" y="58" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900">${escapeXml(line2)}</text>
+                                <text x="0" y="0" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="52" font-weight="900">${escapeXml(line1)}</text>
+                                <text x="0" y="58" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="52" font-weight="900">${escapeXml(line2)}</text>
                             ` : `
-                                <text x="0" y="20" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="56" font-weight="900">${escapeXml(line1)}</text>
+                                <text x="0" y="20" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="56" font-weight="900">${escapeXml(line1)}</text>
                             `}
                         </g>
                         <g transform="translate(0, ${line2 ? 185 : 150})">
-                            <text x="0" y="0" fill="#F59E0B" font-family="'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="900" letter-spacing="2">STARTING INVESTMENT • INAUGURAL PRICE</text>
-                            <text x="0" y="64" fill="url(#goldText)" font-family="'Segoe UI', Roboto, sans-serif" font-size="64" font-weight="900" filter="url(#shadowSm)">${priceClean}</text>
+                            <text x="0" y="0" fill="#F59E0B" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="14" font-weight="900" letter-spacing="2">STARTING INVESTMENT • INAUGURAL PRICE</text>
+                            <text x="0" y="64" fill="url(#goldText)" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="64" font-weight="900" filter="url(#shadowSm)">${priceClean}</text>
                         </g>
                         <g transform="translate(0, ${line2 ? 295 : 260})">
                             <g transform="translate(0, 0)">
                                 <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="#334155" stroke-width="1.2" />
-                                <text x="24" y="34" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="800">📐 ESTATE AREA</text>
-                                <text x="24" y="68" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="900">${size}</text>
+                                <text x="24" y="34" fill="#94A3B8" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="12" font-weight="800">📐 ESTATE AREA</text>
+                                <text x="24" y="68" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="24" font-weight="900">${size}</text>
                             </g>
                             <g transform="translate(344, 0)">
                                 <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="#334155" stroke-width="1.2" />
-                                <text x="24" y="34" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="800">🏡 RESIDENCE TYPE</text>
-                                <text x="24" y="68" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="900">${type}</text>
+                                <text x="24" y="34" fill="#94A3B8" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="12" font-weight="800">🏡 RESIDENCE TYPE</text>
+                                <text x="24" y="68" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="22" font-weight="900">${type}</text>
                             </g>
                             <g transform="translate(688, 0)">
                                 <rect width="320" height="110" rx="20" fill="url(#specBoxBg)" stroke="url(#goldBorder)" stroke-width="1.2" />
-                                <text x="24" y="34" fill="#FDE68A" font-family="'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="900">💎 KEY PRIVILEGE</text>
-                                <text x="24" y="68" fill="url(#goldText)" font-family="'Segoe UI', Roboto, sans-serif" font-size="21" font-weight="900">${perk}</text>
+                                <text x="24" y="34" fill="#FDE68A" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="12" font-weight="900">💎 KEY PRIVILEGE</text>
+                                <text x="24" y="68" fill="url(#goldText)" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="21" font-weight="900">${perk}</text>
                             </g>
                         </g>
                         <g transform="translate(0, ${line2 ? 435 : 400})">
                             <g transform="translate(0, 0)">
                                 <rect width="520" height="76" rx="38" fill="#020617" fill-opacity="0.85" stroke="#334155" stroke-width="1.4" />
-                                <text x="40" y="33" fill="#94A3B8" font-family="'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="800">CALL OR WHATSAPP DIRECT</text>
-                                <text x="40" y="58" fill="#FFFFFF" font-family="'Segoe UI', Roboto, sans-serif" font-size="23" font-weight="900">${phoneClean}</text>
+                                <text x="40" y="33" fill="#94A3B8" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="11" font-weight="800">CALL OR WHATSAPP DIRECT</text>
+                                <text x="40" y="58" fill="#FFFFFF" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="23" font-weight="900">${phoneClean}</text>
                             </g>
                             <g transform="translate(544, 0)">
                                 <rect width="464" height="76" rx="38" fill="url(#goldButton)" stroke="#FDE68A" stroke-width="1.6" />
-                                <text x="232" y="47" fill="#0F172A" font-family="'Segoe UI', Roboto, sans-serif" font-size="18" font-weight="900" text-anchor="middle">SCHEDULE VIP SITE VISIT ➔</text>
+                                <text x="232" y="47" fill="#0F172A" font-family="sans-serif, Arial, Helvetica, DejaVu Sans" font-size="18" font-weight="900" text-anchor="middle">SCHEDULE VIP SITE VISIT ➔</text>
                             </g>
                         </g>
                     </g>

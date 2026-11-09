@@ -39,7 +39,7 @@ function ImpersonationBanner() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
-  const supabase = createClient()
+  const supabase = useState(() => createClient())[0]
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(true)
   const [subscriptionExpiredAlert, setSubscriptionExpiredAlert] = useState(false)
@@ -313,12 +313,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {children}
 
-        {/* Hide the navigation bar on billing, onboarding, video-editor, and full-screen flow builder / automations */}
+        {/* Hide the navigation bar on billing, onboarding, video-editor, agent harness, and full-screen flow builder / automations */}
         {pathname !== '/dashboard/billing' && 
          pathname !== '/dashboard/onboarding' && 
          !pathname?.includes('/dashboard/video-editor') && 
          !pathname?.includes('/dashboard/flows') && 
          !pathname?.includes('/dashboard/automations') && 
+         !pathname?.includes('/dashboard/agent') && 
          <BottomNav />}
       </div>
     </UploadProvider>

@@ -1,0 +1,518 @@
+/*
+ * Nobogent Harness — design tokens.
+ *
+ * These are the real DeepSeek Harness `--dsw-*` values, extracted from
+ * `@deepseek-ai/dsh-client-ui-theme` (see docs/dsh-reference/DESIGN-TOKENS.md).
+ * They are scoped to `.dsh` so they never leak into the existing dashboard UI.
+ *
+ * Rules this file encodes, and that components must respect:
+ *   1. Body copy is 16px/28px sans. Mono is for code only.
+ *   2. Nothing is smaller than 11px.
+ *   3. Weight never exceeds 600; UI labels are 500.
+ *   4. Hierarchy comes from label-primary / -secondary / -tertiary / -caption
+ *      colours, not from size or weight jumps.
+ *   5. Layering comes from the four bg surfaces + 1px alpha borders.
+ *   6. One shadow scale (3 levels). No ad-hoc box-shadows.
+ *   7. Chrome is neutral. `--dsw-static-deepseek-*` is the only accent.
+ */
+
+.dsh {
+  /* ── static palette ─────────────────────────────────────────────────── */
+  --dsw-static-neutral-00: #fff;
+  --dsw-static-neutral-50: #fafafa;
+  --dsw-static-neutral-100: #f5f5f5;
+  --dsw-static-neutral-150: #ededed;
+  --dsw-static-neutral-200: #e5e5e5;
+  --dsw-static-neutral-250: #dcdcdc;
+  --dsw-static-neutral-300: #d4d4d4;
+  --dsw-static-neutral-400: #a2a4a6;
+  --dsw-static-neutral-500: #7f8287;
+  --dsw-static-neutral-550: #65676b;
+  --dsw-static-neutral-600: #545557;
+  --dsw-static-neutral-700: #3c3c3d;
+  --dsw-static-neutral-800: #292929;
+  --dsw-static-neutral-850: #212123;
+  --dsw-static-neutral-900: #0f0f0f;
+  --dsw-static-neutral-1000: #000;
+
+  --dsw-static-neutral-bluish-00: #fff;
+  --dsw-static-neutral-bluish-50: #f9fafb;
+  --dsw-static-neutral-bluish-60: #f5f6f7;
+  --dsw-static-neutral-bluish-75: #f1f3f5;
+  --dsw-static-neutral-bluish-100: #ebeef2;
+  --dsw-static-neutral-bluish-150: #e9ecf2;
+  --dsw-static-neutral-bluish-200: #e1e5ee;
+  --dsw-static-neutral-bluish-300: #cfd3d6;
+  --dsw-static-neutral-bluish-400: #adb2b8;
+  --dsw-static-neutral-bluish-500: #979da6;
+  --dsw-static-neutral-bluish-600: #81858c;
+  --dsw-static-neutral-bluish-700: #61666b;
+  --dsw-static-neutral-bluish-750: #43454a;
+  --dsw-static-neutral-bluish-800: #353638;
+  --dsw-static-neutral-bluish-850: #2c2c2e;
+  --dsw-static-neutral-bluish-875: #232324;
+  --dsw-static-neutral-bluish-900: #1b1b1c;
+  --dsw-static-neutral-bluish-950: #151517;
+  --dsw-static-neutral-bluish-1000: #0f1115;
+
+  --dsw-static-deepseek-50: #edf3fe;
+  --dsw-static-deepseek-100: #e4edfd;
+  --dsw-static-deepseek-200: #d3e2ff;
+  --dsw-static-deepseek-300: #b7c8fe;
+  --dsw-static-deepseek-400: #679efe;
+  --dsw-static-deepseek-450: #5686fe;
+  --dsw-static-deepseek-500: #4176e6;
+  --dsw-static-deepseek-600: #4868b2;
+  --dsw-static-deepseek-800: #34415b;
+  --dsw-static-deepseek-900: #283142;
+
+  --dsw-static-green-100: #e6faed;
+  --dsw-static-green-400: #4ed17e;
+  --dsw-static-green-500: #22c55e;
+  --dsw-static-green-900: #233c2c;
+
+  --dsw-static-red-50: #fef2f2;
+  --dsw-static-red-100: #fee2e2;
+  --dsw-static-red-400: #f25a5a;
+  --dsw-static-red-500: #ef4444;
+  --dsw-static-red-600: #ec1313;
+  --dsw-static-red-900: #570c0c;
+
+  --dsw-static-amber-100: #fef5e7;
+  --dsw-static-amber-400: #f7ad31;
+  --dsw-static-amber-500: #f59e0b;
+  --dsw-static-amber-600: #dd8629;
+  --dsw-static-amber-900: #27241f;
+
+  /* ── typography ─────────────────────────────────────────────────────── */
+  --dsh-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', Roboto, Helvetica, Arial, sans-serif;
+  --dsh-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --dsh-text-xxxs: 11px;
+  --dsh-text-xxs: 12px;
+  --dsh-text-xs: 13px;
+  --dsh-text-s: 14px;
+  --dsh-text-base: 16px;
+  --dsh-text-l: 20px;
+  --dsh-text-xl: 24px;
+
+  --dsh-leading-xxxs: 14px;
+  --dsh-leading-xxs: 18px;
+  --dsh-leading-xs: 20px;
+  --dsh-leading-s: 22px;
+  --dsh-leading-base: 24px;
+  --dsh-leading-prose: 28px;
+
+  /* ── radius ─────────────────────────────────────────────────────────── */
+  --dsh-radius-xs: 6px;
+  --dsh-radius-sm: 8px;
+  --dsh-radius-md: 12px;
+  --dsh-radius-lg: 16px;
+  --dsh-radius-xl: 20px;
+  --dsh-radius-full: 9999px;
+
+  /* ── shadow ─────────────────────────────────────────────────────────── */
+  --dsw-shadow-lv1: 0 2px 4px 0 #0000000d;
+  --dsw-shadow-lv2: 0 4px 12px 0 #00000005, 0 2px 8px 0 #0000000a;
+  --dsw-shadow-lv3: 0 0 1px 0 #0003, 0 0 4px 0 #00000005, 0 12px 32px 0 #00000014;
+
+  /* ── base ───────────────────────────────────────────────────────────── */
+  font-family: var(--dsh-font-family);
+  font-size: var(--dsh-text-base);
+  line-height: var(--dsh-leading-prose);
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── dark (default for the harness) ──────────────────────────────────── */
+.dsh,
+.dsh[data-theme='dark'] {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-bg-skeleton: #ffffff14;
+  --dsw-alias-bg-mask-1: #00000080;
+  --dsw-alias-bg-mask-2: #0003;
+  --dsw-alias-bg-mask-3: #000000cc;
+
+  --dsw-alias-border-l1: #ffffff0f;
+  --dsw-alias-border-l2: #ffffff1f;
+  --dsw-alias-border-l3: #ffffff29;
+  --dsw-alias-border-l4: #ffffff33;
+
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-label-inverted: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
+
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-50);
+
+  --dsw-alias-button-primary-fill: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-primary-text: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-600);
+
+  --dsw-alias-interactive-bg-hover: #ffffff14;
+  --dsw-alias-interactive-bg-active: #ffffff24;
+  --dsw-alias-interactive-bg-hover-danger: #f25a5a26;
+  --dsw-alias-interactive-bg-hover-accent: #ffffff3d;
+
+  --dsw-alias-state-success-primary: var(--dsw-static-green-400);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-900);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-400);
+  --dsw-alias-state-error-tertiary: var(--dsw-static-red-900);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-900);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-400);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-800);
+
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-750);
+
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-850);
+
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-700);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-600);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-550);
+
+  color-scheme: dark;
+}
+
+/* ── light ───────────────────────────────────────────────────────────── */
+.dsh[data-theme='light'] {
+  --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-150);
+  --dsw-alias-bg-skeleton: #0000000a;
+  --dsw-alias-bg-mask-1: #0000003d;
+  --dsw-alias-bg-mask-2: #0000001f;
+  --dsw-alias-bg-mask-3: #0000007a;
+
+  --dsw-alias-border-l1: #0000000a;
+  --dsw-alias-border-l2: #0000001a;
+  --dsw-alias-border-l3: #0000001f;
+  --dsw-alias-border-l4: #00000029;
+
+  --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-700);
+  --dsw-alias-label-tertiary: var(--dsw-static-neutral-bluish-600);
+  --dsw-alias-label-caption: var(--dsw-static-neutral-bluish-400);
+  --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-200);
+  --dsw-alias-label-inverted: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
+
+  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-1000);
+
+  --dsw-alias-button-primary-fill: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-primary-text: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-info-fill: var(--dsw-static-deepseek-500);
+  --dsw-alias-button-info-hover: var(--dsw-static-deepseek-400);
+  --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-00);
+  --dsw-alias-button-floating-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-button-ghost-active-fill: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-ghost-active-border: var(--dsw-static-neutral-bluish-500);
+
+  --dsw-alias-interactive-bg-hover: #2631480f;
+  --dsw-alias-interactive-bg-active: #2631481a;
+  --dsw-alias-interactive-bg-hover-danger: #ec13130d;
+  --dsw-alias-interactive-bg-hover-accent: #26314824;
+
+  --dsw-alias-state-success-primary: var(--dsw-static-green-500);
+  --dsw-alias-state-success-tertiary: var(--dsw-static-green-100);
+  --dsw-alias-state-error-primary: var(--dsw-static-red-600);
+  --dsw-alias-state-error-tertiary: var(--dsw-static-red-100);
+  --dsw-alias-state-warn-primary: var(--dsw-static-amber-500);
+  --dsw-alias-state-warn-secondary: var(--dsw-static-amber-400);
+  --dsw-alias-state-warn-tertiary: var(--dsw-static-amber-100);
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-500);
+  --dsw-alias-state-business-tertiary: var(--dsw-static-deepseek-100);
+
+  --dsw-alias-toast-bg: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-tooltip-bg: var(--dsw-static-neutral-bluish-850);
+
+  --dsw-alias-markdown-code-block: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-code-block-banner: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-markdown-citation: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
+
+  --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
+  --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
+  --dsw-alias-scrollbar-hover-l2: var(--dsw-static-neutral-300);
+
+  color-scheme: light;
+}
+
+/* ── scoped element base ─────────────────────────────────────────────── */
+
+.dsh *,
+.dsh *::before,
+.dsh *::after {
+  box-sizing: border-box;
+}
+
+.dsh button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.dsh :focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+.dsh ::selection {
+  background: var(--dsw-alias-interactive-bg-hover-accent);
+}
+
+.dsh ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.dsh ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dsh ::-webkit-scrollbar-thumb {
+  background: var(--dsw-alias-scrollbar-bg-l1);
+  border-radius: var(--dsh-radius-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.dsh ::-webkit-scrollbar-thumb:hover {
+  background: var(--dsw-alias-scrollbar-hover-l1);
+  background-clip: content-box;
+}
+
+/* ── type scale utilities ────────────────────────────────────────────── */
+
+.dsh-t-xxxs {
+  font-size: var(--dsh-text-xxxs);
+  line-height: var(--dsh-leading-xxxs);
+}
+.dsh-t-xxs {
+  font-size: var(--dsh-text-xxs);
+  line-height: var(--dsh-leading-xxs);
+}
+.dsh-t-xs {
+  font-size: var(--dsh-text-xs);
+  line-height: var(--dsh-leading-xs);
+}
+.dsh-t-s {
+  font-size: var(--dsh-text-s);
+  line-height: var(--dsh-leading-s);
+}
+.dsh-t-base {
+  font-size: var(--dsh-text-base);
+  line-height: var(--dsh-leading-base);
+}
+.dsh-t-prose {
+  font-size: var(--dsh-text-base);
+  line-height: var(--dsh-leading-prose);
+}
+.dsh-t-l {
+  font-size: var(--dsh-text-l);
+  line-height: var(--dsh-leading-prose);
+  font-weight: 500;
+}
+.dsh-t-xl {
+  font-size: var(--dsh-text-xl);
+  line-height: 32px;
+  font-weight: 600;
+}
+
+/* the four label levels — hierarchy by colour, not size */
+.dsh-label-primary {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-label-secondary {
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-label-tertiary {
+  color: var(--dsw-alias-label-tertiary);
+}
+.dsh-label-caption {
+  color: var(--dsw-alias-label-caption);
+}
+
+.dsh-strong {
+  font-weight: 500;
+}
+.dsh-mono {
+  font-family: var(--dsh-font-mono);
+  font-variant-ligatures: none;
+}
+.dsh-tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── surface + control utilities ─────────────────────────────────────────
+ * Components should compose these instead of hardcoding a palette. Adding a
+ * raw `zinc-800` or `blue-600` anywhere inside `.dsh` is a bug.
+ * ---------------------------------------------------------------------- */
+
+.dsh-surface-1 {
+  background: var(--dsw-alias-bg-layer-1);
+}
+.dsh-surface-2 {
+  background: var(--dsw-alias-bg-layer-2);
+}
+.dsh-surface-3 {
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.dsh-border {
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+.dsh-border-l2 {
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+.dsh-border-t {
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.dsh-border-b {
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+/* Hover / active states — the only two interaction backgrounds in the system. */
+.dsh-interactive {
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dsh-interactive:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-interactive-danger:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+.dsh-selected {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.dsh-accent {
+  color: var(--dsw-alias-state-business-primary);
+}
+.dsh-danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+.dsh-success {
+  color: var(--dsw-alias-state-success-primary);
+}
+.dsh-warn {
+  color: var(--dsw-alias-state-warn-primary);
+}
+.dsh-success-bg {
+  background: var(--dsw-alias-state-success-primary);
+}
+.dsh-accent-bg {
+  background: var(--dsw-alias-state-business-primary);
+}
+.dsh-danger-bg {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+/* Primary button: near-white on dark, near-black on light. Never blue. */
+.dsh-btn-primary {
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-button-primary-text);
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+.dsh-btn-primary:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+.dsh-btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Secondary / ghost control. */
+.dsh-btn {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dsh-btn:hover {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Inline chip (attachments, badges, status). */
+.dsh-chip {
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Floating / card surface. */
+.dsh-card {
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+/* Tree rail for nested session lists. */
+.dsh-tree-rail {
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* Active dictation — the one state that earns a colour flash. */
+.dsh-listening {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+  animation: dsh-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dsh-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-listening {
+    animation: none;
+  }
+}
+
+
+

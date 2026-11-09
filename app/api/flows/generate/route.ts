@@ -468,7 +468,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      model: hasDeepSeekKey ? 'deepseek-v4-flash' : 'deterministic-architect',
+      model: hasDeepSeekKey ? 'deepseek-flash' : 'deterministic-architect',
       flow: generatedFlow
     })
   } catch (err: any) {
