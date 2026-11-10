@@ -1,3 +1,4 @@
+import { validateFlow } from '@/lib/flows/schema';
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
@@ -97,6 +98,24 @@ export async function POST(req: Request) {
     const finalNodes = (xyNodes && xyNodes.length > 0) ? xyNodes : nodes
     const finalEdges = (xyEdges && xyEdges.length > 0) ? xyEdges : edges
 
+    // Validate against the engine before saving.
+    //
+    // The canvas can offer node types the runner has no handler for, and such a
+    // flow used to save and publish happily while silently doing nothing. Drafts
+    // may still be saved (people build incrementally), but ACTIVATING a flow
+    // with blocking problems is refused, with the reasons attached.
+    const validation = validateFlow({ nodes: finalNodes, edges: finalEdges })
+    const blockingCreate = validation.issues.filter((i) => i.severity === 'error')
+    if (isActive && blockingCreate.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'This flow cannot be activated yet — fix the problems below, or save it as a draft.',
+          issues: blockingCreate,
+        },
+        { status: 422 }
+      )
+    }
+
     const payload = {
       name: name.trim(),
       description: description || '',
@@ -195,6 +214,21 @@ export async function PUT(req: Request) {
     const resolvedEdges = (xyEdges !== undefined ? xyEdges : edges) !== undefined 
       ? (xyEdges !== undefined ? xyEdges : edges) 
       : (existingPayload.xyEdges || existingPayload.edges)
+
+    // Same gate on update: activating a flow with unsupported or missing pieces
+    // is refused, so a saved draft cannot be switched live while broken.
+    const nextActive = isActive !== undefined ? isActive : existing.is_active
+    const validationUpdate = validateFlow({ nodes: resolvedNodes, edges: resolvedEdges })
+    const blockingUpdate = validationUpdate.issues.filter((i) => i.severity === 'error')
+    if (nextActive && blockingUpdate.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'This flow cannot be activated yet — fix the problems below, or save it as a draft.',
+          issues: blockingUpdate,
+        },
+        { status: 422 }
+      )
+    }
 
     const updatedPayload = {
       name: name !== undefined ? name.trim() : (existingPayload.name || existing.title.replace(/^Flow:\s*/, '')),

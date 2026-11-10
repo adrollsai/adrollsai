@@ -8,6 +8,7 @@
  *   npm run verify:flow-engine
  */
 import { resolveExecutionPlan, evaluateCondition, scoreQualification, splitBucket } from '../lib/flows/engine';
+import { validateFlow } from '../lib/flows/schema';
 
 let fails = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -97,5 +98,32 @@ const d = resolveExecutionPlan({ ...diamond, ctx: { lead: { stage: 'New' } } });
 check('rejoining node runs exactly once', d.steps.filter((s: any) => s.node.id === 'z').length === 1, `${d.steps.length} steps`);
 check('only the taken branch is executed', !d.steps.map((s: any) => s.node.id).includes('y'));
 
+// ── validate-on-publish gate ───────────────────────────────────────────────
+const goodFlow = validateFlow({ nodes: [
+  { id: 't', type: 'triggerNode', data: { triggerType: 'whatsapp_inbound' } },
+  { id: 'm', type: 'action_whatsapp_msg', data: { message: 'hi' } },
+], edges: [{ source: 't', target: 'm' }] });
+check('a valid flow passes validation', goodFlow.ok === true, goodFlow.issues.map((i: any) => i.message).join('; '));
+
+const deadNode = validateFlow({ nodes: [
+  { id: 't', type: 'triggerNode' },
+  { id: 'q', type: 'action_whatsapp_questions', data: {} },
+], edges: [{ source: 't', target: 'q' }] });
+check('an unsupported node blocks publishing', deadNode.ok === false);
+check('and names the offending node', deadNode.issues.some((i: any) => /Question|not implemented/i.test(i.message)),
+  deadNode.issues.find((i: any) => i.severity === 'error')?.message?.slice(0, 80));
+
+const noTrigger = validateFlow({ nodes: [{ id: 'm', type: 'action_whatsapp_msg', data: {} }], edges: [] });
+check('a flow with no trigger is rejected', noTrigger.ok === false && noTrigger.issues.some((i: any) => /No trigger/i.test(i.message)));
+
+const noAction = validateFlow({ nodes: [{ id: 't', type: 'triggerNode' }], edges: [] });
+check('a flow with no action is rejected', noAction.ok === false && noAction.issues.some((i: any) => /No executable action/i.test(i.message)));
+
+const longDelay = validateFlow({ nodes: [
+  { id: 't', type: 'triggerNode' },
+  { id: 'd', type: 'action_delay', data: { seconds: 7200 } },
+], edges: [{ source: 't', target: 'd' }] });
+check('a 2 hour delay warns about the 10s cap', longDelay.issues.some((i: any) => i.severity === 'warning' && /capped to 10s/i.test(i.message)),
+  longDelay.issues.find((i: any) => i.severity === 'warning')?.message?.slice(0, 70));
 console.log(`\n=== ${fails === 0 ? 'all checks passed' : fails + ' FAILED'}`);
 if (fails) process.exit(1);
