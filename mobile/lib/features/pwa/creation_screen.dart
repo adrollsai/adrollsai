@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,7 +9,6 @@ import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
-import '../../core/ui/navigation.dart';
 import '../../data/workspace_source.dart';
 import 'pwa_widgets.dart';
 
@@ -50,9 +51,11 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
     );
     if (!mounted) return;
     _prompt.clear();
-    context.push(
-      '${Routes.session(created.id)}?prompt=${Uri.encodeComponent(brief)}'
-      '&title=${Uri.encodeComponent(_kinds[_kind])}',
+    unawaited(
+      context.push(
+        '${Routes.session(created.id)}?prompt=${Uri.encodeComponent(brief)}'
+        '&title=${Uri.encodeComponent(_kinds[_kind])}',
+      ),
     );
   }
 
@@ -87,8 +90,10 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     // Title block: "AI Creator" beside the status pills.
+                    // Title, then the status pills on their own flow below it.
+                    // Keeping them in one Row overflowed a 360dp phone once the
+                    // text scale went up; the web app wraps them too.
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Icon(
                           Icons.auto_awesome,
@@ -97,7 +102,7 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                         ),
                         const SizedBox(width: NoboSpace.sm),
                         Text(
-                          'AI\nCreator',
+                          'AI Creator',
                           style: NoboType.headline.copyWith(
                             color: c.ink,
                             fontSize: 22,
@@ -106,13 +111,13 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                             letterSpacing: -0.5,
                           ),
                         ),
-                        const SizedBox(width: NoboSpace.md),
-                        Expanded(
-                          child: Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            alignment: WrapAlignment.end,
-                            children: <Widget>[
+                      ],
+                    ),
+                    const SizedBox(height: NoboSpace.sm),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: <Widget>[
                               _StatusPill(
                                 label: 'BATCH\nMODE',
                                 icon: Icons.bolt_rounded,
@@ -137,9 +142,6 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: NoboSpace.base),
 
                     _Segmented(
@@ -188,7 +190,11 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: <Widget>[
-                                    Row(
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
                                       children: <Widget>[
                                         Container(
                                           padding: const EdgeInsets.symmetric(
@@ -207,7 +213,6 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                                             ),
                                           ),
                                         ),
-                                        const SizedBox(width: 6),
                                         Text(
                                           'Design Template',
                                           style: NoboType.caption.copyWith(
@@ -254,11 +259,15 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
                                       color: c.onPrimary,
                                     ),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      'Templates Library',
-                                      style: NoboType.label.copyWith(
-                                        color: c.onPrimary,
-                                        fontSize: 12.5,
+                                    Flexible(
+                                      child: Text(
+                                        'Templates Library',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: NoboType.label.copyWith(
+                                          color: c.onPrimary,
+                                          fontSize: 12.5,
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 6),
@@ -560,7 +569,7 @@ class _CreationScreenState extends ConsumerState<CreationScreen> {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             const SizedBox(height: NoboSpace.base),
-            PwaLabel('Select catalog product'),
+            const PwaLabel('Select catalog product'),
             const SizedBox(height: NoboSpace.sm),
             for (final ProjectSeed p in projects)
               ListTile(
@@ -679,14 +688,18 @@ class _StatusPill extends StatelessWidget {
               Icon(icon, size: 11, color: fg),
               const SizedBox(width: 4),
             ],
-            Text(
-              label,
-              style: NoboType.micro.copyWith(
-                color: fg,
-                fontSize: 8.5,
-                height: 1.15,
-                letterSpacing: 0.3,
-                fontWeight: FontWeight.w700,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: NoboType.micro.copyWith(
+                  color: fg,
+                  fontSize: 8.5,
+                  height: 1.15,
+                  letterSpacing: 0.3,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ],

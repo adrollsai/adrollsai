@@ -1,12 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoPage;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/platform/nobo_platform.dart';
+import '../core/providers.dart';
 import '../core/ui/navigation.dart';
 import '../features/auth/login_screen.dart';
-import '../features/create/create_screen.dart';
+import '../features/pwa/agent_screen.dart';
+import '../features/pwa/creation_screen.dart';
+import '../features/pwa/notifications_screen.dart';
 import '../features/create/session_screen.dart';
 import '../features/crm/crm_screen.dart';
 import '../features/crm/lead_screen.dart';
@@ -34,6 +40,7 @@ abstract final class Routes {
   static const String assets = '/assets';
   static const String profile = '/profile';
   static const String settings = '/settings';
+  static const String notifications = '/notifications';
   static String session(String id) => '/session/$id';
   static String project(String id) => '/project/$id';
   static String lead(String id) => '/lead/$id';
@@ -67,9 +74,25 @@ StatefulShellBranch _branch(String path, Widget screen) {
 }
 
 final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
+  // Drives GoRouter's re-evaluation when the session appears or disappears.
+  final _AuthRefresh refresh = _AuthRefresh(ref);
+
   final GoRouter router = GoRouter(
     // The web app sends you to Analytics after sign-in.
     initialLocation: Routes.analytics,
+    refreshListenable: refresh,
+    // Auth guard: an unauthenticated user only ever sees the sign-in screen.
+    // Demo builds skip it so the interface can be reviewed without credentials.
+    redirect: (BuildContext context, GoRouterState state) {
+      final bool demo = ref.read(demoModeProvider);
+      if (demo) return null;
+      final bool signedIn =
+          ref.read(authRepositoryProvider).currentSession != null;
+      final bool onLogin = state.matchedLocation == Routes.login;
+      if (!signedIn && !onLogin) return Routes.login;
+      if (signedIn && onLogin) return Routes.analytics;
+      return null;
+    },
     routes: <RouteBase>[
       GoRoute(
         path: Routes.login,
@@ -85,9 +108,9 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             ) => AppShell(navigationShell: shell),
         branches: <StatefulShellBranch>[
           _branch(Routes.analytics, const AnalyticsScreen()),
-          _branch(Routes.nobogent, const CreateScreen()),
+          _branch(Routes.nobogent, const AgentScreen()),
           _branch(Routes.catalog, const CatalogScreen()),
-          _branch(Routes.creation, const CreateScreen()),
+          _branch(Routes.creation, const CreationScreen()),
           _branch(
             Routes.ads,
             const WebToolScreen(
@@ -159,6 +182,14 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             ),
       ),
       GoRoute(
+        path: Routes.notifications,
+        pageBuilder: (BuildContext context, GoRouterState state) =>
+            _noboPage<void>(
+              state: state,
+              child: const NotificationsScreen(),
+            ),
+      ),
+      GoRoute(
         path: Routes.settings,
         pageBuilder: (BuildContext context, GoRouterState state) =>
             _noboPage<void>(state: state, child: const SettingsScreen()),
@@ -176,7 +207,10 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
       ),
     ],
   );
-  ref.onDispose(router.dispose);
+  ref.onDispose(() {
+    refresh.dispose();
+    router.dispose();
+  });
   return router;
 });
 
@@ -199,5 +233,21 @@ class AppShell extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+/// Bridges Supabase auth changes into a [Listenable] for GoRouter.
+class _AuthRefresh extends ChangeNotifier {
+  _AuthRefresh(Ref ref) {
+    _sub = ref.read(authRepositoryProvider).changes.listen((_) {
+      notifyListeners();
+    });
+  }
+
+  late final StreamSubscription<AuthState> _sub;
+
+  @override
+  void dispose() {
+    _sub.cancel();
+    super.dispose();
   }
 }

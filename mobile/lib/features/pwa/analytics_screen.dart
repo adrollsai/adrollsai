@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
@@ -79,6 +80,13 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
             title: 'Hi, ${profile?.workspaceName ?? 'there'}',
             subtitle:
                 'Filter, sort, and drilldown into live sales metrics & employee matrices.',
+            actions: <Widget>[
+              NoboCircleAction(
+                icon: Icons.notifications_none_rounded,
+                onTap: () => context.push('/notifications'),
+                tooltip: 'Notifications',
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: NoboSpace.gutter),

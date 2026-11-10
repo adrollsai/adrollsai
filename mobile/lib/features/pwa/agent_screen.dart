@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -41,9 +43,11 @@ class _AgentScreenState extends ConsumerState<AgentScreen> {
     if (!mounted) return;
     final String text = (brief ?? _prompt.text).trim();
     _prompt.clear();
-    context.push(
-      '${Routes.session(created.id)}'
-      '${text.isEmpty ? '' : '?prompt=${Uri.encodeComponent(text)}'}',
+    unawaited(
+      context.push(
+        '${Routes.session(created.id)}'
+        '${text.isEmpty ? '' : '?prompt=${Uri.encodeComponent(text)}'}',
+      ),
     );
   }
 
@@ -84,13 +88,17 @@ class _AgentScreenState extends ConsumerState<AgentScreen> {
                       ),
                     ),
                     const SizedBox(width: NoboSpace.md),
-                    Text(
-                      'Nobogent',
-                      style: NoboType.subtitle.copyWith(
-                        color: c.ink,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
+                    Flexible(
+                      child: Text(
+                        'Nobogent',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: NoboType.subtitle.copyWith(
+                          color: c.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
                       ),
                     ),
                     const SizedBox(width: NoboSpace.sm),

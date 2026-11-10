@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nobogent_mobile/core/platform/nobo_platform.dart';
 import 'package:nobogent_mobile/core/ui/navigation.dart';
-import 'package:nobogent_mobile/features/create/create_screen.dart';
+import 'package:nobogent_mobile/features/pwa/agent_screen.dart';
 import 'package:nobogent_mobile/features/crm/crm_screen.dart';
 import 'package:nobogent_mobile/features/pwa/analytics_screen.dart';
 import 'package:nobogent_mobile/features/pwa/assets_screen.dart';
 import 'package:nobogent_mobile/features/pwa/catalog_screen.dart';
+import 'package:nobogent_mobile/features/pwa/creation_screen.dart';
+import 'package:nobogent_mobile/features/pwa/notifications_screen.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -20,7 +22,9 @@ void main() {
         (name: 'Catalog', build: CatalogScreen.new),
         (name: 'Assets', build: AssetsScreen.new),
         (name: 'Business/CRM', build: CrmScreen.new),
-        (name: 'Creation', build: CreateScreen.new),
+        (name: 'Creation', build: CreationScreen.new),
+        (name: 'Nobogent', build: AgentScreen.new),
+        (name: 'Notifications', build: NotificationsScreen.new),
       ];
 
   for (final ({String name, Widget Function() build}) screen in screens) {

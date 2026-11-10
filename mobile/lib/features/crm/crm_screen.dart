@@ -362,8 +362,11 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                     ),
                   ),
                   const SizedBox(height: NoboSpace.md),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: NoboSpace.md,
+                    runSpacing: NoboSpace.sm,
                     children: <Widget>[
                       _PageButton(
                         label: 'Previous',
@@ -371,9 +374,7 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                         onTap: () => setState(() => _page = safePage - 1),
                       ),
                       Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: NoboSpace.md,
-                        ),
+                        padding: EdgeInsets.zero,
                         child: Text(
                           'Page ${safePage + 1} of $pages',
                           style: NoboType.label.copyWith(
@@ -390,8 +391,11 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                     ],
                   ),
                   const SizedBox(height: NoboSpace.md),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: NoboSpace.sm,
+                    runSpacing: NoboSpace.sm,
                     children: <Widget>[
                       Text(
                         'Leads per page:',
