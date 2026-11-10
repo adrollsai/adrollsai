@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/router.dart';
 import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
+import '../../core/ui/adaptive.dart';
 import '../../core/ui/navigation.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../data/workspace_source.dart';
+import 'product_form_sheet.dart';
 import 'pwa_widgets.dart';
 
 /// Catalog — the web app's "Products & Services" screen.
 ///
-/// Reproduces the web layout: header with a refresh circle, a search field with
-/// a "Tags Only" toggle inside it, a blue "+ Add Product" primary action beside
-/// an overflow circle, then one card per product showing its cover, name, two
-/// quick actions (AI / WhatsApp), the description and its automation switches.
+/// Fully interactive: adding, editing and deleting a product writes to the
+/// `properties` table, and the automation switches persist. Generate and
+/// WhatsApp shortcuts route into the matching destination instead of being dead
+/// affordances.
 class CatalogScreen extends ConsumerStatefulWidget {
   const CatalogScreen({super.key});
 
@@ -25,12 +30,81 @@ class CatalogScreen extends ConsumerStatefulWidget {
 class _CatalogScreenState extends ConsumerState<CatalogScreen> {
   String _query = '';
   bool _tagsOnly = false;
+  bool _busy = false;
 
   Future<void> _refresh() async {
     ref.invalidate(projectsProvider);
     await ref
         .read(projectsProvider.future)
         .catchError((Object _) => const <ProjectSeed>[]);
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  Future<void> _addProduct() async {
+    final bool? saved = await showProductFormSheet(context: context);
+    if (saved == true) {
+      await _refresh();
+      _toast('Product added.');
+    }
+  }
+
+  Future<void> _editProduct(ProjectSeed project) async {
+    final bool? saved = await showProductFormSheet(
+      context: context,
+      existing: project,
+    );
+    if (saved == true) {
+      await _refresh();
+      _toast('Product updated.');
+    }
+  }
+
+  Future<void> _deleteProduct(ProjectSeed project) async {
+    final bool ok = await showNoboConfirm(
+      context: context,
+      title: 'Delete product?',
+      message:
+          '“${project.title}” will be removed from your catalog. Creatives and '
+          'campaigns already generated for it are kept.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(workspaceRepositoryProvider).deleteProject(project.id);
+      await _refresh();
+      _toast('Product deleted.');
+    } on NoboFailure catch (e) {
+      _toast(e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setFlags(
+    ProjectSeed project, {
+    bool? autoGenerate,
+    bool? onLandingPage,
+  }) async {
+    try {
+      await ref
+          .read(workspaceRepositoryProvider)
+          .setProjectFlags(
+            project.id,
+            autoGenerate: autoGenerate,
+            showOnLandingPage: onLandingPage,
+          );
+      await _refresh();
+    } on NoboFailure catch (e) {
+      _toast(e.message);
+    }
   }
 
   @override
@@ -74,7 +148,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
             child: Column(
               children: <Widget>[
                 PwaSearchField(
-                  hint: 'Search products, locations, tags…',
+                  hint: 'Search products, locations, tagsâ€¦',
                   onChanged: (String v) => setState(() => _query = v),
                   trailing: GestureDetector(
                     onTap: () => setState(() => _tagsOnly = !_tagsOnly),
@@ -113,10 +187,11 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                 Row(
                   children: <Widget>[
                     PwaIconCircle(
-                      icon: Icons.more_horiz_rounded,
+                      icon: Icons.people_outline_rounded,
                       size: 48,
                       filled: false,
-                      onTap: () {},
+                      onTap: _refresh,
+                      tooltip: 'Reload products',
                       tint: c.inkSecondary,
                     ),
                     const SizedBox(width: NoboSpace.md),
@@ -124,7 +199,8 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                       child: PwaPrimaryButton(
                         label: 'Add Product',
                         icon: Icons.add_rounded,
-                        onPressed: () {},
+                        loading: _busy,
+                        onPressed: _busy ? null : _addProduct,
                       ),
                     ),
                   ],
@@ -161,11 +237,20 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                     const SizedBox(height: 4),
                     Text(
                       _query.isEmpty
-                          ? 'Add a product to start generating creatives and campaigns for it.'
+                          ? 'Add your first product to start generating '
+                                'creatives and campaigns for it.'
                           : 'Try a different name or location.',
                       textAlign: TextAlign.center,
                       style: NoboType.caption.copyWith(color: c.inkSecondary),
                     ),
+                    if (_query.isEmpty) ...<Widget>[
+                      const SizedBox(height: NoboSpace.base),
+                      PwaPrimaryButton(
+                        label: 'Add Product',
+                        icon: Icons.add_rounded,
+                        onPressed: _addProduct,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -179,7 +264,16 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                   NoboSpace.gutter,
                   0,
                 ),
-                child: _ProductCard(project: p),
+                child: _ProductCard(
+                  project: p,
+                  onEdit: () => _editProduct(p),
+                  onDelete: () => _deleteProduct(p),
+                  onToggleAuto: (bool v) => _setFlags(p, autoGenerate: v),
+                  onToggleLanding: (bool v) =>
+                      _setFlags(p, onLandingPage: v),
+                  onGenerate: () => context.go(Routes.creation),
+                  onWhatsApp: () => context.go(Routes.whatsapp),
+                ),
               ),
           const SizedBox(height: NoboSpace.xxl),
         ],
@@ -188,23 +282,29 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
   }
 }
 
-class _ProductCard extends StatefulWidget {
-  const _ProductCard({required this.project});
+class _ProductCard extends StatelessWidget {
+  const _ProductCard({
+    required this.project,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggleAuto,
+    required this.onToggleLanding,
+    required this.onGenerate,
+    required this.onWhatsApp,
+  });
 
   final ProjectSeed project;
-
-  @override
-  State<_ProductCard> createState() => _ProductCardState();
-}
-
-class _ProductCardState extends State<_ProductCard> {
-  bool _autoGen = false;
-  bool _onLandingPage = false;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final ValueChanged<bool> onToggleAuto;
+  final ValueChanged<bool> onToggleLanding;
+  final VoidCallback onGenerate;
+  final VoidCallback onWhatsApp;
 
   @override
   Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
-    final ProjectSeed p = widget.project;
+    final ProjectSeed p = project;
 
     return PwaCard(
       padding: const EdgeInsets.all(NoboSpace.base),
@@ -224,7 +324,7 @@ class _ProductCardState extends State<_ProductCard> {
                   border: Border.all(color: c.border),
                 ),
                 child: Text(
-                  'Active',
+                  (p.status.isEmpty ? 'active' : p.status),
                   style: NoboType.caption.copyWith(
                     color: c.inkSecondary,
                     fontSize: 11.5,
@@ -237,29 +337,33 @@ class _ProductCardState extends State<_ProductCard> {
                 icon: Icons.edit_outlined,
                 tint: c.inkSecondary,
                 filled: false,
-                onTap: () {},
-                tooltip: 'Edit',
+                onTap: onEdit,
+                tooltip: 'Edit product',
               ),
               const SizedBox(width: NoboSpace.sm),
               PwaIconCircle(
                 icon: Icons.delete_outline_rounded,
                 tint: c.inkSecondary,
                 filled: false,
-                onTap: () {},
-                tooltip: 'Delete',
+                onTap: onDelete,
+                tooltip: 'Delete product',
               ),
             ],
           ),
           const SizedBox(height: NoboSpace.sm),
+          // Cover art is contained on a neutral plate so logos are never cropped
+          // mid-wordmark. A product with no art simply has no media block.
           if (p.cover != null)
             ClipRRect(
               borderRadius: NoboRadius.rMd,
               child: AspectRatio(
                 aspectRatio: 16 / 10,
-                child: Image.asset(
-                  'assets/brand/nobogent-logo.png',
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                child: ColoredBox(
+                  color: c.surfaceSunken,
+                  child: Padding(
+                    padding: const EdgeInsets.all(NoboSpace.md),
+                    child: _cover(p.cover!),
+                  ),
                 ),
               ),
             ),
@@ -281,18 +385,30 @@ class _ProductCardState extends State<_ProductCard> {
               PwaIconCircle(
                 icon: Icons.auto_awesome,
                 tint: c.accent,
-                onTap: () {},
-                tooltip: 'Generate with AI',
+                onTap: onGenerate,
+                tooltip: 'Generate creatives',
               ),
               const SizedBox(width: NoboSpace.sm),
               PwaIconCircle(
                 icon: Icons.chat_bubble_rounded,
                 tint: c.positive,
-                onTap: () {},
-                tooltip: 'WhatsApp',
+                onTap: onWhatsApp,
+                tooltip: 'Open WhatsApp',
               ),
             ],
           ),
+          if (p.address != null) ...<Widget>[
+            const SizedBox(height: 2),
+            Text(
+              '${p.address!} · ${p.price}',
+              style: NoboType.caption.copyWith(
+                color: c.inkSecondary,
+                fontSize: 12,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
           const SizedBox(height: NoboSpace.sm),
           Text(
             p.description ?? '# ${p.title}',
@@ -309,17 +425,36 @@ class _ProductCardState extends State<_ProductCard> {
           PwaToggleRow(
             label: 'Auto-gen daily',
             icon: Icons.auto_awesome_outlined,
-            value: _autoGen,
-            onChanged: (bool v) => setState(() => _autoGen = v),
+            value: p.autoGenerate,
+            onChanged: onToggleAuto,
           ),
           PwaToggleRow(
             label: 'On landing page',
             icon: Icons.grid_view_outlined,
-            value: _onLandingPage,
-            onChanged: (bool v) => setState(() => _onLandingPage = v),
+            value: p.onLandingPage,
+            onChanged: onToggleLanding,
           ),
         ],
       ),
+    );
+  }
+
+  Widget _cover(String source) {
+    if (source.startsWith('assets/')) {
+      return Image.asset(
+        source,
+        fit: BoxFit.cover,
+        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      );
+    }
+    return Image.network(
+      source,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+      loadingBuilder: (BuildContext context, Widget child, ImageChunkEvent? p) {
+        if (p == null) return child;
+        return const ColoredBox(color: Color(0xFFF1F5F9));
+      },
     );
   }
 }

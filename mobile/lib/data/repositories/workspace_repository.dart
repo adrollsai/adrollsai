@@ -369,6 +369,170 @@ class WorkspaceRepository {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Catalog (properties) mutations
+  //
+  // These go straight to PostgREST with the user's JWT, which is what the web
+  // app's own client-side code does for this table. `properties` carries a
+  // permissive RLS policy for authenticated users, so the app must set `user_id`
+  // itself — and every update/delete below is additionally scoped by it, so a
+  // request can never touch another tenant's row.
+  // ---------------------------------------------------------------------
+
+  Future<NoboProject> createProject({
+    required String title,
+    String? address,
+    num? price,
+    String? description,
+    String? propertyType,
+    String? imageUrl,
+  }) async {
+    try {
+      final Map<String, dynamic> row = await _db
+          .from('properties')
+          .insert(<String, dynamic>{
+            'user_id': _uid,
+            'title': title.trim(),
+            if (address != null && address.trim().isNotEmpty)
+              'address': address.trim(),
+            // `price` is a text column; storing the bare number keeps it
+            // parseable for display while remaining valid for the web app.
+            if (price != null && price > 0) 'price': price.toString(),
+            if (description != null && description.trim().isNotEmpty)
+              'description': description.trim(),
+            if (propertyType != null && propertyType.trim().isNotEmpty)
+              'property_type': propertyType.trim(),
+            if (imageUrl != null && imageUrl.trim().isNotEmpty)
+              'image_url': imageUrl.trim(),
+            'status': 'active',
+            'auto_generate': false,
+            'show_on_landing_page': true,
+          })
+          .select()
+          .single();
+      return NoboProject.fromJson(row);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<void> updateProject(
+    String id, {
+    String? title,
+    String? address,
+    num? price,
+    String? description,
+    String? propertyType,
+    String? imageUrl,
+  }) async {
+    try {
+      await _db
+          .from('properties')
+          .update(<String, dynamic>{
+            if (title != null) 'title': title.trim(),
+            if (address != null) 'address': address.trim(),
+            if (price != null) 'price': price.toString(),
+            if (description != null) 'description': description.trim(),
+            if (propertyType != null) 'property_type': propertyType.trim(),
+            if (imageUrl != null) 'image_url': imageUrl.trim(),
+          })
+          .eq('user_id', _uid)
+          .eq('id', id);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<void> deleteProject(String id) async {
+    try {
+      await _db.from('properties').delete().eq('user_id', _uid).eq('id', id);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  /// Removes a lead. Scoped by user_id so it can never reach another tenant.
+  Future<void> deleteLead(String id) async {
+    try {
+      await _db.from('leads').delete().eq('user_id', _uid).eq('id', id);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  /// Requests a presigned R2 upload URL, then uploads the bytes and records the
+  /// new asset. This is the same two-step flow the web app uses.
+  Future<String> uploadAsset({
+    required List<int> bytes,
+    required String fileName,
+    required String contentType,
+    String folder = 'mobile-uploads',
+  }) async {
+    try {
+      final Map<String, dynamic> signed = await _http.postJson(
+        '/api/upload/sign',
+        <String, dynamic>{
+          'fileName': fileName,
+          'fileType': contentType,
+          'folder': folder,
+        },
+      );
+      final String? signedUrl = signed['signedUrl'] as String?;
+      final String? publicUrl = signed['publicUrl'] as String?;
+      if (signedUrl == null || publicUrl == null) {
+        throw const NoboFailure(
+          NoboFailureKind.server,
+          'The upload could not be prepared.',
+        );
+      }
+      await _http.putBytes(
+        signedUrl,
+        bytes,
+        contentType: contentType,
+      );
+      return publicUrl;
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  /// Persists the catalog card's automation switches.
+  Future<void> setProjectFlags(
+    String id, {
+    bool? autoGenerate,
+    bool? showOnLandingPage,
+  }) async {
+    try {
+      await _db
+          .from('properties')
+          .update(<String, dynamic>{
+            if (autoGenerate != null) 'auto_generate': autoGenerate,
+            if (showOnLandingPage != null)
+              'show_on_landing_page': showOnLandingPage,
+          })
+          .eq('user_id', _uid)
+          .eq('id', id);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  /// Sends a WhatsApp text reply through the existing backend route, which makes
+  /// the Meta Cloud API call and persists the outbound message.
+  Future<void> sendWhatsAppText({
+    required String chatId,
+    required String text,
+  }) async {
+    try {
+      await _http.postJson('/api/whatsapp/chat', <String, dynamic>{
+        'chatId': chatId,
+        'messageText': text.trim(),
+      });
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
   /// Soft-fails: callers may be offline; never block the UI on this.
   Future<void> safeMarkRead(String id) async {
     try {

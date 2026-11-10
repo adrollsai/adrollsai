@@ -7,6 +7,7 @@ import '../core/design/nobo_colors.dart';
 import '../core/design/nobo_theme.dart';
 import '../core/platform/nobo_platform.dart';
 import '../core/providers.dart';
+import '../core/ui/boot_splash.dart';
 import 'router.dart';
 
 /// Root widget.
@@ -62,7 +63,11 @@ class NoboApp extends ConsumerWidget {
             child: MediaQuery.withClampedTextScaling(
               minScaleFactor: 1.0,
               maxScaleFactor: scale,
-              child: child ?? const SizedBox.shrink(),
+              // The animated splash sits above the router, so the first screen
+              // builds and warms up underneath it and is ready when it lifts.
+              child: NoboBootGate(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         );

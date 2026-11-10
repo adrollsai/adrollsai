@@ -60,3 +60,10 @@ flutter:
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter.ttf
+    # The logotype is not set in Inter. Outfit Light is the closest available
+    # relative of the shipped wordmark (see the video project's type_score.png),
+    # so the splash lockup and the video sting render the same letterforms.
+    - family: NoboLogotype
+      fonts:
+        - asset: assets/fonts/Outfit-Light.ttf
+          weight: 300

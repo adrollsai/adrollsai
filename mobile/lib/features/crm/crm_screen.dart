@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,14 +8,16 @@ import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
+import '../../core/ui/adaptive.dart';
 import '../../core/ui/navigation.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../core/utils/format.dart';
 import '../../data/models/profile.dart';
 import '../../data/workspace_source.dart';
 import '../pwa/pwa_widgets.dart';
 import 'voip_sheet.dart';
 
-/// CRM Pipeline — reproduction of the web app's `/dashboard/crm`.
+/// CRM Pipeline â€” reproduction of the web app's `/dashboard/crm`.
 ///
 /// Matches the web layout: header with an "Enable Alerts" pill, the collapsible
 /// "CRM Actions & Controls" panel, a search + "View & Filter Controls" card with
@@ -210,7 +212,7 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                   child: Column(
                     children: <Widget>[
                       PwaSearchField(
-                        hint: 'Search by name, phone, or email…',
+                        hint: 'Search by name, phone, or emailâ€¦',
                         onChanged: (String v) => setState(() {
                           _query = v;
                           _page = 0;
@@ -447,6 +449,8 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                       child: _LeadCard(
                         lead: lead,
                         canVoip: canVoip,
+                        onDelete: () => _deleteLead(lead),
+                        onFollowup: () => _logFollowup(lead),
                         onVoip: () => showVoipSheet(
                           context: context,
                           ref: ref,
@@ -481,6 +485,60 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _deleteLead(LeadSeed lead) async {
+    final bool ok = await showNoboConfirm(
+      context: context,
+      title: 'Delete lead?',
+      message:
+          'This removes ${lead.name} from your CRM. Their conversation history '
+          'is kept.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!ok) return;
+    try {
+      await ref.read(workspaceRepositoryProvider).deleteLead(lead.id);
+      ref.invalidate(leadsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lead deleted.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on NoboFailure catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _logFollowup(LeadSeed lead) async {
+    try {
+      await ref
+          .read(workspaceRepositoryProvider)
+          .logLeadActivity(
+            leadId: lead.id,
+            actionType: 'FOLLOWUP',
+            description: 'Follow-up logged from the mobile CRM',
+          );
+      ref.invalidate(leadsProvider);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Follow-up logged.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on NoboFailure catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message), behavior: SnackBarBehavior.floating),
+      );
+    }
   }
 
   static bool _isClosed(String stage) {
@@ -537,11 +595,15 @@ class _LeadCard extends StatelessWidget {
     required this.lead,
     required this.canVoip,
     required this.onVoip,
+    required this.onDelete,
+    required this.onFollowup,
   });
 
   final LeadSeed lead;
   final bool canVoip;
   final VoidCallback onVoip;
+  final VoidCallback onDelete;
+  final VoidCallback onFollowup;
 
   static String _digits(String? phone) =>
       (phone ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
@@ -552,7 +614,7 @@ class _LeadCard extends StatelessWidget {
     try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
-      // No dialer/WhatsApp installed — ignore.
+      // No dialer/WhatsApp installed â€” ignore.
     }
   }
 
@@ -622,11 +684,13 @@ class _LeadCard extends StatelessWidget {
                 label: 'History',
                 icon: Icons.history_rounded,
                 tint: c.accent,
+                onTap: () => context.push(Routes.lead(lead.id)),
               ),
               _SoftPill(
                 label: 'Followup',
                 icon: Icons.phone_callback_outlined,
                 tint: c.primary,
+                onTap: onFollowup,
               ),
             ],
           ),
@@ -694,8 +758,8 @@ class _LeadCard extends StatelessWidget {
               PwaIconCircle(
                 icon: Icons.delete_outline_rounded,
                 tint: c.inkSecondary,
-                onTap: () {},
-                tooltip: 'Delete',
+                onTap: onDelete,
+                tooltip: 'Delete lead',
               ),
             ],
           ),
@@ -828,15 +892,20 @@ class _SoftPill extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.tint,
+    this.onTap,
   });
 
   final String label;
   final IconData icon;
   final Color tint;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: tint.withValues(alpha: 0.10),
@@ -855,7 +924,8 @@ class _SoftPill extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -36,6 +36,8 @@ typedef ProjectSeed = ({
   String? description,
   int assetCount,
   int taskCount,
+  bool autoGenerate,
+  bool onLandingPage,
 });
 
 typedef AssetSeed = ({

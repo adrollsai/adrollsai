@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
 import '../../core/ui/media.dart';
+import '../../core/config/nobo_env.dart';
 import '../../core/ui/navigation.dart';
+import '../../data/models/asset.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../data/models/profile.dart';
 import '../../data/workspace_source.dart';
 import 'pwa_widgets.dart';
 
-/// Asset Library — the web app's "Asset Library" screen.
+/// Asset Library Ã¢â‚¬” the web app's "Asset Library" screen.
 class AssetsScreen extends ConsumerStatefulWidget {
   const AssetsScreen({super.key});
 
@@ -21,6 +27,7 @@ class AssetsScreen extends ConsumerStatefulWidget {
 
 class _AssetsScreenState extends ConsumerState<AssetsScreen> {
   int _filter = 0;
+  bool _uploading = false;
   static const List<String> _filters = <String>[
     'All',
     'Images',
@@ -28,6 +35,59 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
     'Campaign Ready',
   ];
 
+
+  /// Picks an image from the device, uploads it to storage via a presigned URL
+  /// and records the asset row — the same two-step flow the web app uses.
+  Future<void> _upload() async {
+    final NoboColors c = context.nobo;
+    try {
+      final XFile? picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+      );
+      if (picked == null) return;
+      setState(() => _uploading = true);
+
+      final List<int> bytes = await picked.readAsBytes();
+      final String? mime = picked.mimeType;
+      final String contentType = (mime != null && mime.startsWith('image/'))
+          ? mime
+          : 'image/jpeg';
+
+      final repo = ref.read(workspaceRepositoryProvider);
+      final String url = await repo.uploadAsset(
+        bytes: bytes,
+        fileName: picked.name,
+        contentType: contentType,
+      );
+      await repo.createAssetRow(
+        url: url,
+        kind: AssetKind.image,
+        caption: null,
+      );
+      ref.invalidate(assetsProvider);
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Asset uploaded.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: c.navy,
+        ),
+      );
+    } on NoboFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _uploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
@@ -69,10 +129,11 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 PwaPrimaryButton(
-                  label: 'Upload Assets',
+                  label: _uploading ? 'Uploadingâ€¦' : 'Upload Assets',
                   icon: Icons.upload_rounded,
                   dark: true,
-                  onPressed: () {},
+                  loading: _uploading,
+                  onPressed: _uploading ? null : _upload,
                 ),
                 const SizedBox(height: NoboSpace.sm),
                 PwaCard(
@@ -158,7 +219,7 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
           if (async.isLoading)
             const Padding(
               padding: EdgeInsets.only(top: NoboSpace.huge),
-              child: SizedBox(height: 180, child: PwaLoading(label: 'Loading gallery…')),
+              child: SizedBox(height: 180, child: PwaLoading(label: 'Loading galleryÃ¢â‚¬Â¦')),
             )
           else if (items.isEmpty)
             Padding(
@@ -209,6 +270,18 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
         ],
       ),
     );
+  }
+}
+
+/// Opens the matching page in the web app, for settings that only exist there.
+Future<void> _openWebProfile(String path) async {
+  try {
+    await launchUrl(
+      Uri.parse('${NoboEnv.apiBaseUrl}$path'),
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (_) {
+    // No browser available on this device.
   }
 }
 
@@ -263,7 +336,7 @@ class ProfileScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: NoboSpace.sm),
                           Text(
-                            '${profile?.credits.toStringAsFixed(1) ?? '0'} credits · ${profile?.role ?? ''}',
+                            '${profile?.credits.toStringAsFixed(1) ?? '0'} credits ‚· ${profile?.role ?? ''}',
                             style: NoboType.caption.copyWith(
                               color: c.inkTertiary,
                               fontSize: 11.5,
@@ -280,19 +353,30 @@ class ProfileScreen extends ConsumerWidget {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: <Widget>[
-                    const _Row(
+                    _Row(
                       icon: Icons.business_outlined,
                       label: 'Business information',
+                      onTap: () => _openWebProfile('/dashboard/profile'),
                     ),
-                    const _Row(icon: Icons.palette_outlined, label: 'Branding'),
-                    const _Row(icon: Icons.extension_outlined, label: 'Plugins & integrations'),
-                    const _Row(
+                    _Row(
+                      icon: Icons.palette_outlined,
+                      label: 'Branding',
+                      onTap: () => _openWebProfile('/dashboard/profile'),
+                    ),
+                    _Row(
+                      icon: Icons.extension_outlined,
+                      label: 'Plugins & integrations',
+                      onTap: () => _openWebProfile('/dashboard/plugins'),
+                    ),
+                    _Row(
                       icon: Icons.notifications_none_rounded,
                       label: 'Notification preferences',
+                      onTap: () => context.push('/notifications'),
                     ),
-                    const _Row(
+                    _Row(
                       icon: Icons.credit_card_outlined,
                       label: 'Billing & subscription',
+                      onTap: () => _openWebProfile('/dashboard/billing'),
                     ),
                     _Row(
                       icon: Icons.logout_rounded,

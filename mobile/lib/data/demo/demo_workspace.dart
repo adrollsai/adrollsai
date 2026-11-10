@@ -34,6 +34,8 @@ class DemoWorkspace implements WorkspaceSource {
             'Marketing focus: weekend-buyer leads from Bengaluru South.',
         assetCount: 14,
         taskCount: 3,
+        autoGenerate: true,
+        onLandingPage: true,
       ),
       (
         id: projectBluesquare,
@@ -48,6 +50,8 @@ class DemoWorkspace implements WorkspaceSource {
             'running a Diwali offer campaign.',
         assetCount: 22,
         taskCount: 4,
+        autoGenerate: false,
+        onLandingPage: true,
       ),
       (
         id: projectSarthak,
@@ -62,6 +66,8 @@ class DemoWorkspace implements WorkspaceSource {
             'strong; follow-up speed is the bottleneck.',
         assetCount: 9,
         taskCount: 2,
+        autoGenerate: false,
+        onLandingPage: false,
       ),
     ];
   }

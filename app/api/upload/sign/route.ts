@@ -3,10 +3,34 @@ import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  let supabase: any = await createClient()
+  let user = (await supabase.auth.getUser()).data.user
+
+  // Native clients (the Flutter app) hold no SSR cookies, so they send
+  // `Authorization: Bearer <supabase access token>`. Additive: the cookie path
+  // above is unchanged, and the bearer client carries the caller's own token so
+  // RLS still applies.
+  const authHeader = request.headers.get('authorization')
+  if (!user && authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7)
+    const bearerClient = createSupabaseAdmin(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+        auth: { persistSession: false, autoRefreshToken: false },
+      }
+    )
+    const { data } = await bearerClient.auth.getUser(token)
+    if (data?.user) {
+      user = data.user
+      supabase = bearerClient as any
+    }
+  }
+
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { fileName, fileType, folder, impersonateId } = await request.json()

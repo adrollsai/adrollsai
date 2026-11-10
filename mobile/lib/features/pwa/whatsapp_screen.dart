@@ -10,6 +10,7 @@ import '../../core/providers.dart';
 import '../../core/ui/media.dart';
 import '../../core/ui/navigation.dart';
 import '../../core/utils/format.dart';
+import '../../data/repositories/auth_repository.dart';
 import '../../data/models/comms.dart';
 import 'pwa_widgets.dart';
 
@@ -428,8 +429,11 @@ class _Empty extends StatelessWidget {
   }
 }
 
-/// A single WhatsApp conversation.
-class WhatsAppThreadScreen extends ConsumerWidget {
+/// A single WhatsApp conversation, with a working reply composer.
+///
+/// Sending goes through `POST /api/whatsapp/chat`, which performs the Meta Cloud
+/// API call and persists the outbound message, then the thread refreshes.
+class WhatsAppThreadScreen extends ConsumerStatefulWidget {
   const WhatsAppThreadScreen({
     required this.chatId,
     required this.title,
@@ -440,10 +444,51 @@ class WhatsAppThreadScreen extends ConsumerWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WhatsAppThreadScreen> createState() =>
+      _WhatsAppThreadScreenState();
+}
+
+class _WhatsAppThreadScreenState
+    extends ConsumerState<WhatsAppThreadScreen> {
+  final TextEditingController _input = TextEditingController();
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final String text = _input.text.trim();
+    if (text.isEmpty || _sending) return;
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(workspaceRepositoryProvider)
+          .sendWhatsAppText(chatId: widget.chatId, text: text);
+      _input.clear();
+      ref.invalidate(whatsappMessagesProvider(widget.chatId));
+      ref.invalidate(whatsappChatsProvider);
+      if (mounted) setState(() => _sending = false);
+    } on NoboFailure catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _sending = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
     final AsyncValue<List<WhatsAppMessage>> async = ref.watch(
-      whatsappMessagesProvider(chatId),
+      whatsappMessagesProvider(widget.chatId),
     );
     final List<WhatsAppMessage> messages =
         async.value ?? const <WhatsAppMessage>[];
@@ -458,7 +503,7 @@ class WhatsAppThreadScreen extends ConsumerWidget {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          title,
+          widget.title,
           style: NoboType.subtitle.copyWith(
             color: c.ink,
             fontSize: 16,
@@ -467,86 +512,230 @@ class WhatsAppThreadScreen extends ConsumerWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: <Widget>[
+          IconButton(
+            onPressed: () =>
+                ref.invalidate(whatsappMessagesProvider(widget.chatId)),
+            icon: Icon(Icons.refresh_rounded, color: c.inkSecondary),
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
-      body: async.isLoading
-          ? const PwaLoading(label: 'Loading conversation…')
-          : messages.isEmpty
-          ? Center(
-              child: Text(
-                'No messages in this conversation yet.',
-                style: NoboType.body.copyWith(color: c.inkSecondary),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.all(NoboSpace.base),
-              itemCount: messages.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 6),
-              itemBuilder: (BuildContext context, int i) {
-                final WhatsAppMessage m = messages[i];
-                final bool mine = !m.inbound;
-                return Align(
-                  alignment: mine
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    constraints: const BoxConstraints(maxWidth: 300),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: NoboSpace.md,
-                      vertical: 9,
-                    ),
-                    decoration: BoxDecoration(
-                      color: mine
-                          ? NoboBrand.whatsapp.withValues(alpha: 0.14)
-                          : c.surface,
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(NoboRadius.md),
-                        topRight: Radius.circular(NoboRadius.md),
-                        bottomLeft: Radius.circular(NoboRadius.md),
-                        bottomRight: Radius.circular(4),
-                      ),
-                      border: Border.all(color: c.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        if (m.text != null && m.text!.isNotEmpty)
-                          Text(
-                            m.text!,
-                            style: NoboType.body.copyWith(
-                              color: c.ink,
-                              fontSize: 14,
-                              height: 1.4,
-                            ),
-                          ),
-                        if (m.mediaUrl != null) ...<Widget>[
-                          const SizedBox(height: 6),
-                          Text(
-                            m.mediaType == 'image'
-                                ? '📷 Photo'
-                                : m.mediaType == 'video'
-                                ? '🎬 Video'
-                                : '📎 Attachment',
-                            style: NoboType.caption.copyWith(
-                              color: c.primary,
-                            ),
-                          ),
-                        ],
-                        if (m.at != null) ...<Widget>[
-                          const SizedBox(height: 3),
-                          Text(
-                            clockTime(m.at!),
-                            style: NoboType.caption.copyWith(
-                              color: c.inkTertiary,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      ],
+      body: Column(
+        children: <Widget>[
+          if (_error != null)
+            Container(
+              width: double.infinity,
+              color: c.dangerWash,
+              padding: const EdgeInsets.all(NoboSpace.md),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Icon(
+                    Icons.error_outline_rounded,
+                    size: 15,
+                    color: c.danger,
+                  ),
+                  const SizedBox(width: NoboSpace.sm),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: NoboType.caption.copyWith(color: c.danger),
                     ),
                   ),
-                );
-              },
+                  GestureDetector(
+                    onTap: () => setState(() => _error = null),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 15,
+                      color: c.danger,
+                    ),
+                  ),
+                ],
+              ),
             ),
+          Expanded(
+            child: async.isLoading
+                ? const PwaLoading(label: 'Loading conversation…')
+                : messages.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(NoboSpace.xl),
+                      child: Text(
+                        'No messages yet. Say hello below.',
+                        textAlign: TextAlign.center,
+                        style: NoboType.body.copyWith(
+                          color: c.inkSecondary,
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.all(NoboSpace.base),
+                    itemCount: messages.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
+                    itemBuilder: (BuildContext context, int i) =>
+                        _Bubble(message: messages[i]),
+                  ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              border: Border(top: BorderSide(color: c.border)),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              NoboSpace.gutter,
+              NoboSpace.sm,
+              NoboSpace.gutter,
+              NoboSpace.sm + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: NoboRadius.rPill,
+                      border: Border.all(color: c.border),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NoboSpace.base,
+                      vertical: 2,
+                    ),
+                    child: TextField(
+                      controller: _input,
+                      maxLines: 4,
+                      minLines: 1,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: NoboType.body.copyWith(
+                        color: c.ink,
+                        fontSize: 14.5,
+                      ),
+                      cursorColor: c.primary,
+                      onSubmitted: (_) => _send(),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 11,
+                        ),
+                        hintText: 'Message…',
+                        hintStyle: NoboType.body.copyWith(
+                          color: c.inkTertiary,
+                          fontSize: 14.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: NoboSpace.sm),
+                SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Material(
+                    color: _sending ? c.surfaceSunken : NoboBrand.whatsapp,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _sending ? null : _send,
+                      child: Center(
+                        child: _sending
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    c.inkTertiary,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                size: 19,
+                                color: Colors.white,
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Bubble extends StatelessWidget {
+  const _Bubble({required this.message});
+
+  final WhatsAppMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final NoboColors c = context.nobo;
+    final bool mine = !message.inbound;
+    return Align(
+      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 300),
+        padding: const EdgeInsets.symmetric(
+          horizontal: NoboSpace.md,
+          vertical: 9,
+        ),
+        decoration: BoxDecoration(
+          color: mine
+              ? NoboBrand.whatsapp.withValues(alpha: 0.14)
+              : c.surface,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(NoboRadius.md),
+            topRight: Radius.circular(NoboRadius.md),
+            bottomLeft: Radius.circular(NoboRadius.md),
+            bottomRight: Radius.circular(4),
+          ),
+          border: Border.all(color: c.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            if (message.text != null && message.text!.isNotEmpty)
+              Text(
+                message.text!,
+                style: NoboType.body.copyWith(
+                  color: c.ink,
+                  fontSize: 14,
+                  height: 1.4,
+                ),
+              ),
+            if (message.mediaUrl != null) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                message.mediaType == 'image'
+                    ? '?? Photo'
+                    : message.mediaType == 'video'
+                    ? '?? Video'
+                    : '?? Attachment',
+                style: NoboType.caption.copyWith(color: c.primary),
+              ),
+            ],
+            if (message.at != null) ...<Widget>[
+              const SizedBox(height: 3),
+              Text(
+                clockTime(message.at!),
+                style: NoboType.caption.copyWith(
+                  color: c.inkTertiary,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

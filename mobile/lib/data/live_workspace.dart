@@ -39,6 +39,8 @@ class LiveWorkspace implements WorkspaceSource {
             description: p.description,
             assetCount: perProject[p.id] ?? 0,
             taskCount: 0,
+            autoGenerate: p.autoGenerate,
+            onLandingPage: p.showOnLandingPage,
           ),
         )
         .toList(growable: false);

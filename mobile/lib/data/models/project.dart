@@ -20,6 +20,7 @@ class NoboProject {
     required this.createdAt,
     required this.metaCampaignStatus,
     required this.autoGenerate,
+    required this.showOnLandingPage,
   });
 
   final String id;
@@ -34,6 +35,7 @@ class NoboProject {
   final DateTime? createdAt;
   final String? metaCampaignStatus;
   final bool autoGenerate;
+  final bool showOnLandingPage;
 
   /// Cover image: explicit cover first, then the first gallery image.
   String? get coverUrl {
@@ -70,6 +72,7 @@ class NoboProject {
       createdAt: jDate(json['created_at']),
       metaCampaignStatus: jStr(json['meta_campaign_status']),
       autoGenerate: jBool(json['auto_generate']),
+      showOnLandingPage: jBool(json['show_on_landing_page'], fallback: true),
     );
   }
 }

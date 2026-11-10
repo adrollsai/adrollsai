@@ -192,5 +192,31 @@ class NoboHttp {
         .timeout(timeout);
   }
 
+  /// Uploads raw bytes to a presigned storage URL (R2/S3).
+  ///
+  /// Deliberately does **not** send the app's auth headers: the presigned URL
+  /// carries its own signature, and adding an Authorization header invalidates
+  /// that signature on S3-compatible storage.
+  Future<void> putBytes(
+    String url,
+    List<int> bytes, {
+    required String contentType,
+  }) async {
+    final http.Response res = await _client
+        .put(
+          Uri.parse(url),
+          headers: <String, String>{'Content-Type': contentType},
+          body: bytes,
+        )
+        .timeout(const Duration(minutes: 2));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw NoboFailure(
+        NoboFailureKind.server,
+        'The file could not be uploaded.',
+        detail: 'PUT ${res.statusCode}',
+      );
+    }
+  }
+
   void dispose() => _client.close();
 }
