@@ -3,6 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import { streamText, convertToModelMessages } from 'ai';
 import { getAgentModel } from '@/lib/agent/deepseek';
 import { createAgentContext } from '@/lib/agent/orchestrator';
+import { AGENT_MODEL } from '@/lib/agent/models';
+import { startUsageMeter, settleUsage } from '@/lib/agent/usage';
 import { google } from '@ai-sdk/google';
 import { isAvailable, setSessionStatus, appendEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
@@ -170,9 +172,14 @@ export async function POST(req: Request) {
     // outlive the request (see clampToTurnBudget).
     setTurnDeadline(Date.now());
 
+    // Metered usage for this turn: model tokens per step, sandbox seconds and
+    // media calls attributed by the tools themselves. Settled once at the end.
+    const usageMeter = startUsageMeter();
+
     // Step callbacks shared by the primary model and the Gemini fallback, so a
     // fallback turn is logged exactly like a normal one.
     const onStepFinish = async (step: any) => {
+      try { usageMeter?.addModelUsage(AGENT_MODEL, step?.usage); } catch {}
       if (step?.toolCalls?.length) {
         console.log('[Nobo Agent Step Tools]:', step.toolCalls.map((t: any) => t.toolName).join(', '));
       }
@@ -186,6 +193,8 @@ export async function POST(req: Request) {
       if (!sessionId) return;
       await setSessionStatus(supabase, sessionId, 'idle');
       clearTurnDeadline();
+      // Charge measured usage at 2x margin (model tokens, sandbox seconds, media).
+      void settleUsage(supabase as any, targetUserId, usageMeter, 'Agent turn');
 
       // Did we cut this turn off with work left, or did the model finish?
       // `finishReason` describes only the last step, so the explicit tracker is

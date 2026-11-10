@@ -9,6 +9,7 @@ import {
 } from '@/utils/external-apis';
 import { ensureMp3AudioBuffer } from '@/utils/audio-converter';
 import { uploadBufferToR2 } from '../sandbox';
+import { meterOf } from '../usage';
 
 /**
  * Media generation tools: the same models the Nobogent app itself uses, exposed
@@ -276,6 +277,9 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
             console.warn(`[Media Studio] MP3 normalise failed, using raw URL: ${convErr?.message || convErr}`);
           }
 
+          try {
+            meterOf()?.addMedia('tts', spoken.length / 1000, `${voice} voice`);
+          } catch {}
           const asset = await saveAsset({
             title: title || `Voiceover: ${spoken.slice(0, 40)}`,
             type: 'audio',
@@ -383,6 +387,8 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
           }
 
           const videoUrl = await mirrorToR2(rawUrl, `grok_${mode}_${Date.now()}.mp4`, userId);
+          // Bill the clip: Grok Imagine is by far our most expensive per-call model.
+          try { meterOf()?.addMedia(`grok-video:${resolution}`, duration); } catch {}
           const asset = await saveAsset({
             title: baseTitle,
             type: 'video',
@@ -467,6 +473,7 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
             };
           }
 
+          try { meterOf()?.addMedia('image', 1); } catch {}
           const imageUrl = await mirrorToR2(rawUrl, `ai_image_${Date.now()}.png`, userId);
           const asset = await saveAsset({
             title: title || `AI Image: ${text.slice(0, 40)}`,

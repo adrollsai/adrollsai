@@ -2,6 +2,7 @@ import { Sandbox } from '@e2b/code-interpreter';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { remainingTurnBudgetMs } from './turn-limits';
+import { meterOf } from './usage';
 import path from 'path';
 import fs from 'fs';
 
@@ -505,6 +506,7 @@ export async function executeInE2BSandbox(options: {
       // a long render/matte pass can never be paused out from under itself.
       // The timeout is then clamped so the command cannot outlive the turn.
       const effectiveTimeoutMs = clampToTurnBudget(timeoutMs);
+      const commandStartedAt = Date.now();
       touchSandbox(userId, effectiveTimeoutMs + 120_000);
       beginSandboxCommand(userId);
       let result: any;
@@ -513,6 +515,11 @@ export async function executeInE2BSandbox(options: {
           timeoutMs: effectiveTimeoutMs,
         });
       } finally {
+        // Bill the compute this command actually consumed.
+        try {
+          const meter = meterOf();
+          if (meter) meter.addSandboxSeconds((Date.now() - commandStartedAt) / 1000);
+        } catch {}
         endSandboxCommand(userId);
         touchSandbox(userId);
       }

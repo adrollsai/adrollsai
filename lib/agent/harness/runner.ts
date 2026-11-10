@@ -25,6 +25,8 @@ import { project, itemsToModelMessages } from './projection';
 import { isCancelRequested, nextBackoffMs, saveCheckpoint, type HarnessRun } from './runs';
 import { wrapToolsWithIdempotency, countToolOccurrences, UnsafeToRetryError } from './idempotency';
 import { maybeCompact } from './compaction';
+import { startUsageMeter, settleUsage } from '../usage';
+import { AGENT_MODEL } from '../models';
 
 export interface SliceOptions {
   worker: string;
@@ -160,6 +162,8 @@ export async function executeRunSlice(
 
   let steps = 0;
   let cancelled = false;
+  // Meter this slice's model tokens, sandbox seconds and media calls.
+  const usageMeter = startUsageMeter();
 
   try {
     const result = await generateText({
@@ -180,6 +184,7 @@ export async function executeRunSlice(
       ],
       onStepFinish: async (step: any) => {
         steps++;
+        try { usageMeter?.addModelUsage(AGENT_MODEL, step?.usage); } catch {}
         try {
           await persistStep(supabase, run.session_id, step);
         } catch (err: any) {
@@ -262,5 +267,10 @@ export async function executeRunSlice(
     return { status: 'dead', steps, error: message, incrementAttempt: true };
   } finally {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
+    // Charge this slice's measured usage at 2x margin. Runs in `finally` so a
+    // slice that fails or is cancelled is still billed for what it consumed.
+    try {
+      await settleUsage(supabase as any, run.user_id, usageMeter, `Agent run slice ${sliceNumber}`);
+    } catch {}
   }
 }

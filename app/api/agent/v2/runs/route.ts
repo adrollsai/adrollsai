@@ -73,6 +73,29 @@ export async function POST(req: Request) {
     createEvent('run.status', { status: 'queued', detail: 'Queued for background execution.' }),
   ]);
 
+  // Kick the worker now instead of waiting for the next cron tick.
+  //
+  // Cron only fires once a minute, so a freshly queued run could sit idle for up
+  // to 60s and feel broken. Fire-and-forget on purpose: the run is already
+  // durable, so if this call is rejected the cron still picks it up.
+  try {
+    const base =
+      (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '') ||
+      (process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : '');
+    const secret = process.env.CRON_SECRET || '';
+    if (base && secret) {
+      void fetch(`${base}/api/cron/harness-runner?maxSteps=200`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${secret}` },
+        signal: AbortSignal.timeout(2_000),
+      }).catch(() => {});
+    }
+  } catch {
+    /* non-fatal: the cron sweeps the queue every minute */
+  }
+
   return NextResponse.json({ run: toSummary(run) }, { status: 202 });
 }
 
