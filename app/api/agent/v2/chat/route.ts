@@ -21,7 +21,7 @@ import {
 // Must stay a literal: Next reads route segment config by static analysis, so
 // importing a constant here would be silently ignored. Keep in sync with
 // CHAT_MAX_DURATION in lib/agent/turn-limits.ts.
-export const maxDuration = 300;
+export const maxDuration = 1800;
 
 export async function POST(req: Request) {
   try {

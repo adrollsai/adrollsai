@@ -17,7 +17,7 @@
 import { stepCountIs } from 'ai';
 
 /** Route segment config value — import it, never hardcode 60 again. */
-export const CHAT_MAX_DURATION = 300;
+export const CHAT_MAX_DURATION = 1800;
 
 /**
  * Why a turn stopped.
@@ -79,17 +79,22 @@ function resolveTurnBudgetMs(): number {
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
     console.warn(`[turn-limits] ignoring invalid AGENT_TURN_BUDGET_MS="${raw}"`);
   }
-  // 230s, not 275s: the request is killed at maxDuration=300s, and the last step
-  // needs room to finish, stop cleanly and enqueue the continuation. 25s of
-  // headroom was not enough when a tool call overran.
-  return 230_000;
+  // 1700s (28m20s), inside the 1800s ceiling Vercel Fluid compute allows on Pro,
+  // with headroom for the final step to finish, stop cleanly and enqueue the
+  // continuation.
+  //
+  // This is a per-REQUEST limit, NOT the agent's limit. Work that outlives one
+  // request is continued by the durable run queue (lib/agent/harness/runner.ts),
+  // which chains checkpointed slices until the task's deadline — so a task can
+  // run for hours even though no single HTTP request can.
+  return 1_700_000;
 }
 
 export const TURN_BUDGET_MS = resolveTurnBudgetMs();
 
 /** Model steps allowed in one turn (was 10 — far too low for real tasks). */
 export const MAX_STEPS_PER_TURN = Number(
-  (process.env.AGENT_MAX_STEPS || '').replace(/^["']|["']$/g, '').trim() || 60
+  (process.env.AGENT_MAX_STEPS || '').replace(/^["']|["']$/g, '').trim() || 150
 );
 
 /**

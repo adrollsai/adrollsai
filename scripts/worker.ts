@@ -14,7 +14,7 @@
  *   WORKER_LEASE_SECONDS  lease length                (default 300)
  *   WORKER_MAX_PER_USER   concurrent runs per user    (default 2)
  *   WORKER_MAX_TOTAL      concurrent runs overall     (default 8)
- *   WORKER_SLICE_BUDGET_MS  per-slice wall clock      (default 240000)
+ *   WORKER_SLICE_BUDGET_MS  per-slice wall clock      (default 1500000)
  *   WORKER_SLICE_MAX_STEPS  per-slice step cap        (default 30)
  *
  * SIGINT/SIGTERM stop it cleanly: it finishes the slice in flight (so the
@@ -37,7 +37,7 @@ const POLL_MS = int('WORKER_POLL_MS', 2000);
 const LEASE_SECONDS = int('WORKER_LEASE_SECONDS', 300);
 const MAX_PER_USER = int('WORKER_MAX_PER_USER', 2);
 const MAX_TOTAL = int('WORKER_MAX_TOTAL', 8);
-const SLICE_BUDGET_MS = int('WORKER_SLICE_BUDGET_MS', 240_000);
+const SLICE_BUDGET_MS = int('WORKER_SLICE_BUDGET_MS', 1_500_000);
 const SLICE_MAX_STEPS = int('WORKER_SLICE_MAX_STEPS', 30);
 
 const WORKER_ID = `worker-${process.pid.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

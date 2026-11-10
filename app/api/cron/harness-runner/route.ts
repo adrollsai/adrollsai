@@ -16,12 +16,12 @@ import { cronAuthGuard } from '@/lib/agent/harness/cron-auth';
  * lease: overlapping cron invocations never take the same run, and a worker
  * that dies mid-slice has its run reclaimed once the lease expires.
  */
-export const maxDuration = 300;
+export const maxDuration = 1800;
 
 /** Leave headroom under maxDuration so we always finish and release leases. */
-const WORKER_BUDGET_MS = 260_000;
+const WORKER_BUDGET_MS = 1_740_000;
 /** One slice stops well before the worker does, so its checkpoint is safe. */
-const DEFAULT_SLICE_BUDGET_MS = 220_000;
+const DEFAULT_SLICE_BUDGET_MS = 1_700_000;
 const DEFAULT_SLICE_MAX_STEPS = 30;
 const LEASE_SECONDS = 300;
 
