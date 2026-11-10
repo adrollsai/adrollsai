@@ -6,6 +6,7 @@ import '../data/demo/demo_workspace.dart';
 import '../data/live_workspace.dart';
 import '../data/local/session_repository.dart';
 import '../data/models/agent.dart';
+import '../data/models/comms.dart';
 import '../data/models/profile.dart';
 import '../data/remote/nobo_http.dart';
 import '../data/repositories/agent_repository.dart';
@@ -256,6 +257,61 @@ final assetsForProjectProvider =
       if (id == null) return all;
       return all.where((AssetSeed a) => a.projectId == id).toList();
     }, name: 'assetsForProject');
+
+// ---------------------------------------------------------------------------
+// Ads and communications
+// ---------------------------------------------------------------------------
+
+final FutureProvider<List<NoboCampaign>> campaignsProvider =
+    FutureProvider<List<NoboCampaign>>((Ref ref) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <NoboCampaign>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).campaigns();
+    }, name: 'campaigns');
+
+final FutureProvider<List<WhatsAppChat>> whatsappChatsProvider =
+    FutureProvider<List<WhatsAppChat>>((Ref ref) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <WhatsAppChat>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).whatsappChats();
+    }, name: 'whatsappChats');
+
+final FutureProvider<List<WhatsAppBroadcast>> broadcastsProvider =
+    FutureProvider<List<WhatsAppBroadcast>>((Ref ref) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <WhatsAppBroadcast>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).whatsappBroadcasts();
+    }, name: 'broadcasts');
+
+final FutureProvider<List<WhatsAppFlow>> whatsappFlowsProvider =
+    FutureProvider<List<WhatsAppFlow>>((Ref ref) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <WhatsAppFlow>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).whatsappFlows();
+    }, name: 'whatsappFlows');
+
+final FutureProvider<List<NoboCallLog>> callLogsProvider =
+    FutureProvider<List<NoboCallLog>>((Ref ref) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <NoboCallLog>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).callLogs();
+    }, name: 'callLogs');
+
+final whatsappMessagesProvider =
+    FutureProvider.family<List<WhatsAppMessage>, String>((
+      Ref ref,
+      String chatId,
+    ) {
+      if (ref.watch(demoModeProvider)) {
+        return Future.value(const <WhatsAppMessage>[]);
+      }
+      return ref.watch(workspaceRepositoryProvider).whatsappMessages(chatId);
+    }, name: 'whatsappMessages');
 
 // ---------------------------------------------------------------------------
 // Task sessions

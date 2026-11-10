@@ -173,3 +173,22 @@ Recorded because they affect reproducing this build:
 | Biometric authentication | Supabase has no device-biometric factor; would need `local_auth` guarding the persisted session. Straightforward follow-up, not a blocker |
 | Deep-link routing beyond auth callbacks | Link targets for sessions/assets do not exist server-side |
 | Offline mutations queue | Reads degrade honestly; writes require connectivity |
+
+---
+
+## 11. Status update — all destinations implemented
+
+The four destinations that were placeholders now read live data:
+
+| Screen | Implementation |
+|---|---|
+| **AI Ads Manager** | Real `campaigns` rows: name, status pill, budget with cadence, schedule, Meta campaign id, with Active/Paused filters and summary tiles. Campaign creation/optimisation hands off to the web app. |
+| **WhatsApp Portal** | Three tabs over live data — Chats (the real conversation inbox with unread counts and last message), Broadcasts (`whatsapp_broadcasts` with template and delivery status), Flows (`whatsapp_flows` with active state). Tapping a chat opens the full message thread. |
+| **GBP Suite** | Workspace context plus the real tool list (Posts, Reviews, Photos, Keywords, Geotagging). The tools themselves drive Google APIs and stay in the web app; each row hands off there. |
+| **GBP Audit** | Explains what the audit measures and hands off to the web app, which renders the map heatmap. `gbp_audit_*` tables are empty for this workspace, so there is nothing to list yet. |
+
+Still true and unchanged:
+- Two-way in-app VoIP audio is not ported; the call is placed, recorded and
+  transcribed server-side, and the sheet offers the device dialer for talking.
+- Ads creation, GBP actions and the audit run remain web-app flows.
+- iOS is configured but unbuilt (no macOS).

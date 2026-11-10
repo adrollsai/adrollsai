@@ -10,9 +10,12 @@ import '../core/platform/nobo_platform.dart';
 import '../core/providers.dart';
 import '../core/ui/navigation.dart';
 import '../features/auth/login_screen.dart';
+import '../features/pwa/ads_screen.dart';
 import '../features/pwa/agent_screen.dart';
 import '../features/pwa/creation_screen.dart';
+import '../features/pwa/gbp_screens.dart';
 import '../features/pwa/notifications_screen.dart';
+import '../features/pwa/whatsapp_screen.dart';
 import '../features/create/session_screen.dart';
 import '../features/crm/crm_screen.dart';
 import '../features/crm/lead_screen.dart';
@@ -45,6 +48,7 @@ abstract final class Routes {
   static String project(String id) => '/project/$id';
   static String lead(String id) => '/lead/$id';
   static String media(String url) => '/media?src=${Uri.encodeComponent(url)}';
+  static String whatsappChat(String id) => '/whatsapp/chat/$id';
 }
 
 /// Wraps a screen in the platform's own page transition: Cupertino's horizontal
@@ -111,52 +115,11 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
           _branch(Routes.nobogent, const AgentScreen()),
           _branch(Routes.catalog, const CatalogScreen()),
           _branch(Routes.creation, const CreationScreen()),
-          _branch(
-            Routes.ads,
-            const WebToolScreen(
-              title: 'AI Ads Manager',
-              subtitle: 'Launch and optimise Meta campaigns',
-              icon: Icons.bolt_rounded,
-              body:
-                  'Campaign creation, audience building and ad optimisation '
-                  'stay in the web app for now, where the full Meta Ads flow '
-                  'lives.',
-            ),
-          ),
+          _branch(Routes.ads, const AdsScreen()),
           _branch(Routes.crm, const CrmScreen()),
-          _branch(
-            Routes.whatsapp,
-            const WebToolScreen(
-              title: 'WhatsApp Portal',
-              subtitle: 'Broadcasts, templates and the chat inbox',
-              icon: Icons.chat_bubble_rounded,
-              body:
-                  'The WhatsApp portal handles template approval and broadcast '
-                  'sending in the web app.',
-            ),
-          ),
-          _branch(
-            Routes.gbp,
-            const WebToolScreen(
-              title: 'GBP Suite',
-              subtitle: 'Google Business Profile optimisation',
-              icon: Icons.place_rounded,
-              body:
-                  'Posts, reviews, keywords and geotagging for your Google '
-                  'Business Profile live in the web app.',
-            ),
-          ),
-          _branch(
-            Routes.gbpAudit,
-            const WebToolScreen(
-              title: 'GBP Audit',
-              subtitle: 'Local rank heatmap and profile audit',
-              icon: Icons.travel_explore_rounded,
-              body:
-                  'The free profile audit and local rank heatmap run in the '
-                  'web app.',
-            ),
-          ),
+          _branch(Routes.whatsapp, const WhatsAppScreen()),
+          _branch(Routes.gbp, const GbpScreen()),
+          _branch(Routes.gbpAudit, const GbpAuditScreen()),
           _branch(Routes.assets, const AssetsScreen()),
           _branch(Routes.profile, const ProfileScreen()),
         ],
@@ -187,6 +150,17 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
             _noboPage<void>(
               state: state,
               child: const NotificationsScreen(),
+            ),
+      ),
+      GoRoute(
+        path: '/whatsapp/chat/:id',
+        pageBuilder: (BuildContext context, GoRouterState state) =>
+            _noboPage<void>(
+              state: state,
+              child: WhatsAppThreadScreen(
+                chatId: state.pathParameters['id']!,
+                title: state.uri.queryParameters['name'] ?? 'Conversation',
+              ),
             ),
       ),
       GoRoute(

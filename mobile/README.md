@@ -19,7 +19,11 @@ in Flutter with platform-native navigation, controls and motion.
 | **Task session** | `SessionScreen` | Watch the agent work step by step, approve actions, review artifacts |
 | **Projects** | `ProjectsScreen` / `ProjectScreen` | Browse projects (backend `properties`), their assets and tasks |
 | **Inbox** | `InboxScreen` | Clear approvals and agent questions; read workspace updates |
-| **Business / CRM** | `CrmScreen` / `LeadScreen` | Work leads: call, WhatsApp, move stage, log follow-ups |
+| **Business / CRM** | `CrmScreen` / `LeadScreen` | Work leads: call, VoIP (super admin), WhatsApp, move stage, log follow-ups |
+| **Ads** | `AdsScreen` | Live Meta campaigns with budget, status and schedule |
+| **WhatsApp** | `WhatsAppScreen` | Real conversation inbox, broadcasts and automations |
+| **GBP Suite / Audit** | `GbpScreen` / `GbpAuditScreen` | Google Business Profile tools, with hand-off to the web app |
+| **Notifications** | `NotificationsScreen` | Alerts with unread state and mark-all-read |
 | **Settings** | `SettingsScreen` | Account, workspace, light/dark appearance, sign out |
 
 ---

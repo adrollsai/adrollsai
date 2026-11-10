@@ -5,10 +5,13 @@ import 'package:nobogent_mobile/core/ui/navigation.dart';
 import 'package:nobogent_mobile/features/pwa/agent_screen.dart';
 import 'package:nobogent_mobile/features/crm/crm_screen.dart';
 import 'package:nobogent_mobile/features/pwa/analytics_screen.dart';
+import 'package:nobogent_mobile/features/pwa/ads_screen.dart';
 import 'package:nobogent_mobile/features/pwa/assets_screen.dart';
+import 'package:nobogent_mobile/features/pwa/gbp_screens.dart';
 import 'package:nobogent_mobile/features/pwa/catalog_screen.dart';
 import 'package:nobogent_mobile/features/pwa/creation_screen.dart';
 import 'package:nobogent_mobile/features/pwa/notifications_screen.dart';
+import 'package:nobogent_mobile/features/pwa/whatsapp_screen.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -25,6 +28,10 @@ void main() {
         (name: 'Creation', build: CreationScreen.new),
         (name: 'Nobogent', build: AgentScreen.new),
         (name: 'Notifications', build: NotificationsScreen.new),
+        (name: 'Ads', build: AdsScreen.new),
+        (name: 'WhatsApp', build: WhatsAppScreen.new),
+        (name: 'GBP Suite', build: GbpScreen.new),
+        (name: 'GBP Audit', build: GbpAuditScreen.new),
       ];
 
   for (final ({String name, Widget Function() build}) screen in screens) {

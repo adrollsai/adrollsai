@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/asset.dart';
+import '../models/comms.dart';
 import '../models/inbox_item.dart';
 import '../models/lead.dart';
 import '../models/profile.dart';
@@ -271,6 +272,98 @@ class WorkspaceRepository {
         'callUuid': callUuid,
         if (leadId != null) 'leadId': leadId,
       });
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Ads, WhatsApp and call data
+  //
+  // Same rule as everywhere else: filter `user_id` explicitly, because the core
+  // tables' RLS is permissive. `whatsapp_messages` has no user_id column, so it
+  // is scoped through its parent chat (whose RLS *is* genuinely owner-based).
+  // ---------------------------------------------------------------------
+
+  Future<List<NoboCampaign>> campaigns() async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('campaigns')
+          .select()
+          .eq('user_id', _uid)
+          .order('created_at', ascending: false)
+          .limit(100);
+      return rows.map(NoboCampaign.fromJson).toList(growable: false);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<List<WhatsAppChat>> whatsappChats() async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('whatsapp_chats')
+          .select()
+          .eq('user_id', _uid)
+          .order('updated_at', ascending: false)
+          .limit(200);
+      return rows.map(WhatsAppChat.fromJson).toList(growable: false);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<List<WhatsAppMessage>> whatsappMessages(String chatId) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('whatsapp_messages')
+          .select()
+          .eq('chat_id', chatId)
+          .order('created_at', ascending: true)
+          .limit(300);
+      return rows.map(WhatsAppMessage.fromJson).toList(growable: false);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<List<WhatsAppBroadcast>> whatsappBroadcasts() async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('whatsapp_broadcasts')
+          .select()
+          .eq('user_id', _uid)
+          .order('created_at', ascending: false)
+          .limit(100);
+      return rows.map(WhatsAppBroadcast.fromJson).toList(growable: false);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<List<WhatsAppFlow>> whatsappFlows() async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('whatsapp_flows')
+          .select()
+          .eq('user_id', _uid)
+          .order('created_at', ascending: false)
+          .limit(200);
+      return rows.map(WhatsAppFlow.fromJson).toList(growable: false);
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  Future<List<NoboCallLog>> callLogs({int limit = 100}) async {
+    try {
+      final List<Map<String, dynamic>> rows = await _db
+          .from('call_logs')
+          .select()
+          .eq('user_id', _uid)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return rows.map(NoboCallLog.fromJson).toList(growable: false);
     } catch (e) {
       throw mapError(e);
     }
