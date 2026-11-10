@@ -15,11 +15,19 @@ import 'router.dart';
 /// One token set, two themes, two navigation bars. Everything below this point
 /// decides its own layout per platform, but never its own colours.
 class NoboApp extends ConsumerWidget {
-  const NoboApp({super.key});
+  const NoboApp({this.bootAnimation, super.key});
+
+  /// The cold-start clock owned by [NoboRoot], so the splash drawn while the app
+  /// was still initialising carries on into the fade instead of restarting.
+  final Animation<double>? bootAnimation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ThemeMode mode = ref.watch(themeModeProvider);
+    // Watched here rather than inside the gate so the splash widget stays free
+    // of any dependency on the boot sequence.
+    final bool booted =
+        ref.watch(noboBootPhaseProvider) == NoboBootPhase.ready;
 
     return MaterialApp.router(
       title: 'Nobogent',
@@ -71,6 +79,8 @@ class NoboApp extends ConsumerWidget {
               child: Material(
                 type: MaterialType.transparency,
                 child: NoboBootGate(
+                  animation: bootAnimation,
+                  ready: booted,
                   child: child ?? const SizedBox.shrink(),
                 ),
               ),

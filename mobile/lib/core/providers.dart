@@ -104,6 +104,39 @@ final NotifierProvider<ThemeModeController, ThemeMode> themeModeProvider =
     );
 
 // ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+
+/// How far a cold start has got.
+///
+/// The app paints before it is initialised — the splash is on screen while
+/// credentials, preferences and the backend are still being wired up — so
+/// "the UI exists" and "the app is usable" are two different moments.
+enum NoboBootPhase {
+  /// Flutter is painting, but the data layer may not be ready to serve a query.
+  starting,
+
+  /// Everything the first screen needs is in place; the splash may lift.
+  ready,
+}
+
+/// Owns [NoboBootPhase]. The boot sequence drives it; the splash gate reads it.
+class NoboBootController extends Notifier<NoboBootPhase> {
+  @override
+  NoboBootPhase build() => NoboBootPhase.starting;
+
+  void markReady() {
+    if (state != NoboBootPhase.ready) state = NoboBootPhase.ready;
+  }
+}
+
+final NotifierProvider<NoboBootController, NoboBootPhase> noboBootPhaseProvider =
+    NotifierProvider<NoboBootController, NoboBootPhase>(
+      NoboBootController.new,
+      name: 'bootPhase',
+    );
+
+// ---------------------------------------------------------------------------
 // Session / account
 // ---------------------------------------------------------------------------
 

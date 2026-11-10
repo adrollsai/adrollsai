@@ -166,11 +166,56 @@ inverted.
 | Concern | Approach |
 |---|---|
 | Media | `cached_network_image` with `memCacheWidth`; video via `video_player` (hardware decode), never on the UI thread |
-| Startup | First frame never awaits the network; Supabase session restore resolves after `runApp` and the UI shows a branded state |
+| Startup | `runApp` is called before anything is awaited, so the animated splash paints on the first frame and `Supabase.initialize`, preferences and storage paths resolve underneath it |
 | Lists | `SliverList` / `SliverGrid` builders — no `shrinkWrap` scrolling lists in the hot path |
 | Rebuild scope | Riverpod selectors and per-widget `watch`; the streaming transcript updates one message, not the whole screen |
 | Release size | R8 minify + resource shrink on; media streamed, never bundled |
 | Offline | Typed `NoboFailureKind.offline` surfaces a specific message instead of a generic error; session transcripts work offline |
+
+---
+
+## Cold start
+
+A launch has three visible phases, and only one of them is under the app's
+control:
+
+| Phase | What draws it | Duration |
+|---|---|---|
+| 1. Window background | The OS, from `launch_background.xml` | Until Flutter's first frame |
+| 2. Animated splash | `NoboBootSplash`, looping | Until the data layer is ready |
+| 3. The app | The router's first screen | Rest of the session |
+
+Phase 1 cannot animate — the system draws a static drawable before any Dart
+runs. So phase 2 is made to start from exactly the still image phase 1 ends on:
+the finished lockup on the brand's white plate. The eye reads one continuous
+image that then comes alive, instead of a logo that appears, freezes, and is
+replaced by an unrelated animation.
+
+`main()` therefore awaits nothing before `runApp`. `NoboRoot` owns the cold
+start: it paints the splash immediately, does the slow work (storage paths,
+preferences, Supabase) underneath, and calls
+`noboBootPhaseProvider.markReady()` when it is done. The splash repeats one
+dissolve-and-rebuild cycle for as long as that takes, which is seamless because
+both ends of the cycle are the same finished lockup — the intro is an idle
+state, not a one-shot that a slow start can outlast. A floor of 1.7 s means the
+animation is always seen once, and a 12 s valve means a cold start can never
+trap someone behind a logo. Tapping the splash skips it outright.
+
+The same clock is handed to `NoboBootGate` inside `NoboApp`, so the hand-off from
+"booting" to "running, splash fading" is one uninterrupted animation rather than
+a restart.
+
+---
+
+## Loading states
+
+Waiting is where an app looks most generic, so it is branded: `NoboMarkLoader`
+draws the same mark geometry as the splash and the app icon, with a highlight
+travelling the ring arc and the satellite orbiting the core. It replaces
+`CircularProgressIndicator` everywhere — panel loads via `PwaLoading`, inline
+button and tool-row spinners via the `size` parameter. It honours reduced
+motion by holding a static frame, and it is cheap enough to run per row (no
+blur, no shadows, no image assets).
 
 ---
 

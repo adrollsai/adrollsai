@@ -11,6 +11,7 @@ import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
 import '../../core/ui/agent_widgets.dart';
 import '../../core/ui/controls.dart';
+import '../../core/ui/nobo_mark_loader.dart';
 import '../../core/ui/orbit_mark.dart';
 import '../../core/ui/refresh.dart';
 import '../../core/ui/surfaces.dart';
@@ -291,15 +292,10 @@ class _Composer extends StatelessWidget {
                     onTap: enabled && !sending ? onSend : null,
                     child: Center(
                       child: sending
-                          ? SizedBox(
-                              width: 15,
-                              height: 15,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  c.onPrimary,
-                                ),
-                              ),
+                          ? NoboMarkLoader(
+                              size: 15,
+                              color: c.onPrimary,
+                              semanticLabel: 'Sending',
                             )
                           : Icon(
                               Icons.arrow_upward_rounded,

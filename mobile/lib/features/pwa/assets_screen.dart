@@ -219,7 +219,7 @@ class _AssetsScreenState extends ConsumerState<AssetsScreen> {
           if (async.isLoading)
             const Padding(
               padding: EdgeInsets.only(top: NoboSpace.huge),
-              child: SizedBox(height: 180, child: PwaLoading(label: 'Loading galleryÃ¢â‚¬Â¦')),
+              child: SizedBox(height: 180, child: PwaLoading(label: 'Loading gallery…')),
             )
           else if (items.isEmpty)
             Padding(

@@ -8,6 +8,7 @@ import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
 import '../../core/ui/adaptive.dart';
 import '../../core/ui/media.dart';
+import '../../core/ui/nobo_mark_loader.dart';
 import '../../data/repositories/auth_repository.dart';
 
 enum _CallState { idle, dialing, ringing, failed }
@@ -173,14 +174,7 @@ class _VoipSheetState extends State<_VoipSheet> {
           ),
           const SizedBox(height: NoboSpace.base),
           if (busy)
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(c.primary),
-              ),
-            ),
+            NoboMarkLoader(size: 18, color: c.primary, semanticLabel: 'Calling'),
           const SizedBox(height: NoboSpace.sm),
           Text(
             _status,

@@ -4,6 +4,7 @@ import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/platform/nobo_platform.dart';
+import '../../core/ui/nobo_mark_loader.dart';
 
 /// Reusable pieces that reproduce the web app's component vocabulary.
 ///
@@ -132,13 +133,10 @@ class PwaPrimaryButton extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
         if (loading)
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(fg),
-            ),
+          NoboMarkLoader(
+            size: 17,
+            color: fg,
+            semanticLabel: '$label, working',
           )
         else if (icon != null)
           Icon(icon, size: 18, color: fg),
@@ -614,7 +612,10 @@ class PwaSelect extends StatelessWidget {
   }
 }
 
-/// Full-screen loader with the web app's grey spinner and caption.
+/// Full-screen loader: the Nobogent mark in motion with a caption beneath.
+///
+/// Every screen that waits on the network uses this, so a slow query looks like
+/// this product thinking rather than like a generic spinner.
 class PwaLoading extends StatelessWidget {
   const PwaLoading({this.label = 'Loading…', super.key});
 
@@ -622,29 +623,6 @@ class PwaLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final NoboColors c = context.nobo;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          SizedBox(
-            width: 26,
-            height: 26,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.4,
-              valueColor: AlwaysStoppedAnimation<Color>(c.borderStrong),
-            ),
-          ),
-          const SizedBox(height: NoboSpace.base),
-          Text(
-            label,
-            style: NoboType.body.copyWith(
-              color: c.inkTertiary,
-              fontSize: 14,
-            ),
-          ),
-        ],
-      ),
-    );
+    return NoboMarkLoading(label: label);
   }
 }

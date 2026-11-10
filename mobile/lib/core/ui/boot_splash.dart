@@ -29,6 +29,15 @@ abstract final class NoboSplashTiming {
   /// The same length in seconds, which is what every beat below is measured in.
   static const double total = totalMs / 1000.0;
 
+  /// One full "dissolve and rebuild" pass, in milliseconds.
+  ///
+  /// This is [fadeStart] — the point where the lockup is whole again and only
+  /// the fade-out remains. A loop that wraps here is seamless by construction:
+  /// the frame at 0 and the frame at [loop] are the same finished lockup, so the
+  /// splash can repeat for as long as a cold start takes without a visible jump.
+  static const int loopMs = 1580;
+  static const double loop = loopMs / 1000.0;
+
   /// The formed lockup scatters back into particles over this window.
   static const double dissolveStart = 0.00;
   static const double dissolveEnd = 0.26;
@@ -100,10 +109,12 @@ class NoboBootSplash extends StatelessWidget {
     required this.t,
     required this.background,
     this.showDomain = false,
+    this.loop = false,
     super.key,
   });
 
-  /// Seconds elapsed since the splash began.
+  /// Seconds elapsed since the splash began, in the range `[0, loop)` while
+  /// looping.
   final double t;
 
   /// Colour behind the lockup. The gate lerps this from the brand's white plate
@@ -115,6 +126,13 @@ class NoboBootSplash extends StatelessWidget {
   /// Off in the app: a splash introducing the product reads better as the name
   /// alone. On when the same widget should double as the video's end card.
   final bool showDomain;
+
+  /// Whether the splash is repeating rather than playing once.
+  ///
+  /// The halo is the only element that does not return to its opening state at
+  /// the top of the cycle, so while looping it is held at full strength; that
+  /// removes the one discontinuity a wrap would otherwise show.
+  final bool loop;
 
   @override
   Widget build(BuildContext context) {
@@ -151,7 +169,7 @@ class NoboBootSplash extends StatelessWidget {
               width: markDiameter,
               height: markDiameter,
               child: CustomPaint(
-                painter: _NoboMarkPainter(t: t, unit: unit),
+                painter: _NoboMarkPainter(t: t, unit: unit, loop: loop),
               ),
             ),
             SizedBox(height: gap < 0 ? 0 : gap),
@@ -255,10 +273,11 @@ class _NoboWordmarkReveal extends StatelessWidget {
 
 /// Paints the orbital mark at time [t], in ring-radius units scaled by [unit].
 class _NoboMarkPainter extends CustomPainter {
-  _NoboMarkPainter({required this.t, required this.unit});
+  _NoboMarkPainter({required this.t, required this.unit, this.loop = false});
 
   final double t;
   final double unit;
+  final bool loop;
 
   static const Color _violet = NoboSplashBrand.violet;
   static const Color _ring = NoboSplashBrand.ring;
@@ -292,11 +311,9 @@ class _NoboMarkPainter extends CustomPainter {
 
   /// The soft halo that ties the mark to the plate.
   void _paintAura(Canvas canvas, double u) {
-    final double p = _window(
-      t,
-      NoboSplashTiming.auraStart,
-      NoboSplashTiming.auraEnd,
-    );
+    final double p = loop
+        ? 1.0
+        : _window(t, NoboSplashTiming.auraStart, NoboSplashTiming.auraEnd);
     if (p <= 0) return;
     final double radius = u * NoboMark.extent * 1.9;
     canvas.drawCircle(
@@ -547,31 +564,82 @@ class _NoboMarkPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_NoboMarkPainter old) => old.t != t || old.unit != unit;
+  bool shouldRepaint(_NoboMarkPainter old) =>
+      old.t != t || old.unit != unit || old.loop != loop;
 }
 
-/// Hosts the animated splash above the app and lifts it once it has played.
+/// Hosts the animated splash above the app and lifts it once the app is ready.
 ///
-/// Put it in [MaterialApp.builder] so the router's first screen renders and warms
-/// up underneath: by the time the splash lifts, the app is ready.
+/// It repeats for as long as a cold start takes. Wrapping at
+/// [NoboSplashTiming.loopMs] is invisible because the cycle begins and ends on
+/// the finished lockup, so the intro becomes an idle state rather than a
+/// one-shot animation that a slow start can outlast — which is exactly what used
+/// to happen: the mark played, finished, and then sat still while the first
+/// query was still in flight.
+///
+/// It lifts once [ready] is true, or as soon as the owner taps. Put it in
+/// [MaterialApp.builder] so the router's first screen renders and warms up
+/// underneath: by the time the splash lifts, the app is already there.
 class NoboBootGate extends StatefulWidget {
-  const NoboBootGate({required this.child, super.key});
+  const NoboBootGate({
+    required this.child,
+    this.animation,
+    this.ready = false,
+    super.key,
+  });
 
   final Widget child;
+
+  /// The boot clock, owned above this widget so the launch splash and the gate
+  /// draw the very same frame and the hand-off cannot flicker.
+  ///
+  /// When null the gate runs its own clock and plays the intro once, which keeps
+  /// it usable in isolation — tests and previews with no boot sequence behind it
+  /// — and guarantees it settles instead of animating forever.
+  final Animation<double>? animation;
+
+  /// Whether the app is initialised and the splash may go.
+  ///
+  /// Passed in rather than watched, so this widget has no dependency on the boot
+  /// provider and can be exercised on its own.
+  final bool ready;
 
   @override
   State<NoboBootGate> createState() => _NoboBootGateState();
 }
 
 class _NoboBootGateState extends State<NoboBootGate>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
+    with TickerProviderStateMixin {
+  static const Duration _fadeOut = Duration(milliseconds: 380);
+
+  /// Drives the lift. Separate from the intro clock so the splash can be
+  /// dismissed at any point in the loop, not only at a cycle boundary.
+  late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: NoboSplashTiming.totalMs),
+    duration: _fadeOut,
   );
 
+  AnimationController? _own;
   bool _done = false;
   bool _started = false;
+  bool _liftScheduled = false;
+
+  Animation<double> get _clock => widget.animation ?? _own!;
+
+  @override
+  void initState() {
+    super.initState();
+    // With a boot sequence above it, the gate borrows that clock, which repeats
+    // until the app is ready. Standalone there is nothing to wait for, so it
+    // plays the intro once and lifts — which also guarantees the widget settles
+    // instead of animating forever.
+    if (widget.animation == null) {
+      _own = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: NoboSplashTiming.loopMs),
+      );
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -583,46 +651,67 @@ class _NoboBootGateState extends State<NoboBootGate>
       _done = true;
       return;
     }
-    _controller.forward().whenCompleteOrCancel(() {
-      if (mounted) setState(() => _done = true);
+    _own?.forward().whenCompleteOrCancel(() {
+      if (mounted) _beginLift();
     });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fade.dispose();
+    _own?.dispose();
     super.dispose();
   }
 
+  void _beginLift() {
+    if (_done || _fade.isAnimating) return;
+    _fade.forward().whenComplete(() {
+      if (mounted) setState(() => _done = true);
+    });
+  }
+
+  void _scheduleLift() {
+    if (_liftScheduled) return;
+    _liftScheduled = true;
+    // Readiness is usually reached during a build (the boot controller changes
+    // state while the tree is being laid out); the controller can only be
+    // started once that build has finished.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _beginLift();
+    });
+  }
+
+  /// A tap is an instruction, not a transition: someone who taps the splash
+  /// wants the app now, so this skips the fade the automatic lift uses.
   void _skip() {
     if (_done) return;
-    _controller.stop();
+    _fade.stop();
     setState(() => _done = true);
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.ready && !_done) _scheduleLift();
+
     if (_done) return widget.child;
 
     final Color canvas = context.nobo.canvas;
+    final Widget app = widget.child;
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (BuildContext context, Widget? child) {
-        final double t = _controller.value * NoboSplashTiming.total;
-        final double fade = _window(
-          t,
-          NoboSplashTiming.fadeStart,
-          NoboSplashTiming.total,
-          Curves.easeInOut,
-        );
+    return Stack(
+      children: <Widget>[
+        app,
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: Listenable.merge(<Listenable>[_clock, _fade]),
+            builder: (BuildContext context, Widget? _) {
+              final double lift = _fade.value;
+              // Clamped to the loop window: the splash's own end-of-intro fade
+              // would otherwise fire on every pass and blink the plate.
+              final double t = _clock.value * NoboSplashTiming.loop;
 
-        return Stack(
-          children: <Widget>[
-            if (child != null) child,
-            Positioned.fill(
-              child: Opacity(
-                opacity: (1 - fade).clamp(0.0, 1.0),
+              return Opacity(
+                opacity: (1 - lift).clamp(0.0, 1.0),
                 // Opaque behaviour stops the hit test here, so the app below
                 // cannot take a tap meant to skip the splash.
                 child: GestureDetector(
@@ -630,17 +719,16 @@ class _NoboBootGateState extends State<NoboBootGate>
                   onTap: _skip,
                   child: NoboBootSplash(
                     t: t,
-                    background:
-                        Color.lerp(NoboSplashBrand.plate, canvas, fade)!,
+                    background: Color.lerp(NoboSplashBrand.plate, canvas, lift)!,
                     showDomain: true,
+                    loop: true,
                   ),
                 ),
-              ),
-            ),
-          ],
-        );
-      },
-      child: widget.child,
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

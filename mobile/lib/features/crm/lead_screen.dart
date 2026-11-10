@@ -15,6 +15,7 @@ import '../../core/ui/adaptive.dart';
 import '../../core/ui/controls.dart';
 import '../../core/ui/feedback.dart';
 import '../../core/ui/media.dart';
+import '../../core/ui/nobo_mark_loader.dart';
 import '../../core/ui/surfaces.dart';
 import '../../core/utils/format.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -209,13 +210,13 @@ class _LeadScreenState extends ConsumerState<LeadScreen> {
         title: Text('Lead', style: NoboType.bodyStrong.copyWith(color: c.ink)),
         actions: <Widget>[
           if (_busy)
-            const Padding(
-              padding: EdgeInsets.only(right: NoboSpace.base),
+            Padding(
+              padding: const EdgeInsets.only(right: NoboSpace.base),
               child: Center(
-                child: SizedBox(
-                  width: 15,
-                  height: 15,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                child: NoboMarkLoader(
+                  size: 15,
+                  color: context.nobo.primary,
+                  semanticLabel: 'Loading',
                 ),
               ),
             ),

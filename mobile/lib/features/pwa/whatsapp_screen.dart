@@ -9,6 +9,7 @@ import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
 import '../../core/ui/media.dart';
 import '../../core/ui/navigation.dart';
+import '../../core/ui/nobo_mark_loader.dart';
 import '../../core/utils/format.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/models/comms.dart';
@@ -643,15 +644,10 @@ class _WhatsAppThreadScreenState
                       onTap: _sending ? null : _send,
                       child: Center(
                         child: _sending
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    c.inkTertiary,
-                                  ),
-                                ),
+                            ? NoboMarkLoader(
+                                size: 16,
+                                color: c.inkTertiary,
+                                semanticLabel: 'Sending',
                               )
                             : const Icon(
                                 Icons.send_rounded,

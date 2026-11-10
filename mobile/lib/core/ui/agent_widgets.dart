@@ -7,6 +7,7 @@ import '../design/nobo_type.dart';
 import '../utils/format.dart';
 import 'controls.dart';
 import 'media.dart';
+import 'nobo_mark_loader.dart';
 import 'orbit_mark.dart';
 
 /// Session state as a readable pill.
@@ -116,14 +117,7 @@ class _Step extends StatelessWidget {
     final (Color dot, Widget indicator) = switch (tool.state) {
       ToolRunState.running => (
         c.primary,
-        SizedBox(
-          width: 12,
-          height: 12,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            valueColor: AlwaysStoppedAnimation<Color>(c.primary),
-          ),
-        ),
+        NoboMarkLoader(size: 12, color: c.primary, semanticLabel: 'Running'),
       ),
       ToolRunState.done => (
         c.positive,

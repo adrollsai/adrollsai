@@ -1,28 +1,23 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'app/app.dart';
-import 'core/config/nobo_env.dart';
-import 'core/platform/nobo_platform.dart';
-import 'core/providers.dart';
-import 'data/local/session_repository.dart';
+import 'app/boot_root.dart';
 
 /// Entry point.
 ///
-/// Startup order matters: bindings, system chrome, persisted preferences,
-/// backend, then the widget tree. The first frame never waits on the network, so
-/// the UI is on screen while Supabase restores a session.
-Future<void> main() async {
+/// Startup order matters, and it is deliberately short: bindings, an error
+/// handler that cannot crash a business owner's phone, and the widget tree.
+/// Nothing is awaited before `runApp`, because every millisecond spent awaiting
+/// here is a millisecond the OS launch screen — a still image — is holding the
+/// screen. The animated splash paints on the first frame, and [NoboRoot] does
+/// the slow work (preferences, the backend, storage paths) underneath it.
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Errors must be visible in development and survivable in release — never
-  // crash to a white screen in a business owner's hands.
+  // crash to a white screen.
   FlutterError.onError = (FlutterErrorDetails details) {
     if (kDebugMode) FlutterError.presentError(details);
   };
@@ -31,66 +26,9 @@ Future<void> main() async {
     return true;
   };
 
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  // Edge-to-edge is part of the launch frame: setting it after the first frame
+  // would make the splash jump when the bars fade in.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  // Resolve the app-support directory once, up front: the session store reads and
-  // writes synchronously, so it needs the path before the first frame.
-  try {
-    await primeAppSupportDirectory();
-  } catch (e) {
-    debugPrint('Could not resolve app support directory: $e');
-  }
-
-  // QA affordance: render the iOS experience on a non-Apple device so it can be
-  // screenshot-verified without macOS. Debug-only by construction.
-  if (kDebugMode && NoboEnv.forceIosExperience) {
-    NoboPlatform.debugSet(NoboPlatformKind.ios);
-  }
-
-  final SharedPreferences prefs = await SharedPreferences.getInstance();
-  final ThemeMode initialMode = switch (prefs.getString('nobo.themeMode')) {
-    'light' => ThemeMode.light,
-    'dark' => ThemeMode.dark,
-    _ => ThemeMode.system,
-  };
-
-  if (NoboEnv.isConfigured && !NoboEnv.demoMode) {
-    try {
-      await Supabase.initialize(
-        url: NoboEnv.supabaseUrl,
-        publishableKey: NoboEnv.supabaseAnonKey,
-        authOptions: const FlutterAuthClientOptions(autoRefreshToken: true),
-      );    } catch (e) {
-      // Misconfiguration must not brick the app: fall through to demo data.
-      debugPrint('Supabase init failed, continuing without it: $e');
-    }
-  }
-
-  runApp(
-    ProviderScope(
-      overrides: [
-        themeModeProvider.overrideWith(
-          () => ThemeModeController(initial: initialMode),
-        ),
-      ],
-      child: const NoboBootstrap(),
-    ),
-  );
-}
-
-/// Persists the appearance choice whenever it changes, and otherwise just hosts
-/// the app.
-class NoboBootstrap extends ConsumerWidget {
-  const NoboBootstrap({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<ThemeMode>(themeModeProvider, (ThemeMode? prev, ThemeMode next) {
-      unawaited(() async {
-        final SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('nobo.themeMode', next.name);
-      }());
-    });
-    return const NoboApp();
-  }
+  runApp(const ProviderScope(child: NoboRoot()));
 }

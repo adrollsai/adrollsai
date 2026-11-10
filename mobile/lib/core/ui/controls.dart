@@ -5,6 +5,7 @@ import '../design/nobo_colors.dart';
 import '../design/nobo_metrics.dart';
 import '../design/nobo_type.dart';
 import '../platform/nobo_platform.dart';
+import 'nobo_mark_loader.dart';
 
 enum NoboButtonVariant { primary, tonal, outline, ghost, danger }
 
@@ -97,14 +98,7 @@ class _NoboButtonState extends State<NoboButton> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: <Widget>[
         if (widget.loading)
-          SizedBox(
-            width: 15,
-            height: 15,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(fg),
-            ),
-          )
+          NoboMarkLoader(size: 15, color: fg, semanticLabel: 'Working')
         else if (widget.icon != null)
           Icon(widget.icon, size: 18, color: fg),
         if (widget.loading || widget.icon != null)
