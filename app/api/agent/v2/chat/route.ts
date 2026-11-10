@@ -13,6 +13,8 @@ import {
   turnStopConditions,
   createTurnStopTracker,
   MAX_CONTINUATIONS_PER_SESSION,
+  setTurnDeadline,
+  clearTurnDeadline,
   shouldContinueAfterTurn,
 } from '@/lib/agent/turn-limits';
 
@@ -164,6 +166,9 @@ export async function POST(req: Request) {
 
     // Turn-stop bookkeeping, declared before the callbacks that read it.
     const stopTracker = createTurnStopTracker();
+    // Tell tool runners how long this turn has left so a long command cannot
+    // outlive the request (see clampToTurnBudget).
+    setTurnDeadline(Date.now());
 
     // Step callbacks shared by the primary model and the Gemini fallback, so a
     // fallback turn is logged exactly like a normal one.
@@ -180,6 +185,7 @@ export async function POST(req: Request) {
     const onFinish = async (event: any) => {
       if (!sessionId) return;
       await setSessionStatus(supabase, sessionId, 'idle');
+      clearTurnDeadline();
 
       // Did we cut this turn off with work left, or did the model finish?
       // `finishReason` describes only the last step, so the explicit tracker is
@@ -247,6 +253,7 @@ export async function POST(req: Request) {
     // already in the log, but the turn itself is dead — so hand the remaining
     // work to the durable queue rather than silently losing the task.
     const onAbort = async (event: any) => {
+      clearTurnDeadline();
       const completedSteps = Array.isArray(event?.steps) ? event.steps.length : 0;
       console.log(`[Nobo Agent] turn aborted by the client after ${completedSteps} step(s).`);
       if (!sessionId) return;

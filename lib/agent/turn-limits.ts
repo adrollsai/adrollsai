@@ -39,6 +39,32 @@ export function createTurnStopTracker(): TurnStopTracker {
 }
 
 /**
+ * Absolute deadline for the turn in progress.
+ *
+ * `stopWhen` can only stop the loop BETWEEN steps. A single tool call may run
+ * for up to 300s, so a step starting at 200s can still be running when the
+ * platform kills the function at maxDuration — which is exactly how a turn died
+ * in production with no continuation ever queued. Tool runners clamp their own
+ * timeouts against this deadline so the loop always regains control in time to
+ * stop cleanly and hand the rest to the durable queue.
+ */
+let activeTurnDeadline = 0;
+
+export function setTurnDeadline(startedAt: number): void {
+  activeTurnDeadline = TURN_BUDGET_MS > 0 ? startedAt + TURN_BUDGET_MS : 0;
+}
+
+export function clearTurnDeadline(): void {
+  activeTurnDeadline = 0;
+}
+
+/** Milliseconds left in this turn, or Infinity when no turn is running. */
+export function remainingTurnBudgetMs(): number {
+  if (!activeTurnDeadline) return Infinity;
+  return Math.max(0, activeTurnDeadline - Date.now());
+}
+
+/**
  * Wall-clock budget for one turn, kept below CHAT_MAX_DURATION on purpose.
  *
  * Override with `AGENT_TURN_BUDGET_MS`:
@@ -53,7 +79,10 @@ function resolveTurnBudgetMs(): number {
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
     console.warn(`[turn-limits] ignoring invalid AGENT_TURN_BUDGET_MS="${raw}"`);
   }
-  return 275_000;
+  // 230s, not 275s: the request is killed at maxDuration=300s, and the last step
+  // needs room to finish, stop cleanly and enqueue the continuation. 25s of
+  // headroom was not enough when a tool call overran.
+  return 230_000;
 }
 
 export const TURN_BUDGET_MS = resolveTurnBudgetMs();

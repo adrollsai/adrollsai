@@ -50,6 +50,12 @@ if [ ! -x /home/user/.nobohf/node_modules/.bin/hyperframes ]; then
   cd /home/user/.nobohf && npm init -y >/dev/null 2>&1 && npm install hyperframes@latest --no-audit --no-fund 2>&1 | tail -5
 fi
 cd /home/user/${o.projectDir}
+if [ ! -f index.html ]; then
+  echo "ERROR: no index.html in /home/user/${o.projectDir}."
+  echo "Write the composition with sandbox_write_file first, then call this tool"
+  echo "again without htmlContent — or pass the full HTML in htmlContent."
+  exit 2
+fi
 HF=/home/user/.nobohf/node_modules/.bin/hyperframes
 [ -x "$HF" ] || HF="npx -y hyperframes@latest"
 

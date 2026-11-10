@@ -1,8 +1,26 @@
 import { Sandbox } from '@e2b/code-interpreter';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { remainingTurnBudgetMs } from './turn-limits';
 import path from 'path';
 import fs from 'fs';
+
+/**
+ * Never let a single command outlive the turn.
+ *
+ * The loop can only stop BETWEEN steps and the platform kills the request at
+ * maxDuration, so a long render started near the end of a turn could take the
+ * whole function down with it. Clamping here means such a command returns a
+ * timeout instead, the loop stops cleanly, and the continuation run resumes from
+ * the sandbox — which still holds the files.
+ */
+function clampToTurnBudget(requestedMs: number): number {
+  const left = remainingTurnBudgetMs();
+  if (!Number.isFinite(left)) return requestedMs;
+  const usable = left - 12_000; // room to record the result and stop
+  if (usable >= requestedMs) return requestedMs;
+  return Math.max(15_000, usable);
+}
 
 function getE2BApiKey(): string {
   return (process.env.E2B_API_KEY || '').replace(/^["']|["']$/g, '').trim();
@@ -466,7 +484,6 @@ export async function executeInE2BSandbox(options: {
 
   try {
     const sandbox = await getOrCreateSandbox(userId, apiKey, timeoutMs);
-
     // Write any provided code or assets into the sandbox
     for (const file of files) {
       if (file.path.includes('/')) {
@@ -486,12 +503,14 @@ export async function executeInE2BSandbox(options: {
     if (command) {
       // Hold the sandbox open for at least as long as the command may take, so
       // a long render/matte pass can never be paused out from under itself.
-      touchSandbox(userId, timeoutMs + 120_000);
+      // The timeout is then clamped so the command cannot outlive the turn.
+      const effectiveTimeoutMs = clampToTurnBudget(timeoutMs);
+      touchSandbox(userId, effectiveTimeoutMs + 120_000);
       beginSandboxCommand(userId);
       let result: any;
       try {
         result = await sandbox.commands.run(command, {
-          timeoutMs,
+          timeoutMs: effectiveTimeoutMs,
         });
       } finally {
         endSandboxCommand(userId);

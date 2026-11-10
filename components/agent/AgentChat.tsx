@@ -50,6 +50,7 @@ import {
   Maximize2,
   Play,
   FileEdit,
+  ArrowLeft,
 } from 'lucide-react';
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
@@ -330,6 +331,31 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
   const isLoading = status === 'submitted' || status === 'streaming';
 
+  // ── Follow-up queue ──────────────────────────────────────────────────
+  // Sending while a turn is streaming used to be blocked outright, so a user
+  // who thought of a correction had to wait for the agent to finish. Messages
+  // composed mid-turn are now queued and dispatched the moment the turn ends,
+  // in the order they were typed.
+  const [queuedCount, setQueuedCount] = useState(0);
+  const queueRef = useRef<string[]>([]);
+  const handleSendRef = useRef<(text?: string) => Promise<void>>(async () => {});
+
+  // Two-step delete confirmation: holds the id awaiting a second click.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
+
+  useEffect(() => {
+    if (isLoading || isUploading) return;
+    if (queueRef.current.length === 0) return;
+    const next = queueRef.current.shift() as string;
+    setQueuedCount(queueRef.current.length);
+    void handleSendRef.current(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, isUploading]);
+
   // When a run finishes, the turn is in the log — reload the projection so the
   // live view is replaced by the authoritative replay view.
   const wasStreaming = useRef(false);
@@ -576,7 +602,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
   const handleSend = async (customPrompt?: string) => {
     const textToSend = customPrompt || input;
-    if ((!textToSend.trim() && !attachedFile) || isLoading || isUploading) return;
+    if ((!textToSend.trim() && !attachedFile) || isUploading) return;
 
     let fullPrompt = textToSend;
     if (attachedFile) {
@@ -586,6 +612,16 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 2000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`;
       }
       setAttachedFile(null);
+    }
+
+    // A turn is already running: queue this instead of dropping it, and send it
+    // automatically when the current one ends.
+    if (isLoading) {
+      queueRef.current.push(fullPrompt);
+      setQueuedCount(queueRef.current.length);
+      setInput('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      return;
     }
 
     ensureSessionRegistered(textToSend);
@@ -771,6 +807,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
   const handleDeleteWorkspace = (wsId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    // Two-step confirm: deletion takes sessions with it and cannot be undone.
+    if (pendingDelete !== wsId) {
+      setPendingDelete(wsId);
+      setTimeout(() => setPendingDelete((p) => (p === wsId ? null : p)), 5000);
+      return;
+    }
+    setPendingDelete(null);
     const target = workspaces.find((w) => w.id === wsId);
     let updated = workspaces.filter((w) => w.id !== wsId);
     if (updated.length === 0) {
@@ -803,6 +846,14 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
   const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // Two-step confirm so a stray click cannot wipe a conversation.
+    if (pendingDelete !== id) {
+      setPendingDelete(id);
+      setTimeout(() => setPendingDelete((p) => (p === id ? null : p)), 5000);
+      return;
+    }
+    setPendingDelete(null);
 
     if (harness.available === true) {
       await harness.removeSession(id);
@@ -999,10 +1050,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       </button>
                       <button
                         onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                        className="p-1 rounded dsh-label-caption dsh-interactive-danger"
-                        title="Delete workspace folder"
+                        className={`p-1 rounded dsh-label-caption dsh-interactive-danger ${pendingDelete === ws.id ? 'dsh-strong' : ''}`}
+                        title={pendingDelete === ws.id ? 'Click again to delete' : 'Delete workspace folder'}
                       >
-                        <Trash2 size={13} />
+                        {pendingDelete === ws.id ? <Check size={13} /> : <Trash2 size={13} />}
                       </button>
                     </div>
                   </div>
@@ -1037,10 +1088,14 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                               <span>{formatTimeAgo(sess.createdAt)}</span>
                               <button
                                 onClick={(e) => handleDeleteSession(sess.id, e)}
-                                className="p-0.5 dsh-label-caption dsh-interactive-danger"
-                                title="Delete chat session"
+                                className={`p-0.5 dsh-label-caption dsh-interactive-danger ${pendingDelete === sess.id ? 'dsh-strong' : ''}`}
+                                title={pendingDelete === sess.id ? 'Click again to delete' : 'Delete chat session'}
                               >
-                                <Trash2 size={12} />
+                                {pendingDelete === sess.id ? (
+                                  <Check size={12} />
+                                ) : (
+                                  <Trash2 size={12} />
+                                )}
                               </button>
                             </div>
                           </div>
@@ -1093,6 +1148,18 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 <PanelLeftOpen size={16} />
               </button>
             )}
+
+            {/* Escape hatch. The harness fills the viewport and hides the
+                dashboard chrome, so without this there is no way back to the
+                rest of the app. */}
+            <a
+              href="/dashboard"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-[8px] dsh-t-xs dsh-label-secondary dsh-interactive shrink-0"
+              title="Back to dashboard"
+            >
+              <ArrowLeft size={14} />
+              <span className="hidden sm:inline">Dashboard</span>
+            </a>
 
             <div className="flex items-center gap-2 max-w-md truncate text-xs">
               <span className="font-bold text-white truncate">
@@ -1203,18 +1270,24 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               // stream. On finish the projection is reloaded and replaces it.
               <>
                 <HarnessTranscript items={projected?.items ?? []} onOptionSelect={handleSend} />
-                {isLoading && messages.length > 0 && (
-                  <SafeMessageRenderer
-                    m={messages[messages.length - 1]}
-                    mIdx={messages.length - 1}
-                    messages={messages}
-                    isLoading={isLoading}
-                    handleSend={handleSend}
-                    handleCopyMessage={handleCopyMessage}
-                    copiedIndex={copiedIndex}
-                    reload={reload}
-                  />
-                )}
+                {isLoading &&
+                  messages.length > 0 &&
+                  messages[messages.length - 1]?.role === 'assistant' && (
+                    // Only ever render the live ASSISTANT message here. The
+                    // committed projection already contains the user's message,
+                    // so rendering the live user message too made it appear
+                    // twice until the projection caught up.
+                    <SafeMessageRenderer
+                      m={messages[messages.length - 1]}
+                      mIdx={messages.length - 1}
+                      messages={messages}
+                      isLoading={isLoading}
+                      handleSend={handleSend}
+                      handleCopyMessage={handleCopyMessage}
+                      copiedIndex={copiedIndex}
+                      reload={reload}
+                    />
+                  )}
               </>
             ) : (
               messages.map((m: any, mIdx: number) => (
@@ -1421,8 +1494,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     <Rocket size={12} />
                   </button>
 
-                  {/* Send / Stop Button */}
-                  {isLoading ? (
+                  {/* Send / Stop Button. While a turn runs, typing shows Send
+                      again (the message queues) and an empty box shows Stop. */}
+                  {isLoading && !input.trim() && !attachedFile ? (
                     <button
                       type="button"
                       onClick={stop}
@@ -1437,7 +1511,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       onClick={() => handleSend()}
                       disabled={(!input.trim() && !attachedFile) || isUploading}
                       className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
-                      title="Send"
+                      title={isLoading ? 'Queue message (sends when the current turn finishes)' : 'Send'}
                     >
                       <Send size={12} />
                     </button>
@@ -1448,7 +1522,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
             {/* Bottom Status Metadata Bar */}
             <div className="mt-2 text-center dsh-t-xxxs dsh-mono dsh-label-caption truncate">
-              Nobogent Autonomous Operator • Standard mode • Full Access
+              {queuedCount > 0 ? (
+                <span className="dsh-accent">
+                  {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — will send when this turn finishes
+                </span>
+              ) : (
+                <>Nobogent Autonomous Operator • Standard mode • Full Access</>
+              )}
             </div>
           </div>
         </div>

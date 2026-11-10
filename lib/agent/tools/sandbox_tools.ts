@@ -359,11 +359,15 @@ python3 render_card.py
       inputSchema: z.object({
         projectName: z.string().default('hyperframes_comp').describe('Project folder name (alphanumeric, e.g. "diwali_reel")'),
         title: z.string().default('HyperFrames Video').describe('Title of the video for the player artifact'),
-        htmlContent: z.string().describe('Full HTML markup for the composition, including Google Fonts, styles, layout, and GSAP animation script registering window.__timelines["main"] = tl'),
+        htmlContent: z
+          .string()
+          .optional()
+          .describe(
+            'Full HTML markup for the composition. OMIT THIS if you already wrote index.html into the sandbox with sandbox_write_file — the renderer will use the file on disk. Never pass a placeholder like "PLACEHOLDER": it overwrites your real file.'
+          ),
         durationSeconds: z.number().default(15).describe('Composition duration in seconds (must match root data-duration)'),
         resolution: z.enum(['1080x1920_vertical', '1920x1080_landscape']).default('1080x1920_vertical'),
-        quality: z.enum(['draft', 'looks', 'delivery']).default('looks').describe('Encode quality. "draft" is far cheaper and faster and is the right choice while iterating; "looks" is the default CRF 16; "delivery" is the highest quality and slowest.'),
-        fps: z.number().optional().describe('Frame rate. Omit to keep the composition\'s own data-fps (usually 30). Render time scales linearly with frames = duration x fps, so 24 is ~20% cheaper than 30 and plenty for most motion graphics.'),
+        quality: z.enum(['draft', 'looks', 'delivery']).default('looks').describe('Encode quality. "draft" is far cheaper and faster and is the right choice while iterating; "looks" is the default CRF 16; "delivery" is the highest quality and slowest.'),        fps: z.number().optional().describe('Frame rate. Omit to keep the composition\'s own data-fps (usually 30). Render time scales linearly with frames = duration x fps, so 24 is ~20% cheaper than 30 and plenty for most motion graphics.'),
         startSeconds: z.number().optional().describe('Render only the span starting at this second — the cheap way to re-check one section while iterating.'),
         endSeconds: z.number().optional().describe('Render only up to this second. Use with startSeconds to re-render just one span.'),
         audioUrl: z.string().optional().describe('Optional URL to real celebratory audio or background music track to mix into the MP4'),
@@ -374,9 +378,20 @@ python3 render_card.py
           const dur = Math.min(Math.max(durationSeconds || 15, 5), 60);
           const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'comp';
 
-          const files = [
-            { path: `${safeName}/index.html`, content: htmlContent },
-          ];
+          // Only write index.html when htmlContent is genuinely a document.
+          //
+          // This used to be written unconditionally, so an agent that had already
+          // built the composition with sandbox_write_file and then passed a
+          // placeholder string DESTROYED its own file — the render then failed and
+          // the agent spent several steps trying to work out what happened.
+          const rawHtml = (htmlContent || '').trim();
+          const looksLikeHtml =
+            rawHtml.length > 200 &&
+            /<!doctype|<html|<head|<body|<div|<style|<script/i.test(rawHtml) &&
+            !/^placeholder$/i.test(rawHtml) &&
+            !/^(todo|tbd|n\/a|\.\.\.)$/i.test(rawHtml);
+
+          const files = looksLikeHtml ? [{ path: `${safeName}/index.html`, content: rawHtml }] : [];
 
           const runScript = buildHyperFramesRenderScript({
             projectDir: safeName,
