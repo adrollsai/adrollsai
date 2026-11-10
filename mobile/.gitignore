@@ -50,6 +50,9 @@ dart_defines.json
 .env
 .env.local
 
+# Local test-account material, used only for scripted verification runs.
+.local/
+
 # Android signing material must never enter the repository.
 android/local.properties
 android/key.properties
