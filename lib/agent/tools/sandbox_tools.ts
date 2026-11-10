@@ -12,6 +12,32 @@ import {
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildHyperFramesRenderScript } from './hyperframes-render';
 
+/**
+ * Reject obvious placeholder writes.
+ *
+ * Models sometimes emit the literal token "PLACEHOLDER" (or TODO/...) instead of
+ * a whole file — usually when the content is long and they "plan" to fill it in
+ * later. Writing it creates a broken script that fails several steps later with
+ * a baffling `NameError: name 'PLACEHOLDER' is not defined`, which is exactly
+ * what happened to a render.py in production. Refusing the write turns a silent
+ * landmine into an immediate, self-explanatory error.
+ */
+function placeholderRejection(path: string, content: string): string | null {
+  const trimmed = (content || '').trim();
+  if (!trimmed) {
+    return `Refused to write ${path}: the content was empty. Send the complete file content.`;
+  }
+  const isJustToken = /^(placeholder|todo|tbd|fixme|n\/a|\.{3}|…)$/i.test(trimmed);
+  const isThinStub = trimmed.length < 40 && /placeholder|todo|tbd/i.test(trimmed);
+  if (isJustToken || isThinStub) {
+    return (
+      `Refused to write ${path}: the content is the placeholder "${trimmed.slice(0, 40)}", not real file content. ` +
+      `Write the actual file — do not stub it out and plan to fill it in later.`
+    );
+  }
+  return null;
+}
+
 export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
   return {
     sandbox_bash_run: tool({
@@ -496,6 +522,11 @@ python3 render_card.py
         timeoutSeconds: z.number().default(120),
       }),
       execute: async ({ files, runCommand, readFiles, timeoutSeconds }) => {
+        // Refuse placeholder stubs before they reach the filesystem.
+        for (const f of files || []) {
+          const bad = placeholderRejection(f.path, f.content);
+          if (bad) return { success: false, error: bad };
+        }
         try {
           const safeTimeoutMs = Math.min(Math.max(timeoutSeconds || 120, 10), 300) * 1000;
           const res = await executeInE2BSandbox({
@@ -553,6 +584,8 @@ python3 render_card.py
         content: z.string().describe('The complete file content to write'),
       }),
       execute: async ({ path, content }) => {
+        const badWrite = placeholderRejection(path, content);
+        if (badWrite) return { success: false, error: badWrite };
         try {
           const res = await writeSandboxFile(path, content, userId);
           return { success: true, path: res.path, message: `Successfully wrote ${content.length} bytes to ${res.path}` };

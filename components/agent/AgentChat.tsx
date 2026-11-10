@@ -794,7 +794,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     }
   };
 
-  const handleNewSession = async (targetWsId?: string) => {    const wsId = targetWsId || activeWorkspaceId;
+  const handleNewSession = async (targetWsId?: string) => {
+    const wsId = targetWsId || activeWorkspaceId;
     setActiveWorkspaceId(wsId);
     setMessages([]);
     setSecondsElapsed(0);
@@ -1321,6 +1322,24 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               // stream. On finish the projection is reloaded and replaces it.
               <>
                 <HarnessTranscript items={projected?.items ?? []} onOptionSelect={handleSend} />
+                {/* Opening a session fetches the projection; without this the
+                    pane sat blank for a beat and looked broken. */}
+                {(projected?.items?.length ?? 0) === 0 && harness.loading && (
+                  <div className="space-y-3 pt-4 animate-pulse" aria-label="Loading conversation">
+                    {[72, 88, 54].map((w, i) => (
+                      <div key={i} className="flex items-start gap-2.5">
+                        <div
+                          className="mt-1.5 h-2.5 w-2.5 rounded-full shrink-0"
+                          style={{ background: 'var(--dsw-alias-border-l2)' }}
+                        />
+                        <div
+                          className="h-3 rounded-full"
+                          style={{ width: `${w}%`, background: 'var(--dsw-alias-bg-layer-3)' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {isLoading &&
                   messages.length > 0 &&
                   messages[messages.length - 1]?.role === 'assistant' && (
@@ -1356,14 +1375,41 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               ))
             )}
 
-            {/* Deep diving live indicator (Screenshot 2) */}
+            {/* Live status strip. The previous indicator was one small line that
+                scrolled out of view, so a background run looked like nothing was
+                happening at all. This stays pinned under the transcript with the
+                elapsed time, what is going on, and a Stop control. */}
             {isLoading && (
               <div
-                className="flex items-center gap-2 py-2 dsh-t-s"
-                style={{ color: 'var(--dsw-alias-label-tertiary)' }}
+                className="sticky bottom-0 mt-3 flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 dsh-t-s"
+                style={{
+                  background: 'var(--dsw-alias-bg-layer-2)',
+                  border: '1px solid var(--dsw-alias-border-l1)',
+                  boxShadow: 'var(--dsw-shadow-lv1)',
+                }}
+                role="status"
+                aria-live="polite"
               >
-                <Loader2 size={13} className="animate-spin" />
-                <span className="dsh-tnum">Working… {secondsElapsed}s</span>
+                <Loader2 size={14} className="animate-spin shrink-0" />
+                <span className="dsh-strong" style={{ color: 'var(--dsw-alias-label-primary)' }}>
+                  {harness.runInProgress ? 'Agent is working' : 'Working'}
+                </span>
+                <span className="dsh-tnum" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
+                  {secondsElapsed}s
+                </span>
+                <span className="hidden sm:inline" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
+                  · {harness.runInProgress ? 'background run — safe to close this tab' : 'step by step'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (harness.runInProgress) void harness.cancelRun();
+                    else stop();
+                  }}
+                  className="ml-auto shrink-0 px-2 py-1 rounded-[6px] dsh-t-xs dsh-label-secondary dsh-interactive"
+                >
+                  Stop
+                </button>
               </div>
             )}
           </div>
@@ -1475,7 +1521,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     handleSend();
                   }
                 }}
-                placeholder="Message the agent"
+                placeholder={
+                  isLoading
+                    ? 'Type a correction — it queues and sends when this run finishes'
+                    : 'Describe the outcome you want — e.g. "Bhai Dooj image creative, then post it to Facebook"'
+                }
+                aria-label="Message the agent"
                 rows={1}
                 className="w-full resize-none bg-transparent outline-none dsh-t-base px-1 py-1 max-h-44"
                 style={{ color: 'var(--dsw-alias-label-primary)' }}
