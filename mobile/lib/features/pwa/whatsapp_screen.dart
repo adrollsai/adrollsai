@@ -714,13 +714,28 @@ class _Bubble extends StatelessWidget {
               ),
             if (message.mediaUrl != null) ...<Widget>[
               const SizedBox(height: 6),
-              Text(
-                message.mediaType == 'image'
-                    ? '?? Photo'
-                    : message.mediaType == 'video'
-                    ? '?? Video'
-                    : '?? Attachment',
-                style: NoboType.caption.copyWith(color: c.primary),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    message.mediaType == 'image'
+                        ? Icons.image_outlined
+                        : message.mediaType == 'video'
+                        ? Icons.videocam_outlined
+                        : Icons.attach_file_rounded,
+                    size: 13,
+                    color: c.primary,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    message.mediaType == 'image'
+                        ? 'Photo'
+                        : message.mediaType == 'video'
+                        ? 'Video'
+                        : 'Attachment',
+                    style: NoboType.caption.copyWith(color: c.primary),
+                  ),
+                ],
               ),
             ],
             if (message.at != null) ...<Widget>[
