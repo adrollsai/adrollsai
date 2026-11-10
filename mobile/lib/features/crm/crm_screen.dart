@@ -1,27 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/router.dart';
 import '../../core/design/nobo_colors.dart';
 import '../../core/design/nobo_metrics.dart';
 import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
-import '../../core/ui/controls.dart';
-import '../../core/ui/feedback.dart';
-import '../../core/ui/media.dart';
-import '../../core/ui/refresh.dart';
-import '../../core/ui/surfaces.dart';
+import '../../core/ui/navigation.dart';
 import '../../core/utils/format.dart';
 import '../../data/workspace_source.dart';
+import '../pwa/pwa_widgets.dart';
 
-enum _CrmFilter { pipeline, dueToday, all }
-
-/// CRM, optimised for a phone.
+/// CRM Pipeline — reproduction of the web app's `/dashboard/crm`.
 ///
-/// A business owner checks this in the gaps between meetings, so the screen
-/// leads with "who needs contact today" and keeps the full pipeline one tap
-/// away — rather than opening on a wide kanban that only works on a laptop.
+/// Matches the web layout: header with an "Enable Alerts" pill, the collapsible
+/// "CRM Actions & Controls" panel, a search + "View & Filter Controls" card with
+/// the All / Fresh / Ongoing tabs (with counts), select-all, pagination, and lead
+/// cards carrying the web app's action row.
 class CrmScreen extends ConsumerStatefulWidget {
   const CrmScreen({super.key});
 
@@ -30,33 +27,44 @@ class CrmScreen extends ConsumerStatefulWidget {
 }
 
 class _CrmScreenState extends ConsumerState<CrmScreen> {
-  _CrmFilter _filter = _CrmFilter.pipeline;
   String _query = '';
+  int _tab = 0;
+  int _page = 0;
+  static const int _perPage = 50;
+  bool _controlsOpen = false;
+
+  static const List<String> _tabs = <String>[
+    'All Leads',
+    'Fresh Leads',
+    'Ongoing',
+  ];
 
   @override
   Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
-    final AsyncValue<List<LeadSeed>> leadsAsync = ref.watch(leadsProvider);
-    final List<LeadSeed> all = leadsAsync.value ?? const <LeadSeed>[];
+    final AsyncValue<List<LeadSeed>> async = ref.watch(leadsProvider);
+    final List<LeadSeed> all = async.value ?? const <LeadSeed>[];
 
-    final List<LeadSeed> visible = switch (_filter) {
-      _CrmFilter.pipeline => all
-          .where((LeadSeed l) => !_isClosed(l.stage))
-          .toList(growable: false),
-      _CrmFilter.dueToday => all
-          .where(
-            (LeadSeed l) =>
-                l.nextFollowup != null &&
-                _isSameDay(l.nextFollowup!, DateTime.now()) &&
-                !_isClosed(l.stage),
-          )
-          .toList(growable: false),
-      _CrmFilter.all => all,
+    int countFor(int tab) => switch (tab) {
+      1 => all
+          .where((LeadSeed l) => l.stage.toLowerCase().contains('new'))
+          .length,
+      2 => all.where((LeadSeed l) => !_isClosed(l.stage)).length,
+      _ => all.length,
     };
 
+    final List<LeadSeed> byTab = switch (_tab) {
+      1 => all
+          .where((LeadSeed l) => l.stage.toLowerCase().contains('new'))
+          .toList(growable: false),
+      2 => all
+          .where((LeadSeed l) => !_isClosed(l.stage))
+          .toList(growable: false),
+      _ => all,
+    };
     final List<LeadSeed> searched = _query.isEmpty
-        ? visible
-        : visible
+        ? byTab
+        : byTab
               .where(
                 (LeadSeed l) =>
                     l.name.toLowerCase().contains(_query.toLowerCase()) ||
@@ -64,389 +72,726 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
               )
               .toList(growable: false);
 
-    final int overdue = all
-        .where(
-          (LeadSeed l) =>
-              l.nextFollowup != null &&
-              isBeforeToday(l.nextFollowup!) &&
-              !_leadIsClosed(l.stage),
-        )
-        .length;
-    final int won = all.where((LeadSeed l) => _isWon(l.stage)).length;
+    final int pages = searched.isEmpty
+        ? 1
+        : (searched.length / _perPage).ceil();
+    final int safePage = _page.clamp(0, pages - 1);
+    final List<LeadSeed> visible = searched
+        .skip(safePage * _perPage)
+        .take(_perPage)
+        .toList(growable: false);
 
-    return Scaffold(
-      backgroundColor: c.canvas,
-      body: SafeArea(
-        bottom: false,
-        child: NoboRefreshScroll(
-          onRefresh: () async {
-            ref.invalidate(leadsProvider);
-            await ref
-                .read(leadsProvider.future)
-                .catchError((Object _) => const <LeadSeed>[]);
-          },
-          slivers: <Widget>[
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  NoboSpace.gutter,
-                  NoboSpace.md,
-                  NoboSpace.gutter,
-                  0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      'Business',
-                      style: NoboType.title.copyWith(color: c.ink),
-                    ),
-                    Text(
-                      all.isEmpty
-                          ? 'No leads yet'
-                          : '${all.length} leads · $overdue overdue · $won won',
-                      style: NoboType.caption.copyWith(
-                        color: overdue > 0 ? c.accent : c.inkTertiary,
-                      ),
-                    ),
-                    const SizedBox(height: NoboSpace.base),
-                    NoboSegmented<_CrmFilter>(
-                      selected: _filter,
-                      onChanged: (_CrmFilter f) => setState(() => _filter = f),
-                      segments: const <({_CrmFilter value, String label})>[
-                        (value: _CrmFilter.pipeline, label: 'Pipeline'),
-                        (value: _CrmFilter.dueToday, label: 'Today'),
-                        (value: _CrmFilter.all, label: 'All'),
-                      ],
-                    ),
-                    const SizedBox(height: NoboSpace.md),
-                    _SearchField(
-                      value: _query,
-                      onChanged: (String v) => setState(() => _query = v),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            if (_filter == _CrmFilter.pipeline && all.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    NoboSpace.gutter,
-                    NoboSpace.lg,
-                    NoboSpace.gutter,
-                    0,
-                  ),
-                  child: _StageBar(leads: all),
-                ),
-              ),
-
-            if (leadsAsync.isLoading)
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 200, child: NoboLoading()),
-              )
-            else if (leadsAsync.hasError)
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 300,
-                  child: NoboErrorState(
-                    error: leadsAsync.error!,
-                    onRetry: () => ref.invalidate(leadsProvider),
-                  ),
-                ),
-              )
-            else if (searched.isEmpty)
-              SliverToBoxAdapter(
-                child: NoboEmptyState(
-                  title: _query.isEmpty
-                      ? (_filter == _CrmFilter.dueToday
-                            ? 'Nothing due today'
-                            : 'No leads yet')
-                      : 'No lead matches "$_query"',
-                  message: _query.isEmpty
-                      ? 'Leads arrive from Meta, your website forms and property '
-                            'portals. Nobogent can follow them up for you.'
-                      : 'Try a different name or number.',
-                  icon: Icons.people_outline_rounded,
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(
-                  NoboSpace.gutter,
-                  NoboSpace.base,
-                  NoboSpace.gutter,
-                  0,
-                ),
-                sliver: SliverList.separated(
-                  itemCount: searched.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: NoboSpace.sm),
-                  itemBuilder: (BuildContext context, int i) =>
-                      _LeadRow(lead: searched[i]),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static bool _isClosed(String stage) => _leadIsClosed(stage);
-
-  static bool _isWon(String stage) => _leadIsWon(stage);
-
-  static bool _isSameDay(DateTime a, DateTime b) => _sameDay(a, b);
-}
-
-bool _leadIsClosed(String stage) {
-  final String s = stage.toLowerCase();
-  return s.contains('won') ||
-      s.contains('lost') ||
-      s.contains('not interested') ||
-      s.contains('disqualified') ||
-      s.contains('junk');
-}
-
-bool _leadIsWon(String stage) => stage.toLowerCase().contains('won');
-
-bool _sameDay(DateTime a, DateTime b) =>
-    a.year == b.year && a.month == b.month && a.day == b.day;
-
-class _StageBar extends StatelessWidget {
-  const _StageBar({required this.leads});
-
-  final List<LeadSeed> leads;
-
-  @override
-  Widget build(BuildContext context) {
-    final NoboColors c = context.nobo;
-    const List<String> stages = <String>[
-      'New Lead',
-      'Contacted',
-      'Qualified',
-      'Meeting Scheduled',
-      'Negotiation',
-      'Deal Won',
-    ];
-    final Map<String, int> counts = <String, int>{};
-    for (final LeadSeed l in leads) {
-      counts[l.stage] = (counts[l.stage] ?? 0) + 1;
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text('PIPELINE', style: NoboType.micro.copyWith(color: c.inkTertiary)),
-        const SizedBox(height: NoboSpace.sm),
-        SizedBox(
-          height: 46,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            // Trailing padding so the last stage is not clipped flush against
-            // the screen edge, which reads as broken rather than scrollable.
-            padding: const EdgeInsets.only(right: NoboSpace.gutter),
-            itemCount: stages.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 6),
-            itemBuilder: (BuildContext context, int i) {
-              final String stage = stages[i];
-              final int count = counts[stage] ?? 0;
-              final bool active = count > 0;
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: NoboSpace.md,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: active ? c.primaryWash : c.surfaceSunken,
-                  borderRadius: NoboRadius.rSm,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Text(
-                      '$count',
-                      style: NoboType.numeric(
-                        NoboType.label.copyWith(
-                          color: active ? c.primary : c.inkTertiary,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      _short(stage),
-                      style: NoboType.caption.copyWith(
-                        color: active ? c.primary : c.inkTertiary,
-                        fontSize: 10.5,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _short(String stage) {
-    switch (stage) {
-      case 'New Lead':
-        return 'New';
-      case 'Meeting Scheduled':
-        return 'Meeting';
-      case 'Deal Won':
-        return 'Won';
-      default:
-        return stage;
-    }
-  }
-}
-
-class _LeadRow extends StatelessWidget {
-  const _LeadRow({required this.lead});
-
-  final LeadSeed lead;
-
-  @override
-  Widget build(BuildContext context) {
-    final NoboColors c = context.nobo;
-    final bool overdue =
-        lead.nextFollowup != null &&
-        isBeforeToday(lead.nextFollowup!) &&
-        !_leadIsClosed(lead.stage);
-
-    return NoboCard(
-      onTap: () => context.push(Routes.lead(lead.id)),
-      padding: const EdgeInsets.all(NoboSpace.md),
-      child: Row(
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(leadsProvider);
+        await ref
+            .read(leadsProvider.future)
+            .catchError((Object _) => const <LeadSeed>[]);
+      },
+      color: c.primary,
+      backgroundColor: c.surface,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         children: <Widget>[
-          NoboAvatar(name: lead.name, size: 40),
-          const SizedBox(width: NoboSpace.md),
-          Expanded(
+          NoboPageHeader(
+            title: 'CRM Pipeline',
+            subtitle: 'Manage and distribute your leads',
+            actions: <Widget>[
+              NoboCircleAction(
+                icon: Icons.refresh_rounded,
+                onTap: () => ref.invalidate(leadsProvider),
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: NoboSpace.gutter),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        lead.name,
-                        style: NoboType.bodyStrong.copyWith(color: c.ink),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.primaryWash,
+                    borderRadius: NoboRadius.rPill,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        Icons.notifications_active_outlined,
+                        size: 14,
+                        color: c.primary,
                       ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Enable Alerts',
+                        style: NoboType.label.copyWith(
+                          color: c.primary,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: NoboSpace.md),
+
+                // Collapsible actions panel.
+                PwaCard(
+                  padding: EdgeInsets.zero,
+                  onTap: () =>
+                      setState(() => _controlsOpen = !_controlsOpen),
+                  child: Column(
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: NoboSpace.base,
+                          vertical: 14,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.sell_outlined,
+                              size: 16,
+                              color: c.primary,
+                            ),
+                            const SizedBox(width: NoboSpace.sm),
+                            Expanded(
+                              child: Text(
+                                'CRM Actions & Controls',
+                                style: NoboType.label.copyWith(
+                                  color: c.ink,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              _controlsOpen
+                                  ? Icons.expand_less_rounded
+                                  : Icons.expand_more_rounded,
+                              size: 20,
+                              color: c.inkTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_controlsOpen) ...<Widget>[
+                        Divider(height: 1, color: c.hairline),
+                        Padding(
+                          padding: const EdgeInsets.all(NoboSpace.base),
+                          child: Text(
+                            'Bulk transfer, round-robin distribution and stage '
+                            'automation run from the web app.',
+                            style: NoboType.caption.copyWith(
+                              color: c.inkSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: NoboSpace.base),
+
+                // Search + filter card.
+                PwaCard(
+                  child: Column(
+                    children: <Widget>[
+                      PwaSearchField(
+                        hint: 'Search by name, phone, or email…',
+                        onChanged: (String v) => setState(() {
+                          _query = v;
+                          _page = 0;
+                        }),
+                      ),
+                      const SizedBox(height: NoboSpace.md),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: NoboSpace.base,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c.surfaceSunken,
+                          borderRadius: NoboRadius.rMd,
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.tune_rounded,
+                              size: 15,
+                              color: c.inkSecondary,
+                            ),
+                            const SizedBox(width: NoboSpace.sm),
+                            Expanded(
+                              child: Text(
+                                'View & Filter Controls',
+                                style: NoboType.label.copyWith(
+                                  color: c.ink,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              'SHOW',
+                              style: NoboType.micro.copyWith(
+                                color: c.inkTertiary,
+                                fontSize: 10,
+                              ),
+                            ),
+                            Icon(
+                              Icons.expand_more_rounded,
+                              size: 16,
+                              color: c.inkTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: NoboSpace.md),
+                      SizedBox(
+                        height: 38,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          padding: EdgeInsets.zero,
+                          itemCount: _tabs.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(width: NoboSpace.lg),
+                          itemBuilder: (BuildContext context, int i) {
+                            final bool active = i == _tab;
+                            return GestureDetector(
+                              onTap: () => setState(() {
+                                _tab = i;
+                                _page = 0;
+                              }),
+                              behavior: HitTestBehavior.opaque,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: <Widget>[
+                                  Row(
+                                    children: <Widget>[
+                                      Text(
+                                        _tabs[i],
+                                        style: NoboType.label.copyWith(
+                                          fontSize: 13,
+                                          color: active
+                                              ? c.ink
+                                              : c.inkSecondary,
+                                          fontWeight: active
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 7,
+                                          vertical: 1,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: active
+                                              ? c.navy
+                                              : c.surfaceSunken,
+                                          borderRadius: NoboRadius.rPill,
+                                        ),
+                                        child: Text(
+                                          '${countFor(i)}',
+                                          style: NoboType.caption.copyWith(
+                                            color: active
+                                                ? c.onNavy
+                                                : c.inkSecondary,
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    height: 2,
+                                    width: 44,
+                                    color: active
+                                        ? c.ink
+                                        : Colors.transparent,
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: NoboSpace.base),
+
+                if (async.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.only(top: NoboSpace.xl),
+                    child: SizedBox(height: 180, child: PwaLoading()),
+                  )
+                else ...<Widget>[
+                  PwaCard(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NoboSpace.base,
+                      vertical: 13,
                     ),
-                    if (overdue)
-                      const NoboPill(
-                        label: 'Overdue',
-                        tone: NoboPillTone.danger,
-                        dense: true,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          Icons.check_box_outline_blank_rounded,
+                          size: 18,
+                          color: c.inkTertiary,
+                        ),
+                        const SizedBox(width: NoboSpace.md),
+                        Expanded(
+                          child: Text(
+                            'Select All ${visible.length} leads on this page',
+                            style: NoboType.label.copyWith(
+                              color: c.ink,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: NoboSpace.md),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      _PageButton(
+                        label: 'Previous',
+                        enabled: safePage > 0,
+                        onTap: () => setState(() => _page = safePage - 1),
                       ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  lead.phone ?? 'No number',
-                  style: NoboType.caption.copyWith(color: c.inkSecondary),
-                ),
-                const SizedBox(height: NoboSpace.sm),
-                // Wrap, not Row: the stage name plus a relative time can exceed
-                // a compact phone's width once the stage text is long.
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: <Widget>[
-                    _stagePill(lead.stage),
-                    if (lead.nextFollowup != null)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: NoboSpace.md,
+                        ),
+                        child: Text(
+                          'Page ${safePage + 1} of $pages',
+                          style: NoboType.label.copyWith(
+                            color: c.ink,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      _PageButton(
+                        label: 'Next',
+                        enabled: safePage < pages - 1,
+                        onTap: () => setState(() => _page = safePage + 1),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: NoboSpace.md),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        'Leads per page:',
+                        style: NoboType.caption.copyWith(
+                          color: c.inkSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: NoboSpace.sm),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: NoboSpace.md,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c.surface,
+                          borderRadius: NoboRadius.rSm,
+                          border: Border.all(color: c.border),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Text(
+                              '$_perPage',
+                              style: NoboType.label.copyWith(
+                                color: c.ink,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.expand_more_rounded,
+                              size: 15,
+                              color: c.inkTertiary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: NoboSpace.base),
+                  for (final LeadSeed lead in visible)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: NoboSpace.md),
+                      child: _LeadCard(lead: lead),
+                    ),
+                  if (visible.isEmpty)
+                    PwaCard(
+                      child: Column(
                         children: <Widget>[
                           Icon(
-                            Icons.schedule_rounded,
-                            size: 11,
+                            Icons.people_outline_rounded,
+                            size: 28,
                             color: c.inkTertiary,
                           ),
-                          const SizedBox(width: 3),
+                          const SizedBox(height: NoboSpace.md),
                           Text(
-                            timeAgo(lead.nextFollowup),
-                            style: NoboType.caption.copyWith(
-                              color: c.inkTertiary,
-                              fontSize: 11,
-                            ),
+                            'No leads match this view',
+                            style: NoboType.subtitle.copyWith(color: c.ink),
                           ),
                         ],
                       ),
-                  ],
-                ),
-                  ],
-                ),
-              ),
-          Icon(Icons.chevron_right_rounded, size: 20, color: c.inkTertiary),
+                    ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: NoboSpace.xxl),
         ],
       ),
     );
   }
 
-  Widget _stagePill(String stage) {
+  static bool _isClosed(String stage) {
     final String s = stage.toLowerCase();
-    final NoboPillTone tone = s.contains('won')
-        ? NoboPillTone.positive
-        : s.contains('lost') || s.contains('not interested')
-        ? NoboPillTone.danger
-        : s.contains('negotiation') || s.contains('proposal')
-        ? NoboPillTone.credit
-        : s.contains('meeting') || s.contains('qualified')
-        ? NoboPillTone.brand
-        : NoboPillTone.neutral;
-    return NoboPill(label: stage, tone: tone, dense: true);
+    return s.contains('won') ||
+        s.contains('lost') ||
+        s.contains('not interested') ||
+        s.contains('disqualified') ||
+        s.contains('junk');
   }
 }
 
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.value, required this.onChanged});
+class _PageButton extends StatelessWidget {
+  const _PageButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
 
-  final String value;
-  final ValueChanged<String> onChanged;
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final NoboColors c = context.nobo;
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: NoboSpace.base,
+          vertical: 9,
+        ),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: NoboRadius.rPill,
+          border: Border.all(color: c.border),
+        ),
+        child: Text(
+          label,
+          style: NoboType.label.copyWith(
+            fontSize: 13,
+            color: enabled ? c.ink : c.inkTertiary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One lead row, matching the web app's card.
+class _LeadCard extends StatelessWidget {
+  const _LeadCard({required this.lead});
+
+  final LeadSeed lead;
+
+  static String _digits(String? phone) =>
+      (phone ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
+
+  Future<void> _launch(String url) async {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // No dialer/WhatsApp installed — ignore.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final NoboColors c = context.nobo;
+    final String dial = _digits(lead.phone);
+
+    return PwaCard(
+      padding: const EdgeInsets.all(NoboSpace.base),
+      onTap: () => context.push(Routes.lead(lead.id)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                Icons.check_box_outline_blank_rounded,
+                size: 18,
+                color: c.inkTertiary,
+              ),
+              const SizedBox(width: NoboSpace.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            lead.name,
+                            style: NoboType.subtitle.copyWith(
+                              color: c.ink,
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: NoboSpace.sm),
+                        _WarmPill(score: _warmth(lead)),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      lead.phone ?? 'No number',
+                      style: NoboType.caption.copyWith(
+                        color: c.inkSecondary,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: NoboSpace.md),
+          Divider(height: 1, color: c.hairline),
+          const SizedBox(height: NoboSpace.md),
+          Wrap(
+            spacing: NoboSpace.sm,
+            runSpacing: NoboSpace.sm,
+            children: <Widget>[
+              _SoftPill(
+                label: 'History',
+                icon: Icons.history_rounded,
+                tint: c.accent,
+              ),
+              _SoftPill(
+                label: 'Followup',
+                icon: Icons.phone_callback_outlined,
+                tint: c.primary,
+              ),
+            ],
+          ),
+          const SizedBox(height: NoboSpace.md),
+          Row(
+            children: <Widget>[
+              PwaIconCircle(
+                icon: Icons.person_add_alt_1_outlined,
+                tint: c.inkSecondary,
+                onTap: () {},
+                tooltip: 'Assign',
+              ),
+              const SizedBox(width: NoboSpace.sm),
+              PwaIconCircle(
+                icon: Icons.call_rounded,
+                tint: c.primary,
+                onTap: dial.isEmpty ? null : () => _launch('tel:$dial'),
+                tooltip: 'Call',
+              ),
+              const SizedBox(width: NoboSpace.sm),
+              PwaIconCircle(
+                icon: Icons.chat_bubble_rounded,
+                tint: NoboBrand.whatsapp,
+                onTap: dial.isEmpty
+                    ? null
+                    : () => _launch('https://wa.me/$dial'),
+                tooltip: 'WhatsApp',
+              ),
+              const Spacer(),
+              PwaIconCircle(
+                icon: Icons.delete_outline_rounded,
+                tint: c.inkSecondary,
+                onTap: () {},
+                tooltip: 'Delete',
+              ),
+            ],
+          ),
+          const SizedBox(height: NoboSpace.md),
+          Row(
+            children: <Widget>[
+              Icon(Icons.sell_rounded, size: 12, color: c.danger),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  <String>[
+                    'Leads',
+                    if (lead.source != null) lead.source!,
+                    if (lead.createdAt != null) fullDate(lead.createdAt!),
+                  ].join(' | '),
+                  style: NoboType.caption.copyWith(
+                    color: c.inkSecondary,
+                    fontSize: 11.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.visibility_outlined, size: 13, color: c.inkTertiary),
+            ],
+          ),
+          const SizedBox(height: NoboSpace.md),
+          Row(
+            children: <Widget>[
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: NoboSpace.md,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.primaryWash,
+                    borderRadius: NoboRadius.rSm,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          lead.stage,
+                          style: NoboType.label.copyWith(
+                            color: c.primary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.expand_more_rounded,
+                        size: 15,
+                        color: c.primary,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (lead.createdAt != null)
+                Text(
+                  clockTime(lead.createdAt!),
+                  style: NoboType.caption.copyWith(
+                    color: c.inkTertiary,
+                    fontSize: 11,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The web app shows a numeric warmth score. Derived here from the signals the
+  /// client actually holds (stage progress, call outcomes, attempts).
+  static int _warmth(LeadSeed l) {
+    int score = 25;
+    final String s = l.stage.toLowerCase();
+    if (s.contains('meeting') || s.contains('negotiat')) score += 30;
+    if (s.contains('proposal') || s.contains('qualified')) score += 20;
+    if (s.contains('contact')) score += 10;
+    if (l.lastCallStatus == 'CONNECTED') score += 10;
+    score += l.dnp.clamp(0, 3) * 2;
+    return score.clamp(0, 100);
+  }
+}
+
+class _WarmPill extends StatelessWidget {
+  const _WarmPill({required this.score});
+
+  final int score;
 
   @override
   Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
     return Container(
-      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: NoboRadius.rSm,
-        border: Border.all(color: c.border),
+        color: c.cautionWash,
+        borderRadius: NoboRadius.rPill,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: NoboSpace.md),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.search_rounded, size: 17, color: c.inkTertiary),
-          const SizedBox(width: NoboSpace.sm),
-          Expanded(
-            child: TextFormField(
-              initialValue: value,
-              onChanged: onChanged,
-              style: NoboType.body.copyWith(color: c.ink, fontSize: 14.5),
-              cursorColor: c.primary,
-              decoration: InputDecoration(
-                isDense: true,
-                filled: false,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                hintText: 'Search leads',
-                hintStyle: NoboType.body.copyWith(
-                  color: c.inkTertiary,
-                  fontSize: 14.5,
-                ),
-              ),
+          Icon(Icons.bolt_rounded, size: 11, color: c.caution),
+          const SizedBox(width: 3),
+          Text(
+            '$score Warm',
+            style: NoboType.caption.copyWith(
+              color: c.caution,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SoftPill extends StatelessWidget {
+  const _SoftPill({
+    required this.label,
+    required this.icon,
+    required this.tint,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.10),
+        borderRadius: NoboRadius.rPill,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 12, color: tint),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: NoboType.caption.copyWith(
+              color: tint,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
