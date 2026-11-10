@@ -65,8 +65,14 @@ class NoboApp extends ConsumerWidget {
               maxScaleFactor: scale,
               // The animated splash sits above the router, so the first screen
               // builds and warms up underneath it and is ready when it lifts.
-              child: NoboBootGate(
-                child: child ?? const SizedBox.shrink(),
+              // MaterialApp.builder is outside the Navigator and therefore
+              // outside every Scaffold, so text here needs its own Material
+              // ancestor or Flutter paints its debug overflow bar under it.
+              child: Material(
+                type: MaterialType.transparency,
+                child: NoboBootGate(
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

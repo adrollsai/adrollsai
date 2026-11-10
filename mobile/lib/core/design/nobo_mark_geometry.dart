@@ -8,8 +8,6 @@
 // The animated splash draws this; the video sting draws the same numbers from
 // assets/brand/mark.json, so the two can never drift apart.
 
-import 'dart:ui' show Color;
-
 /// One dot of the mark's orbital field.
 ///
 /// [x], [y], [r] are the dot's resting place and size. [startX], [startY] are the

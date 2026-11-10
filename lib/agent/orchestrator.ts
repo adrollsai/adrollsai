@@ -20,6 +20,7 @@ import { createSiteTools } from './tools/sites';
 import { createRecipeTools } from './tools/recipes';
 import { createNotificationTools } from './tools/notifications';
 import { createReportingTools } from './tools/reporting';
+import { createAutomationTools } from './tools/automation';
 
 export async function createAgentContext(supabase: SupabaseClient, userId: string, operatorUserId?: string) {
   // Fetch user profile and business context for the target business
@@ -71,6 +72,8 @@ export async function createAgentContext(supabase: SupabaseClient, userId: strin
     ...createNotificationTools(supabase, userId),
     // 2g. Reporting — real counts, org-wide, in the customer's timezone
     ...createReportingTools(supabase, userId),
+    // 2h. Automation awareness - what flows already exist, so new ones do not clash
+    ...createAutomationTools(supabase, userId),
     // 2e. Tested recipes � known-good pipelines to adapt instead of reinventing
     ...createRecipeTools(),
     // 3. 24fps.dev Motion Graphics Suite MCP
@@ -154,6 +157,12 @@ MODULAR PLUGIN SUITE:
 4. 24fps.dev Motion Graphics Suite MCP:
    - 'search_24fps_motion_graphics', 'get_24fps_clip_source', 'search_24fps_editor_presets', 'get_24fps_editor_preset': Search 7,000+ motion graphic clips, presets, and GSAP templates.
    - 'notify_user': send the account owner a push and/or email — for finished long tasks, failures, or a post going live when they are not watching. Push and email ONLY, never WhatsApp or SMS. Do not use it for ordinary replies.
+4b. Automations — CHECK BEFORE YOU PROPOSE:
+   - 'list_automation_flows': the flows and lead-routing rules that already exist, with their triggers and live/disabled state. Call this FIRST for any "automate this", "set up a flow", or "when a lead comes in…" request — clients almost always already have something running.
+   - 'check_flow_conflicts': whether an active flow would already fire on the trigger you are about to use.
+   - Two active flows on one trigger message and call the same lead twice. Never propose a new flow on a trigger that is already taken: modify or consolidate the existing one and say which flow you are changing.
+   - Long delays do NOT belong in a flow step — the executor caps a delay node at 10 seconds. "Call after 2 hours / follow up after 2 days" runs through the lead's scheduling fields and the follow-up engine, so explain that instead of building a delay step.
+   - BULK ACTIONS ALWAYS REQUIRE THE APPROVAL CARD. Anything touching more than one lead at once — a broadcast, a bulk call campaign, a flow that fans out to a segment — must go through 'request_human_approval' and wait for the user. Never fire bulk messaging or bulk calling directly.
 3f. How to build a still image creative — pick the right method, never just one by default:
    a) WHOLE IMAGE FROM THE IMAGE MODEL: best for photographic or illustrated scenes. If the picture is mostly photography, generate the whole thing in ONE prompt INCLUDING the intended typography ("festive Bhai Dooj greeting, warm gold serif reading HAPPY BHAI DOOJ across the top third, diyas and marigolds"). A coherent generated image beats a good photo ruined by flat code-drawn text.
    b) ENTIRELY FROM CODE: exact brand typography, precise copy, or when AI imagery looks AI-ish and that is a problem — typography-led layouts, offer cards, price lists, schedule graphics. Render HTML/GSAP in the sandbox at the exact pixel size.

@@ -23,16 +23,24 @@ import '../design/nobo_mark_geometry.dart';
 abstract final class NoboSplashTiming {
   const NoboSplashTiming._();
 
-  /// Total length, including the fade-out.
-  static const double total = 1.90;
+  /// Total length in milliseconds, including the fade-out.
+  static const int totalMs = 1900;
+
+  /// The same length in seconds, which is what every beat below is measured in.
+  static const double total = totalMs / 1000.0;
 
   /// The formed lockup scatters back into particles over this window.
   static const double dissolveStart = 0.00;
-  static const double dissolveEnd = 0.32;
+  static const double dissolveEnd = 0.26;
+
+  /// The wordmark peels away just ahead of the dot field, left to right.
+  static const double letterOutStart = 0.02;
+  static const double letterOutStagger = 0.010;
+  static const double letterOutEach = 0.14;
 
   /// The dot field spirals back into place. Each dot starts at
   /// `dotsInStart + delay * dotsInStagger` and takes [dotsInEach] to land.
-  static const double dotsInStart = 0.22;
+  static const double dotsInStart = 0.24;
   static const double dotsInStagger = 0.44;
   static const double dotsInEach = 0.40;
 
@@ -113,8 +121,11 @@ class NoboBootSplash extends StatelessWidget {
     final Size screen = MediaQuery.sizeOf(context);
 
     // Brand lockup proportions, taken from the shipped logo: the wordmark's ink
-    // width is ~1.77x the mark's drawn diameter and its cap height ~0.28x.
-    final double lockupWidth = math.min(screen.width * 0.82, 520.0);
+    // width is ~1.77x the mark's drawn diameter and its cap height ~0.28x. Those
+    // ratios describe the FULL lockup including ".com", which is why the splash
+    // shows the domain: dropping it while keeping these ratios would leave the
+    // mark oversized against the name and the whole lockup too small.
+    final double lockupWidth = math.min(screen.width * 0.78, 460.0);
     final double markDiameter = lockupWidth / 1.773;
     final double fontSize = markDiameter * 0.284;
     final double unit = markDiameter / (2 * NoboMark.extent);
@@ -187,23 +198,44 @@ class _NoboWordmarkReveal extends StatelessWidget {
     final List<Widget> children = <Widget>[];
     for (int i = 0; i < glyphs.length; i++) {
       // ".com" is a separate beat: it lands after the name has settled.
-      final double start = i == domainIndex
+      final double inStart = i == domainIndex
           ? NoboSplashTiming.wordStart +
               (glyphs.length - 1) * NoboSplashTiming.wordStagger
           : NoboSplashTiming.wordStart + i * NoboSplashTiming.wordStagger;
 
-      final double p = _window(
-        t,
-        start,
-        start + NoboSplashTiming.wordEach,
-        Curves.easeOutCubic,
-      );
+      // Two regimes rather than one blend: the lockup is fully present on the
+      // very first frame, because that is exactly what the native launch screen
+      // drew. It then peels away letter by letter before the mark rebuilds.
+      final double opacity;
+      final double dy;
+      if (t < NoboSplashTiming.dissolveEnd) {
+        final double out = _window(
+          t,
+          NoboSplashTiming.letterOutStart +
+              i * NoboSplashTiming.letterOutStagger,
+          NoboSplashTiming.letterOutStart +
+              i * NoboSplashTiming.letterOutStagger +
+              NoboSplashTiming.letterOutEach,
+          Curves.easeInCubic,
+        );
+        opacity = 1 - out;
+        dy = out * fontSize * 0.16;
+      } else {
+        final double p = _window(
+          t,
+          inStart,
+          inStart + NoboSplashTiming.wordEach,
+          Curves.easeOutCubic,
+        );
+        opacity = p;
+        dy = (1 - p) * fontSize * 0.26;
+      }
 
       children.add(
         Opacity(
-          opacity: p.clamp(0.0, 1.0),
+          opacity: opacity.clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: Offset(0, (1 - p) * fontSize * 0.26),
+            offset: Offset(0, dy),
             child: Text(
               glyphs[i],
               style: style,
@@ -231,6 +263,13 @@ class _NoboMarkPainter extends CustomPainter {
   static const Color _violet = NoboSplashBrand.violet;
   static const Color _ring = NoboSplashBrand.ring;
 
+  /// The arc's start and full sweep in radians. Both are compile-time constants
+  /// derived from the generated geometry, so they cannot fall out of step with
+  /// the satellite's resting place.
+  static const double _arcStartRad = NoboMark.arcStartDeg * math.pi / 180.0;
+  static const double _arcSweepRad = NoboMark.arcSweepDeg * math.pi / 180.0;
+
+  /// Angular length of the travelling glint, in radians.
   static const double _glintRadians = 0.62;
 
   @override
@@ -374,8 +413,6 @@ class _NoboMarkPainter extends CustomPainter {
   /// The ring arc: retracts with the dissolve, then redraws from its start.
   void _paintArc(Canvas canvas, double u) {
     final Rect rect = Rect.fromCircle(center: Offset.zero, radius: u);
-    final double startRad = NoboMark.arcStartDeg * math.pi / 180.0;
-    final double fullSweep = NoboMark.arcSweepDeg * math.pi / 180.0;
     final Paint paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = NoboMark.ringStroke * u
@@ -389,7 +426,7 @@ class _NoboMarkPainter extends CustomPainter {
         NoboSplashTiming.dissolveEnd,
         Curves.easeInCubic,
       );
-      if (p < 1) canvas.drawArc(rect, startRad, fullSweep * (1 - p), false, paint);
+      if (p < 1) canvas.drawArc(rect, _arcStartRad, _arcSweepRad * (1 - p), false, paint);
       return;
     }
 
@@ -399,7 +436,7 @@ class _NoboMarkPainter extends CustomPainter {
       NoboSplashTiming.arcEnd,
       Curves.easeInOut,
     );
-    if (p > 0) canvas.drawArc(rect, startRad, fullSweep * p, false, paint);
+    if (p > 0) canvas.drawArc(rect, _arcStartRad, _arcSweepRad * p, false, paint);
   }
 
   /// A highlight gliding once around the finished arc.
@@ -416,11 +453,9 @@ class _NoboMarkPainter extends CustomPainter {
     if (opacity <= 0.004) return;
 
     final Rect rect = Rect.fromCircle(center: Offset.zero, radius: u);
-    final double startRad = NoboMark.arcStartDeg * math.pi / 180.0;
-    final double fullSweep = NoboMark.arcSweepDeg * math.pi / 180.0;
     canvas.drawArc(
       rect,
-      startRad + fullSweep * p,
+      _arcStartRad + _arcSweepRad * p,
       _glintRadians,
       false,
       Paint()
@@ -433,7 +468,7 @@ class _NoboMarkPainter extends CustomPainter {
 
   /// The satellite: pulled back into the core by the dissolve, then launched.
   void _paintSatellite(Canvas canvas, double u) {
-    final Paint paint = Paint()..color = Color(NoboMark.satelliteColor);
+    final Paint paint = Paint()..color = const Color(NoboMark.satelliteColor);
 
     if (t < NoboSplashTiming.dissolveEnd) {
       final double p = _window(
@@ -532,9 +567,7 @@ class _NoboBootGateState extends State<NoboBootGate>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(
-      milliseconds: (NoboSplashTiming.total * 1000).round(),
-    ),
+    duration: const Duration(milliseconds: NoboSplashTiming.totalMs),
   );
 
   bool _done = false;
@@ -599,6 +632,7 @@ class _NoboBootGateState extends State<NoboBootGate>
                     t: t,
                     background:
                         Color.lerp(NoboSplashBrand.plate, canvas, fade)!,
+                    showDomain: true,
                   ),
                 ),
               ),
