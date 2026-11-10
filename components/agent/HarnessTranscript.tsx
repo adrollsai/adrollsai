@@ -46,10 +46,14 @@ const UserItem = React.memo(function UserItem({ item }: { item: Extract<HarnessI
         <div
           className="px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
           style={{
-            background: 'var(--dsw-alias-bg-layer-2)',
-            border: '1px solid var(--dsw-alias-border-l1)',
+            // Tinted, right-aligned and clearly bounded: the user's turn should
+            // read as a card sitting above the agent's working surface, not as
+            // another block of the same page.
+            background: 'var(--dsw-alias-bg-layer-3)',
+            border: '1px solid var(--dsw-alias-border-l2)',
             borderRadius: 'var(--dsh-radius-lg)',
             color: 'var(--dsw-alias-label-primary)',
+            boxShadow: 'var(--dsw-shadow-lv1)',
           }}
         >
           {item.attachments?.map((a, i) => (

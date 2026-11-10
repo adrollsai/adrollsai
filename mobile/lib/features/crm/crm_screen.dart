@@ -10,8 +10,10 @@ import '../../core/design/nobo_type.dart';
 import '../../core/providers.dart';
 import '../../core/ui/navigation.dart';
 import '../../core/utils/format.dart';
+import '../../data/models/profile.dart';
 import '../../data/workspace_source.dart';
 import '../pwa/pwa_widgets.dart';
+import 'voip_sheet.dart';
 
 /// CRM Pipeline — reproduction of the web app's `/dashboard/crm`.
 ///
@@ -44,6 +46,10 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
     final NoboColors c = context.nobo;
     final AsyncValue<List<LeadSeed>> async = ref.watch(leadsProvider);
     final List<LeadSeed> all = async.value ?? const <LeadSeed>[];
+    // VoIP dialling is a super-admin capability in the web app, so the button is
+    // only offered when the signed-in account actually has it.
+    final NoboProfile? profile = ref.watch(accountProvider).value;
+    final bool canVoip = profile?.canUseAgent ?? false;
 
     int countFor(int tab) => switch (tab) {
       1 => all
@@ -438,7 +444,17 @@ class _CrmScreenState extends ConsumerState<CrmScreen> {
                   for (final LeadSeed lead in visible)
                     Padding(
                       padding: const EdgeInsets.only(bottom: NoboSpace.md),
-                      child: _LeadCard(lead: lead),
+                      child: _LeadCard(
+                        lead: lead,
+                        canVoip: canVoip,
+                        onVoip: () => showVoipSheet(
+                          context: context,
+                          ref: ref,
+                          name: lead.name,
+                          phone: lead.phone ?? '',
+                          leadId: lead.id,
+                        ),
+                      ),
                     ),
                   if (visible.isEmpty)
                     PwaCard(
@@ -517,9 +533,15 @@ class _PageButton extends StatelessWidget {
 
 /// One lead row, matching the web app's card.
 class _LeadCard extends StatelessWidget {
-  const _LeadCard({required this.lead});
+  const _LeadCard({
+    required this.lead,
+    required this.canVoip,
+    required this.onVoip,
+  });
 
   final LeadSeed lead;
+  final bool canVoip;
+  final VoidCallback onVoip;
 
   static String _digits(String? phone) =>
       (phone ?? '').replaceAll(RegExp(r'[^0-9+]'), '');
@@ -625,6 +647,41 @@ class _LeadCard extends StatelessWidget {
                 tooltip: 'Call',
               ),
               const SizedBox(width: NoboSpace.sm),
+              if (canVoip) ...<Widget>[
+                GestureDetector(
+                  onTap: onVoip,
+                  child: Container(
+                    height: 36,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: NoboSpace.md,
+                    ),
+                    decoration: BoxDecoration(
+                      color: c.primary,
+                      borderRadius: NoboRadius.rPill,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(
+                          Icons.phone_in_talk_rounded,
+                          size: 14,
+                          color: c.onPrimary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'VoIP',
+                          style: NoboType.label.copyWith(
+                            color: c.onPrimary,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: NoboSpace.sm),
+              ],
               PwaIconCircle(
                 icon: Icons.chat_bubble_rounded,
                 tint: NoboBrand.whatsapp,

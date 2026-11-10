@@ -238,6 +238,44 @@ class WorkspaceRepository {
     }
   }
 
+  /// Places a VoIP call to a lead from the app.
+  ///
+  /// This is the same server-side dial the web app's VoIP softphone performs
+  /// (`POST /api/voice/vobiz/agent-call`, `action: 'dial'`): it rings the lead's
+  /// phone through the workspace's Vobiz DID and records + transcribes the call.
+  /// The route is super-admin gated, so the UI only offers it to owners.
+  Future<Map<String, dynamic>> dialVoip({
+    required String phone,
+    String? leadId,
+  }) async {
+    try {
+      return await _http.postJson(
+        '/api/voice/vobiz/agent-call',
+        <String, dynamic>{
+          'action': 'dial',
+          'toPhone': phone,
+          if (leadId != null) 'leadId': leadId,
+          'sessionId': 'mobile-${DateTime.now().microsecondsSinceEpoch}',
+        },
+      );
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
+  /// Ends an in-progress VoIP call so the server finalises the record.
+  Future<void> endVoip({required String callUuid, String? leadId}) async {
+    try {
+      await _http.postJson('/api/voice/vobiz/agent-call', <String, dynamic>{
+        'action': 'hangup',
+        'callUuid': callUuid,
+        if (leadId != null) 'leadId': leadId,
+      });
+    } catch (e) {
+      throw mapError(e);
+    }
+  }
+
   /// Soft-fails: callers may be offline; never block the UI on this.
   Future<void> safeMarkRead(String id) async {
     try {

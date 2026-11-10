@@ -1,15 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android 12+ (API 31+) uses the platform SplashScreen API instead of
-  windowBackground for the launch screen. Without these overrides the system
-  would show the app icon on a default (often white) background, which breaks the
-  branded first frame.
+  Android 12+ uses the platform SplashScreen API instead of windowBackground.
+  Kept on the same white plate with the real mark so the first frame matches the
+  window background that follows it.
 -->
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenBackground">@android:color/white</item>
         <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
-        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/white</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
     </style>
 

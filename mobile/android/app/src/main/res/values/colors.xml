@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Midpoint of the brand violet -> indigo gradient. -->
-    <color name="ic_launcher_background">#4E2BD8</color>
-    <color name="nobo_violet">#5F27DC</color>
-    <color name="nobo_indigo">#3F3FE0</color>
+    <!-- The real logomark sits on white, as it does everywhere else in the brand. -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="nobo_violet">#5B27D4</color>
+    <color name="nobo_blue">#2563EB</color>
 </resources>

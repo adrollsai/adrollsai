@@ -1,145 +1,74 @@
-# Generates the Nobogent app icon set for Android and iOS.
+# Generates the Nobogent app icon, adaptive icon and splash from the REAL brand
+# asset — `assets/brand/nobogent-logo.png` — rather than a re-drawn approximation.
 #
-# The mark is drawn programmatically rather than cropped from the wordmark logo,
-# so the launcher icon is the same vector geometry the app renders at runtime
-# (see lib/core/ui/orbit_mark.dart) — one brand mark, no drift.
+# The source logo is a violet/orange dotted orb above a "nobogent.com" wordmark.
+# The launcher icon uses just the orb (cropped programmatically to its saturated
+# bounds, so it cannot drift if the artwork changes); the splash uses the full
+# lockup on white, which is what the web app uses for its own launch screen.
 #
 # Usage: pwsh -File tools/generate_icons.ps1
 
 Add-Type -AssemblyName System.Drawing
-
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
 $androidRes = Join-Path $root 'android\app\src\main\res'
 $iosIconSet = Join-Path $root 'ios\Runner\Assets.xcassets\AppIcon.appiconset'
 $brandDir = Join-Path $root 'assets\brand'
+$logoPath = Join-Path $brandDir 'nobogent-logo.png'
 
-function New-BrushGradient([System.Drawing.RectangleF]$rect) {
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        $rect,
-        [System.Drawing.Color]::FromArgb(255, 0x62, 0x20, 0xD8),
-        [System.Drawing.Color]::FromArgb(255, 0x3F, 0x3F, 0xE0),
-        45.0
-    )
-    return $brush
-}
+if (-not (Test-Path $logoPath)) { Write-Error "Missing $logoPath"; exit 1 }
 
-# Draws the orbital mark (dotted spiral + ring + core) in white.
-function Draw-OrbitMark(
-    [System.Drawing.Graphics]$g,
-    [float]$cx,
-    [float]$cy,
-    [float]$markSize,
-    [System.Drawing.Color]$color
-) {
-    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+$source = [System.Drawing.Bitmap]::FromFile($logoPath)
+Write-Output ("source logo: {0}x{1}" -f $source.Width, $source.Height)
 
-    $extent = $markSize / 2.0
-    $ink = $markSize / 24.0
-
-    # --- Dotted spiral -----------------------------------------------------
-    $total = 58
-    for ($i = 0; $i -lt $total; $i++) {
-        $t = $i / [double]$total
-        $angle = $t * [math]::PI * 2.0 * 1.9
-        $band = 0.74 + 0.26 * [math]::Sin($t * [math]::PI)
-        $radius = $extent * $band
-        $px = $cx + [math]::Cos($angle) * $radius
-        $py = $cy + [math]::Sin($angle) * $radius
-
-        $taper = [math]::Sin($t * [math]::PI)
-        if ($taper -lt 0) { $taper = 0 }
-        $dotR = $ink * (0.18 + 0.52 * $taper)
-        if ($dotR -lt 0.35) { $dotR = 0.35 }
-
-        $alpha = [int](255 * (0.25 + 0.75 * $taper))
-        $brush = New-Object System.Drawing.SolidBrush(
-            [System.Drawing.Color]::FromArgb($alpha, $color.R, $color.G, $color.B)
-        )
-        $g.FillEllipse($brush, ($px - $dotR), ($py - $dotR), ($dotR * 2), ($dotR * 2))
-        $brush.Dispose()
+# --- 1. Find the orb (the saturated part of the artwork) --------------------
+$minX = $source.Width; $minY = $source.Height; $maxX = 0; $maxY = 0
+for ($y = 0; $y -lt $source.Height; $y++) {
+    for ($x = 0; $x -lt $source.Width; $x++) {
+        $c = $source.GetPixel($x, $y)
+        $mx = [Math]::Max($c.R, [Math]::Max($c.G, $c.B))
+        $mn = [Math]::Min($c.R, [Math]::Min($c.G, $c.B))
+        # Saturation separates the violet/orange orb from the black wordmark.
+        if (($mx - $mn) -gt 40) {
+            if ($x -lt $minX) { $minX = $x }
+            if ($x -gt $maxX) { $maxX = $x }
+            if ($y -lt $minY) { $minY = $y }
+            if ($y -gt $maxY) { $maxY = $y }
+        }
     }
-
-    # --- Ring with a gap ---------------------------------------------------
-    $ringR = $extent * 0.5
-    $stroke = $ink * 0.62
-    if ($stroke -lt 1.0) { $stroke = 1.0 }
-    $pen = New-Object System.Drawing.Pen(
-        [System.Drawing.Color]::FromArgb(255, $color.R, $color.G, $color.B),
-        $stroke
-    )
-    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $startDeg = -0.62 * 180.0
-    $sweepDeg = 1.42 * 180.0
-    $g.DrawArc(
-        $pen,
-        ($cx - $ringR),
-        ($cy - $ringR),
-        ($ringR * 2),
-        ($ringR * 2),
-        $startDeg,
-        $sweepDeg
-    )
-
-    # --- Core --------------------------------------------------------------
-    $coreR = $extent * 0.2
-    $coreBrush = New-Object System.Drawing.SolidBrush(
-        [System.Drawing.Color]::FromArgb(255, $color.R, $color.G, $color.B)
-    )
-    $g.FillEllipse($coreBrush, ($cx - $coreR), ($cy - $coreR), ($coreR * 2), ($coreR * 2))
-    $coreBrush.Dispose()
-
-    # --- Satellite dot on the ring start -----------------------------------
-    $satAngle = $startDeg * [math]::PI / 180.0
-    $sx = $cx + [math]::Cos($satAngle) * $ringR
-    $sy = $cy + [math]::Sin($satAngle) * $ringR
-    $satR = $ink * 0.5
-    $satBrush = New-Object System.Drawing.SolidBrush(
-        [System.Drawing.Color]::FromArgb(255, $color.R, $color.G, $color.B)
-    )
-    $g.FillEllipse($satBrush, ($sx - $satR), ($sy - $satR), ($satR * 2), ($satR * 2))
-    $satBrush.Dispose()
-
-    $pen.Dispose()
 }
+$side = [Math]::Max($maxX - $minX, $maxY - $minY)
+$pad = [int]($side * 0.06)
+$cx = [int](($minX + $maxX) / 2)
+$cy = [int](($minY + $maxY) / 2)
+$half = [int]($side / 2) + $pad
+$orbRect = New-Object System.Drawing.Rectangle(
+    ($cx - $half), ($cy - $half), ($half * 2), ($half * 2)
+)
+if ($orbRect.X -lt 0) { $orbRect.X = 0 }
+if ($orbRect.Y -lt 0) { $orbRect.Y = 0 }
+if ($orbRect.Right -gt $source.Width) { $orbRect.Width = $source.Width - $orbRect.X }
+if ($orbRect.Bottom -gt $source.Height) { $orbRect.Height = $source.Height - $orbRect.Y }
+Write-Output ("orb crop: {0}x{1} at {2},{3}" -f $orbRect.Width, $orbRect.Height, $orbRect.X, $orbRect.Y)
 
-# Full-bleed icon: gradient background + centred white mark.
-function New-IconBitmap([int]$size, [double]$markRatio) {
-    $bmp = New-Object System.Drawing.Bitmap($size, $size)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $rect = New-Object System.Drawing.RectangleF(0, 0, $size, $size)
-    $brush = New-BrushGradient($rect)
-    $g.FillRectangle($brush, $rect)
-    $brush.Dispose()
-
-    $mark = $size * $markRatio
-    Draw-OrbitMark $g ($size / 2.0) ($size / 2.0) $mark ([System.Drawing.Color]::White)
-
-    $g.Dispose()
-    return $bmp
-}
-
-# Transparent adaptive-icon foreground: mark only, inside the 66% safe zone.
-function New-AdaptiveForeground([int]$size) {
-    $bmp = New-Object System.Drawing.Bitmap($size, $size)
-    $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.Clear([System.Drawing.Color]::Transparent)
-    # 108dp canvas; the safe zone is the inner 72dp, so the mark sits at ~0.46.
-    Draw-OrbitMark $g ($size / 2.0) ($size / 2.0) ($size * 0.46) ([System.Drawing.Color]::White)
-    $g.Dispose()
-    return $bmp
-}
-
-function Save-Resized([System.Drawing.Bitmap]$source, [int]$size, [string]$path) {
+function Save-Resized([System.Drawing.Bitmap]$src, [System.Drawing.Rectangle]$crop, [int]$size, [string]$path, [System.Drawing.Color]$bg, [double]$fill = 1.0) {
     $out = New-Object System.Drawing.Bitmap($size, $size)
     $g = [System.Drawing.Graphics]::FromImage($out)
     $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
-    $g.DrawImage($source, (New-Object System.Drawing.Rectangle(0, 0, $size, $size)))
+    if ($bg.A -gt 0) {
+        $brush = New-Object System.Drawing.SolidBrush($bg)
+        $g.FillRectangle($brush, 0, 0, $size, $size)
+        $brush.Dispose()
+    } else {
+        $g.Clear([System.Drawing.Color]::Transparent)
+    }
+    $inner = [int]($size * $fill)
+    $offset = [int](($size - $inner) / 2)
+    $dest = New-Object System.Drawing.Rectangle($offset, $offset, $inner, $inner)
+    $g.DrawImage($src, $dest, $crop, [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose()
     $dir = Split-Path -Parent $path
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
@@ -147,31 +76,50 @@ function Save-Resized([System.Drawing.Bitmap]$source, [int]$size, [string]$path)
     $out.Dispose()
 }
 
-Write-Output '== Generating master icon =='
-$master = New-IconBitmap 1024 0.60
-New-Item -ItemType Directory -Force -Path $brandDir | Out-Null
-$master.Save((Join-Path $brandDir 'app_icon_1024.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+function Save-Lockup([System.Drawing.Bitmap]$src, [int]$width, [string]$path) {
+    $ratio = $src.Height / $src.Width
+    $height = [int]($width * $ratio)
+    $out = New-Object System.Drawing.Bitmap($width, $height)
+    $g = [System.Drawing.Graphics]::FromImage($out)
+    $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+    $g.Clear([System.Drawing.Color]::White)
+    $g.DrawImage($src, 0, 0, $width, $height)
+    $g.Dispose()
+    $dir = Split-Path -Parent $path
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $out.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+    $out.Dispose()
+}
+
+$white = [System.Drawing.Color]::White
+$clear = [System.Drawing.Color]::FromArgb(0, 0, 0, 0)
+
+Write-Output '== master icon (white plate, real orb) =='
+Save-Resized $source $orbRect 1024 (Join-Path $brandDir 'app_icon_1024.png') $white 0.86
 Write-Output '   assets/brand/app_icon_1024.png'
 
-Write-Output '== Android legacy launcher icons =='
+Write-Output '== Android launcher icons =='
 $androidSizes = @{ 'mdpi' = 48; 'hdpi' = 72; 'xhdpi' = 96; 'xxhdpi' = 144; 'xxxhdpi' = 192 }
-foreach ($density in $androidSizes.Keys) {
-    $size = $androidSizes[$density]
-    Save-Resized $master $size (Join-Path $androidRes "mipmap-$density\ic_launcher.png")
-    Write-Output "   mipmap-$density/ic_launcher.png ($size px)"
+foreach ($d in $androidSizes.Keys) {
+    Save-Resized $source $orbRect $androidSizes[$d] (Join-Path $androidRes "mipmap-$d\ic_launcher.png") $white 0.86
+    Write-Output "   mipmap-$d/ic_launcher.png"
 }
 
-Write-Output '== Android adaptive icon foreground =='
+Write-Output '== Android adaptive foreground (transparent, inside safe zone) =='
 $adaptiveSizes = @{ 'mdpi' = 108; 'hdpi' = 162; 'xhdpi' = 216; 'xxhdpi' = 324; 'xxxhdpi' = 432 }
-foreach ($density in $adaptiveSizes.Keys) {
-    $size = $adaptiveSizes[$density]
-    $fg = New-AdaptiveForeground $size
-    $dir = Join-Path $androidRes "mipmap-$density"
+foreach ($d in $adaptiveSizes.Keys) {
+    $dir = Join-Path $androidRes "mipmap-$d"
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
-    $fg.Save((Join-Path $dir 'ic_launcher_foreground.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-    $fg.Dispose()
-    Write-Output "   mipmap-$density/ic_launcher_foreground.png ($size px)"
+    # 0.62 keeps the mark inside the 66% adaptive-icon safe zone.
+    Save-Resized $source $orbRect $adaptiveSizes[$d] (Join-Path $dir 'ic_launcher_foreground.png') $clear 0.62
+    Write-Output "   mipmap-$d/ic_launcher_foreground.png"
 }
+
+Write-Output '== splash lockup (full logo on white, as the web app launches) =='
+Save-Lockup $source 720 (Join-Path $androidRes 'drawable-nodpi\splash_logo.png')
+Write-Output '   drawable-nodpi/splash_logo.png'
 
 Write-Output '== iOS app icons =='
 $iosSizes = [ordered]@{
@@ -192,9 +140,9 @@ $iosSizes = [ordered]@{
     'Icon-App-1024x1024@1x.png' = 1024
 }
 foreach ($name in $iosSizes.Keys) {
-    Save-Resized $master $iosSizes[$name] (Join-Path $iosIconSet $name)
-    Write-Output "   $name ($($iosSizes[$name]) px)"
+    Save-Resized $source $orbRect $iosSizes[$name] (Join-Path $iosIconSet $name) $white 0.86
+    Write-Output "   $name"
 }
 
-$master.Dispose()
+$source.Dispose()
 Write-Output '== Done =='

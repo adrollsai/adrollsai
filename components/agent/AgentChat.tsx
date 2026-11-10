@@ -51,6 +51,7 @@ import {
   Play,
   FileEdit,
   ArrowLeft,
+  ChevronRight,
 } from 'lucide-react';
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
@@ -254,6 +255,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Start collapsed on phones: the rail is an overlay there, and covering the
+  // conversation the moment the page loads is both confusing and slow-feeling.
+  useEffect(() => {
+    try {
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    } catch {}
+  }, []);
   const [showFileManager, setShowFileManager] = useState(false);
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -266,6 +274,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // Workspaces state (DeepSeek Harness style)
   const [workspaces, setWorkspaces] = useState<WorkspaceFolder[]>(DEFAULT_WORKSPACES);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>('ws_general');
+  // Workspace folders collapse, so a long session list cannot swamp the rail.
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
+  const toggleWorkspaceCollapsed = (id: string) =>
+    setCollapsedWorkspaces((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [showNewWorkspaceModal, setShowNewWorkspaceModal] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -958,6 +975,17 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
   return (
     <div className="flex h-full w-full overflow-hidden" style={{ background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }}>
+      {/* Mobile scrim: on a phone the sidebar floats over the chat, so tapping
+          outside it must close it. Hidden from md upwards where it is docked. */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-30 md:hidden"
+          style={{ background: 'rgba(15, 23, 42, 0.32)' }}
+        />
+      )}
+
       {/* 1. DeepSeek Harness Left Sidebar */}
       <div
         className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
@@ -965,7 +993,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         }`}
         style={{
           background: 'var(--dsw-alias-bg-layer-1)',
-          borderRight: '1px solid var(--dsw-alias-border-l1)',
+          // A firmer divider than the hairline used inside panels: this is the
+          // one structural seam in the layout, so the rail reads as its own
+          // surface instead of blending into the conversation.
+          borderRight: '1px solid var(--dsw-alias-border-l2)',
+          boxShadow: '1px 0 0 0 rgba(15, 23, 42, 0.03)',
         }}
       >
         {/* Brand & New Session Button */}
@@ -1003,7 +1035,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1"
+              title="Hide sidebar"
+              aria-label="Hide sidebar"
+              className="p-1 hover:opacity-70 transition"
               style={{ color: 'var(--dsw-alias-label-tertiary)', borderRadius: 'var(--dsh-radius-sm)' }}
             >
               <PanelLeftClose size={16} />
@@ -1063,7 +1097,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 <div key={ws.id} className="space-y-1">
                   {/* Workspace Folder Header */}
                   <div
-                    onClick={() => setActiveWorkspaceId(ws.id)}
+                    onClick={() => {
+                      setActiveWorkspaceId(ws.id);
+                      toggleWorkspaceCollapsed(ws.id);
+                    }}
+                    title={collapsedWorkspaces.has(ws.id) ? 'Expand folder' : 'Collapse folder'}
                     className={`group flex items-center justify-between px-2.5 py-2 rounded-xl text-xs cursor-pointer transition select-none ${
                       isWsActive
                         ? 'dsh-selected dsh-border-l2 dsh-label-primary dsh-strong'
@@ -1071,6 +1109,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate flex-1 min-w-0">
+                      {collapsedWorkspaces.has(ws.id) ? (
+                        <ChevronRight size={13} className="shrink-0 dsh-label-caption" />
+                      ) : (
+                        <ChevronDown size={13} className="shrink-0 dsh-label-caption" />
+                      )}
                       <FolderOpen size={14} className={isWsActive ? 'dsh-accent shrink-0' : 'shrink-0 dsh-label-caption'} />
                       <span className="truncate font-medium">{ws.name}</span>
                     </div>
@@ -1102,7 +1145,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   </div>
 
                   {/* Indented Sessions inside this folder */}
-                  {wsSessions.length > 0 && (
+                  {wsSessions.length > 0 && !collapsedWorkspaces.has(ws.id) && (
                     <div className="pl-3.5 space-y-0.5 dsh-tree-rail ml-3 py-0.5">
                       {wsSessions.map((sess) => {
                         const isSelected = sess.id === activeSessionId;
@@ -1178,8 +1221,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         <div
           className="h-12 flex items-center justify-between px-4 shrink-0"
           style={{
+            // Chrome sits one step above the content surface so the header reads
+            // as a distinct band rather than part of the transcript.
             borderBottom: '1px solid var(--dsw-alias-border-l1)',
-            background: 'var(--dsw-alias-bg-base)',
+            background: 'var(--dsw-alias-bg-layer-1)',
           }}
         >
           <div className="flex items-center gap-3">
@@ -1430,8 +1475,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         <div
           className="p-4 pb-4 shrink-0"
           style={{
+            // A boundary line plus a gradient fade gives the dock its own zone.
+            // Before this the transcript simply ran into the input and the whole
+            // screen read as one undifferentiated mass.
+            borderTop: '1px solid var(--dsw-alias-border-l1)',
             background:
-              'linear-gradient(to top, var(--dsw-alias-bg-base) 60%, transparent)',
+              'linear-gradient(to top, var(--dsw-alias-bg-base) 72%, transparent)',
           }}
         >
           <div className="max-w-3xl mx-auto">
