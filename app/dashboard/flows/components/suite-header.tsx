@@ -127,6 +127,15 @@ export function SuiteHeader({
               <span className="text-[10px] font-black uppercase tracking-wider bg-violet-50 text-violet-700 px-2 py-0.5 rounded-full border border-violet-200">
                 PRO
               </span>
+              {/* Flow Studio is the clean canvas editor; this suite keeps the
+                  channel-specific views (calls, DMs, comments, sequences). */}
+              <button
+                onClick={() => router.push(`/dashboard/flows/studio${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                className="ml-2 text-[11px] font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-full px-2.5 py-0.5 transition-colors cursor-pointer flex items-center gap-1"
+                title="Open the visual flow editor"
+              >
+                <Workflow size={11} /> Flow Studio
+              </button>
             </div>
 
             <div className="flex items-center gap-3">
