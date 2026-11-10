@@ -54,6 +54,7 @@ export const NODE_SPECS: NodeSpec[] = [
   { type: 'action_whatsapp_msg', aliases: ['action_send_whatsapp'], label: 'Send WhatsApp message (with CTA)', category: 'message', support: 'executed', config: ['message', 'body', 'buttonText', 'buttonUrl'] },
   { type: 'inventoryDeliveryNode', label: 'Deliver inventory / catalogue', category: 'message', support: 'executed', config: ['message'] },
   { type: 'emailNode', aliases: ['action_send_email', 'action_email'], label: 'Send email', category: 'message', support: 'executed', config: ['subject', 'recipient', 'customEmail'] },
+  { type: 'aiAgentNode', label: 'AI agent reply (DeepSeek)', category: 'message', support: 'executed', config: ['instructions', 'prompt', 'message'], note: 'Drafts a reply with DeepSeek and sends it on WhatsApp.' },
 
   // ── logic ───────────────────────────────────────────────────────────────
   { type: 'action_condition', aliases: ['conditionNode', 'action_if_else'], label: 'Condition / branch', category: 'logic', support: 'executed', config: ['field', 'operator', 'value', 'trueHandle', 'falseHandle'], note: 'Evaluated during planning; only the matching branch runs.' },

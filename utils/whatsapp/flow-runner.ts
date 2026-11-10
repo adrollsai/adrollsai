@@ -1198,6 +1198,64 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
         }
       }
 
+      // ── AI agent node ──────────────────────────────────────────────────
+      // The canvas renders this as "DeepSeek AI Agent" but the runner had no
+      // handler, so it silently did nothing. It now drafts a reply with
+      // DeepSeek (or uses a fixed message when configured) and sends it on
+      // WhatsApp — which is what the node promises on the canvas.
+      if (nodeType === 'aiAgentNode') {
+        const staticReply = cfg.message || cfg.reply || cfg.text || ''
+        const instruction = String(cfg.instructions || cfg.prompt || cfg.systemPrompt || '').trim()
+        let replyText = staticReply ? interpolateVariables(String(staticReply), variableMap) : ''
+
+        if (!replyText && instruction) {
+          try {
+            const { callDeepSeekWithUsage } = await import('@/utils/external-apis')
+            const inbound = (messageText || buttonReplyTitle || '').slice(0, 800)
+            const generated = await callDeepSeekWithUsage(
+              `Customer message: "${inbound || '(none)'}"\n\nWhat to do: ${interpolateVariables(instruction, variableMap)}`,
+              {
+                system:
+                  `You are the WhatsApp assistant for ${ownerBusinessName}. ` +
+                  `Reply in 1-3 short sentences, warm and human, no markdown. ` +
+                  `Never invent prices, availability or promises that were not given to you.`,
+                maxTokens: 240,
+                temperature: 0.6,
+                timeoutMs: 20_000,
+              }
+            )
+            replyText = (generated.text || '').trim()
+          } catch (genErr: any) {
+            console.error('[FlowRunner] aiAgentNode generation failed:', genErr?.message || genErr)
+          }
+        }
+
+        if (replyText && ownerWaPhoneId && cleanFrom) {
+          try {
+            const aiRes = await fetch(`https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${ownerWaToken}` },
+              body: JSON.stringify({
+                messaging_product: 'whatsapp',
+                recipient_type: 'individual',
+                to: cleanFrom,
+                type: 'text',
+                text: { body: replyText.slice(0, 4000) },
+              }),
+            })
+            if (!aiRes.ok) {
+              console.error('[FlowRunner] aiAgentNode send failed:', (await aiRes.text()).slice(0, 300))
+            } else {
+              actionsExecuted.push('ai_agent_reply')
+            }
+          } catch (sendErr: any) {
+            console.error('[FlowRunner] aiAgentNode send threw:', sendErr?.message || sendErr)
+          }
+        } else if (!replyText) {
+          console.warn('[FlowRunner] aiAgentNode produced no reply text; skipping send')
+        }
+      }
+
       // Optional delay between nodes if configured
       if (nodeType === 'action_delay' || nodeType === 'delayNode') {
         const delaySeconds = Math.min(cfg.seconds || (cfg.minutes ? cfg.minutes * 60 : 1), 10)
