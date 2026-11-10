@@ -18,6 +18,7 @@ import { createMediaStudioTools } from './tools/media_studio';
 import { createPublishingTools } from './tools/publishing';
 import { createSiteTools } from './tools/sites';
 import { createRecipeTools } from './tools/recipes';
+import { createNotificationTools } from './tools/notifications';
 
 export async function createAgentContext(supabase: SupabaseClient, userId: string, operatorUserId?: string) {
   // Fetch user profile and business context for the target business
@@ -65,6 +66,8 @@ export async function createAgentContext(supabase: SupabaseClient, userId: strin
     ...createPublishingTools(supabase, userId),
     // 2d. Landing pages + custom domains (the agent writes the page, this makes it live)
     ...createSiteTools(supabase, userId),
+    // 2f. Notifications the agent can send the owner (push + email only)
+    ...createNotificationTools(supabase, userId),
     // 2e. Tested recipes � known-good pipelines to adapt instead of reinventing
     ...createRecipeTools(),
     // 3. 24fps.dev Motion Graphics Suite MCP
@@ -147,6 +150,14 @@ MODULAR PLUGIN SUITE:
    Do NOT ask when the request already implies the format — "reel", "video", "story", "poster", "banner", "carousel", or a stated duration or aspect ratio all settle it. Never ask twice, and never ask purely to appear careful.
 4. 24fps.dev Motion Graphics Suite MCP:
    - 'search_24fps_motion_graphics', 'get_24fps_clip_source', 'search_24fps_editor_presets', 'get_24fps_editor_preset': Search 7,000+ motion graphic clips, presets, and GSAP templates.
+   - 'notify_user': send the account owner a push and/or email — for finished long tasks, failures, or a post going live when they are not watching. Push and email ONLY, never WhatsApp or SMS. Do not use it for ordinary replies.
+3f. How to build a still image creative — pick the right method, never just one by default:
+   a) WHOLE IMAGE FROM THE IMAGE MODEL: best for photographic or illustrated scenes. If the picture is mostly photography, generate the whole thing in ONE prompt INCLUDING the intended typography ("festive Bhai Dooj greeting, warm gold serif reading HAPPY BHAI DOOJ across the top third, diyas and marigolds"). A coherent generated image beats a good photo ruined by flat code-drawn text.
+   b) ENTIRELY FROM CODE: exact brand typography, precise copy, or when AI imagery looks AI-ish and that is a problem — typography-led layouts, offer cards, price lists, schedule graphics. Render HTML/GSAP in the sandbox at the exact pixel size.
+   c) HYBRID: generate the photographic part, then composite precise editable type over it in code. Use when the scene should be photographic but the words must be perfect. Check the image first with analyze_image_with_gemini to find where the empty space actually is.
+   d) REAL IMAGERY FROM THE INTERNET: when it needs an actual place, product, logo or person, fetch a real image rather than inventing one. Never fabricate a real brand's logo or property.
+   Judgement: photographic subject -> (a) or (c); text-led or brand-critical -> (b); real-world reference -> (d).
+   ASK FOR FEEDBACK on design — creative taste is the client's, not yours. After delivering, show it and ask one focused question ("more photographic, cleaner, or a different colour?") instead of a vague "how is it?". If they say AI images look AI-ish, switch to (b) or (c) rather than arguing.
 5. Meta Ads — you manage the user's CONNECTED ad account directly:
    - 'meta_graph_account': the ad account's name, currency, timezone, status, spend and reachable accounts. Call this before quoting any budget so you use the real currency.
    - 'meta_graph_list' / 'meta_graph_get': inspect campaigns, ad sets, ads, creatives, audiences and lead forms with real targeting and budgets.

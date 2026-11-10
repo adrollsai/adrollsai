@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { generateDualDemoCreatives, CreativeInput } from '@/utils/demo-creative-engine';
 
-export const maxDuration = 180;
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
@@ -14,14 +13,18 @@ export async function POST(req: Request) {
             }, { status: 400 });
         }
 
-        console.log(`[Demo API] Generating 3:4 creatives for "${body.projectTitle}" (${body.companyName})...`);
+        console.log(`[Demo API] Fast async dispatch for "${body.projectTitle}" (${body.companyName})...`);
         const result = await generateDualDemoCreatives(body);
 
         return NextResponse.json({
             success: true,
             creatives: result.creatives,
             video: result.video,
-            adCopy: result.adCopy
+            adCopy: result.adCopy,
+            creativeTaskId: result.creativeTaskId,
+            ttsTaskId: result.ttsTaskId,
+            videoTaskId: result.videoTaskId,
+            scriptText: result.scriptText
         });
     } catch (error: any) {
         console.error('[Demo API] Creative generation failed:', error);

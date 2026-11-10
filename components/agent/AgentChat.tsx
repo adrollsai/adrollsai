@@ -346,6 +346,26 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // Two-step delete confirmation: holds the id awaiting a second click.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
+  // Theme. Light is the default; the choice persists per browser.
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  useEffect(() => {
+    let initial: 'light' | 'dark' = 'light';
+    try {
+      const saved = localStorage.getItem('nobo_agent_theme');
+      if (saved === 'dark' || saved === 'light') initial = saved;
+    } catch {}
+    setTheme(initial);
+    document.querySelector('.dsh')?.setAttribute('data-theme', initial);
+  }, []);
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    try {
+      localStorage.setItem('nobo_agent_theme', next);
+    } catch {}
+    document.querySelector('.dsh')?.setAttribute('data-theme', next);
+  };
+
   useEffect(() => {
     handleSendRef.current = handleSend;
   });
@@ -644,17 +664,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       }
     }
 
-    if (harness.available === true && sid) {
-      // This is the only writer of `user.message`; the route owns everything
-      // the model produces.
-      void harness.appendUserMessage(
-        fullPrompt,
-        attachedFile
-          ? [{ name: attachedFile.name, url: attachedFile.url, type: attachedFile.type, size: attachedFile.size }]
-          : undefined,
-        sid
-      );
-    }
+    // NOTE: no appendUserMessage here in the durable path.
+    //
+    // POST /api/agent/v2/runs appends `user.message` itself, so writing it here
+    // too produced two identical bubbles in the transcript. The append below is
+    // only for the streaming fallback, where no run is created.
 
     // Immediately save user prompt to localStorage so tab reload or backgrounding NEVER loses the session
     try {
@@ -691,6 +705,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     }
 
     // Fallback only when the durable queue is unavailable.
+    if (harness.available === true && sid) {
+      void harness.appendUserMessage(
+        fullPrompt,
+        attachedFile
+          ? [{ name: attachedFile.name, url: attachedFile.url, type: attachedFile.type, size: attachedFile.size }]
+          : undefined,
+        sid
+      );
+    }
     await sendMessage({ text: fullPrompt }, sid ? { body: { sessionId: sid } } : undefined);
   };
 
@@ -1180,8 +1203,17 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               <span className="hidden sm:inline">Dashboard</span>
             </a>
 
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="px-2 py-1 rounded-[8px] dsh-t-xs dsh-label-secondary dsh-interactive shrink-0"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark' ? 'Light' : 'Dark'}
+            </button>
+
             <div className="flex items-center gap-2 max-w-md truncate text-xs">
-              <span className="font-bold text-white truncate">
+              <span className="font-bold dsh-label-primary truncate">
                 {activeSessionObj?.title || 'New Session'}
               </span>
               <span className="dsh-label-caption dsh-mono hidden sm:inline">

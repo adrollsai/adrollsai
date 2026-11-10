@@ -79,6 +79,8 @@ interface GeneratedCreative {
     headline: string;
     primaryText: string;
     ctaText: string;
+    taskId?: string;
+    isFinal?: boolean;
 }
 
 interface GeneratedVideo {
@@ -88,10 +90,12 @@ interface GeneratedVideo {
     aspectRatio: '9:16';
     duration: number;
     taskId?: string;
+    ttsTaskId?: string;
     scriptText?: string;
     scriptCues?: Array<{ start?: number; end?: number; time?: number; text: string; emphasis?: boolean }>;
     captionStyle?: string;
     audioUrl?: string;
+    isAudioFinal?: boolean;
 }
 
 const POPULAR_INDIAN_LANGUAGES = [
@@ -412,6 +416,83 @@ export default function DemoPage() {
             clearInterval(pollInterval);
         };
     }, [generatedVideo?.taskId, generatedVideo?.videoUrl]);
+
+    // Background polling for real AI Kie Creative task
+    useEffect(() => {
+        if (!creative?.taskId || creative?.isFinal) return;
+
+        let active = true;
+        const pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/demo/creative-status?taskId=${encodeURIComponent(creative.taskId!)}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!active) return;
+
+                if (data.state === 'success' && data.imageUrl) {
+                    clearInterval(pollInterval);
+                    setCreative(prev => prev ? { ...prev, imageUrl: data.imageUrl, isFinal: true } : null);
+                    toast.success("✦ AI 3:4 Ad Creative synthesized successfully!");
+                } else if (data.state === 'fail') {
+                    clearInterval(pollInterval);
+                    console.warn('[Demo Creative Polling] AI creative generation ended:', data.error);
+                }
+            } catch (err) {
+                console.warn('[Demo Creative Polling] Network notice:', err);
+            }
+        }, 3500);
+
+        return () => {
+            active = false;
+            clearInterval(pollInterval);
+        };
+    }, [creative?.taskId, creative?.isFinal]);
+
+    // Background polling for real AI Voiceover (TTS) task & acoustic caption alignment
+    useEffect(() => {
+        if (!generatedVideo?.ttsTaskId || generatedVideo?.isAudioFinal) return;
+
+        let active = true;
+        const pollInterval = setInterval(async () => {
+            try {
+                const scriptParam = encodeURIComponent(generatedVideo.scriptText || '');
+                const langParam = encodeURIComponent(videoLanguage || 'hinglish');
+                const res = await fetch(`/api/demo/audio-status?taskId=${encodeURIComponent(generatedVideo.ttsTaskId!)}&scriptText=${scriptParam}&videoLanguage=${langParam}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!active) return;
+
+                if (data.state === 'success' && data.audioUrl) {
+                    clearInterval(pollInterval);
+                    setGeneratedVideo(prev => prev ? {
+                        ...prev,
+                        audioUrl: data.audioUrl,
+                        scriptCues: data.scriptCues || prev.scriptCues,
+                        isAudioFinal: true
+                    } : null);
+                    if (data.scriptCues && data.scriptCues.length > 0) {
+                        setEditableCues(data.scriptCues.map((c: any, i: number) => ({
+                            text: c.text,
+                            start: c.start ?? (i * 2.0),
+                            end: c.end ?? ((i + 1) * 2.0),
+                            emphasis: c.emphasis
+                        })));
+                    }
+                    toast.success("✦ Multilingual Voiceover & Timed Captions ready!");
+                } else if (data.state === 'fail') {
+                    clearInterval(pollInterval);
+                    console.warn('[Demo Audio Polling] TTS synthesis ended:', data.error);
+                }
+            } catch (err) {
+                console.warn('[Demo Audio Polling] Network notice:', err);
+            }
+        }, 3000);
+
+        return () => {
+            active = false;
+            clearInterval(pollInterval);
+        };
+    }, [generatedVideo?.ttsTaskId, generatedVideo?.isAudioFinal, generatedVideo?.scriptText, videoLanguage]);
 
     const handleSelectCaptionTheme = (themeKey: string) => {
         setSelectedCaptionTheme(themeKey);
@@ -1979,11 +2060,19 @@ export default function DemoPage() {
                                     <div className="lg:col-span-6 rounded-2xl p-4 bg-slate-50 border border-slate-200">
                                         <div className="w-full aspect-[3/4] rounded-xl overflow-hidden bg-slate-100 relative border border-slate-200 shadow-md">
                                             {creative?.imageUrl ? (
-                                                <img
-                                                    src={creative.imageUrl}
-                                                    alt="Ad Creative"
-                                                    className="w-full h-full object-cover"
-                                                />
+                                                <>
+                                                    <img
+                                                        src={creative.imageUrl}
+                                                        alt="Ad Creative"
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                    {!creative.isFinal && creative.taskId && (
+                                                        <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur-md text-amber-300 text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-amber-500/30">
+                                                            <Loader2 size={11} className="animate-spin text-amber-400" />
+                                                            <span>AI Creative Rendering...</span>
+                                                        </div>
+                                                    )}
+                                                </>
                                             ) : isGenerating ? (
                                                 <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center bg-white space-y-3">
                                                     <div className="relative w-12 h-12 flex items-center justify-center">
@@ -2160,9 +2249,9 @@ export default function DemoPage() {
                                                                     <Loader2 size={12} className="shrink-0 animate-spin" />
                                                                     <span className="truncate">Synthesizing camera flight...</span>
                                                                 </div>
-                                                                <div className="flex items-center gap-2 text-[10px] font-medium text-slate-500">
-                                                                    <div className="w-3 h-3 rounded-full border border-slate-700 shrink-0" />
-                                                                    <span className="truncate">Syncing {videoLanguage.toUpperCase()} voiceover</span>
+                                                                <div className={`flex items-center gap-2 text-[10px] font-bold ${generatedVideo?.audioUrl ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                                                    {generatedVideo?.audioUrl ? <CheckCircle2 size={12} className="shrink-0 text-emerald-400" /> : <div className="w-3 h-3 rounded-full border border-slate-700 shrink-0" />}
+                                                                    <span className="truncate">{generatedVideo?.audioUrl ? `${videoLanguage.toUpperCase()} voiceover ready` : `Syncing ${videoLanguage.toUpperCase()} voiceover`}</span>
                                                                 </div>
                                                             </div>
                                                         </div>

@@ -153,6 +153,21 @@ export function useHarnessSession(): UseHarnessSession {
       const events: HarnessEvent[] = Array.isArray(body.events) ? body.events : [];
       lastSeqRef.current = events.reduce((max, e) => Math.max(max, e.seq || 0), 0);
       setError(null);
+
+      // Re-attach to a run that is still going.
+      //
+      // activeRun lived only in this tab's memory, so reopening (or opening on
+      // another device) showed a transcript with no sign that the agent was
+      // still working. Ask the server what is actually in flight.
+      try {
+        const runsBody = await jsonFetch(`/api/agent/v2/runs?sessionId=${encodeURIComponent(id)}`);
+        const runs: RunSummary[] = Array.isArray(runsBody.runs) ? runsBody.runs : [];
+        const live = runs.find((r) => r.status === 'queued' || r.status === 'running') || null;
+        setActiveRun(live);
+      } catch {
+        /* runs endpoint unavailable — leave whatever we had */
+      }
+
       return nextState;
     } catch (err: any) {
       setError(err?.message || 'Could not open session');

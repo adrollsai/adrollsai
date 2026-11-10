@@ -14,7 +14,7 @@ function AgentPageContent() {
   return (
     // `.dsh` scopes the harness design tokens (off-white dark surfaces,
     // neutral chrome, 16px prose) so they never leak into the dashboard UI.
-    <div className="dsh fixed inset-0 z-50 h-screen w-screen overflow-hidden" data-theme="dark">
+    <div className="dsh fixed inset-0 z-50 h-screen w-screen overflow-hidden" data-theme="light">
       <AgentChat impersonateId={impersonateId} />
     </div>
   );
@@ -26,7 +26,7 @@ export default function AgentPage() {
       fallback={
         <div
           className="dsh fixed inset-0 z-50 flex items-center justify-center"
-          data-theme="dark"
+          data-theme="light"
         >
           <div
             className="flex items-center gap-3 p-5 rounded-[16px]"
