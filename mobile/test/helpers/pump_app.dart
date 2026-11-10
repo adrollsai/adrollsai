@@ -97,7 +97,9 @@ Future<void> pumpNobo(
             child: c ?? const SizedBox.shrink(),
           );
         },
-        home: child,
+        // Screens are pumped bare; Scaffold supplies the Material ancestor that
+        // TextField and InkWell require, exactly as AppShell does at runtime.
+        home: Scaffold(body: child),
       ),
     ),
   );

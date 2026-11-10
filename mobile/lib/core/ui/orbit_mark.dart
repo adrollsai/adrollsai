@@ -89,7 +89,7 @@ class _OrbitMarkState extends State<OrbitMark>
   Widget build(BuildContext context) {
     final NoboColors c = context.nobo;
     final Color primary = widget.color ?? c.primary;
-    final Color secondary = widget.secondaryColor ?? NoboBrand.indigo500;
+    final Color secondary = widget.secondaryColor ?? NoboBrand.blue500;
 
     Widget painterAt(double t) => CustomPaint(
       size: Size.square(widget.size),

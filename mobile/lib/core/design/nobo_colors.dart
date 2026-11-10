@@ -1,86 +1,89 @@
 import 'package:flutter/material.dart';
 
-/// Nobogent brand palette.
+/// Palette lifted from the live Nobogent PWA.
 ///
-/// The identity is derived from the actual Nobogent logomark, which is an
-/// orbital swirl rendered as a violet -> indigo gradient (#6020D0 -> #4840D0).
-/// The marketing site's navy / crimson / gold are retained as *accent* roles,
-/// not as the primary brand colour, because the logomark is the authoritative
-/// brand asset and violet is what a user actually recognises.
+/// Values are sampled from the running web app and its Tailwind config, not
+/// invented: the whole point of this design pass is that the native app looks
+/// like the product people already use. Slate neutrals, blue-600 action colour,
+/// slate-900 "navy" for the dark primary buttons, and the accent hues the web
+/// dashboard uses to colour-code its stat tiles.
 abstract final class NoboBrand {
   const NoboBrand._();
 
-  // Violet — primary. Sampled directly from the logomark.
-  static const Color violet50 = Color(0xFFF4F0FF);
-  static const Color violet100 = Color(0xFFE9E1FF);
-  static const Color violet200 = Color(0xFFD6C7FF);
-  static const Color violet300 = Color(0xFFB9A0FF);
-  static const Color violet400 = Color(0xFF9670FA);
-  static const Color violet500 = Color(0xFF7B45F0);
-  static const Color violet600 = Color(0xFF5F27DC);
-  static const Color violet700 = Color(0xFF4E1CB8);
-  static const Color violet800 = Color(0xFF3F1895);
-  static const Color violet900 = Color(0xFF331375);
+  // Blue — the single action colour across the web app.
+  static const Color blue50 = Color(0xFFEFF6FF);
+  static const Color blue100 = Color(0xFFDBEAFE);
+  static const Color blue200 = Color(0xFFBFDBFE);
+  static const Color blue500 = Color(0xFF3B82F6);
+  static const Color blue600 = Color(0xFF2563EB);
+  static const Color blue700 = Color(0xFF1D4ED8);
 
-  // Indigo — the cool end of the logomark gradient.
-  static const Color indigo400 = Color(0xFF7A73F0);
-  static const Color indigo500 = Color(0xFF5A50E2);
-  static const Color indigo600 = Color(0xFF4338CA);
-  static const Color indigo700 = Color(0xFF372DA6);
+  // Slate neutrals — the app's structural colour.
+  static const Color slate50 = Color(0xFFF8FAFC);
+  static const Color slate100 = Color(0xFFF1F5F9);
+  static const Color slate200 = Color(0xFFE2E8F0);
+  static const Color slate300 = Color(0xFFCBD5E1);
+  static const Color slate400 = Color(0xFF94A3B8);
+  static const Color slate500 = Color(0xFF64748B);
+  static const Color slate600 = Color(0xFF475569);
+  static const Color slate700 = Color(0xFF334155);
+  static const Color slate800 = Color(0xFF1E293B);
+  static const Color slate900 = Color(0xFF0F172A);
+  static const Color slate950 = Color(0xFF020617);
 
-  // Crimson — approval / irreversible action. From the marketing brand.
-  static const Color crimson500 = Color(0xFFD43B41);
-  static const Color crimson600 = Color(0xFFB31B20);
-  static const Color crimson700 = Color(0xFF902227);
+  // Accent hues the dashboard uses to differentiate metrics and actions.
+  static const Color violet500 = Color(0xFF8B5CF6);
+  static const Color violet600 = Color(0xFF7C3AED);
+  static const Color violet50 = Color(0xFFF5F3FF);
 
-  // Gold — credits, streaks, achievement.
-  static const Color gold400 = Color(0xFFE8BB55);
-  static const Color gold500 = Color(0xFFD4AF37);
-  static const Color gold600 = Color(0xFFB08F22);
+  static const Color emerald500 = Color(0xFF10B981);
+  static const Color emerald600 = Color(0xFF059669);
+  static const Color emerald50 = Color(0xFFECFDF5);
 
-  // Navy — brand depth; used for dark canvas tint and editorial surfaces.
-  static const Color navy700 = Color(0xFF0C3157);
-  static const Color navy800 = Color(0xFF003D6F);
-  static const Color navy900 = Color(0xFF00284D);
+  static const Color amber500 = Color(0xFFF59E0B);
+  static const Color amber600 = Color(0xFFD97706);
+  static const Color amber50 = Color(0xFFFFFBEB);
 
-  // Success / warning, tuned to sit beside violet without clashing.
-  static const Color positive500 = Color(0xFF0F9D76);
-  static const Color positive600 = Color(0xFF0B7D5E);
-  static const Color caution500 = Color(0xFFE0A32E);
-  static const Color caution600 = Color(0xFFB77E14);
+  static const Color rose500 = Color(0xFFF43F5E);
+  static const Color rose50 = Color(0xFFFFF1F2);
+
+  static const Color red500 = Color(0xFFEF4444);
+  static const Color red600 = Color(0xFFDC2626);
+  static const Color red50 = Color(0xFFFEF2F2);
+
+  static const Color pink500 = Color(0xFFEC4899);
+  static const Color pink50 = Color(0xFFFDF2F8);
+  static const Color purple500 = Color(0xFFA855F7);
+  static const Color purple50 = Color(0xFFFAF5FF);
+
+  // WhatsApp's own green, used on the WhatsApp actions in the PWA.
+  static const Color whatsapp = Color(0xFF25D366);
+  static const Color whatsappDark = Color(0xFF128C7E);
 }
 
-/// The orbital gradient used by the logomark.
 abstract final class NoboGradients {
   const NoboGradients._();
 
-  /// Primary brand gradient: violet -> indigo, 135 degrees.
-  static const LinearGradient orbit = LinearGradient(
+  /// Primary web button gradient (blue-500 → blue-600).
+  static const LinearGradient blue = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: <Color>[Color(0xFF6220D8), Color(0xFF3F3FE0)],
+    colors: <Color>[Color(0xFF3B82F6), Color(0xFF2563EB)],
   );
 
-  /// Softer variant for large fills and washed surfaces.
-  static const LinearGradient orbitSoft = LinearGradient(
+  /// Dark primary button (slate-900).
+  static const LinearGradient navy = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: <Color>[Color(0xFF7B45F0), Color(0xFF5A50E2)],
+    colors: <Color>[Color(0xFF1E293B), Color(0xFF0F172A)],
   );
 
-  /// Warm accent gradient for credits / achievement moments.
-  static const LinearGradient gold = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: <Color>[Color(0xFFE8BB55), Color(0xFFC99A22)],
-  );
+  /// Retained alias so screens written against the earlier blue brand gradient
+  /// keep compiling while they are migrated to the web app's styling.
+  static const LinearGradient orbit = blue;
 }
 
 /// Semantic colour roles, resolved per brightness.
-///
-/// Installed as a [ThemeExtension] so every widget reads colour through the
-/// theme rather than reaching for a constant. Light and dark are separately
-/// art-directed — dark is not a naive inversion.
 @immutable
 class NoboColors extends ThemeExtension<NoboColors> {
   const NoboColors({
@@ -112,144 +115,123 @@ class NoboColors extends ThemeExtension<NoboColors> {
     required this.hairline,
     required this.skeleton,
     required this.skeletonHighlight,
+    required this.navy,
+    required this.onNavy,
+    required this.info,
+    required this.infoWash,
   });
 
-  /// Page background behind everything.
   final Color canvas;
-
-  /// Default content surface (cards, sheets, bars).
   final Color surface;
-
-  /// Recessed area — inset wells, track backgrounds, grouped lists.
   final Color surfaceSunken;
-
-  /// Raised above [surface] — floating sheets, menus, hovered rows.
   final Color surfaceRaised;
-
-  /// 1px hairline used for most separation.
   final Color border;
-
-  /// Stronger border for inputs and emphasis.
   final Color borderStrong;
-
-  /// Primary text.
   final Color ink;
-
-  /// Supporting text.
   final Color inkSecondary;
-
-  /// Metadata, placeholders, disabled.
   final Color inkTertiary;
-
-  /// Text placed on brand-coloured fills.
   final Color inkInverse;
-
-  /// Brand action colour.
   final Color primary;
-
-  /// Pressed/hovered brand colour.
   final Color primaryPressed;
-
-  /// Foreground on [primary].
   final Color onPrimary;
-
-  /// Tinted brand background for selectable/selected states.
   final Color primaryWash;
 
-  /// Secondary emphasis (crimson family).
+  /// Violet accent — the PWA uses it for AI/sparkle affordances and history.
   final Color accent;
-
-  /// Tinted accent background.
   final Color accentWash;
-
   final Color positive;
   final Color positiveWash;
   final Color caution;
   final Color cautionWash;
   final Color danger;
   final Color dangerWash;
-
-  /// Credits / achievement (gold family).
   final Color credit;
   final Color creditWash;
-
-  /// Modal barrier.
   final Color scrim;
-
-  /// Barely-there divider inside a surface.
   final Color hairline;
-
-  /// Skeleton base.
   final Color skeleton;
-
-  /// Skeleton shimmer highlight.
   final Color skeletonHighlight;
 
-  /// Light theme: paper-white canvas with a violet cast so brand colours feel
-  /// native rather than pasted on. Never pure #FFFFFF for the page itself —
-  /// cards need somewhere to sit.
+  /// Near-black surface used for the PWA's dark primary actions
+  /// ("Upload Assets", "New session", "Enable Now").
+  final Color navy;
+  final Color onNavy;
+
+  /// Secondary informational tint (the PWA's light-blue pills).
+  final Color info;
+  final Color infoWash;
+
   static const NoboColors light = NoboColors(
-    canvas: Color(0xFFF6F5FA),
+    canvas: NoboBrand.slate50,
     surface: Color(0xFFFFFFFF),
-    surfaceSunken: Color(0xFFF0EFF6),
+    surfaceSunken: NoboBrand.slate100,
     surfaceRaised: Color(0xFFFFFFFF),
-    border: Color(0xFFE5E3EE),
-    borderStrong: Color(0xFFD2CFDF),
-    ink: Color(0xFF14131C),
-    inkSecondary: Color(0xFF56536A),
-    inkTertiary: Color(0xFF8A879B),
+    border: NoboBrand.slate200,
+    borderStrong: NoboBrand.slate300,
+    ink: NoboBrand.slate900,
+    inkSecondary: NoboBrand.slate500,
+    inkTertiary: NoboBrand.slate400,
     inkInverse: Color(0xFFFFFFFF),
-    primary: NoboBrand.violet600,
-    primaryPressed: NoboBrand.violet700,
+    primary: NoboBrand.blue600,
+    primaryPressed: NoboBrand.blue700,
     onPrimary: Color(0xFFFFFFFF),
-    primaryWash: Color(0xFFEFE9FE),
-    accent: NoboBrand.crimson600,
-    accentWash: Color(0xFFFBE9EA),
-    positive: NoboBrand.positive500,
-    positiveWash: Color(0xFFE4F5EF),
-    caution: NoboBrand.caution600,
-    cautionWash: Color(0xFFFBF0DA),
-    danger: Color(0xFFC62F35),
-    dangerWash: Color(0xFFFCE8E8),
-    credit: NoboBrand.gold600,
-    creditWash: Color(0xFFFBF2D8),
-    scrim: Color(0x6612101C),
-    hairline: Color(0xFFF0EEF5),
-    skeleton: Color(0xFFE9E7F0),
-    skeletonHighlight: Color(0xFFF5F3F9),
+    primaryWash: NoboBrand.blue50,
+    accent: NoboBrand.violet600,
+    accentWash: NoboBrand.violet50,
+    positive: NoboBrand.emerald600,
+    positiveWash: NoboBrand.emerald50,
+    caution: NoboBrand.amber600,
+    cautionWash: NoboBrand.amber50,
+    danger: NoboBrand.red600,
+    dangerWash: NoboBrand.red50,
+    credit: NoboBrand.amber600,
+    creditWash: NoboBrand.amber50,
+    scrim: Color(0x660F172A),
+    hairline: NoboBrand.slate100,
+    skeleton: NoboBrand.slate200,
+    skeletonHighlight: NoboBrand.slate100,
+    navy: NoboBrand.slate900,
+    onNavy: Color(0xFFFFFFFF),
+    info: NoboBrand.blue600,
+    infoWash: NoboBrand.blue50,
   );
 
-  /// Dark theme: deep violet-black, not grey. Surfaces lift by tint rather
-  /// than by shadow, which is what reads as "native dark" on both platforms.
+  /// The web app is light-only by design (`color-scheme: light`, white canvas).
+  /// A dark palette exists so the native app can follow a phone set to dark mode
+  /// without looking broken, but light is the canonical experience.
   static const NoboColors dark = NoboColors(
-    canvas: Color(0xFF0A0910),
-    surface: Color(0xFF141320),
-    surfaceSunken: Color(0xFF0E0D16),
-    surfaceRaised: Color(0xFF1C1A2B),
-    border: Color(0xFF2A2740),
-    borderStrong: Color(0xFF3B3757),
-    ink: Color(0xFFF4F2FA),
-    inkSecondary: Color(0xFFA9A5BE),
-    inkTertiary: Color(0xFF6F6B85),
-    inkInverse: Color(0xFF14131C),
-    primary: NoboBrand.violet400,
-    primaryPressed: NoboBrand.violet300,
-    onPrimary: Color(0xFF180B3A),
-    primaryWash: Color(0xFF241A45),
-    accent: Color(0xFFE8696E),
-    accentWash: Color(0xFF33161A),
-    positive: Color(0xFF3FD0A6),
-    positiveWash: Color(0xFF10312A),
-    caution: NoboBrand.gold400,
-    cautionWash: Color(0xFF332609),
-    danger: Color(0xFFF07379),
-    dangerWash: Color(0xFF361619),
-    credit: NoboBrand.gold400,
-    creditWash: Color(0xFF31260B),
+    canvas: NoboBrand.slate950,
+    surface: NoboBrand.slate900,
+    surfaceSunken: Color(0xFF1E293B),
+    surfaceRaised: NoboBrand.slate800,
+    border: Color(0xFF1E293B),
+    borderStrong: NoboBrand.slate700,
+    ink: Color(0xFFF8FAFC),
+    inkSecondary: NoboBrand.slate400,
+    inkTertiary: NoboBrand.slate500,
+    inkInverse: NoboBrand.slate900,
+    primary: NoboBrand.blue500,
+    primaryPressed: NoboBrand.blue600,
+    onPrimary: Color(0xFFFFFFFF),
+    primaryWash: Color(0xFF172554),
+    accent: NoboBrand.violet500,
+    accentWash: Color(0xFF2E1065),
+    positive: NoboBrand.emerald500,
+    positiveWash: Color(0xFF052E22),
+    caution: NoboBrand.amber500,
+    cautionWash: Color(0xFF3B2606),
+    danger: NoboBrand.red500,
+    dangerWash: Color(0xFF3F1216),
+    credit: NoboBrand.amber500,
+    creditWash: Color(0xFF3B2606),
     scrim: Color(0x99000000),
-    hairline: Color(0xFF211E33),
-    skeleton: Color(0xFF1E1B2E),
-    skeletonHighlight: Color(0xFF282440),
+    hairline: Color(0xFF1E293B),
+    skeleton: Color(0xFF1E293B),
+    skeletonHighlight: Color(0xFF334155),
+    navy: Color(0xFFF8FAFC),
+    onNavy: NoboBrand.slate900,
+    info: NoboBrand.blue500,
+    infoWash: Color(0xFF172554),
   );
 
   @override
@@ -282,6 +264,10 @@ class NoboColors extends ThemeExtension<NoboColors> {
     Color? hairline,
     Color? skeleton,
     Color? skeletonHighlight,
+    Color? navy,
+    Color? onNavy,
+    Color? info,
+    Color? infoWash,
   }) {
     return NoboColors(
       canvas: canvas ?? this.canvas,
@@ -312,55 +298,55 @@ class NoboColors extends ThemeExtension<NoboColors> {
       hairline: hairline ?? this.hairline,
       skeleton: skeleton ?? this.skeleton,
       skeletonHighlight: skeletonHighlight ?? this.skeletonHighlight,
+      navy: navy ?? this.navy,
+      onNavy: onNavy ?? this.onNavy,
+      info: info ?? this.info,
+      infoWash: infoWash ?? this.infoWash,
     );
   }
 
   @override
   NoboColors lerp(ThemeExtension<NoboColors>? other, double t) {
     if (other is! NoboColors) return this;
+    Color c(Color a, Color b) => Color.lerp(a, b, t)!;
     return NoboColors(
-      canvas: Color.lerp(canvas, other.canvas, t)!,
-      surface: Color.lerp(surface, other.surface, t)!,
-      surfaceSunken: Color.lerp(surfaceSunken, other.surfaceSunken, t)!,
-      surfaceRaised: Color.lerp(surfaceRaised, other.surfaceRaised, t)!,
-      border: Color.lerp(border, other.border, t)!,
-      borderStrong: Color.lerp(borderStrong, other.borderStrong, t)!,
-      ink: Color.lerp(ink, other.ink, t)!,
-      inkSecondary: Color.lerp(inkSecondary, other.inkSecondary, t)!,
-      inkTertiary: Color.lerp(inkTertiary, other.inkTertiary, t)!,
-      inkInverse: Color.lerp(inkInverse, other.inkInverse, t)!,
-      primary: Color.lerp(primary, other.primary, t)!,
-      primaryPressed: Color.lerp(primaryPressed, other.primaryPressed, t)!,
-      onPrimary: Color.lerp(onPrimary, other.onPrimary, t)!,
-      primaryWash: Color.lerp(primaryWash, other.primaryWash, t)!,
-      accent: Color.lerp(accent, other.accent, t)!,
-      accentWash: Color.lerp(accentWash, other.accentWash, t)!,
-      positive: Color.lerp(positive, other.positive, t)!,
-      positiveWash: Color.lerp(positiveWash, other.positiveWash, t)!,
-      caution: Color.lerp(caution, other.caution, t)!,
-      cautionWash: Color.lerp(cautionWash, other.cautionWash, t)!,
-      danger: Color.lerp(danger, other.danger, t)!,
-      dangerWash: Color.lerp(dangerWash, other.dangerWash, t)!,
-      credit: Color.lerp(credit, other.credit, t)!,
-      creditWash: Color.lerp(creditWash, other.creditWash, t)!,
-      scrim: Color.lerp(scrim, other.scrim, t)!,
-      hairline: Color.lerp(hairline, other.hairline, t)!,
-      skeleton: Color.lerp(skeleton, other.skeleton, t)!,
-      skeletonHighlight: Color.lerp(
-        skeletonHighlight,
-        other.skeletonHighlight,
-        t,
-      )!,
+      canvas: c(canvas, other.canvas),
+      surface: c(surface, other.surface),
+      surfaceSunken: c(surfaceSunken, other.surfaceSunken),
+      surfaceRaised: c(surfaceRaised, other.surfaceRaised),
+      border: c(border, other.border),
+      borderStrong: c(borderStrong, other.borderStrong),
+      ink: c(ink, other.ink),
+      inkSecondary: c(inkSecondary, other.inkSecondary),
+      inkTertiary: c(inkTertiary, other.inkTertiary),
+      inkInverse: c(inkInverse, other.inkInverse),
+      primary: c(primary, other.primary),
+      primaryPressed: c(primaryPressed, other.primaryPressed),
+      onPrimary: c(onPrimary, other.onPrimary),
+      primaryWash: c(primaryWash, other.primaryWash),
+      accent: c(accent, other.accent),
+      accentWash: c(accentWash, other.accentWash),
+      positive: c(positive, other.positive),
+      positiveWash: c(positiveWash, other.positiveWash),
+      caution: c(caution, other.caution),
+      cautionWash: c(cautionWash, other.cautionWash),
+      danger: c(danger, other.danger),
+      dangerWash: c(dangerWash, other.dangerWash),
+      credit: c(credit, other.credit),
+      creditWash: c(creditWash, other.creditWash),
+      scrim: c(scrim, other.scrim),
+      hairline: c(hairline, other.hairline),
+      skeleton: c(skeleton, other.skeleton),
+      skeletonHighlight: c(skeletonHighlight, other.skeletonHighlight),
+      navy: c(navy, other.navy),
+      onNavy: c(onNavy, other.onNavy),
+      info: c(info, other.info),
+      infoWash: c(infoWash, other.infoWash),
     );
   }
 }
 
 /// Convenience accessor: `context.nobo.ink`.
-///
-/// Falls back to the palette matching the ambient brightness instead of throwing.
-/// A missing extension should degrade to the right colours, not crash a screen —
-/// and it keeps widget tests that mount a component without the full theme stack
-/// from failing on a null check.
 extension NoboColorsX on BuildContext {
   NoboColors get nobo {
     final ThemeData theme = Theme.of(this);

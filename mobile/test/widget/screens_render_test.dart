@@ -1,36 +1,33 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nobogent_mobile/core/platform/nobo_platform.dart';
 import 'package:nobogent_mobile/core/ui/navigation.dart';
 import 'package:nobogent_mobile/features/create/create_screen.dart';
 import 'package:nobogent_mobile/features/crm/crm_screen.dart';
-import 'package:nobogent_mobile/features/home/home_screen.dart';
-import 'package:nobogent_mobile/features/inbox/inbox_screen.dart';
-import 'package:nobogent_mobile/features/projects/projects_screen.dart';
+import 'package:nobogent_mobile/features/pwa/analytics_screen.dart';
+import 'package:nobogent_mobile/features/pwa/assets_screen.dart';
+import 'package:nobogent_mobile/features/pwa/catalog_screen.dart';
 
 import '../helpers/pump_app.dart';
 
 /// Every primary screen must lay out cleanly on every supported device size, on
 /// both platforms, in both themes, and at increased Dynamic Type — with no
 /// RenderFlex overflow and no clipping exception.
-///
-/// This is the automated counterpart to the screenshot review: screenshots show
-/// what one device looks like, these catch the sizes and text scales nobody
-/// opened by hand.
 void main() {
   final List<({String name, Widget Function() build})> screens =
       <({String name, Widget Function() build})>[
-        (name: 'Home', build: HomeScreen.new),
-        (name: 'Create', build: CreateScreen.new),
-        (name: 'Projects', build: ProjectsScreen.new),
-        (name: 'Inbox', build: InboxScreen.new),
+        (name: 'Analytics', build: AnalyticsScreen.new),
+        (name: 'Catalog', build: CatalogScreen.new),
+        (name: 'Assets', build: AssetsScreen.new),
         (name: 'Business/CRM', build: CrmScreen.new),
+        (name: 'Creation', build: CreateScreen.new),
       ];
 
   for (final ({String name, Widget Function() build}) screen in screens) {
     group('${screen.name} screen', () {
-      noboTestWidgets('renders on every Android size', (WidgetTester tester) async {
+      noboTestWidgets('renders on every Android size', (
+        WidgetTester tester,
+      ) async {
         for (final Size size in Devices.android) {
           await pumpNobo(
             tester,
@@ -42,7 +39,9 @@ void main() {
         }
       });
 
-      noboTestWidgets('renders on every iPhone size', (WidgetTester tester) async {
+      noboTestWidgets('renders on every iPhone size', (
+        WidgetTester tester,
+      ) async {
         for (final Size size in Devices.ios) {
           await pumpNobo(
             tester,
@@ -79,55 +78,45 @@ void main() {
     });
   }
 
-  group('platform-specific navigation chrome', () {
-    noboTestWidgets('Android uses a Material NavigationBar', (
+  group('navigation', () {
+    noboTestWidgets('exposes the web app eleven destinations in order', (
+      WidgetTester tester,
+    ) async {
+      expect(noboDestinations.length, 11);
+      expect(
+        noboDestinations.map((NoboDestination d) => d.label).toList(),
+        <String>[
+          'Analytics',
+          'Nobogent',
+          'Catalog',
+          'Creation',
+          'Ads',
+          'CRM',
+          'WhatsApp',
+          'GBP Suite',
+          'GBP Audit',
+          'Assets',
+          'Profile',
+        ],
+      );
+    });
+
+    noboTestWidgets('renders the scrollable bottom bar', (
       WidgetTester tester,
     ) async {
       await pumpNobo(
         tester,
         Scaffold(
           body: const SizedBox.shrink(),
-          bottomNavigationBar: AndroidNavBar(
-            currentIndex: 0,
+          bottomNavigationBar: NoboBottomNav(
+            currentIndex: 2,
             onSelected: (_) {},
-            badges: const <int, int>{3: 2},
           ),
         ),
         platform: NoboPlatformKind.android,
       );
       expectNoLayoutError(tester);
-      expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.byType(CupertinoTabBar), findsNothing);
-    });
-
-    noboTestWidgets('iOS uses a CupertinoTabBar instead', (
-      WidgetTester tester,
-    ) async {
-      await pumpNobo(
-        tester,
-        Scaffold(
-          body: const SizedBox.shrink(),
-          bottomNavigationBar: IosTabBar(
-            currentIndex: 0,
-            onSelected: (_) {},
-            badges: const <int, int>{3: 2},
-          ),
-        ),
-        platform: NoboPlatformKind.ios,
-      );
-      expectNoLayoutError(tester);
-      expect(find.byType(CupertinoTabBar), findsOneWidget);
-      expect(find.byType(NavigationBar), findsNothing);
-    });
-
-    noboTestWidgets('both bars expose the same five destinations', (
-      WidgetTester tester,
-    ) async {
-      expect(noboDestinations.length, 5);
-      expect(
-        noboDestinations.map((NoboDestination d) => d.label),
-        <String>['Home', 'Create', 'Projects', 'Inbox', 'Business'],
-      );
+      expect(find.text('Catalog'), findsOneWidget);
     });
   });
 }

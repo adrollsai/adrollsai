@@ -79,7 +79,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       } else if (state.value == null && !_creating) {
         setState(() => _error = 'That account has no workspace profile yet.');
       } else if (mounted) {
-        context.go(Routes.home);
+        context.go(Routes.analytics);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

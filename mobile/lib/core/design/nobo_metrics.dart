@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// Spacing, shape, elevation and motion constants.
+/// Spacing, shape, elevation and motion — tuned to match the web app.
 ///
-/// Spacing is a strict 4pt grid — every value below is a multiple of 4, and
-/// layout code should only ever use these constants. Ad-hoc values are what
-/// make generated interfaces look unconsidered.
+/// The PWA is a 4pt-grid design with generous padding, cards separated by a
+/// hairline border rather than a shadow, and gently rounded corners (16–24).
+/// Matching those values is what makes the native port read as the same product.
 abstract final class NoboSpace {
   const NoboSpace._();
 
@@ -20,33 +20,25 @@ abstract final class NoboSpace {
   static const double huge = 48;
   static const double giant = 64;
 
-  /// Horizontal page gutter. 20 is the sweet spot on phones: wide enough to
-  /// feel airy, tight enough that a 360dp device still fits real content.
-  static const double gutter = 20;
+  /// The web app uses a 16px page gutter on phones.
+  static const double gutter = 16;
 
-  /// Gap between unrelated content groups (2x the related gap, per rhythm rule).
-  static const double sectionGap = 32;
+  static const double sectionGap = 24;
 
-  /// Minimum interactive target, per both Apple HIG (44pt) and Material (48dp).
   static const double minTapTarget = 48;
 }
 
-/// Corner radii.
-///
-/// Deliberately restrained: the brief calls out over-rounded cards as a
-/// failure mode. Large radii are reserved for sheets and hero media only.
+/// Corner radii. The PWA's Tailwind overrides: xl = 16, 2xl = 24, 3xl = 32.
 abstract final class NoboRadius {
   const NoboRadius._();
 
   static const double xs = 6;
   static const double sm = 10;
-  static const double md = 14;
-  static const double lg = 18;
-  static const double xl = 22;
-
-  /// Sheets and full-bleed media.
-  static const double sheet = 28;
-
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 20;
+  static const double xxl = 24;
+  static const double sheet = 24;
   static const double pill = 999;
 
   static const BorderRadius rXs = BorderRadius.all(Radius.circular(xs));
@@ -54,6 +46,7 @@ abstract final class NoboRadius {
   static const BorderRadius rMd = BorderRadius.all(Radius.circular(md));
   static const BorderRadius rLg = BorderRadius.all(Radius.circular(lg));
   static const BorderRadius rXl = BorderRadius.all(Radius.circular(xl));
+  static const BorderRadius rXxl = BorderRadius.all(Radius.circular(xxl));
   static const BorderRadius rPill = BorderRadius.all(Radius.circular(pill));
 
   static const BorderRadius rSheetTop = BorderRadius.vertical(
@@ -61,10 +54,8 @@ abstract final class NoboRadius {
   );
 }
 
-/// Motion.
-///
-/// Durations are short on purpose. Snappy reads as "native"; long easing reads
-/// as "web app". Every animation in the app must resolve through these.
+/// Motion. Short and quiet — the web app has almost no animation, so the native
+/// layer adds only the transitions the platforms themselves expect.
 abstract final class NoboMotion {
   const NoboMotion._();
 
@@ -75,71 +66,57 @@ abstract final class NoboMotion {
   static const Duration slow = Duration(milliseconds: 400);
   static const Duration hero = Duration(milliseconds: 560);
 
-  /// Standard: fast out, gentle settle. Matches Material 3 emphasized-decelerate
-  /// closely enough to feel native on Android and calm on iOS.
   static const Curve standard = Cubic(0.2, 0.0, 0.0, 1.0);
-
-  /// Entering content.
   static const Curve decelerate = Cubic(0.05, 0.7, 0.1, 1.0);
-
-  /// Leaving content.
   static const Curve accelerate = Cubic(0.3, 0.0, 0.8, 0.15);
-
-  /// Playful settle for confirmations and haptic-adjacent beats.
   static const Curve emphasized = Cubic(0.21, 1.02, 0.35, 1.0);
-
-  /// iOS-style ease for Cupertino transitions.
   static const Curve ios = Curves.easeOutCubic;
 }
 
-/// Elevation.
-///
-/// Shadows are tinted with the brand violet-black rather than neutral grey —
-/// a pure grey shadow over a violet-tinted canvas reads as dirty.
+/// Elevation. The PWA separates surfaces with a 1px slate-200 border and, at
+/// most, a very faint shadow. Heavy shadows would immediately look wrong.
 abstract final class NoboElevation {
   const NoboElevation._();
 
   static const List<BoxShadow> none = <BoxShadow>[];
 
-  /// Resting cards. Barely visible; defines an edge, not a "floating card".
+  /// Card resting state — matches `shadow-sm`.
   static const List<BoxShadow> low = <BoxShadow>[
     BoxShadow(
-      color: Color(0x0D160C33),
-      blurRadius: 12,
-      offset: Offset(0, 2),
+      color: Color(0x0A0F172A),
+      blurRadius: 3,
+      offset: Offset(0, 1),
     ),
   ];
 
-  /// Sticky headers, floating action surfaces.
+  /// Raised surfaces (dropdowns, sticky bars) — matches `shadow-md`.
   static const List<BoxShadow> medium = <BoxShadow>[
     BoxShadow(
-      color: Color(0x14160C33),
-      blurRadius: 24,
-      offset: Offset(0, 6),
+      color: Color(0x140F172A),
+      blurRadius: 12,
+      offset: Offset(0, 4),
     ),
   ];
 
-  /// Bottom sheets, dialogs, navigation bars.
+  /// Sheets and dialogs.
   static const List<BoxShadow> high = <BoxShadow>[
     BoxShadow(
-      color: Color(0x1F160C33),
-      blurRadius: 40,
-      offset: Offset(0, 12),
+      color: Color(0x1F0F172A),
+      blurRadius: 32,
+      offset: Offset(0, 10),
     ),
   ];
 
-  /// Brand-tinted glow beneath primary actions. Used sparingly.
+  /// Blue glow used under the primary call-to-action, as the web app does.
   static List<BoxShadow> glow(Color color) => <BoxShadow>[
     BoxShadow(
-      color: color.withValues(alpha: 0.28),
-      blurRadius: 24,
-      offset: const Offset(0, 8),
+      color: color.withValues(alpha: 0.25),
+      blurRadius: 18,
+      offset: const Offset(0, 6),
     ),
   ];
 }
 
-/// Border helpers — hairlines are the primary separator in this design, not
-/// shadows. 1 physical pixel wide regardless of density.
 abstract final class NoboBorder {
   const NoboBorder._();
 

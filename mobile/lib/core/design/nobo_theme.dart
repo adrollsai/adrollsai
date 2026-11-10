@@ -5,11 +5,12 @@ import 'nobo_colors.dart';
 import 'nobo_metrics.dart';
 import 'nobo_type.dart';
 
-/// Builds the two platform themes from the shared token set.
+/// Builds the platform themes from the shared token set.
 ///
-/// Business logic, tokens and components are shared; only the *styling and
-/// motion* differ per platform. Nothing here branches on colour — both
-/// platforms draw from the same art-directed palette.
+/// The visual language is the web app's — white surfaces, slate hairlines, blue
+/// action colour, pill-shaped buttons. Only the *behaviour* is platform-specific:
+/// ripple and Material controls on Android, Cupertino controls and transitions on
+/// iOS. Nothing here changes the look between platforms.
 abstract final class NoboTheme {
   const NoboTheme._();
 
@@ -24,13 +25,13 @@ abstract final class NoboTheme {
       primaryContainer: c.primaryWash,
       onPrimaryContainer: c.primary,
       secondary: c.accent,
-      onSecondary: c.inkInverse,
+      onSecondary: Colors.white,
       secondaryContainer: c.accentWash,
       onSecondaryContainer: c.accent,
-      tertiary: c.credit,
-      onTertiary: c.inkInverse,
+      tertiary: c.positive,
+      onTertiary: Colors.white,
       error: c.danger,
-      onError: c.inkInverse,
+      onError: Colors.white,
       errorContainer: c.dangerWash,
       onErrorContainer: c.danger,
       surface: c.surface,
@@ -43,11 +44,11 @@ abstract final class NoboTheme {
       onSurfaceVariant: c.inkSecondary,
       outline: c.borderStrong,
       outlineVariant: c.border,
-      shadow: const Color(0xFF160C33),
+      shadow: const Color(0xFF0F172A),
       scrim: c.scrim,
-      inverseSurface: c.ink,
-      onInverseSurface: c.canvas,
-      inversePrimary: isDark ? NoboBrand.violet600 : NoboBrand.violet300,
+      inverseSurface: c.navy,
+      onInverseSurface: c.onNavy,
+      inversePrimary: NoboBrand.blue200,
     );
 
     final TextTheme text = NoboType.textTheme(c.ink, c.inkSecondary);
@@ -64,8 +65,6 @@ abstract final class NoboTheme {
       fontFamily: NoboType.family,
       extensions: <ThemeExtension<dynamic>>[c],
       visualDensity: VisualDensity.standard,
-      // Android reads as native when the system bars are drawn by content
-      // (edge-to-edge) and the app paints behind them.
       dividerTheme: DividerThemeData(
         color: c.hairline,
         thickness: 1,
@@ -78,7 +77,7 @@ abstract final class NoboTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: NoboType.headline.copyWith(color: c.ink),
+        titleTextStyle: NoboType.subtitle.copyWith(color: c.ink),
       ),
       cardTheme: CardThemeData(
         color: c.surface,
@@ -87,6 +86,8 @@ abstract final class NoboTheme {
         margin: EdgeInsets.zero,
         shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rLg),
       ),
+      // The web app's CTAs are pills: "Add Product", "Upload Assets",
+      // "Enable Now", "Open Active Chat".
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: c.primary,
@@ -98,30 +99,31 @@ abstract final class NoboTheme {
             horizontal: NoboSpace.lg,
             vertical: NoboSpace.md,
           ),
-          textStyle: NoboType.label.copyWith(fontSize: 14),
-          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rSm),
+          textStyle: NoboType.label.copyWith(fontSize: 14.5),
+          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rPill),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: c.ink,
+          backgroundColor: c.surface,
           minimumSize: const Size(0, NoboSpace.minTapTarget),
           padding: const EdgeInsets.symmetric(
             horizontal: NoboSpace.lg,
             vertical: NoboSpace.md,
           ),
-          textStyle: NoboType.label.copyWith(fontSize: 14),
-          side: BorderSide(color: c.borderStrong),
-          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rSm),
+          textStyle: NoboType.label.copyWith(fontSize: 14.5),
+          side: BorderSide(color: c.border),
+          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rPill),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: c.primary,
-          minimumSize: const Size(0, NoboSpace.minTapTarget),
+          minimumSize: const Size(0, 40),
           padding: const EdgeInsets.symmetric(horizontal: NoboSpace.md),
-          textStyle: NoboType.label.copyWith(fontSize: 14),
-          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rSm),
+          textStyle: NoboType.label.copyWith(fontSize: 14, color: c.primary),
+          shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rPill),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -129,8 +131,8 @@ abstract final class NoboTheme {
         fillColor: c.surface,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: NoboSpace.md,
-          vertical: NoboSpace.md,
+          horizontal: NoboSpace.base,
+          vertical: 14,
         ),
         hintStyle: NoboType.body.copyWith(color: c.inkTertiary),
         labelStyle: NoboType.body.copyWith(color: c.inkSecondary),
@@ -138,23 +140,23 @@ abstract final class NoboTheme {
         errorStyle: NoboType.caption.copyWith(color: c.danger),
         helperStyle: NoboType.caption.copyWith(color: c.inkTertiary),
         border: OutlineInputBorder(
-          borderRadius: NoboRadius.rSm,
+          borderRadius: NoboRadius.rLg,
           borderSide: BorderSide(color: c.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: NoboRadius.rSm,
+          borderRadius: NoboRadius.rLg,
           borderSide: BorderSide(color: c.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: NoboRadius.rSm,
+          borderRadius: NoboRadius.rLg,
           borderSide: BorderSide(color: c.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: NoboRadius.rSm,
+          borderRadius: NoboRadius.rLg,
           borderSide: BorderSide(color: c.danger),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: NoboRadius.rSm,
+          borderRadius: NoboRadius.rLg,
           borderSide: BorderSide(color: c.danger, width: 1.5),
         ),
       ),
@@ -168,34 +170,36 @@ abstract final class NoboTheme {
         shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rSheetTop),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: c.surfaceRaised,
+        backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rLg),
-        titleTextStyle: NoboType.headline.copyWith(color: c.ink),
+        shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rXl),
+        titleTextStyle: NoboType.subtitle.copyWith(color: c.ink),
         contentTextStyle: NoboType.body.copyWith(color: c.inkSecondary),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: c.ink,
-        contentTextStyle: NoboType.body.copyWith(color: c.canvas),
+        backgroundColor: c.navy,
+        contentTextStyle: NoboType.body.copyWith(color: c.onNavy),
         behavior: SnackBarBehavior.floating,
         elevation: 0,
-        shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rSm),
+        shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rMd),
         insetPadding: const EdgeInsets.all(NoboSpace.base),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: c.surfaceSunken,
-        selectedColor: c.primaryWash,
+        backgroundColor: c.surface,
+        selectedColor: c.navy,
         side: BorderSide(color: c.border),
         labelStyle: NoboType.label.copyWith(color: c.inkSecondary),
-        secondaryLabelStyle: NoboType.label.copyWith(color: c.primary),
+        secondaryLabelStyle: NoboType.label.copyWith(color: c.onNavy),
         padding: const EdgeInsets.symmetric(
-          horizontal: NoboSpace.sm,
-          vertical: NoboSpace.xs,
+          horizontal: NoboSpace.md,
+          vertical: NoboSpace.sm,
         ),
         shape: const RoundedRectangleBorder(borderRadius: NoboRadius.rPill),
         showCheckmark: false,
       ),
+      // Android bottom navigation, styled to the web app's bar: white surface,
+      // hairline top border, blue active pill.
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: c.surface,
         surfaceTintColor: Colors.transparent,
@@ -203,37 +207,34 @@ abstract final class NoboTheme {
         elevation: 0,
         height: 64,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        labelTextStyle: WidgetStateProperty.resolveWith((states) {
-          final bool selected = states.contains(WidgetState.selected);
-          return NoboType.micro.copyWith(
-            fontSize: 11.5,
-            letterSpacing: 0.1,
+        labelTextStyle: WidgetStateProperty.resolveWith((Set<WidgetState> s) {
+          final bool selected = s.contains(WidgetState.selected);
+          return NoboType.caption.copyWith(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
             color: selected ? c.primary : c.inkTertiary,
           );
         }),
-        iconTheme: WidgetStateProperty.resolveWith((states) {
-          final bool selected = states.contains(WidgetState.selected);
+        iconTheme: WidgetStateProperty.resolveWith((Set<WidgetState> s) {
+          final bool selected = s.contains(WidgetState.selected);
           return IconThemeData(
-            size: 23,
+            size: 22,
             color: selected ? c.primary : c.inkTertiary,
           );
         }),
       ),
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? Colors.white
-              : c.surface,
+          (Set<WidgetState> s) =>
+              s.contains(WidgetState.selected) ? Colors.white : c.surface,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? c.primary
-              : c.surfaceSunken,
+          (Set<WidgetState> s) =>
+              s.contains(WidgetState.selected) ? c.primary : c.surfaceSunken,
         ),
         trackOutlineColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? Colors.transparent
-              : c.borderStrong,
+          (Set<WidgetState> s) =>
+              s.contains(WidgetState.selected) ? Colors.transparent : c.border,
         ),
       ),
       progressIndicatorTheme: ProgressIndicatorThemeData(
@@ -242,11 +243,8 @@ abstract final class NoboTheme {
         circularTrackColor: c.surfaceSunken,
       ),
       tooltipTheme: TooltipThemeData(
-        decoration: BoxDecoration(
-          color: c.ink,
-          borderRadius: NoboRadius.rXs,
-        ),
-        textStyle: NoboType.caption.copyWith(color: c.canvas),
+        decoration: BoxDecoration(color: c.navy, borderRadius: NoboRadius.rXs),
+        textStyle: NoboType.caption.copyWith(color: c.onNavy),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: <TargetPlatform, PageTransitionsBuilder>{
@@ -256,10 +254,6 @@ abstract final class NoboTheme {
     );
   }
 
-  /// Cupertino theme for the iOS experience.
-  ///
-  /// Translucent-bar colours are resolved from the same palette so the two
-  /// platforms stay one product.
   static CupertinoThemeData cupertino({required Brightness brightness}) {
     final bool isDark = brightness == Brightness.dark;
     final NoboColors c = isDark ? NoboColors.dark : NoboColors.light;
@@ -269,17 +263,21 @@ abstract final class NoboTheme {
       primaryColor: c.primary,
       primaryContrastingColor: c.onPrimary,
       scaffoldBackgroundColor: c.canvas,
-      barBackgroundColor: c.surface.withValues(alpha: isDark ? 0.82 : 0.86),
+      barBackgroundColor: c.surface.withValues(alpha: isDark ? 0.86 : 0.92),
       textTheme: CupertinoTextThemeData(
         textStyle: NoboType.body.copyWith(color: c.ink),
-        navTitleTextStyle: NoboType.subtitle.copyWith(color: c.ink),
+        navTitleTextStyle: NoboType.subtitle.copyWith(
+          color: c.ink,
+          fontSize: 17,
+        ),
         navLargeTitleTextStyle: NoboType.display.copyWith(color: c.ink),
-        navActionTextStyle: NoboType.label
-            .copyWith(color: c.primary)
-            .copyWith(fontSize: 17),
-        tabLabelTextStyle: NoboType.micro.copyWith(
+        navActionTextStyle: NoboType.body.copyWith(
+          color: c.primary,
+          fontSize: 17,
+        ),
+        tabLabelTextStyle: NoboType.caption.copyWith(
           fontSize: 10,
-          letterSpacing: 0,
+          fontWeight: FontWeight.w500,
           color: c.inkTertiary,
         ),
         actionTextStyle: NoboType.label.copyWith(color: c.primary),

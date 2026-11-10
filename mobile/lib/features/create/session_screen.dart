@@ -477,7 +477,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               'locally, so they do not follow you between phones.',
           icon: Icons.search_off_rounded,
           actionLabel: 'Back to tasks',
-          onAction: () => context.go(Routes.create),
+          onAction: () => context.go(Routes.creation),
         ),
       );
     }

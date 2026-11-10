@@ -4,42 +4,45 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/platform/nobo_platform.dart';
-import '../core/providers.dart';
 import '../core/ui/navigation.dart';
 import '../features/auth/login_screen.dart';
 import '../features/create/create_screen.dart';
 import '../features/create/session_screen.dart';
 import '../features/crm/crm_screen.dart';
 import '../features/crm/lead_screen.dart';
-import '../features/home/home_screen.dart';
-import '../features/inbox/inbox_screen.dart';
 import '../features/media/media_viewer_screen.dart';
-import '../features/projects/project_screen.dart';
-import '../features/projects/projects_screen.dart';
+import '../features/pwa/analytics_screen.dart';
+import '../features/pwa/assets_screen.dart';
+import '../features/pwa/catalog_screen.dart';
 import '../features/settings/settings_screen.dart';
 
-/// Route paths, kept in one place so navigation calls cannot drift.
+/// Route paths. These mirror the web app's dashboard URLs so the two products
+/// share one vocabulary.
 abstract final class Routes {
   const Routes._();
 
   static const String login = '/login';
-  static const String home = '/home';
-  static const String create = '/create';
-  static const String projects = '/projects';
-  static const String inbox = '/inbox';
-  static const String crm = '/business';
+  static const String analytics = '/analytics';
+  static const String nobogent = '/nobogent';
+  static const String catalog = '/catalog';
+  static const String creation = '/creation';
+  static const String ads = '/ads';
+  static const String crm = '/crm';
+  static const String whatsapp = '/whatsapp';
+  static const String gbp = '/gbp';
+  static const String gbpAudit = '/gbp-audit';
+  static const String assets = '/assets';
+  static const String profile = '/profile';
   static const String settings = '/settings';
   static String session(String id) => '/session/$id';
   static String project(String id) => '/project/$id';
   static String lead(String id) => '/lead/$id';
-  static String media(String url) =>
-      '/media?src=${Uri.encodeComponent(url)}';
+  static String media(String url) => '/media?src=${Uri.encodeComponent(url)}';
 }
 
-/// Wraps a screen in the platform's own page transition.
-///
-/// iOS gets the horizontal slide plus interactive back-swipe; Android gets
-/// Material's predictive-back-aware transition.
+/// Wraps a screen in the platform's own page transition: Cupertino's horizontal
+/// slide with interactive back-swipe on iOS, Material's predictive-back-aware
+/// transition on Android.
 Page<void> _noboPage<T>({
   required Widget child,
   required GoRouterState state,
@@ -50,9 +53,23 @@ Page<void> _noboPage<T>({
   return MaterialPage<void>(key: state.pageKey, child: child);
 }
 
+/// One branch per destination in the web app's navigation, in the same order.
+StatefulShellBranch _branch(String path, Widget screen) {
+  return StatefulShellBranch(
+    routes: <RouteBase>[
+      GoRoute(
+        path: path,
+        pageBuilder: (BuildContext context, GoRouterState state) =>
+            _noboPage<void>(state: state, child: screen),
+      ),
+    ],
+  );
+}
+
 final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
   final GoRouter router = GoRouter(
-    initialLocation: Routes.home,
+    // The web app sends you to Analytics after sign-in.
+    initialLocation: Routes.analytics,
     routes: <RouteBase>[
       GoRoute(
         path: Routes.login,
@@ -67,59 +84,58 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
               StatefulNavigationShell shell,
             ) => AppShell(navigationShell: shell),
         branches: <StatefulShellBranch>[
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.home,
-                pageBuilder: (BuildContext context, GoRouterState state) =>
-                    _noboPage<void>(state: state, child: const HomeScreen()),
-              ),
-            ],
+          _branch(Routes.analytics, const AnalyticsScreen()),
+          _branch(Routes.nobogent, const CreateScreen()),
+          _branch(Routes.catalog, const CatalogScreen()),
+          _branch(Routes.creation, const CreateScreen()),
+          _branch(
+            Routes.ads,
+            const WebToolScreen(
+              title: 'AI Ads Manager',
+              subtitle: 'Launch and optimise Meta campaigns',
+              icon: Icons.bolt_rounded,
+              body:
+                  'Campaign creation, audience building and ad optimisation '
+                  'stay in the web app for now, where the full Meta Ads flow '
+                  'lives.',
+            ),
           ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.create,
-                pageBuilder: (BuildContext context, GoRouterState state) =>
-                    _noboPage<void>(
-                      state: state,
-                      child: CreateScreen(
-                        initialPrompt: state.uri.queryParameters['prompt'],
-                      ),
-                    ),
-              ),
-            ],
+          _branch(Routes.crm, const CrmScreen()),
+          _branch(
+            Routes.whatsapp,
+            const WebToolScreen(
+              title: 'WhatsApp Portal',
+              subtitle: 'Broadcasts, templates and the chat inbox',
+              icon: Icons.chat_bubble_rounded,
+              body:
+                  'The WhatsApp portal handles template approval and broadcast '
+                  'sending in the web app.',
+            ),
           ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.projects,
-                pageBuilder: (BuildContext context, GoRouterState state) =>
-                    _noboPage<void>(
-                      state: state,
-                      child: const ProjectsScreen(),
-                    ),
-              ),
-            ],
+          _branch(
+            Routes.gbp,
+            const WebToolScreen(
+              title: 'GBP Suite',
+              subtitle: 'Google Business Profile optimisation',
+              icon: Icons.place_rounded,
+              body:
+                  'Posts, reviews, keywords and geotagging for your Google '
+                  'Business Profile live in the web app.',
+            ),
           ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.inbox,
-                pageBuilder: (BuildContext context, GoRouterState state) =>
-                    _noboPage<void>(state: state, child: const InboxScreen()),
-              ),
-            ],
+          _branch(
+            Routes.gbpAudit,
+            const WebToolScreen(
+              title: 'GBP Audit',
+              subtitle: 'Local rank heatmap and profile audit',
+              icon: Icons.travel_explore_rounded,
+              body:
+                  'The free profile audit and local rank heatmap run in the '
+                  'web app.',
+            ),
           ),
-          StatefulShellBranch(
-            routes: <RouteBase>[
-              GoRoute(
-                path: Routes.crm,
-                pageBuilder: (BuildContext context, GoRouterState state) =>
-                    _noboPage<void>(state: state, child: const CrmScreen()),
-              ),
-            ],
-          ),
+          _branch(Routes.assets, const AssetsScreen()),
+          _branch(Routes.profile, const ProfileScreen()),
         ],
       ),
       GoRoute(
@@ -132,14 +148,6 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
                 initialPrompt: state.uri.queryParameters['prompt'],
                 initialTitle: state.uri.queryParameters['title'],
               ),
-            ),
-      ),
-      GoRoute(
-        path: '/project/:id',
-        pageBuilder: (BuildContext context, GoRouterState state) =>
-            _noboPage<void>(
-              state: state,
-              child: ProjectScreen(projectId: state.pathParameters['id']!),
             ),
       ),
       GoRoute(
@@ -172,7 +180,8 @@ final Provider<GoRouter> routerProvider = Provider<GoRouter>((Ref ref) {
   return router;
 });
 
-/// The persistent shell around the five primary destinations.
+/// The persistent shell: the web app's eleven-destination bar, always visible so
+/// the current section is never ambiguous.
 class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
 
@@ -180,37 +189,14 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final int attention = ref.watch(attentionCountProvider);
-    final Map<int, int> badges = <int, int>{3: attention};
-
-    void onSelected(int index) {
-      navigationShell.goBranch(
-        index,
-        // Tapping the current tab returns it to its root, which is the
-        // behaviour users expect on both platforms.
-        initialLocation: index == navigationShell.currentIndex,
-      );
-    }
-
-    if (NoboPlatform.isIOS) {
-      return Scaffold(
-        // Let content flow under the translucent iOS tab bar.
-        extendBody: true,
-        body: navigationShell,
-        bottomNavigationBar: IosTabBar(
-          currentIndex: navigationShell.currentIndex,
-          onSelected: onSelected,
-          badges: badges,
-        ),
-      );
-    }
-
     return Scaffold(
-      body: navigationShell,
-      bottomNavigationBar: AndroidNavBar(
+      body: SafeArea(bottom: false, child: navigationShell),
+      bottomNavigationBar: NoboBottomNav(
         currentIndex: navigationShell.currentIndex,
-        onSelected: onSelected,
-        badges: badges,
+        onSelected: (int index) => navigationShell.goBranch(
+          index,
+          initialLocation: index == navigationShell.currentIndex,
+        ),
       ),
     );
   }
