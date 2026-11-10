@@ -1,3 +1,4 @@
+import { resolveExecutionPlan } from '@/lib/flows/engine';
 import { sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { sendLeadNotificationEmail, resolveNotificationRecipients } from '@/utils/email-helper'
 
@@ -448,71 +449,61 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
 
   const edges: any[] = Array.isArray(matchedFlow.xyEdges) ? matchedFlow.xyEdges : (Array.isArray(matchedFlow.edges) ? matchedFlow.edges : [])
 
-  let nodesToExecute: any[] = []
-
-  // If edges exist, traverse from the button or trigger node using BFS to support both chains & branching!
+  // ── Execution plan (branch-aware) ──────────────────────────────────────
+  // The previous traversal was a handle-blind BFS: it followed EVERY outgoing
+  // edge, so a Condition node ran both branches and Qualify could not influence
+  // anything. resolveExecutionPlan evaluates conditions/splits/qualification and
+  // only reaches nodes on the branch that was actually taken.
+  let startNodeIds: string[] = []
   if (edges.length > 0 && allNodes.length > 0) {
     const cleanBtnText = (buttonReplyTitle || '').trim().toLowerCase()
     const cleanBtnId = (buttonReplyId || '').trim().toLowerCase()
     const triggerNode = allNodes.find((n: any) => n.type === 'triggerNode' || n.type?.startsWith('trigger_'))
 
-    let startEdges: any[] = []
-
     if (triggerNode && (isButtonClick || cleanBtnText || cleanBtnId)) {
       const triggerButtons: any[] = triggerNode.data?.buttons || triggerNode.config?.buttons || []
-      
-      // Match edge originating from the specific button that was tapped
-      startEdges = edges.filter((e: any) => {
-        if (e.source !== triggerNode.id) return false
-        const handle = (e.sourceHandle || '').toLowerCase()
-        if (!handle) return false
-
-        // 1. Direct handle name matching (e.g. handle contains button title or id)
-        if (cleanBtnText && (handle.includes(cleanBtnText) || handle.includes(cleanBtnText.replace(/\s+/g, '_')))) return true
-        if (cleanBtnId && (handle.includes(cleanBtnId) || handle.includes(cleanBtnId.replace(/\s+/g, '_')))) return true
-
-        // 2. Check triggerButtons list mapping to btn_0, btn_1, btn_<id>
-        return triggerButtons.some((btn: any, idx: number) => {
-          const btnId = String(btn.id || '').toLowerCase()
-          const btnTitle = String(btn.title || '').toLowerCase()
-          const handleMatches = handle === `btn_${btnId}` || handle === `btn_${idx}` || (btnId && handle.includes(btnId)) || (btnTitle && handle.includes(btnTitle.replace(/\s+/g, '_')))
-          if (!handleMatches) return false
-
-          return (cleanBtnId && (cleanBtnId === btnId || cleanBtnId.includes(btnId) || btnId.includes(cleanBtnId))) ||
-                 (cleanBtnText && (cleanBtnText === btnTitle || cleanBtnText.includes(btnTitle) || btnTitle.includes(cleanBtnText)))
+      startNodeIds = edges
+        .filter((e: any) => {
+          if (e.source !== triggerNode.id) return false
+          const handle = (e.sourceHandle || '').toLowerCase()
+          if (!handle) return false
+          if (cleanBtnText && (handle.includes(cleanBtnText) || handle.includes(cleanBtnText.replace(/\s+/g, '_')))) return true
+          if (cleanBtnId && (handle.includes(cleanBtnId) || handle.includes(cleanBtnId.replace(/\s+/g, '_')))) return true
+          return triggerButtons.some((btn: any, idx: number) => {
+            const btnId = String(btn.id || '').toLowerCase()
+            const btnTitle = String(btn.title || '').toLowerCase()
+            const handleMatches =
+              handle === `btn_${btnId}` || handle === `btn_${idx}` ||
+              (btnId && handle.includes(btnId)) ||
+              (btnTitle && handle.includes(btnTitle.replace(/\s+/g, '_')))
+            if (!handleMatches) return false
+            return (cleanBtnId && (cleanBtnId === btnId || cleanBtnId.includes(btnId) || btnId.includes(cleanBtnId))) ||
+                   (cleanBtnText && (cleanBtnText === btnTitle || cleanBtnText.includes(btnTitle) || btnTitle.includes(cleanBtnText)))
+          })
         })
-      })
-    }
-
-    if (startEdges.length === 0 && triggerNode) {
-      // Find all edges leaving the trigger node
-      startEdges = edges.filter((e: any) => e.source === triggerNode.id)
-    }
-    if (startEdges.length === 0 && edges.length > 0) {
-      startEdges = [edges[0]]
-    }
-
-    const queue = startEdges.map((e: any) => e.target).filter(Boolean)
-    const visited = new Set<string>()
-
-    while (queue.length > 0) {
-      const targetId = queue.shift()
-      if (!targetId || visited.has(targetId)) continue
-      visited.add(targetId)
-
-      const targetNode = allNodes.find((n: any) => n.id === targetId)
-      if (targetNode) {
-        nodesToExecute.push(targetNode)
-      }
-
-      const nextEdges = edges.filter((e: any) => e.source === targetId)
-      for (const ne of nextEdges) {
-        if (!visited.has(ne.target)) {
-          queue.push(ne.target)
-        }
-      }
+        .map((e: any) => String(e.target))
+        .filter(Boolean)
     }
   }
+
+  const planCtx: any = {
+    messageText,
+    buttonReplyTitle: buttonReplyTitle ?? undefined,
+    lead: latestLead as any,
+    chat: chat as any,
+    answers: (chat as any)?.flow_answers || {},
+  }
+
+  const plan = resolveExecutionPlan({ nodes: allNodes, edges, startNodeIds, ctx: planCtx })
+
+  if (plan.problems.length > 0) {
+    console.warn(`[FlowRunner] plan problems for flow ${matchedFlow.id}: ${plan.problems.join(' | ')}`)
+  }
+  if (plan.decisions.length > 0) {
+    console.log(`[FlowRunner] decisions: ${plan.decisions.map((d) => `${d.nodeType}->${d.handle} (${d.reason})`).join(' | ')}`)
+  }
+
+  let nodesToExecute: any[] = plan.steps.map((s) => s.node)
 
   // Fallback: execute all non-trigger nodes in sequence
   if (nodesToExecute.length === 0) {
@@ -1056,7 +1047,7 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       }
 
       // 5. ACTION: Custom API / Webhook Integration (customApiNode or action_webhook)
-      if (nodeType === 'customApiNode' || nodeType === 'action_webhook') {
+      if (nodeType === 'customApiNode' || nodeType === 'action_webhook' || nodeType === 'custom_webhook') {
         const targetUrl = cfg.url
         const method = (cfg.method || 'POST').toUpperCase()
         if (targetUrl) {
@@ -1139,6 +1130,71 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
             .eq('id', latestLead.id)
 
           actionsExecuted.push(`update_field:${fieldName}`)
+        }
+      }
+
+      // ── Logic nodes ────────────────────────────────────────────────────
+      // Condition / split decide routing during planning (resolveExecutionPlan),
+      // so they have no side effect here; recorded so the run log shows the path.
+      if (nodeType === 'action_condition' || nodeType === 'conditionNode' || nodeType === 'action_if_else') {
+        actionsExecuted.push('condition:evaluated')
+      }
+
+      if (nodeType === 'action_split_traffic' || nodeType === 'splitNode' || nodeType === 'action_ab_split') {
+        actionsExecuted.push('split:assigned')
+      }
+
+      // Qualify persists the score so it is visible in the CRM and reusable,
+      // not just a value inside this traversal.
+      if (nodeType === 'action_qualify' || nodeType === 'qualifyNode' || nodeType === 'action_qualification') {
+        const score = typeof planCtx.qualificationScore === 'number' ? planCtx.qualificationScore : null
+        if (latestLead?.id && score !== null) {
+          const cf = typeof latestLead.custom_fields === 'string'
+            ? (() => { try { return JSON.parse(latestLead.custom_fields) } catch { return {} } })()
+            : (latestLead.custom_fields || {})
+          await supabaseAdmin
+            .from('leads')
+            .update({ custom_fields: { ...cf, qualification_score: score, qualified_at: new Date().toISOString() } })
+            .eq('id', latestLead.id)
+        }
+        actionsExecuted.push(`qualify:${score ?? 'unscored'}`)
+      }
+
+      // ── CRM extras ─────────────────────────────────────────────────────
+      if (nodeType === 'action_remove_tag') {
+        const rawTags = cfg.tags || (cfg.tag ? [cfg.tag] : [])
+        const removeTags = (Array.isArray(rawTags) ? rawTags : [String(rawTags)]).map((t: any) => String(t))
+        if (latestLead?.id && removeTags.length > 0) {
+          const current = Array.isArray(latestLead.tags) ? latestLead.tags : []
+          const kept = current.filter((t: string) => !removeTags.includes(t))
+          await supabaseAdmin.from('leads').update({ tags: kept }).eq('id', latestLead.id)
+          actionsExecuted.push(`remove_tag:${removeTags.join(',')}`)
+        }
+      }
+
+      if (nodeType === 'action_add_note') {
+        const note = interpolateVariables(String(cfg.note || cfg.message || cfg.text || ''), variableMap)
+        if (latestLead?.id && note) {
+          const existingNotes = String((latestLead as any).notes || '')
+          const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
+          const merged = `${existingNotes}${existingNotes ? '\n' : ''}[${stamp}] ${note}`.slice(-4000)
+          await supabaseAdmin.from('leads').update({ notes: merged }).eq('id', latestLead.id)
+          actionsExecuted.push('add_note')
+        }
+      }
+
+      if (nodeType === 'action_assign_agent' || nodeType === 'assign_agent') {
+        // Stored the same way crmStageNode does it; there is no assignee column.
+        const agent = String(cfg.agent || cfg.agentName || cfg.assignee || '').trim()
+        if (latestLead?.id && agent) {
+          const cf = typeof latestLead.custom_fields === 'string'
+            ? (() => { try { return JSON.parse(latestLead.custom_fields) } catch { return {} } })()
+            : (latestLead.custom_fields || {})
+          await supabaseAdmin
+            .from('leads')
+            .update({ custom_fields: { ...cf, assigned_to_name: agent } })
+            .eq('id', latestLead.id)
+          actionsExecuted.push(`assign_agent:${agent}`)
         }
       }
 

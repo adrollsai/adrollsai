@@ -56,16 +56,16 @@ export const NODE_SPECS: NodeSpec[] = [
   { type: 'emailNode', aliases: ['action_send_email', 'action_email'], label: 'Send email', category: 'message', support: 'executed', config: ['subject', 'recipient', 'customEmail'] },
 
   // ── logic ───────────────────────────────────────────────────────────────
-  { type: 'action_condition', label: 'Condition / branch', category: 'logic', support: 'unsupported', note: 'No branching in the engine — every downstream node runs regardless.' },
-  { type: 'action_split_traffic', label: 'A/B split', category: 'logic', support: 'unsupported', note: 'Not implemented; both branches are not evaluated.' },
-  { type: 'action_qualify', label: 'Qualify / score', category: 'logic', support: 'unsupported', note: 'Not implemented in the executor.' },
+  { type: 'action_condition', aliases: ['conditionNode', 'action_if_else'], label: 'Condition / branch', category: 'logic', support: 'executed', config: ['field', 'operator', 'value', 'trueHandle', 'falseHandle'], note: 'Evaluated during planning; only the matching branch runs.' },
+  { type: 'action_split_traffic', aliases: ['splitNode', 'action_ab_split'], label: 'A/B split', category: 'logic', support: 'executed', config: ['percentA'], note: 'Deterministic per lead id, so a prospect never sees both variants.' },
+  { type: 'action_qualify', aliases: ['qualifyNode', 'action_qualification'], label: 'Qualify / score', category: 'logic', support: 'executed', config: ['questions', 'passScore'], note: 'Scores answers, persists qualification_score, and can route passed/failed.' },
 
   // ── CRM ─────────────────────────────────────────────────────────────────
   { type: 'crmStageNode', aliases: ['action_crm_stage'], label: 'Move CRM stage', category: 'crm', support: 'executed', config: ['stage', 'assignAgent'] },
   { type: 'tagNode', aliases: ['action_add_tag'], label: 'Add tag', category: 'crm', support: 'executed', config: ['tag', 'tags'] },
-  { type: 'action_remove_tag', label: 'Remove tag', category: 'crm', support: 'unsupported' },
+  { type: 'action_remove_tag', label: 'Remove tag', category: 'crm', support: 'executed', config: ['tag', 'tags'] },
   { type: 'action_update_field', label: 'Update lead field', category: 'crm', support: 'executed', config: ['field', 'value'] },
-  { type: 'action_assign_agent', aliases: ['assign_agent'], label: 'Assign to agent', category: 'crm', support: 'unsupported', note: 'Only works as part of crmStageNode config (assignAgent).' },
+  { type: 'action_assign_agent', aliases: ['assign_agent'], label: 'Assign to agent', category: 'crm', support: 'executed', config: ['agent'] },
 
   // ── notify ──────────────────────────────────────────────────────────────
   { type: 'notifyNode', aliases: ['action_notify_team', 'action_notify_admin'], label: 'Notify the team', category: 'notify', support: 'executed', config: ['title', 'body', 'message'] },
@@ -78,7 +78,7 @@ export const NODE_SPECS: NodeSpec[] = [
 
   // ── integrations ────────────────────────────────────────────────────────
   { type: 'customApiNode', aliases: ['action_webhook'], label: 'Webhook / custom API', category: 'integration', support: 'executed', config: ['url', 'method', 'headers'] },
-  { type: 'custom_webhook', label: 'Webhook (legacy type)', category: 'integration', support: 'unsupported', note: 'Use customApiNode — this spelling has no handler.' },
+  { type: 'custom_webhook', label: 'Webhook (legacy type)', category: 'integration', support: 'executed', config: ['url', 'method'], note: 'Legacy spelling, handled like customApiNode.' },
   { type: 'ai_deepseek', label: 'AI (DeepSeek) step', category: 'integration', support: 'unsupported' },
 
   // ── channel replies ─────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ export const NODE_SPECS: NodeSpec[] = [
   { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported' },
   { type: 'action_whatsapp_interactive', label: 'WhatsApp interactive message', category: 'message', support: 'unsupported' },
   { type: 'action_whatsapp_questions', label: 'WhatsApp question flow', category: 'message', support: 'unsupported', note: 'Question flows exist separately (whatsapp_question_flows).' },
-  { type: 'action_add_note', label: 'Add internal note', category: 'crm', support: 'unsupported' },
+  { type: 'action_add_note', label: 'Add internal note', category: 'crm', support: 'executed', config: ['note', 'message'] },
 
   // ── delay ───────────────────────────────────────────────────────────────
   { type: 'action_delay', aliases: ['delayNode'], label: 'Delay', category: 'delay', support: 'executed', note: 'Hard-capped at 10 SECONDS by the executor. Long waits must use the lead follow-up schedule.' },
