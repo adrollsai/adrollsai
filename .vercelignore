@@ -8,3 +8,13 @@ scratch
 *.pdf
 *.log
 scripts/
+
+# mobile/ is a separate Flutter application with its own toolchain and pipeline.
+# It is not part of the Next.js build, and its build artefacts alone are ~2.6 GB,
+# which exceeded the upload limit and failed deploys with "Not authorized".
+mobile/
+
+# Local run artefacts from the verify/demo scripts.
+.demo/
+.nobogent/
+.tmp-*
