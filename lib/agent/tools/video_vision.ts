@@ -1,5 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
+import { meterOf } from '../usage';
 import { analyzeVideoWithGemini } from '@/utils/gemini-video-analysis';
 import { VIDEO_ANALYSIS_MODEL } from '@/lib/agent/models';
 
@@ -35,6 +36,14 @@ export function createVideoVisionTools() {
       execute: async ({ videoUrl, prompt }) => {
         try {
           const result = await analyzeVideoWithGemini({ videoUrl, prompt });
+      try {
+        if (result.usage) {
+          meterOf()?.addModelUsage('gemini', {
+            inputTokens: result.usage.input,
+            outputTokens: result.usage.output,
+          });
+        }
+      } catch {}
           return {
             success: true,
             model: result.model,

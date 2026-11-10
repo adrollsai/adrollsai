@@ -121,9 +121,28 @@ export function meterOf(): UsageMeter | null {
 /**
  * Charge the meter's total at 2x margin. Never throws: a billing problem must
  * not take down a task the user is watching.
+ *
+ * The service-role client is created HERE rather than passed in. Callers sit in
+ * request-scoped code holding a cookie/session client, and a credit write is to
+ * `profiles` plus the `credit_transactions` ledger for the PRIMARY (possibly
+ * parent/agency) account — which the session client cannot touch. Passing it in
+ * meant charges silently failed under RLS.
  */
+function adminClient(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  try {
+    // Imported lazily so this module stays usable in scripts that only want the
+    // pricing maths (verify:billing).
+    const { createClient } = require('@supabase/supabase-js');
+    return createClient(url, key, { auth: { persistSession: false } });
+  } catch {
+    return null;
+  }
+}
+
 export async function settleUsage(
-  supabaseAdmin: SupabaseClient,
   userId: string,
   meter: UsageMeter | null,
   label: string
@@ -132,11 +151,22 @@ export async function settleUsage(
   const costInr = meter.totalInr();
   if (costInr <= 0) return null;
 
-  // 2x margin, applied by the existing ledger helper.
   const credits = Math.round(costInr * 2 * 100) / 100;
+  const admin = adminClient();
+  if (!admin) {
+    console.warn(`[Agent usage] ${label}: no service-role client, cannot charge ₹${costInr.toFixed(4)}`);
+    return { charged: 0, costInr };
+  }
+
   try {
     const { deductCreditsByCost } = await import('@/utils/credits');
-    const ok = await deductCreditsByCost(supabaseAdmin, userId, costInr, 'ai_generation', `${label} — ${meter.summary()}`.slice(0, 500));
+    const ok = await deductCreditsByCost(
+      admin,
+      userId,
+      costInr,
+      'ai_generation',
+      `${label} — ${meter.summary()}`.slice(0, 500)
+    );
     console.log(
       `[Agent usage] ${label}: cost ₹${costInr.toFixed(4)} -> ${credits} credits (${ok ? 'charged' : 'FAILED'}) | ${meter.summary()}`
     );
@@ -144,5 +174,42 @@ export async function settleUsage(
   } catch (err: any) {
     console.warn(`[Agent usage] settle failed for ${label}: ${err?.message || err}`);
     return { charged: 0, costInr };
+  }
+}
+
+/**
+ * What a media generation will cost in CREDITS (already at the 2x margin), so
+ * expensive tools can refuse to start when the balance cannot cover them.
+ */
+export function estimateMediaCredits(key: string, units: number): number {
+  const p = mediaPrice(key);
+  const costInr = p.per !== undefined ? p.per * units : (p.each || 0) * units;
+  return Math.round(costInr * 2 * 100) / 100;
+}
+
+/**
+ * Pre-flight balance check for an expensive tool.
+ *
+ * Without this a user with an empty wallet could still trigger a ₹16 Grok video
+ * and we would eat the cost, because settlement happens after the fact.
+ */
+export async function canAfford(
+  userId: string,
+  creditsNeeded: number
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!Number.isFinite(creditsNeeded) || creditsNeeded <= 0) return { ok: true };
+  const admin = adminClient();
+  if (!admin) return { ok: true }; // fail open rather than block a working user
+  try {
+    const { hasEnoughCredits } = await import('@/utils/credits');
+    const enough = await hasEnoughCredits(admin, userId, creditsNeeded);
+    if (enough) return { ok: true };
+    return {
+      ok: false,
+      reason: `This needs about ${creditsNeeded.toFixed(2)} credits and the account balance cannot cover it. Top up in dashboard usage, or ask for a cheaper option (e.g. an image instead of a video).`,
+    };
+  } catch (err: any) {
+    console.warn(`[Agent usage] affordability check failed, allowing: ${err?.message || err}`);
+    return { ok: true };
   }
 }

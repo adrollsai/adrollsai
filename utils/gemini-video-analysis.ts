@@ -22,6 +22,8 @@ export interface VideoAnalysisResult {
   model: string;
   /** True when the file was uploaded rather than passed as a URL. */
   uploaded: boolean;
+  /** Token counts, when the provider reported them — used for billing. */
+  usage?: { input: number; output: number } | null;
 }
 
 function getApiKey(): string {
@@ -123,9 +125,19 @@ export async function analyzeVideoWithGemini(options: {
       parts = [{ fileData: { mimeType: file.mimeType || mimeType, fileUri: file.uri } }, { text: instruction }];
     }
 
+    // Token usage is returned so the agent can bill the call. Video analysis is
+    // not free and was previously invisible to the meter.
+    let lastUsage: { input: number; output: number } | null = null;
     const run = async (modelId: string) => {
       const model = genAI.getGenerativeModel({ model: modelId });
       const result = await model.generateContent(parts);
+      const meta: any = (result.response as any)?.usageMetadata;
+      if (meta) {
+        lastUsage = {
+          input: Number(meta.promptTokenCount || 0),
+          output: Number(meta.candidatesTokenCount || 0),
+        };
+      }
       return result.response.text();
     };
 
@@ -146,7 +158,7 @@ export async function analyzeVideoWithGemini(options: {
     }
 
     console.log(`[Video Vision] analysed with ${usedModel} (${analysis.length} chars).`);
-    return { analysis: analysis.trim(), model: usedModel, uploaded: Boolean(uploadedName) };
+    return { analysis: analysis.trim(), model: usedModel, uploaded: Boolean(uploadedName), usage: lastUsage };
   } finally {
     try {
       if (uploadedName) await fileManager.deleteFile(uploadedName);

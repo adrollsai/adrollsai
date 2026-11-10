@@ -270,7 +270,7 @@ export async function executeRunSlice(
     // Charge this slice's measured usage at 2x margin. Runs in `finally` so a
     // slice that fails or is cancelled is still billed for what it consumed.
     try {
-      await settleUsage(supabase as any, run.user_id, usageMeter, `Agent run slice ${sliceNumber}`);
+      await settleUsage(run.user_id, usageMeter, `Agent run slice ${sliceNumber}`);
     } catch {}
   }
 }

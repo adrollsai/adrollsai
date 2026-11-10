@@ -194,7 +194,7 @@ export async function POST(req: Request) {
       await setSessionStatus(supabase, sessionId, 'idle');
       clearTurnDeadline();
       // Charge measured usage at 2x margin (model tokens, sandbox seconds, media).
-      void settleUsage(supabase as any, targetUserId, usageMeter, 'Agent turn');
+      void settleUsage(targetUserId, usageMeter, 'Agent turn');
 
       // Did we cut this turn off with work left, or did the model finish?
       // `finishReason` describes only the last step, so the explicit tracker is

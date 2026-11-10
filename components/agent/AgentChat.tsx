@@ -329,7 +329,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     onError: handleError,
   }) as any;
 
-  const isLoading = status === 'submitted' || status === 'streaming';
+  // A durable run counts as "busy" exactly like a streaming turn, so the
+  // composer, spinner and live indicator all behave the same either way.
+  const isLoading =
+    status === 'submitted' || status === 'streaming' || harness.runInProgress === true;
 
   // ── Follow-up queue ──────────────────────────────────────────────────
   // Sending while a turn is streaming used to be blocked outright, so a user
@@ -672,6 +675,22 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       textareaRef.current.style.height = 'auto';
     }
 
+    // ── Durable by default ───────────────────────────────────────────────
+    // Every message becomes a queued run, so nothing depends on a single HTTP
+    // request surviving: the run is checkpointed, retried and continued by the
+    // worker whether this tab stays open, sleeps, or the request is killed.
+    // The transcript below streams from the event log over Realtime, so the
+    // user still watches thinking blocks and tool rows land as they happen.
+    if (harness.available === true && sid) {
+      const run = await harness.startRun(fullPrompt);
+      if (run) {
+        toast.success('Running in the background — safe to close this tab.');
+        return;
+      }
+      toast.error('Could not queue the run; falling back to a live turn.');
+    }
+
+    // Fallback only when the durable queue is unavailable.
     await sendMessage({ text: fullPrompt }, sid ? { body: { sessionId: sid } } : undefined);
   };
 
@@ -1499,7 +1518,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   {isLoading && !input.trim() && !attachedFile ? (
                     <button
                       type="button"
-                      onClick={stop}
+                      onClick={() => {
+                        // A durable run is cancelled via the run API; the stream
+                        // controller only knows about live in-request turns.
+                        if (harness.runInProgress) void harness.cancelRun();
+                        else stop();
+                      }}
                       className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
                       title="Stop"
                     >

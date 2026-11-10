@@ -9,7 +9,7 @@ import {
 } from '@/utils/external-apis';
 import { ensureMp3AudioBuffer } from '@/utils/audio-converter';
 import { uploadBufferToR2 } from '../sandbox';
-import { meterOf } from '../usage';
+import { meterOf, canAfford, estimateMediaCredits } from '../usage';
 
 /**
  * Media generation tools: the same models the Nobogent app itself uses, exposed
@@ -219,6 +219,9 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
         const profile = LANGUAGE_PROFILES[language] || LANGUAGE_PROFILES.english;
         const voice = VOICE_NAMES.includes(voiceName) ? voiceName : 'Aoede';
 
+        const affordableTts = await canAfford(userId, estimateMediaCredits('tts', spoken.length / 1000));
+        if (!affordableTts.ok) return { success: false, error: affordableTts.reason };
+
         try {
           const { taskId, error } = await createGeminiTTS({
             dialogueText: spoken,
@@ -338,6 +341,11 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
         const mode = images.length > 0 ? 'image_to_video' : 'text_to_video';
         const duration = Math.min(Math.max(Math.round(durationSeconds || 8), 1), 15);
 
+        // Pre-flight: a 15s 720p clip is ~30 credits. Never start work the
+        // balance cannot cover - settlement is after the fact.
+        const affordable = await canAfford(userId, estimateMediaCredits(`grok-video:${resolution}`, duration));
+        if (!affordable.ok) return { success: false, error: affordable.reason };
+
         try {
           const { taskId, error } = await createGrokVideoTask({
             prompt: text,
@@ -436,6 +444,9 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
       execute: async ({ prompt, aspectRatio, referenceImageUrls, title }) => {
         const text = (prompt || '').trim();
         if (!text) return { success: false, error: 'prompt is required.' };
+
+        const affordableImage = await canAfford(userId, estimateMediaCredits('image', 1));
+        if (!affordableImage.ok) return { success: false, error: affordableImage.reason };
 
         try {
           const taskId = await createKieImageTask(
