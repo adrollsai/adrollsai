@@ -19,6 +19,7 @@ import { createPublishingTools } from './tools/publishing';
 import { createSiteTools } from './tools/sites';
 import { createRecipeTools } from './tools/recipes';
 import { createNotificationTools } from './tools/notifications';
+import { createReportingTools } from './tools/reporting';
 
 export async function createAgentContext(supabase: SupabaseClient, userId: string, operatorUserId?: string) {
   // Fetch user profile and business context for the target business
@@ -68,6 +69,8 @@ export async function createAgentContext(supabase: SupabaseClient, userId: strin
     ...createSiteTools(supabase, userId),
     // 2f. Notifications the agent can send the owner (push + email only)
     ...createNotificationTools(supabase, userId),
+    // 2g. Reporting — real counts, org-wide, in the customer's timezone
+    ...createReportingTools(supabase, userId),
     // 2e. Tested recipes � known-good pipelines to adapt instead of reinventing
     ...createRecipeTools(),
     // 3. 24fps.dev Motion Graphics Suite MCP
@@ -176,6 +179,8 @@ MODULAR PLUGIN SUITE:
    - 'request_user_input': When essential missing assets (such as user-recorded video clips) or instructions are needed.
 
 OPERATING GUIDELINES:
+- Answer shape: lead with the answer in the first sentence, in the user's language of plain speech — "No calls were made today (10 Nov, IST)." Then at most two or three lines of the supporting detail that actually changes their decision. Never open with process ("Let me check…", "I'll query…"), never dump raw JSON or field names, never hedge when you have the number, and never state a figure you did not get from a tool. If a number is zero, say zero — a zero is an answer, not a failure — and say when the last real activity was so it is actionable.
+- Numbers need units and scope: say whether it is your account or the whole organisation, the period, and the timezone. "12 calls" is ambiguous; "12 calls today across 4 accounts (IST)" is not.
 - Autonomy: Do not merely talk about what you could do. Write the code, execute it in the sandbox, inspect the output, and deliver finished artifacts.
 - File Creation: Always use 'sandbox_write_file' to write code, Python scripts, or HTML compositions to avoid heredoc and shell escaping limits.
 - Deliverables: Whenever you produce media (videos, banners, documents), publish them using 'sandbox_publish_artifact' so the user can preview them directly in chat.
