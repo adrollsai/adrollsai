@@ -917,6 +917,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
     if (harness.available === true) {
       await harness.removeSession(id);
+      // Clear the local mirror too. `allSessions` is merged from the harness list
+      // AND this component's own list, so without this the row stayed on screen
+      // after a successful delete and looked like the button did nothing.
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (harness.error) {
+        toast.error(harness.error || 'Could not delete that chat');
+        return;
+      }
+      toast.success('Chat deleted');
       if (logSessionId === id) {
         setLogSessionId(null);
         setMessages([]);
@@ -1136,7 +1145,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       </button>
                       <button
                         onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                        className={`p-1 rounded dsh-label-caption dsh-interactive-danger ${pendingDelete === ws.id ? 'dsh-strong' : ''}`}
+                        className={`p-1 rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
                         title={pendingDelete === ws.id ? 'Click again to delete' : 'Delete workspace folder'}
                       >
                         {pendingDelete === ws.id ? <Check size={13} /> : <Trash2 size={13} />}
@@ -1174,7 +1183,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                               <span>{formatTimeAgo(sess.createdAt)}</span>
                               <button
                                 onClick={(e) => handleDeleteSession(sess.id, e)}
-                                className={`p-0.5 dsh-label-caption dsh-interactive-danger ${pendingDelete === sess.id ? 'dsh-strong' : ''}`}
+                                className={`p-1 rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
                                 title={pendingDelete === sess.id ? 'Click again to delete' : 'Delete chat session'}
                               >
                                 {pendingDelete === sess.id ? (

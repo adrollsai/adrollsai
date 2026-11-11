@@ -14,6 +14,7 @@ import fs from 'fs';
 import path from 'path';
 import { compileSpec } from '../lib/agent/spec/compile';
 import { assessFeasibility, validateSpec, type AssetRequirement } from '../lib/agent/spec/schema';
+import { adaptSpec, parseInventory } from '../lib/agent/spec/adapt';
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -64,6 +65,26 @@ function arg(name: string): string | undefined {
   result.spec.feasibility = feasibility;
 
   const out = arg('out') || '.work/spec.json';
+
+  // --adapt presenter=static,footage=stills rewrites the plan to fit what we have,
+  // keeping every portable style decision and swapping only the operations the
+  // footage cannot support.
+  const adaptArg = arg('adapt');
+  if (adaptArg) {
+    const inv = parseInventory(adaptArg);
+    const adapted = adaptSpec(result.spec, inv);
+    fs.writeFileSync(out.replace(/\.json$/, '') + '.original.json', JSON.stringify(result.spec, null, 2));
+    result.spec = adapted.spec;
+    console.log(`\nADAPTED to [presenter=${inv.presenter}, footage=${inv.footage}]`);
+    for (const c of adapted.changes) {
+      console.log(`  ${c.at.toFixed(2)}s  ${c.from} -> ${c.to}   (${c.why})`);
+    }
+    if (adapted.unavoidable.length) {
+      console.log('  STILL UNAVOIDABLE:');
+      for (const u of adapted.unavoidable) console.log(`    - ${u}`);
+    }
+  }
+
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   fs.writeFileSync(out, JSON.stringify(result.spec, null, 2));
 

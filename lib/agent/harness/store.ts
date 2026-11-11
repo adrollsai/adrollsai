@@ -266,6 +266,25 @@ export async function deleteSession(
   userId: string,
   sessionId: string
 ): Promise<boolean> {
+  // Delete children first. `harness_events` and `harness_runs` reference the
+  // session, and without an ON DELETE CASCADE the delete is rejected by the
+  // foreign key — which surfaced in the UI as a delete button that did nothing,
+  // because the route reported success and the row reappeared on refresh.
+  const children: Array<{ table: string; column: string }> = [
+    { table: 'harness_events', column: 'session_id' },
+    { table: 'harness_runs', column: 'session_id' },
+  ];
+  for (const child of children) {
+    const { error: childError } = await db(supabase)
+      .from(child.table)
+      .delete()
+      .eq(child.column, sessionId);
+    if (childError && !isMissingTable(childError)) {
+      console.error(`[Harness] deleteSession could not clear ${child.table}:`, childError.message);
+      return false;
+    }
+  }
+
   const { error } = await db(supabase)
     .from('harness_sessions')
     .delete()

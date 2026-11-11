@@ -136,7 +136,29 @@ export async function maybeAutoTitle(
 
     const clean = prompt.replace(/\s+/g, ' ').trim();
     if (!clean) return null;
-    const title = clean.length > 60 ? `${clean.slice(0, 59)}…` : clean;
+
+    // Summarise, don't truncate. Slicing the first 60 characters produced names
+    // like "hey can you make me a ..." — a half-sentence, not a name. A short
+    // model call yields a 2-6 word label, which is what the reference harness does.
+    let title = '';
+    try {
+      const { callDeepSeekWithUsage } = await import('@/utils/external-apis');
+      const res = await callDeepSeekWithUsage(
+        `Name this chat. Rules: 2 to 5 words, no quotes, no trailing punctuation, ` +
+          `Title Case, describe the TASK not the greeting. Reply with the name only.\n\n` +
+          `First message: ${clean.slice(0, 500)}`,
+        { maxTokens: 24, temperature: 0.2, timeoutMs: 6000 }
+      );
+      const raw = String(res.text || '').split('\n')[0].trim();
+      title = raw.replace(/^["'`]+|["'`]+$/g, '').replace(/[.!?:;,]+$/, '').trim();
+      if (title.split(/\s+/).length > 7 || title.length > 60) title = '';
+    } catch {
+      /* naming must never block a turn */
+    }
+
+    if (!title) {
+      title = clean.length > 60 ? `${clean.slice(0, 59)}\u2026` : clean;
+    }
     if (title === DEFAULT_TITLE) return null;
 
     const ok = await renameSession(supabase, userId, sessionId, title);

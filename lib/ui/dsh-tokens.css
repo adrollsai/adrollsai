@@ -424,6 +424,71 @@
 .dsh-selected {
   background: var(--dsw-alias-interactive-bg-active);
 }
+
+/* ── tactile press ────────────────────────────────────────────────────────────
+   Before this, nothing on the harness acknowledged a click. Hover had a
+   background shift, but pressing a button produced no visible response until the
+   network came back — which is exactly what makes an interface feel dead or, worse,
+   makes you click twice.
+
+   Press feedback must be INSTANT and come from CSS, never from a request. Every
+   interactive element now dips slightly and darkens on pointer-down, using a
+   digital-feeling 90ms so it reads as a hardware press rather than a slow fade.
+   Transform/opacity only, so it stays on the compositor and cannot jank. */
+.dsh-interactive,
+.dsh-interactive-danger,
+button,
+[role='button'] {
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    transform 90ms cubic-bezier(0.2, 0, 0.2, 1),
+    box-shadow 90ms ease,
+    opacity 90ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dsh-interactive:active,
+.dsh-interactive-danger:active,
+button:not(:disabled):active,
+[role='button']:active {
+  transform: scale(0.96);
+  background: var(--dsw-alias-interactive-bg-active);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/* A pressed row or card should compress, not shrink its text. */
+.dsh-pressable:active {
+  transform: scale(0.985);
+}
+
+button:disabled,
+[aria-disabled='true'] {
+  opacity: 0.45;
+  transform: none !important;
+  cursor: not-allowed;
+}
+
+/* Keyboard users get the same acknowledgement as pointer users. */
+.dsh-interactive:focus-visible,
+.dsh-interactive-danger:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
+}
+
+/* Respect a user who has asked the OS to reduce motion: keep the colour change
+   (still informative) and drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .dsh-interactive:active,
+  .dsh-interactive-danger:active,
+  button:not(:disabled):active,
+  [role='button']:active,
+  .dsh-pressable:active {
+    transform: none;
+  }
+}
 .dsh-accent {
   color: var(--dsw-alias-state-business-primary);
 }

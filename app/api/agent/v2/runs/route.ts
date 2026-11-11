@@ -51,6 +51,20 @@ export async function POST(req: Request) {
     ]);
   }
 
+  // Name the chat on the durable path too. This is the DEFAULT path now, so
+  // without this every conversation stayed "New session" forever - the title
+  // logic only ever ran in the legacy streaming route.
+  if (message) {
+    void (async () => {
+      try {
+        const { maybeAutoTitle } = await import('@/lib/agent/harness/persist');
+        await maybeAutoTitle(supabase, user.id, sessionId, message);
+      } catch {
+        /* naming never blocks a run */
+      }
+    })();
+  }
+
   const goal = typeof body.goal === 'string' && body.goal.trim() ? body.goal.trim() : message;
 
   // A client-supplied key makes enqueue idempotent: an impatient double-click
