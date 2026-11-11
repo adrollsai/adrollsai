@@ -1,38 +1,52 @@
 /**
  * Compile any reference video into an executable spec.
  *
- * This is the piece that turns "make it like this reference" from an improvisation
- * into a repeatable build. It exists because two honest attempts at matching a
- * reference cost ~₹190 and produced work I would not ship, and the causes were not
- * effort — they were constraints rediscovered from scratch each time (ffmpeg
- * cannot animate a crop's own size; Grok ignores the aspect you ask for; a
- * feathered matte shows a bright halo behind type; cheap CDNs only publish 380px
- * thumbnails). Those belong in a compiled artefact, not in a model's luck.
+ * Design changed after reading the HyperFrames `reverse-any-video` skill: our first
+ * version asked a video model for the beat map, and the model invented 15 segments
+ * for a reference that actually has 6 shots — because it was segmenting by text
+ * element, not by picture. Measured against the real edit, 13 of those 14 cuts did
+ * not exist.
  *
- * The compile is deliberately strict: the model may only emit operations from the
- * closed vocabulary in schema.ts, and the result is validated before it is trusted.
+ * So the order is inverted. The MEASUREMENT decides the frame boundaries, exactly
+ * as the original does. The model is then only asked to do what a model is good at:
+ * classify each already-measured shot into our operation vocabulary, and read off
+ * the on-screen text with its timings. Its numbers can no longer move the cut list.
  */
 import { analyzeVideoWithGemini } from '@/utils/gemini-video-analysis';
+import { measureReference, diffSpec, type Measurement } from './measure';
 import {
   ASSET_REQUIREMENTS,
   MOTIONS,
   OPERATIONS,
   TRANSITIONS,
+  validateSpec,
   type Spec,
+  type SpecSegment,
+  type SpecTextEvent,
 } from './schema';
 
-const SPEC_VERSION = 1;
+export interface CompileResult {
+  spec: Spec;
+  problems: string[];
+  model: string;
+  measurement: Measurement;
+  rawJson?: string;
+}
 
-function buildPrompt(durationHint: string) {
-  return `You are compiling a reference video into an executable edit spec. Another engine will rebuild this edit on different footage, so the output must be machine-executable, not descriptive.
+function buildPrompt(m: Measurement): string {
+  const shotLines = m.shots
+    .map((s, i) => `  shot ${i}: ${s.start.toFixed(3)}s - ${s.end.toFixed(3)}s (${s.frames} frames)`)
+    .join('\n');
 
-VIDEO LENGTH: ${durationHint}
+  return `A reference video has ALREADY been measured. These shot boundaries are facts taken from the file — do not change, merge, split or re-time them:
 
-Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shape:
+GEOMETRY: ${m.width}x${m.height}, ${m.fps.toFixed(3)} fps, ${m.durationSec.toFixed(3)}s, ${m.frameCount} frames
+SHOTS:
+${shotLines}
+
+Your job is to CLASSIFY these shots and read off the text. Return ONLY JSON:
 
 {
-  "durationSec": <number>,
-  "aspect": "9:16",
   "requires": [<one or more of: ${ASSET_REQUIREMENTS.join(', ')}>],
   "style": {
     "palette": ["#rrggbb", ...],
@@ -40,60 +54,51 @@ Return ONLY valid JSON, no prose, no markdown fences, matching exactly this shap
     "typeCase": "upper" | "title" | "mixed",
     "typeTexture": "flat" | "gradient" | "metallic" | "grain",
     "grain": "none" | "fine" | "heavy",
-    "grade": "short description of colour and contrast",
-    "focus": "camera and focus behaviour, e.g. locked-off, continuous AF, shallow DOF, one rack focus at 21.6s"
+    "grade": "colour and contrast in a phrase",
+    "focus": "camera and focus behaviour, naming any rack focus and its timestamp"
   },
-  "segments": [
+  "shots": [
     {
-      "start": <number>, "end": <number>,
+      "index": <the shot index above>,
       "operation": <one of: ${OPERATIONS.join(', ')}>,
       "params": {
         "motion": <one of: ${MOTIONS.join(', ')}> (optional),
         "transition": <one of: ${TRANSITIONS.join(', ')}>,
-        "travel": [<0..1>, <0..1>] (optional, only for clip_window),
+        "travel": [<0..1>, <0..1>] (only for clip_window),
         "subject": "presenter" | "none" (optional),
-        "note": "what happens on screen, one short clause"
-      },
-      "text": null | {
-        "lines": ["EXACT WORDS", ...],
-        "role": "hook" | "supporting" | "spec" | "cta",
-        "behindSubject": true | false,
-        "sizeHint": "huge" | "medium" | "small"
+        "note": "what is on screen, one short clause"
       }
+    }
+  ],
+  "textEvents": [
+    {
+      "start": <seconds>, "end": <seconds>,
+      "lines": ["EXACT WORDS", ...],
+      "role": "hook" | "supporting" | "spec" | "cta",
+      "behindSubject": true | false,
+      "sizeHint": "huge" | "medium" | "small"
     }
   ],
   "audio": {
     "vo": {"present": true, "language": "...", "wordsPerSecond": <number>, "delivery": "..."} | null,
     "music": {"present": true, "genre": "...", "bpm": <number>, "energy": "..."} | null,
-    "sfx": ["e.g. whoosh on every type entry", ...]
+    "sfx": ["...", ...]
   }
 }
 
-RULES — these matter more than completeness:
-1. Segments must tile the timeline in order with no overlaps and no gaps.
-2. Use "matte_behind" ONLY where display type is genuinely occluded by a person. If the type is in front of the person, use "type_display" with behindSubject false.
-3. Use "clip_window" only where the source is real wide video that a 9:16 window travels across.
-4. Use "plate" where the source material is low-resolution or a different aspect and would have to be shown inside a blurred backdrop.
-5. Text lines must be VERBATIM what appears on screen. If you cannot read a word, use "[unclear]".
-6. Capture EVERY text element with its real timings, including small spoken captions (those are "subtitle_chunk", role "supporting", sizeHint "small").
-7. "requires" must be honest about the footage the reference itself had. If the presenter walks and the camera follows, that is "presenter_motion".
-8. Include the end card if there is one, as "end_card".`;
-}
-
-export interface CompileResult {
-  spec: Spec;
-  problems: string[];
-  model: string;
-  rawAnalysisChars: number;
-  /** Rejected candidate output, kept so a failure is diagnosable. */
-  rawJson?: string;
+RULES:
+1. One entry in "shots" per measured shot, same index. Every index must appear exactly once.
+2. Text events are SEPARATE from shots. A single shot can hold many text events — that is normal and expected. Do not turn a text change into a shot change.
+3. Use "matte_behind" only where display type is genuinely occluded by a person. Type in front of them is "type_display" with behindSubject false.
+4. Use "clip_window" only where real wide video is travelled by a 9:16 window.
+5. Use "plate" where source material is low-resolution or a different aspect and must sit inside a blurred backdrop.
+6. Text "lines" must be VERBATIM as on screen; use "[unclear]" for anything unreadable. Capture every element including small spoken captions (role "supporting", sizeHint "small").
+7. "requires" must be honest about the footage this reference itself had. A presenter walking while the camera follows is "presenter_motion".
+8. All text timings must fall inside 0..${m.durationSec.toFixed(2)}.`;
 }
 
 function extractJson(text: string): any | null {
-  const cleaned = text
-    .replace(/^\s*```(?:json)?/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
+  const cleaned = text.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/i, '').trim();
   const tryParse = (s: string) => {
     try {
       return JSON.parse(s);
@@ -101,84 +106,117 @@ function extractJson(text: string): any | null {
       return null;
     }
   };
-  const direct = tryParse(cleaned);
-  if (direct) return direct;
-  // Fall back to the outermost braces, which survives a stray preamble.
-  const first = cleaned.indexOf('{');
-  const last = cleaned.lastIndexOf('}');
-  if (first >= 0 && last > first) return tryParse(cleaned.slice(first, last + 1));
-  return null;
+  return tryParse(cleaned) || (() => {
+    const a = cleaned.indexOf('{');
+    const b = cleaned.lastIndexOf('}');
+    return a >= 0 && b > a ? tryParse(cleaned.slice(a, b + 1)) : null;
+  })();
 }
 
-/** Force the shape we need even if the model omits optional corners. */
-function normalise(raw: any, referenceUrl: string): Spec {
-  const segments = Array.isArray(raw?.segments) ? raw.segments : [];
-  return {
-    version: SPEC_VERSION,
-    compiledFrom: {
-      referenceUrl,
-      durationSec: Number(raw?.durationSec) || segments[segments.length - 1]?.end || 0,
-      aspect: String(raw?.aspect || '9:16'),
-      compiledAt: new Date().toISOString(),
-    },
-    requires: Array.isArray(raw?.requires) ? raw.requires : [],
-    style: {
-      palette: Array.isArray(raw?.style?.palette) ? raw.style.palette : [],
-      typeFamily: String(raw?.style?.typeFamily || ''),
-      typeCase: raw?.style?.typeCase || 'upper',
-      typeTexture: raw?.style?.typeTexture || 'flat',
-      grain: raw?.style?.grain || 'none',
-      grade: String(raw?.style?.grade || ''),
-      focus: String(raw?.style?.focus || ''),
-    },
-    segments: segments.map((s: any) => ({
-      start: Number(s?.start) || 0,
-      end: Number(s?.end) || 0,
-      operation: s?.operation,
-      params: s?.params || {},
-      text:
-        s?.text && Array.isArray(s.text.lines) && s.text.lines.length
-          ? {
-              lines: s.text.lines.map((l: any) => String(l)),
-              role: s.text.role || 'supporting',
-              behindSubject: Boolean(s.text.behindSubject),
-              sizeHint: s.text.sizeHint || 'medium',
-            }
-          : null,
-    })),
-    audio: {
-      vo: raw?.audio?.vo ?? null,
-      music: raw?.audio?.music ?? null,
-      sfx: Array.isArray(raw?.audio?.sfx) ? raw.audio.sfx : [],
-    },
-  };
+/** Assign a fallback operation when the model omits a shot. */
+function fallbackOperation(i: number, total: number): { operation: string; params: any } {
+  if (i === total - 1 && total > 1) return { operation: 'end_card', params: { transition: 'fade_black', note: 'closing slate' } };
+  return { operation: 'cover', params: { motion: 'push', transition: 'cut', note: 'unclassified shot' } };
 }
 
 export async function compileSpec(opts: {
   referenceUrl: string;
-  durationHint?: string;
+  threshold?: number;
 }): Promise<CompileResult> {
-  const prompt = buildPrompt(opts.durationHint || 'unknown — read it from the video');
+  // 1. Measure first. This, not the model, decides the timeline.
+  const measurement = await measureReference(opts.referenceUrl, { threshold: opts.threshold });
 
-  const analysis = await analyzeVideoWithGemini({ videoUrl: opts.referenceUrl, prompt });
+  // 2. Ask the model to classify the measured shots and read the text.
+  const analysis = await analyzeVideoWithGemini({
+    videoUrl: opts.referenceUrl,
+    prompt: buildPrompt(measurement),
+  });
   const parsed = extractJson(analysis.analysis);
   if (!parsed) {
     return {
-      spec: normalise({}, opts.referenceUrl),
+      spec: buildSpec(measurement, {}, new Map(), opts.referenceUrl),
       problems: ['model did not return parseable JSON'],
       model: analysis.model,
-      rawAnalysisChars: analysis.analysis.length,
+      measurement,
       rawJson: analysis.analysis.slice(0, 4000),
     };
   }
 
-  const spec = normalise(parsed, opts.referenceUrl);
-  const { validateSpec } = await import('./schema');
+  const byIndex = new Map<number, any>();
+  if (Array.isArray(parsed.shots)) {
+    for (const s of parsed.shots) {
+      if (typeof s?.index === 'number') byIndex.set(s.index, s);
+    }
+  }
+
+  const spec = buildSpec(measurement, parsed, byIndex, opts.referenceUrl);
+
+  // 3. Verify the result against the measurement. With measured boundaries this
+  //    should always be a match — if it is not, the compiler has a bug, and saying
+  //    so is better than shipping a spec nobody checked.
+  const d = diffSpec(spec.segments, measurement);
+  spec.verification = {
+    verdict: d.verdict,
+    summary: d.summary,
+    missingCuts: d.missingCuts,
+    extraCuts: d.extraCuts,
+    durationDelta: d.durationDelta,
+  };
+
+  return { spec, problems: validateSpec(spec), model: analysis.model, measurement, rawJson: analysis.analysis.slice(0, 4000) };
+}
+
+function buildSpec(m: Measurement, parsed: any, byIndex: Map<number, any>, url: string): Spec {
+  const segments: SpecSegment[] = m.shots.map((shot, i) => {
+    const classified = byIndex.get(i);
+    const fb = fallbackOperation(i, m.shots.length);
+    return {
+      start: shot.start,
+      end: shot.end,
+      operation: (classified?.operation as any) || (fb.operation as any),
+      params: { ...fb.params, ...(classified?.params || {}) },
+      frames: shot.frames,
+    };
+  });
+
+  const textEvents: SpecTextEvent[] = (Array.isArray(parsed?.textEvents) ? parsed.textEvents : [])
+    .filter((t: any) => Array.isArray(t?.lines) && t.lines.length && Number.isFinite(Number(t?.start)))
+    .map((t: any) => ({
+      start: Math.max(0, Math.min(m.durationSec, Number(t.start))),
+      end: Math.max(0, Math.min(m.durationSec, Number(t.end) || Number(t.start) + 1)),
+      lines: t.lines.map((l: any) => String(l)),
+      role: ['hook', 'supporting', 'spec', 'cta'].includes(t?.role) ? t.role : 'supporting',
+      behindSubject: Boolean(t?.behindSubject),
+      sizeHint: ['huge', 'medium', 'small'].includes(t?.sizeHint) ? t.sizeHint : 'medium',
+    }))
+    .sort((a: SpecTextEvent, b: SpecTextEvent) => a.start - b.start);
+
   return {
-    spec,
-    problems: validateSpec(spec),
-    model: analysis.model,
-    rawAnalysisChars: analysis.analysis.length,
-    rawJson: analysis.analysis.slice(0, 4000),
+    version: 1,
+    compiledFrom: {
+      referenceUrl: url,
+      durationSec: m.durationSec,
+      aspect: `${m.width}:${m.height}`,
+      fps: m.fps,
+      frameCount: m.frameCount,
+      compiledAt: new Date().toISOString(),
+    },
+    requires: Array.isArray(parsed?.requires) ? parsed.requires : [],
+    style: {
+      palette: Array.isArray(parsed?.style?.palette) ? parsed.style.palette : [],
+      typeFamily: String(parsed?.style?.typeFamily || ''),
+      typeCase: parsed?.style?.typeCase || 'upper',
+      typeTexture: parsed?.style?.typeTexture || 'flat',
+      grain: parsed?.style?.grain || 'none',
+      grade: String(parsed?.style?.grade || ''),
+      focus: String(parsed?.style?.focus || ''),
+    },
+    segments,
+    textEvents,
+    audio: {
+      vo: parsed?.audio?.vo ?? null,
+      music: parsed?.audio?.music ?? null,
+      sfx: Array.isArray(parsed?.audio?.sfx) ? parsed.audio.sfx : [],
+    },
   };
 }

@@ -20,7 +20,9 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
   return {
     list_reference_creatives: tool({
       description:
-        'List the app\'s built-in reference creatives — real, finished ad designs the business can restyle from. ' +
+        'List the app\'s built-in reference creatives: 35 finished luxury real-estate ad designs. ' +
+        'Treat them as a DESIGN reference, not content — keep the layout, typography, framing and surface ' +
+        'treatment, and replace the place, the brand marks and any claims with the client\'s own. ' +
         'Each has a name, category, badge, description and a public image URL. Use this when the user wants a ' +
         'creative "like this one", "in that style", or asks what templates exist. Pick a template whose category ' +
         'matches the brief, then pass its url to generate_ai_image as referenceImageUrls. ' +
@@ -68,6 +70,36 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
             url: t.url,
             fallbackUrl: t.fallbackImage,
           })),
+          designLanguage: {
+            sum:
+              'Luxury architectural advertising: full-bleed hero architecture, a short uppercase badge, one ' +
+              'dominant sell-line, a fine tracked sub-line, and a single high-contrast CTA.',
+            recurring: [
+              'Badge lockup top or upper-left — small, wide tracking, uppercase',
+              'One dominant word or numeral carrying the whole layout',
+              'Warm cream / sand / gold type over deep architectural imagery',
+              'A price or a single number given its own heavy weight',
+              'Quiet footer: developer mark, contact, legal line',
+            ],
+          },
+          mustAdapt: {
+            why: 'These are Dubai / Emirates designs. The craft transfers; the specifics do not.',
+            replacePlaces: ['Dubai', 'Palm Jumeirah', 'Emirates', 'Creek Harbour', 'Marina', 'Downtown'],
+            stripBrands: ['DAMAC', 'Emaar', 'Atlantis', 'any developer mark that is not the client\'s'],
+            stripClaims: [
+              '0% tax',
+              'guaranteed returns',
+              'guaranteed ROI',
+              'freehold title',
+              'post-handover payment plan',
+              'highest rental yield',
+              'AED pricing',
+            ],
+            rule:
+              'Where the reference made one of these claims, replace it with a fact from the client\'s own ' +
+              'record or drop the element. Never carry a Dubai claim onto an Indian project, and never invent ' +
+              'the replacement.',
+          },
           howToUse:
             'Pass the chosen url as referenceImageUrls to generate_ai_image. Describe the change you want ' +
             '(the property, the offer, the brand colours) and keep the reference\'s layout, framing and type ' +

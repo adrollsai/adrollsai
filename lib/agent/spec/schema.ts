@@ -56,13 +56,33 @@ export interface SpecSegment {
     subject?: 'presenter' | 'none';
     note?: string;
   };
+  /** Frame count from the measurement, so the renderer never re-derives timing. */
+  frames?: number;
+  /** DEPRECATED: text lives in Spec.textEvents so one shot can hold many. */
   text?: {
     lines: string[];
     role: 'hook' | 'supporting' | 'spec' | 'cta';
-    /** True when the reference hides this type behind the presenter. */
     behindSubject?: boolean;
     sizeHint?: 'huge' | 'medium' | 'small';
   } | null;
+}
+
+/**
+ * On-screen text is an event on the timeline, not a property of a shot.
+ *
+ * The first compiler conflated the two and produced 15 "shots" for a 6-shot
+ * reference, because it segmented wherever the words changed. Measuring the cuts
+ * separately is what exposes that: in this style a single shot commonly carries
+ * six or eight text events.
+ */
+export interface SpecTextEvent {
+  start: number;
+  end: number;
+  lines: string[];
+  role: 'hook' | 'supporting' | 'spec' | 'cta';
+  /** True when the reference hides this type behind the presenter. */
+  behindSubject: boolean;
+  sizeHint: 'huge' | 'medium' | 'small';
 }
 
 export interface Spec {
@@ -71,6 +91,8 @@ export interface Spec {
     referenceUrl: string;
     durationSec: number;
     aspect: string;
+    fps?: number;
+    frameCount?: number;
     compiledAt: string;
   };
   requires: AssetRequirement[];
@@ -85,6 +107,15 @@ export interface Spec {
     focus: string;
   };
   segments: SpecSegment[];
+  textEvents: SpecTextEvent[];
+  /** Filled by the compiler: the numeric diff against the measured reference. */
+  verification?: {
+    verdict: 'match' | 'close' | 'off';
+    summary: string;
+    missingCuts: number;
+    extraCuts: number;
+    durationDelta: number;
+  };
   audio: {
     vo: { present: boolean; language?: string; wordsPerSecond?: number; delivery?: string } | null;
     music: { present: boolean; genre?: string; bpm?: number; energy?: string } | null;
@@ -146,6 +177,23 @@ export function validateSpec(spec: any): string[] {
       problems.push(`${at}: text present but no lines`);
     }
   });
+
+  const dur = Number(spec.compiledFrom?.durationSec) || 0;
+  if (Array.isArray(spec.textEvents)) {
+    spec.textEvents.forEach((t: any, i: number) => {
+      const at = `textEvent ${i}`;
+      if (!Array.isArray(t.lines) || t.lines.length === 0) problems.push(`${at}: no lines`);
+      if (typeof t.start !== 'number' || typeof t.end !== 'number') {
+        problems.push(`${at}: start/end must be numbers`);
+      } else {
+        if (t.end <= t.start) problems.push(`${at}: end must be after start`);
+        if (dur && (t.start < 0 || t.end > dur + 0.01)) {
+          problems.push(`${at}: ${t.start}-${t.end}s falls outside the ${dur}s reference`);
+        }
+      }
+      if (!['hook', 'supporting', 'spec', 'cta'].includes(t.role)) problems.push(`${at}: bad role "${t.role}"`);
+    });
+  }
 
   if (Array.isArray(spec.requires)) {
     for (const r of spec.requires) {

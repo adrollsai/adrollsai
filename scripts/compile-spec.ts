@@ -40,7 +40,12 @@ function arg(name: string): string | undefined {
 
   console.log(`compiling: ${referenceUrl}`);
   const result = await compileSpec({ referenceUrl });
-  console.log(`analyst: ${result.model} (${result.rawAnalysisChars} chars)\n`);
+  console.log(`analyst: ${result.model}`);
+  const m = result.measurement;
+  console.log(
+    `measured: ${m.width}x${m.height} @ ${m.fps.toFixed(2)}fps, ${m.durationSec.toFixed(2)}s, ` +
+      `${m.shots.length} shots, ${m.cuts.length} cuts\n`
+  );
 
   if (result.problems.length) {
     console.log('SPEC REJECTED — it is not executable as written:');
@@ -68,14 +73,27 @@ function arg(name: string): string | undefined {
   console.log(`focus      ${result.spec.style.focus}`);
   console.log(`music      ${result.spec.audio.music ? `${result.spec.audio.music.genre} @ ${result.spec.audio.music.bpm}bpm` : 'none'}`);
   console.log(`vo         ${result.spec.audio.vo ? `${result.spec.audio.vo.language} @ ${result.spec.audio.vo.wordsPerSecond} wps` : 'none'}`);
-  console.log(`segments   ${result.spec.segments.length}`);
+  console.log(`shots      ${result.spec.segments.length} (measured — not model-invented)`);
+  console.log(`text events ${result.spec.textEvents.length}`);
   console.log('');
 
   for (const s of result.spec.segments) {
-    const when = `${s.start.toFixed(1)}-${s.end.toFixed(1)}s`.padEnd(13);
-    const op = s.operation.padEnd(14);
-    const txt = s.text ? ` | ${s.text.role}${s.text.behindSubject ? ' (BEHIND)' : ''}: "${s.text.lines.join(' / ').slice(0, 40)}"` : '';
-    console.log(`  ${when}${op}${s.params.motion ? String(s.params.motion).padEnd(11) : ''.padEnd(11)}${txt}`);
+    const when = `${s.start.toFixed(2)}-${s.end.toFixed(2)}s`.padEnd(15);
+    const op = String(s.operation).padEnd(14);
+    const mot = String(s.params.motion || '').padEnd(11);
+    console.log(`  SHOT ${when}${op}${mot}${s.params.note || ''}`);
+  }
+
+  console.log('');
+  for (const t of result.spec.textEvents) {
+    const when = `${t.start.toFixed(2)}-${t.end.toFixed(2)}s`.padEnd(15);
+    console.log(
+      `  TEXT ${when}${String(t.role).padEnd(11)}${t.behindSubject ? 'BEHIND ' : '       '}${t.lines.join(' / ').slice(0, 46)}`
+    );
+  }
+
+  if (result.spec.verification) {
+    console.log(`\nVERIFICATION vs measurement: ${result.spec.verification.summary}`);
   }
 
   console.log(`\nFEASIBILITY with [${have.join(', ') || 'no assets declared'}]:`);
