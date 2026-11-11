@@ -38,8 +38,9 @@ const TOOLCHAIN_VERSION = 'v1';
 const MODEL_URL =
   'https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx';
 const MODEL_MIN_BYTES = 100_000_000; // a truncated download must not be reused
-const FONT_URL =
-  'https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf';
+// Our own copy, uploaded from the repo font that was verified to contain the Black
+// variation. Pulling Montserrat from a third party produced files PIL rejected.
+const FONT_URL = `${(process.env.R2_PUBLIC_URL || '').replace(/\/$/, '')}/spec-assets/Montserrat.ttf`;
 const MAX_OUTPUT_BYTES = 400 * 1024 * 1024;
 
 export interface AssetRef {
@@ -62,7 +63,12 @@ export interface CloudRenderInput {
   /** Defaults to the sandbox's vCPU count, capped by shot count. */
   workers?: number;
   timeoutMs?: number;
-  /** Endpoint the sandbox uses for outbound downloads (R2 public base). */
+  /**
+   * The display font as base64. Written straight into the sandbox so the type is
+   * byte-identical to the local render; fetching it over HTTP from a third party
+   * produced a file PIL rejected.
+   */
+  fontBase64?: string;
   onEvent?: (msg: string) => void;
 }
 
@@ -141,14 +147,7 @@ else
   echo "[provision] matte model cached"
 fi
 
-F="$ROOT/Montserrat.ttf"
-if [ "$(stat -c %s "$F" 2>/dev/null || echo 0)" -lt 50000 ]; then
-  echo "[provision] fetching display font"
-  curl -fsSL --retry 3 -o "$F.part" "${FONT_URL}" && mv "$F.part" "$F" || echo "[provision] font fetch failed (will fall back to a system face)"
-else
-  echo "[provision] font cached"
-fi
-
+# The display font is supplied by the caller as bytes and verified there.
 MEM_MB=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
 echo "[provision] vcpus=$(nproc) mem=\${MEM_MB}MB"
 echo "PROBE $(nproc) \${MEM_MB}"
@@ -242,6 +241,24 @@ export async function renderSpecInSandbox(input: CloudRenderInput): Promise<Clou
 
     // Renderer + spec
     const root = `/home/user/${ROOT}`;
+
+    // The font travels as bytes, not as a URL. It is written to a .b64 file and
+    // decoded in the sandbox, then *verified* with PIL so a bad transfer fails here
+    // instead of quietly rendering thin type.
+    if (input.fontBase64) {
+      await sandbox.files.write(`${root}/font.b64`, input.fontBase64);
+      const fontCheck = await runIn(
+        sandbox,
+        `cd "$HOME/${ROOT}" && base64 -d font.b64 > Montserrat.ttf && rm -f font.b64 && \
+         python3 -c "from PIL import ImageFont; f=ImageFont.truetype('Montserrat.ttf', 40); f.set_variation_by_name('Black'); print('FONT_OK', f.getname())"`,
+        60_000
+      );
+      log(fontCheck.stdout.trim() || fontCheck.stderr.trim());
+      if (fontCheck.code !== 0) {
+        log('WARNING: supplied font rejected by PIL; the renderer will fall back to a system face');
+      }
+    }
+
     await sandbox.files.write(`${root}/scripts/render-spec.py`, input.rendererSource);
     await sandbox.files.write(`${root}/spec.json`, JSON.stringify(spec, null, 2));
 

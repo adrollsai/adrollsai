@@ -35,6 +35,10 @@ function multi(name: string): AssetRef[] {
 
   const rendererSource = fs.readFileSync(path.join(process.cwd(), 'scripts/render-spec.py'), 'utf8');
 
+  // Ship the verified display font with the render so cloud type matches local exactly.
+  const fontPath = path.join(process.cwd(), 'assets/fonts/Montserrat.ttf');
+  const fontBase64 = fs.existsSync(fontPath) ? fs.readFileSync(fontPath).toString('base64') : undefined;
+
   const userId = arg('user') || process.env.RENDER_CLOUD_USER || 'cloud-render-test';
   const presenterUrl = arg('presenter');
   const musicUrl = arg('music');
@@ -47,6 +51,7 @@ function multi(name: string): AssetRef[] {
     const result = await renderSpecInSandbox({
       spec,
       rendererSource,
+      fontBase64,
       userId,
       stills: multi('stills'),
       clips: multi('clips'),

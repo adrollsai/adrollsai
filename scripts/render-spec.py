@@ -280,6 +280,10 @@ def run_parallel(args, argv):
             os.remove(pth)
         except Exception:
             pass
+    if args.music and not os.path.exists(args.music) and not args.shard:
+        # Silence here is worse than an error: the render looks fine and ships
+        # without sound, which is exactly how a no-audio video reached the client.
+        raise SystemExit(f'ERROR: --music was given but the file does not exist: {args.music}')
     if args.music and os.path.exists(args.music) and not args.shard:
         tmp = args.out.replace('.mp4', '_v.mp4')
         os.replace(args.out, tmp)
@@ -526,13 +530,19 @@ def main():
     # window then travels across it. run 1 learned the hard way that crop cannot
     # animate its own size, so the window size is fixed and only x moves.
     CW, CH = 1440, 810
+    # Real footage from a client or from YouTube often carries the publisher's own
+    # titles across the top and bottom. Rendering our type over theirs looked broken
+    # (a test frame had "WITNESS PUNJAB'S MOST POWERFUL ADDRESS" behind our headline),
+    # so trim a band off the top and bottom before filling the canvas.
+    ybias = float(os.environ.get('CLIP_YBIAS', '0.24') or 0.24)
     clip_proc = {}
 
     def clip_reader(path, nframes):
         if path not in clip_proc:
             clip_proc[path] = subprocess.Popen(
                 ['ffmpeg', '-v', 'error', '-stream_loop', '-1', '-i', path,
-                 '-vf', f'fps={fps},scale={CW}:{CH}:force_original_aspect_ratio=increase:flags=lanczos,crop={CW}:{CH}',
+                 '-vf', f'fps={fps},crop=iw:ih*{1 - 2 * ybias:.3f}:0:ih*{ybias:.3f},'
+                        f'scale={CW}:{CH}:force_original_aspect_ratio=increase:flags=lanczos,crop={CW}:{CH}',
                  '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
                 stdout=subprocess.PIPE)
         return clip_proc[path]
@@ -653,6 +663,10 @@ def main():
     log(f'wrote {args.out} ({written} frames)')
 
     # audio: keep the reference's own track when supplied, else silence
+    if args.music and not os.path.exists(args.music) and not args.shard:
+        # Silence here is worse than an error: the render looks fine and ships
+        # without sound, which is exactly how a no-audio video reached the client.
+        raise SystemExit(f'ERROR: --music was given but the file does not exist: {args.music}')
     if args.music and os.path.exists(args.music) and not args.shard:
         tmp = args.out.replace('.mp4', '_v.mp4')
         os.replace(args.out, tmp)
