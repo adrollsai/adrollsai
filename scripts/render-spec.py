@@ -188,10 +188,10 @@ def still_frame(path, W, H, mode, u, motion):
     if im is None:
         im = Image.open(path).convert('RGB')
         # Cap the longest edge so a 4000px source cannot pin hundreds of MB per file.
-        if max(im.size) > 1800:
-            ratio = 1800 / max(im.size)
+        if max(im.size) > 1280:
+            ratio = 1280 / max(im.size)
             im = im.resize((max(2, int(im.width * ratio)), max(2, int(im.height * ratio))), Image.LANCZOS)
-        if len(_STILL_CACHE) >= 24:
+        if len(_STILL_CACHE) >= 8:
             _STILL_CACHE.clear()
         _STILL_CACHE[path] = im
     z = 1 + (0.10 if motion in ('push', 'pull') else 0.05)
@@ -247,7 +247,20 @@ def run_parallel(args, argv):
         cmd = [c for c in cmd if c != args.music and c != '--music']
         r = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if r.returncode != 0:
-            raise RuntimeError(f'worker {i} failed:\n{r.stdout[-1500:]}\n{r.stderr[-1500:]}')
+            # Python tracebacks go to the head of stderr, then drown in ffmpeg's
+            # broken-pipe noise. Slicing from the end therefore hid the actual
+            # exception entirely; pull the diagnostic lines out first.
+            combined = (r.stdout or '') + (r.stderr or '')
+            lines = combined.splitlines()
+            keys = ('Traceback', 'Error:', 'error:', 'Exception', 'Killed', 'No such file')
+            hits = [l for l in lines if any(k in l for k in keys)]
+            head = lines[:14]
+            raise RuntimeError(
+                f'worker {i} failed (exit {r.returncode})\n'
+                f'--- diagnostic lines ---\n' + '\n'.join(hits[:20]) +
+                f'\n--- first 14 lines ---\n' + '\n'.join(head) +
+                f'\n--- stdout tail ---\n' + (r.stdout or '')[-600:]
+            )
         return i
 
     with fut.ThreadPoolExecutor(max_workers=n) as ex:
@@ -357,6 +370,17 @@ def main():
     else:
         segs = all_segs
 
+    try:
+        with open('/proc/meminfo') as fh:
+            mem_kb = int([l for l in fh if l.startswith('MemAvailable')][0].split()[1])
+        log(f'available memory: {mem_kb // 1024} MB')
+        if mem_kb < 700_000 and os.environ.get('MATTE_STRIDE') is None:
+            # Below ~700MB free, per-frame inference will get us killed; stride harder
+            # rather than fail outright.
+            os.environ['MATTE_STRIDE'] = '8'
+            log('low memory: matte stride raised to 8')
+    except Exception:
+        pass
     log(f'spec: {W}x{H} @ {fps:.2f}fps, {total:.2f}s, {len(segs)} shots, {len(spec.get("textEvents", []))} text events')
 
     stills = [p for p in list_assets(args.stills) if not is_video(p)]
@@ -376,6 +400,11 @@ def main():
         threads = int(os.environ.get('RENDER_THREADS', '0') or 0) or (os.cpu_count() or 4)
         so.intra_op_num_threads = max(1, threads)
         so.inter_op_num_threads = max(1, threads // 2)
+        # A small model in a tight loop does not benefit from the CPU arena or the
+        # memory pattern planner, and both raise peak RSS enough to get the whole
+        # render SIGKILLed in a 2GB sandbox.
+        so.enable_cpu_mem_arena = False
+        so.enable_mem_pattern = False
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         sess = ort.InferenceSession(args.model, sess_options=so, providers=['CPUExecutionProvider'])
         log(f'matte: u2net_human_seg loaded ({so.intra_op_num_threads} threads)')
@@ -443,7 +472,7 @@ def main():
 
     presenter_reader = Presenter(presenter) if sess and presenter else None
     MASK_SCALE = 2
-    MASK_CACHE_MAX = 64
+    MASK_CACHE_MAX = 32
     mask_cache = {}
 
     def _shrink(m):
@@ -485,11 +514,11 @@ def main():
         if len(mask_cache) >= MASK_CACHE_MAX:
             mask_cache.clear()
         mask_cache[key] = _shrink(m)
-        return mask_cache[key]
-        m = person_mask(frame)
-        if len(mask_cache) > 240:
-            mask_cache.clear()
-        mask_cache[key] = m
+        # Return the FULL-RESOLUTION mask. Returning the cached half-res uint8 here
+        # is what produced "operands could not be broadcast together with shapes
+        # (1280,720,3) (640,360,1)" - the compact cache leaked into the composite.
+        if m.shape != (H, W):
+            raise ValueError(f'matte shape {m.shape} does not match the frame ({H}, {W})')
         return m
 
     # clip readers (ffmpeg rawvideo pipes, opened lazily per clip)
@@ -594,6 +623,8 @@ def main():
                 pidx = int(t * fps)
                 pframe = presenter_reader.frame_at(pidx)
                 mraw = mask_at(pidx, pframe)
+                if mraw.ndim != 2 or mraw.shape != (H, W):
+                    raise ValueError(f'mask_at returned {mraw.shape}, expected {(H, W)}')
                 m = mraw[:, :, None]
                 frame = pframe.astype(np.float32)
                 blurred = fast_blur(frame, W, H, 13)

@@ -106,7 +106,10 @@ async function runIn(
 }
 
 /** The one-time (per sandbox) setup: deps, model, tools. Idempotent by marker. */
-async function provision(sandbox: any, log: (s: string) => void): Promise<number> {
+async function provision(
+  sandbox: any,
+  log: (s: string) => void
+): Promise<{ vcpus: number; memMb: number }> {
   const script = `
 set -u
 ROOT="$HOME/${ROOT}"
@@ -146,7 +149,9 @@ else
   echo "[provision] font cached"
 fi
 
-echo "[provision] vcpus=$(nproc)"
+MEM_MB=$(awk '/MemAvailable/ {print int($2/1024)}' /proc/meminfo)
+echo "[provision] vcpus=$(nproc) mem=\${MEM_MB}MB"
+echo "PROBE $(nproc) \${MEM_MB}"
 nproc
 `;
   const res = await runIn(sandbox, script, 900_000);
@@ -154,9 +159,11 @@ nproc
   if (res.code !== 0) {
     throw new Error(`Sandbox provisioning failed (exit ${res.code}): ${(res.stderr || res.stdout).slice(-800)}`);
   }
-  const last = res.stdout.trim().split('\n').pop() || '';
-  const vcpus = Number(last);
-  return Number.isFinite(vcpus) && vcpus > 0 ? vcpus : 2;
+  // Prefer the explicit PROBE line; fall back to the last numeric line.
+  const probe = res.stdout.match(/PROBE\s+(\d+)\s+(\d+)/);
+  if (probe) return { vcpus: Number(probe[1]) || 2, memMb: Number(probe[2]) || 1400 };
+  const nums = res.stdout.trim().split('\n').map((l) => Number(l.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  return { vcpus: nums[nums.length - 1] || 2, memMb: 1400 };
 }
 
 /** Download assets into the sandbox, skipping any already present by hash. */
@@ -231,7 +238,7 @@ export async function renderSpecInSandbox(input: CloudRenderInput): Promise<Clou
   let downloadedBytes = 0;
 
   try {
-    const vcpus = await provision(sandbox, log);
+    const { vcpus, memMb } = await provision(sandbox, log);
 
     // Renderer + spec
     const root = `/home/user/${ROOT}`;
@@ -244,11 +251,15 @@ export async function renderSpecInSandbox(input: CloudRenderInput): Promise<Clou
     if (input.music) await fetchOne(sandbox, input.music, `music.${hashName(input.music.url).split('.').pop()}`, log);
 
     const shots = spec.segments.length || 1;
-    // Each worker holds its own ONNX session and image caches. Default to a
-    // conservative fan-out and let the caller opt up, rather than OOM-killing a
-    // sandbox halfway through a render.
-    const requested = input.workers ?? Math.max(1, Math.min(vcpus - 1, 4));
-    const workers = Math.max(1, Math.min(Math.floor(requested), shots, 8));
+    // Each worker holds its own ONNX session plus image and matte caches, which
+    // measured out at roughly 700-900MB peak. Sizing the fan-out from vCPUs alone
+    // SIGKILLed the render on a 1.4GB sandbox, so memory decides first and cores
+    // only cap it further.
+    const MB_PER_WORKER = 900;
+    const byMemory = Math.max(1, Math.floor((memMb - 350) / MB_PER_WORKER)); // 350MB headroom for ffmpeg + python
+    const requested = input.workers ?? byMemory;
+    const workers = Math.max(1, Math.min(Math.floor(requested), byMemory, vcpus, shots, 8));
+    log(`workers: ${workers} (memory allows ${byMemory}, ${vcpus} vCPU, ${memMb}MB free)`);
 
     const presenterFile = input.presenter
       ? `assets/presenter.${hashName(input.presenter.url).split('.').pop()}`
