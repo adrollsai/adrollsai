@@ -106,6 +106,19 @@ export async function POST(req: Request) {
       // The CLIENT writes `user.message` (it owns the displayed message id, so
       // the optimistic row and the persisted row are the same row). This route
       // owns everything the model produces. Exactly one writer per event type.
+      // Same gate as the durable path: do not start a turn we cannot bill. Both routes
+      // must check, otherwise switching paths becomes the way around it.
+      {
+        const { canStartTurn } = await import('@/lib/agent/usage');
+        const affordable = await canStartTurn(targetUserId);
+        if (!affordable.ok) {
+          return NextResponse.json(
+            { error: 'insufficient_credits', message: affordable.reason },
+            { status: 402 }
+          );
+        }
+      }
+
       await setSessionStatus(supabase, sessionId, 'running');
       if (lastUserText.trim()) {
         void maybeAutoTitle(supabase, user.id, sessionId, lastUserText);

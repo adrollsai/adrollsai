@@ -40,6 +40,19 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
+  // An empty wallet must not start work we then fail to bill. Media tools were already
+  // gated; text turns were not, which is an open tap rather than a wrong number.
+  {
+    const { canStartTurn } = await import('@/lib/agent/usage');
+    const affordable = await canStartTurn(user.id);
+    if (!affordable.ok) {
+      return NextResponse.json(
+        { error: 'insufficient_credits', message: affordable.reason },
+        { status: 402 }
+      );
+    }
+  }
+
   // ONE run per session at a time. The client queues while a turn is running, but a
   // reload, a second tab, another device or a direct call reaches this route with a
   // run already live, and two runs appending to the same event log interleave their

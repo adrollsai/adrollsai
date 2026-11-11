@@ -188,6 +188,40 @@ export function estimateMediaCredits(key: string, units: number): number {
 }
 
 /**
+ * Pre-flight check for starting a TURN, not just a media tool.
+ *
+ * Media generation was already gated, so a zero-balance account could not buy a video —
+ * but it could still send messages, and a real background run proved it: the model turn
+ * executed, we paid for it, and the charge was refused afterwards with "Overdraft
+ * prevented". An open tap is worse than a wrong number, so a turn refuses to start on an
+ * empty wallet.
+ *
+ * Deliberately generous: any positive balance runs, and the check fails OPEN on a
+ * database error so a billing hiccup cannot lock a paying customer out of the app.
+ */
+export async function canStartTurn(
+  userId: string,
+  minCredits = 0.5
+): Promise<{ ok: boolean; reason?: string }> {
+  const admin = adminClient();
+  if (!admin) return { ok: true };
+  try {
+    const { hasEnoughCredits } = await import('@/utils/credits');
+    const enough = await hasEnoughCredits(admin, userId, minCredits);
+    if (enough) return { ok: true };
+    return {
+      ok: false,
+      reason:
+        'This account has run out of credits, so the agent cannot start a new task. ' +
+        'Top up in dashboard usage and send the message again — nothing was lost.',
+    };
+  } catch (err: any) {
+    console.warn(`[Agent usage] turn affordability check failed, allowing: ${err?.message || err}`);
+    return { ok: true };
+  }
+}
+
+/**
  * Pre-flight balance check for an expensive tool.
  *
  * Without this a user with an empty wallet could still trigger a ₹16 Grok video
