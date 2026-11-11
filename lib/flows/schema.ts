@@ -89,7 +89,17 @@ export const NODE_SPECS: NodeSpec[] = [
   { type: 'action_fb_comment_reply', label: 'Reply to FB comment', category: 'message', support: 'unsupported' },
   { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported' },
   { type: 'action_whatsapp_interactive', label: 'WhatsApp interactive message', category: 'message', support: 'unsupported' },
-  { type: 'action_whatsapp_questions', label: 'WhatsApp question flow', category: 'message', support: 'unsupported', note: 'Question flows exist separately (whatsapp_question_flows).' },
+  {
+    type: 'action_whatsapp_questions',
+    label: 'WhatsApp question flow',
+    category: 'message',
+    support: 'executed',
+    config: ['question_flow_id', 'questions'],
+    note:
+      'Attaches a qualification question set (built in Settings > Qualifying) to the lead so the ' +
+      'WhatsApp conversation asks them. Set question_flow_id to pick a specific set; leave it empty to ' +
+      'use the business active set. Answers land in the lead custom_fields as qualification_answers.',
+  },
   { type: 'action_add_note', label: 'Add internal note', category: 'crm', support: 'executed', config: ['note', 'message'] },
 
   // ── delay ───────────────────────────────────────────────────────────────

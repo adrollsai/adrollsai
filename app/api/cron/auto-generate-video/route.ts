@@ -320,13 +320,14 @@ AVOID (Do not mention phone numbers in dialogue)`;
           triggeredVideos.push({
             userId,
             businessName: profile.business_name,
-            productTitle: targetProduct.id,
+            productTitle: targetProduct.title,
             duration,
-            taskId: taskResult.taskId,
+            clips: submitted.length,
+            taskIds: submitted.map((s) => s.taskId),
             captionTheme
           });
 
-          console.log(`[Video Auto-Gen] ✅ Successfully dispatched 3-day video task for "${targetProduct.title}" (Asset: ${newAsset?.id})`);
+          console.log(`[Video Auto-Gen] ✅ Dispatched ${submitted.length}-clip ${duration}s video for "${targetProduct.title}" (asset: ${newAsset?.id})`);
         }
       } catch (genErr: any) {
         console.error(`[Video Auto-Gen] Error generating video for ${targetProduct.title}:`, genErr);

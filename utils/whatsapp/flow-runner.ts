@@ -1136,6 +1136,69 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       // ── Logic nodes ────────────────────────────────────────────────────
       // Condition / split decide routing during planning (resolveExecutionPlan),
       // so they have no side effect here; recorded so the run log shows the path.
+      // 9. ACTION: Attach a WhatsApp qualification question set
+      //
+      // This node was declared 'unsupported' while the capability lived in a parallel
+      // subsystem (whatsapp_question_flows), which meant any flow using it failed
+      // validation and could not be published. It now reads that subsystem's data, so
+      // there is one source of questions rather than a second copy.
+      //
+      // It does not send anything itself: it records which questions are outstanding
+      // on the lead, so the next WhatsApp reply asks them and the answers are stored
+      // back on the lead. Sending from here would race the message node.
+      if (nodeType === 'action_whatsapp_questions' || nodeType === 'questionFlowNode') {
+        try {
+          const wantedId = cfg.question_flow_id || cfg.flow_id || null
+          const ownerId = ownerUserId
+
+          let questionSet: any = null
+          if (wantedId) {
+            const { data } = await supabaseAdmin
+              .from('whatsapp_question_flows')
+              .select('id, name, questions')
+              .eq('id', wantedId)
+              .maybeSingle()
+            questionSet = data
+          }
+          if (!questionSet && ownerId) {
+            const { data } = await supabaseAdmin
+              .from('whatsapp_question_flows')
+              .select('id, name, questions')
+              .eq('user_id', ownerId)
+              .eq('is_active', true)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            questionSet = data
+          }
+
+          const questions = Array.isArray(questionSet?.questions) ? questionSet.questions : []
+          if (latestLead?.id && questions.length > 0) {
+            const existing = latestLead.custom_fields || {}
+            const updatedCustom = {
+              ...existing,
+              pending_qualification: {
+                flow_id: questionSet.id,
+                flow_name: questionSet.name || null,
+                questions,
+                answers: existing.pending_qualification?.answers || {},
+                started_at: new Date().toISOString(),
+              },
+            }
+            await supabaseAdmin
+              .from('leads')
+              .update({ custom_fields: updatedCustom })
+              .eq('id', latestLead.id)
+            actionsExecuted.push(`whatsapp_questions:${questions.length}`)
+          } else {
+            // Visible in the run log rather than silently doing nothing.
+            actionsExecuted.push('whatsapp_questions:skipped(no questions configured)')
+          }
+        } catch (err: any) {
+          actionsExecuted.push(`whatsapp_questions:error(${String(err?.message || err).slice(0, 60)})`)
+        }
+      }
+
       if (nodeType === 'action_condition' || nodeType === 'conditionNode' || nodeType === 'action_if_else') {
         actionsExecuted.push('condition:evaluated')
       }

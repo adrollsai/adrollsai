@@ -107,10 +107,12 @@ check('a valid flow passes validation', goodFlow.ok === true, goodFlow.issues.ma
 
 const deadNode = validateFlow({ nodes: [
   { id: 't', type: 'triggerNode' },
-  { id: 'q', type: 'action_whatsapp_questions', data: {} },
+  // action_whatsapp_questions is implemented now, so this uses a node that is
+  // still genuinely unsupported.
+  { id: 'q', type: 'action_ig_send_dm', data: {} },
 ], edges: [{ source: 't', target: 'q' }] });
 check('an unsupported node blocks publishing', deadNode.ok === false);
-check('and names the offending node', deadNode.issues.some((i: any) => /Question|not implemented/i.test(i.message)),
+check('and names the offending node', deadNode.issues.some((i: any) => /not implemented|unsupported/i.test(i.message)),
   deadNode.issues.find((i: any) => i.severity === 'error')?.message?.slice(0, 80));
 
 const noTrigger = validateFlow({ nodes: [{ id: 'm', type: 'action_whatsapp_msg', data: {} }], edges: [] });
