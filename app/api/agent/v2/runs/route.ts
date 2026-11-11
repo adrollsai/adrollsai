@@ -44,19 +44,33 @@ export async function POST(req: Request) {
   // reload, a second tab, another device or a direct call reaches this route with a
   // run already live, and two runs appending to the same event log interleave their
   // events. The client treats this 409 as "queue it", so a message is never lost.
-  if (await hasLiveRun(supabase, sessionId)) {
-    return NextResponse.json(
-      {
-        error: 'run_in_progress',
-        message:
-          'A run is already working on this chat. Your message was not started - send it again when ' +
-          'that finishes, or let the queue deliver it.',
-      },
-      { status: 409 }
-    );
+  const message = typeof body.message === 'string' ? body.message.trim() : '';
+
+  const live = await hasLiveRun(supabase, sessionId);
+  if (live) {
+    // The task is still working. A message sent now is STEERING: it is written to the
+    // event log and the running worker folds it into its next step, so the agent
+    // answers it without the turn being restarted or a second run being started.
+    if (!message) {
+      return NextResponse.json(
+        { error: 'run_in_progress', message: 'A run is already working on this chat.' },
+        { status: 409 }
+      );
+    }
+    await appendEvents(supabase, sessionId, [
+      createEvent('user.message', {
+        id: typeof body.messageId === 'string' ? body.messageId : `u_${Date.now()}`,
+        text: message,
+        ...(Array.isArray(body.attachments) ? { attachments: body.attachments } : {}),
+      }),
+    ]);
+    return NextResponse.json({
+      steered: true,
+      sessionId,
+      message: 'Delivered to the running task — it will pick this up on its next step.',
+    });
   }
 
-  const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (message) {
     await appendEvents(supabase, sessionId, [
       createEvent('user.message', {

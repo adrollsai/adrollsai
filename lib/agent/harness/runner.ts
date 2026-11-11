@@ -188,6 +188,55 @@ export async function executeRunSlice(
     // nothing for 5-20 seconds and then a whole step at once — which is precisely
     // why it felt dead next to a live-streaming harness. streamText lets the
     // partial answer be written incrementally, so the transcript animates.
+    // ── steering ────────────────────────────────────────────────────────────
+    // A message sent while the task is running is not parked until the end: the
+    // harness hands it to the running agent so it can adapt mid-flight. We remember
+    // the highest event sequence already folded into `messages`, and anything newer
+    // arrives as an extra user turn before the next model call.
+    let steerCursor = Math.max(0, ...messages.map((m: any) => Number(m?.__seq) || 0));
+    {
+      const { data: newest } = await supabase
+        .from('harness_events')
+        .select('seq')
+        .eq('session_id', run.session_id)
+        .order('seq', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestSeq = Number(newest?.seq) || 0;
+      if (latestSeq > steerCursor) steerCursor = latestSeq;
+    }
+    let steeredCount = 0;
+
+    const pullSteering = async (): Promise<string[]> => {
+      try {
+        const { data } = await supabase
+          .from('harness_events')
+          .select('seq, type, data')
+          .eq('session_id', run.session_id)
+          .eq('type', 'user.message')
+          .gt('seq', steerCursor)
+          .order('seq', { ascending: true })
+          .limit(10);
+        if (!data?.length) return [];
+        const texts: string[] = [];
+        for (const ev of data as any[]) {
+          steerCursor = Math.max(steerCursor, Number(ev.seq) || steerCursor);
+          const text = String(ev?.data?.text || '').trim();
+          if (text) texts.push(text);
+        }
+        if (texts.length) {
+          steeredCount += texts.length;
+          console.log(
+            `[Harness runner] steering: ${texts.length} new user message(s) delivered mid-run ` +
+              `(run ${run.id.slice(0, 8)})`
+          );
+        }
+        return texts;
+      } catch {
+        return [];
+      }
+    };
+
     const result = streamText({
       model,
       system: systemPrompt,
@@ -220,8 +269,14 @@ export async function executeRunSlice(
       // Checkpoint at every step boundary, so a crash can lose at most the one
       // step that was in flight — not the whole slice.
       prepareStep: async ({ messages: stepMessages }: { messages: any[] }) => {
-        await saveCheckpoint(supabase, run.id, stepMessages, sliceNumber);
-        return {};
+        // Steering happens here: new user messages become an extra user turn before
+        // the next model call, so the agent reacts to them without restarting.
+        const steered = await pullSteering();
+        const withSteering = steered.length
+          ? [...stepMessages, ...steered.map((text) => ({ role: 'user' as const, content: text }))]
+          : stepMessages;
+        await saveCheckpoint(supabase, run.id, withSteering, sliceNumber);
+        return steered.length ? { messages: withSteering } : {};
       },
     });
 
