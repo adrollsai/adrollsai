@@ -198,6 +198,59 @@ def still_frame(path, W, H, mode, u, motion):
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
+def run_parallel(args, argv):
+    """Fan out to N workers then concatenate. Each worker renders a contiguous
+    slice of shots, so the expensive per-frame work overlaps across cores."""
+    import concurrent.futures as fut
+    n = max(1, args.parallel)
+    base, ext = os.path.splitext(args.out)
+    parts = [f'{base}.part{i}{ext}' for i in range(n)]
+    log(f'parallel render: {n} workers')
+
+    cores = os.cpu_count() or 4
+    per = max(1, cores // n)
+    log(f'parallel render: {n} workers x {per} threads ({cores} cores)')
+
+    def worker(i):
+        env = dict(os.environ, RENDER_THREADS=str(per))
+        cmd = [sys.executable, os.path.abspath(__file__)] + argv + [
+            '--shard', f'{i}/{n}', '--out', parts[i], '--parallel', '1',
+        ]
+        # audio is muxed once on the joined file, not per shard
+        cmd = [c for c in cmd if c != args.music and c != '--music']
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if r.returncode != 0:
+            raise RuntimeError(f'worker {i} failed:\n{r.stdout[-1500:]}\n{r.stderr[-1500:]}')
+        return i
+
+    with fut.ThreadPoolExecutor(max_workers=n) as ex:
+        list(ex.map(worker, range(n)))
+
+    existing = [p for p in parts if os.path.exists(p) and os.path.getsize(p) > 0]
+    if not existing:
+        raise SystemExit('no shard produced output')
+    lst = f'{base}.concat.txt'
+    with open(lst, 'w') as f:
+        for pth in existing:
+            f.write("file '" + os.path.abspath(pth).replace(os.sep, '/') + "'\n")
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst,
+                    '-c', 'copy', args.out], check=True)
+    for pth in existing:
+        try:
+            os.remove(pth)
+        except Exception:
+            pass
+    if args.music and os.path.exists(args.music) and not args.shard:
+        tmp = args.out.replace('.mp4', '_v.mp4')
+        os.replace(args.out, tmp)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', tmp, '-i', args.music,
+                        '-filter_complex', '[1:a]loudnorm=I=-14:TP=-1.5:LRA=11[a]',
+                        '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
+                        '-shortest', '-movflags', '+faststart', args.out], check=True)
+        os.remove(tmp)
+    log(f'joined {len(existing)} shards -> {args.out}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--spec', required=True)
@@ -209,7 +262,23 @@ def main():
     ap.add_argument('--font', default=DEFAULT_FONT)
     ap.add_argument('--model', default='.work/regalia2/models/u2net_human_seg.onnx')
     ap.add_argument('--limit', type=float, default=0, help='render only the first N seconds (preview)')
+    ap.add_argument('--shard', default='', help='i/N — render only this shard of the timeline')
+    ap.add_argument('--parallel', type=int, default=1, help='fan out to N worker processes, then concat')
     args = ap.parse_args()
+
+    if args.parallel and args.parallel > 1 and not args.shard:
+        argv = [a for a in sys.argv[1:]]
+        # strip the parent's own parallel flag so workers do not recurse
+        out = []
+        i = 0
+        while i < len(argv):
+            if argv[i] == '--parallel':
+                i += 2
+                continue
+            out.append(argv[i])
+            i += 1
+        run_parallel(args, out)
+        return
 
     spec = json.load(open(args.spec, encoding='utf-8'))
     cf = spec.get('compiledFrom', {})
@@ -217,10 +286,46 @@ def main():
     W = int(str(cf.get('aspect', '720:1280')).split(':')[0])
     H = int(str(cf.get('aspect', '720:1280')).split(':')[1])
     style = spec.get('style', {})
-    segs = spec['segments']
-    total = float(cf.get('durationSec') or segs[-1]['end'])
+    all_segs = spec['segments']
+    total = float(cf.get('durationSec') or all_segs[-1]['end'])
     if args.limit:
         total = min(total, args.limit)
+
+    # A shard renders only the shots that begin inside its slice of the timeline.
+    # Every shard writes its own file; the parent concatenates them. This is what
+    # turns a 25-minute render into a few minutes, and the same command works in a
+    # cloud sandbox where the core count is higher.
+    if args.shard:
+        try:
+            si, sn = [int(x) for x in args.shard.split('/')]
+        except Exception:
+            raise SystemExit('--shard must look like 0/4')
+        # Shards must be CONTIGUOUS runs of the timeline, because the driver
+        # concatenates part0..partN in index order. Balancing by weight alone made
+        # each shard a scattered set of shots, which scrambled the sequence - the
+        # joins showed up as cuts at the wrong times. So: keep the order, balance
+        # the weights (classic greedy partition), never both at once.
+        ordered = sorted(all_segs, key=lambda x: x['start'])
+        weights = [int(round((x['end'] - x['start']) * fps)) for x in ordered]
+        grand = sum(weights) or 1
+        per_target = grand / sn
+        groups = [[] for _ in range(sn)]
+        acc = 0
+        gi = 0
+        for sg, w in zip(ordered, weights):
+            groups[min(gi, sn - 1)].append(sg)
+            acc += w
+            if acc >= per_target * (gi + 1) and gi < sn - 1:
+                gi += 1
+        segs = groups[si]
+        load = sum(int(round((x['end'] - x['start']) * fps)) for x in segs)
+        log(f'shard {si}/{sn}: {len(segs)} contiguous shot(s), {load} frames')
+        if not segs:
+            log('nothing in this shard; writing an empty marker')
+            open(args.out + '.empty', 'w').write('1')
+            return
+    else:
+        segs = all_segs
 
     log(f'spec: {W}x{H} @ {fps:.2f}fps, {total:.2f}s, {len(segs)} shots, {len(spec.get("textEvents", []))} text events')
 
@@ -235,8 +340,12 @@ def main():
         # Single-threaded inference was ~2.5s a frame here, which is what made the
         # run-2 matte job unusably slow. Give it every core.
         so = ort.SessionOptions()
-        so.intra_op_num_threads = max(1, (os.cpu_count() or 4))
-        so.inter_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
+        # RENDER_THREADS is set by the parallel driver. Six workers each claiming
+        # all eight cores oversubscribed the CPU and made a parallel render
+        # SLOWER than a serial one (0.85x), which is the classic fan-out mistake.
+        threads = int(os.environ.get('RENDER_THREADS', '0') or 0) or (os.cpu_count() or 4)
+        so.intra_op_num_threads = max(1, threads)
+        so.inter_op_num_threads = max(1, threads // 2)
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         sess = ort.InferenceSession(args.model, sess_options=so, providers=['CPUExecutionProvider'])
         log(f'matte: u2net_human_seg loaded ({so.intra_op_num_threads} threads)')
@@ -461,7 +570,7 @@ def main():
     log(f'wrote {args.out} ({written} frames)')
 
     # audio: keep the reference's own track when supplied, else silence
-    if args.music and os.path.exists(args.music):
+    if args.music and os.path.exists(args.music) and not args.shard:
         tmp = args.out.replace('.mp4', '_v.mp4')
         os.replace(args.out, tmp)
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', tmp, '-i', args.music,

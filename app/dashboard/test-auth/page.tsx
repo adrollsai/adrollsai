@@ -24,7 +24,7 @@ export default function TestAuthPage() {
                 .single()
 
             const { data: agencyProfile } = profile?.agency_id 
-                ? await supabase.from('profiles').select('id, business_name, role, facebook_token').eq('id', profile.agency_id).single()
+                ? await supabase.from('profiles').select('id, business_name, role').eq('id', profile.agency_id).single()
                 : { data: null }
 
             setDebugInfo({

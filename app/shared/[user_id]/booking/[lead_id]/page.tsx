@@ -81,13 +81,11 @@ export default function PublicBookingPortal() {
           currentUserId = hostId
         } else {
           // Load lead
-          const { data: leadData, error: leadErr } = await supabase
-            .from('leads')
-            .select('*')
-            .eq('id', leadId)
-            .maybeSingle()
+          // Fetched through a service-role endpoint: `anon` has no access to `leads`.
+          const bookingRes = await fetch(`/api/public/booking/${encodeURIComponent(leadId)}`)
+          if (!bookingRes.ok) throw new Error('Could not load your booking record')
+          const { lead: leadData } = await bookingRes.json()
 
-          if (leadErr) throw leadErr
           if (!leadData) {
             setError('We could not find your booking record.')
             setLoading(false)
@@ -190,14 +188,13 @@ export default function PublicBookingPortal() {
 
       setRescheduledSuccess(true)
       setIsRescheduling(false)
-      // Reload lead status
-      const { data: updatedLead } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('id', leadId)
-        .single()
-      if (updatedLead) {
-        setLead(updatedLead)
+      // Reload lead status (service-role endpoint; `anon` cannot read `leads`)
+      const refreshed = await fetch(`/api/public/booking/${encodeURIComponent(leadId)}`)
+      if (refreshed.ok) {
+        const { lead: updatedLead } = await refreshed.json()
+        if (updatedLead) {
+          setLead(updatedLead)
+        }
       }
     } catch (err: any) {
       alert(err.message || 'Failed to reschedule. Please try another slot.')

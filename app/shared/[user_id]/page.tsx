@@ -159,7 +159,9 @@ export default function SharedCataloguePage() {
       }
 
       // 2. Direct client query fallback
-      let profileQuery = supabase.from('profiles').select('*')
+      // Public projection only — this page runs unauthenticated. Never `select('*')`
+      // here: the full row carries WhatsApp/Meta/ElevenLabs credentials.
+      let profileQuery = supabase.from('profiles').select('id, business_name, full_name, logo_url, brand_color, mission_statement, contact_number, email, address, business_info, custom_domain, whitelabel_domain, facebook_url, instagram_url, linkedin_url, youtube_url, whatsapp_phone_number, avatar_url, pixel_id, google_place_id, google_review_url, google_booking_duration, google_booking_hours, google_booking_enabled, business_landing_enabled, business_landing_hero_title, business_landing_hero_subtitle, business_landing_show_products, currency, created_at')
       if (identifier.includes('.')) {
           profileQuery = profileQuery.eq('custom_domain', identifier)
       } else {
@@ -183,7 +185,7 @@ export default function SharedCataloguePage() {
 
       const { data: props } = await supabase
           .from('properties')
-          .select('*')
+          .select('id, user_id, title, address, price, description, property_type, status, image_url, images, master_creatives, rera_number, brochure_url, floor_plan_url, configurations, youtube_url, show_on_landing_page, created_at')
           .eq('user_id', profileData.id)
           .order('created_at', { ascending: false })
       
@@ -206,7 +208,7 @@ export default function SharedCataloguePage() {
 
       const { data: blogPosts } = await supabase
           .from('posts')
-          .select('*')
+          .select('id, created_at, user_id, title, content, excerpt, image_url, tags, media_type, media_url, link_url, youtube_url, status')
           .eq('user_id', profileData.id)
           .eq('status', 'published')
           .order('created_at', { ascending: false })

@@ -20,11 +20,11 @@ export default function SharedBookingRedirect() {
         return
       }
 
-      const { data: lead } = await supabase
-        .from('leads')
-        .select('id, user_id')
-        .eq('id', leadId)
-        .maybeSingle()
+      // Fetched through a service-role endpoint: `anon` has no access to `leads`.
+      const res = await fetch(`/api/public/booking/${encodeURIComponent(leadId)}`)
+      const { lead }: { lead?: { id: string; user_id: string } | null } = res.ok
+        ? await res.json()
+        : { lead: null }
 
       if (!lead?.user_id) {
         setError('Appointment details not found or link has expired.')
