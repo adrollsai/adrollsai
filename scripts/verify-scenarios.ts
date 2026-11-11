@@ -240,6 +240,15 @@ const SCENARIOS: Scenario[] = [
     (unsupportedFlow.issues || []).some((i: any) => i.severity === 'error' && /not implemented/i.test(i.message))
   );
 
+  // A follow-up must be scheduled on the lead, never slept inside the flow: the
+  // executor caps delay nodes at 10 seconds, so a delayed follow-up step would
+  // silently fire almost immediately.
+  const followUpFlow = validateFlow({
+    nodes: [trig, { id: 'f', type: 'action_follow_up', data: {} }],
+    edges: [{ source: 't', target: 'f' }],
+  });
+  check('a flow can now schedule a follow-up', followUpFlow.ok === true, (followUpFlow.issues || []).map((i: any) => i.message).join('; '));
+
   const orphan = validateFlow({ nodes: [{ id: 'a', type: 'action_add_tag', data: {} }], edges: [] });
   check('a flow with no trigger is rejected', orphan.ok === false);
 

@@ -64,6 +64,29 @@ async function resolveIdentity(
 
   if (!callerId) return { error: 'Authentication required', status: 401 };
 
+  // The whole agent tool catalogue is reachable over HTTP here, including spend,
+  // publish and Meta mutations. Any authenticated user of any tenant could therefore
+  // drive another business's account by impersonating, or run its own tools through
+  // this surface. Secure by default: super admins only, unless an operator explicitly
+  // opens it with MCP_ALLOW_NON_ADMIN=1.
+  if ((process.env.MCP_ALLOW_NON_ADMIN || '').trim() !== '1') {
+    const { data: gateProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, email')
+      .eq('id', callerId)
+      .maybeSingle();
+    const allowed =
+      gateProfile?.role === 'super_admin' || gateProfile?.email === 'rchopra489@gmail.com';
+    if (!allowed) {
+      return {
+        error:
+          'The MCP endpoint exposes the full agent tool catalogue and is restricted to super admins. ' +
+          'Set MCP_ALLOW_NON_ADMIN=1 to open it deliberately.',
+        status: 403,
+      };
+    }
+  }
+
   // Optional impersonation, super-admin only (mirrors the in-app agent).
   const target = (request.headers.get('x-nobogent-impersonate') || '').trim();
   if (!target || target === callerId) return { userId: callerId, operatorUserId: callerId };

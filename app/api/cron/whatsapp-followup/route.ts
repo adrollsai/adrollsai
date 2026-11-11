@@ -192,6 +192,11 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     }
                 }
 
+                // Rendered copy for our own chat/inbox log. The message actually
+                // delivered is the approved Meta template above; this mirrors it
+                // so the inbox shows what the lead received.
+                const promptText = `Hi ${leadName}, a quick weekly check-in from ${businessName}. Would you like to see our latest options?`
+
                 const sendRes = await fetch(metaUrl, {
                     method: 'POST',
                     headers: {

@@ -1136,6 +1136,42 @@ export async function executeFlowRunner(params: FlowRunnerParams): Promise<FlowR
       // ── Logic nodes ────────────────────────────────────────────────────
       // Condition / split decide routing during planning (resolveExecutionPlan),
       // so they have no side effect here; recorded so the run log shows the path.
+      // 10. ACTION: Schedule a follow-up
+      //
+      // Deliberately NOT a sleep. The executor caps a delay node at 10 seconds, so a
+      // real "call them in 2 hours" cannot be a delayed step. This writes the lead's
+      // schedule and lets the follow-up engine do the waiting, which is the same
+      // mechanism the agent is told to use.
+      if (nodeType === 'action_follow_up' || nodeType === 'followUpNode') {
+        try {
+          const hours = Number(cfg.after_hours ?? 0)
+          const minutes = Number(cfg.after_minutes ?? 0)
+          const totalMinutes = (Number.isFinite(hours) ? hours * 60 : 0) + (Number.isFinite(minutes) ? minutes : 0)
+          const effective = totalMinutes > 0 ? totalMinutes : 24 * 60
+
+          if (latestLead?.id) {
+            const due = new Date(Date.now() + effective * 60_000).toISOString()
+            const patch: Record<string, any> = {
+              next_action_due_at: due,
+              next_followup: due,
+            }
+            if (cfg.note || cfg.message) patch.followup_note = String(cfg.note || cfg.message).slice(0, 500)
+
+            const { error } = await supabaseAdmin.from('leads').update(patch).eq('id', latestLead.id)
+            if (error) {
+              // Never swallow it: a silent failure here means the lead is never followed up.
+              actionsExecuted.push(`follow_up:error(${String(error.message).slice(0, 60)})`)
+            } else {
+              actionsExecuted.push(`follow_up:${effective}min`)
+            }
+          } else {
+            actionsExecuted.push('follow_up:skipped(no lead)')
+          }
+        } catch (err: any) {
+          actionsExecuted.push(`follow_up:error(${String(err?.message || err).slice(0, 60)})`)
+        }
+      }
+
       // 9. ACTION: Attach a WhatsApp qualification question set
       //
       // This node was declared 'unsupported' while the capability lived in a parallel

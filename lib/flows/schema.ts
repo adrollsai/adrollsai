@@ -75,7 +75,16 @@ export const NODE_SPECS: NodeSpec[] = [
   // ── calls ───────────────────────────────────────────────────────────────
   { type: 'aiCallNode', aliases: ['action_ai_call'], label: 'AI phone call', category: 'integration', support: 'executed', note: 'Calls triggerOutboundCall immediately when the flow runs.' },
   { type: 'action_ai_call_transfer', label: 'Transfer to human', category: 'integration', support: 'unsupported' },
-  { type: 'action_follow_up', label: 'Schedule follow-up', category: 'integration', support: 'unsupported', note: 'Scheduling runs through the lead follow-up engine, not a flow node.' },
+  {
+    type: 'action_follow_up',
+    label: 'Schedule follow-up',
+    category: 'integration',
+    support: 'executed',
+    config: ['after_hours', 'after_minutes', 'next_followup', 'note'],
+    note:
+      'Writes the lead follow-up schedule (next_action_due_at / next_followup) so the follow-up engine ' +
+      'picks it up. Do NOT put the wait in a delay node - the executor caps those at 10 seconds.',
+  },
 
   // ── integrations ────────────────────────────────────────────────────────
   { type: 'customApiNode', aliases: ['action_webhook'], label: 'Webhook / custom API', category: 'integration', support: 'executed', config: ['url', 'method', 'headers'] },
@@ -83,11 +92,11 @@ export const NODE_SPECS: NodeSpec[] = [
   { type: 'ai_deepseek', label: 'AI (DeepSeek) step', category: 'integration', support: 'unsupported' },
 
   // ── channel replies ─────────────────────────────────────────────────────
-  { type: 'action_ig_comment_reply', label: 'Reply to IG comment', category: 'message', support: 'unsupported' },
-  { type: 'action_ig_send_dm', label: 'Send IG DM', category: 'message', support: 'unsupported' },
-  { type: 'action_ig_card', label: 'IG card', category: 'message', support: 'unsupported' },
-  { type: 'action_fb_comment_reply', label: 'Reply to FB comment', category: 'message', support: 'unsupported' },
-  { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported' },
+  { type: 'action_ig_comment_reply', label: 'Reply to IG comment', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
+  { type: 'action_ig_send_dm', label: 'Send IG DM', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
+  { type: 'action_ig_card', label: 'IG card', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
+  { type: 'action_fb_comment_reply', label: 'Reply to FB comment', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
+  { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
   { type: 'action_whatsapp_interactive', label: 'WhatsApp interactive message', category: 'message', support: 'unsupported' },
   {
     type: 'action_whatsapp_questions',
