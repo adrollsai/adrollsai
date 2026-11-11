@@ -329,7 +329,9 @@ export async function POST(request: Request) {
                 // Refund the credits
                 try {
                     const { addCredits } = await import('@/utils/credits');
-                    const refundAmount = taskCount * 250;
+                    // AI_VIDEO_15SEC_CHUNK is 50 credits per clip. This used to
+                    // refund 250 per clip — crediting 5x more than was deducted.
+                    const refundAmount = taskCount * 50;
                     await addCredits(supabaseAdmin, videoTask.user_id, refundAmount, 'ai_generation', `Refund: AI Video Generation failed after maximum retries (${taskCount} clips)`);
                 } catch (crErr) {
                     console.error("Failed to refund credits in video callback:", crErr);
@@ -815,7 +817,7 @@ export async function POST(request: Request) {
                 // Refund credits
                 try {
                     const { addCredits } = await import('@/utils/credits');
-                    const refundAmount = siblings.length * 250;
+                    const refundAmount = siblings.length * 50;
                     await addCredits(supabaseAdmin, videoTask.user_id, refundAmount, 'ai_generation', `Refund: Stitching dispatch failed (${siblings.length} clips)`);
                 } catch (crErr) {
                     console.error("Failed to refund credits in video callback:", crErr);

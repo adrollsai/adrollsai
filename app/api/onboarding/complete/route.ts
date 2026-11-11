@@ -66,7 +66,7 @@ export async function POST(request: Request) {
         // 1. Fetch current profile to check existing data
         const { data: existingProfile } = await supabaseAdmin
             .from('profiles')
-            .select('business_name, business_info, client_features, logo_url, contact_number, address, custom_domain, character_url, character_audio_url, character_description, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+            .select('business_name, business_info, client_features, logo_url, contact_number, address, custom_domain, character_url, character_audio_url, character_description, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, subscription_status')
             .eq('id', user.id)
             .single();
 
@@ -118,6 +118,25 @@ export async function POST(request: Request) {
         if (profileError) {
             console.error("[Onboarding API] Profile update failed:", profileError);
             throw new Error(`Failed to update business profile: ${profileError.message}`);
+        }
+
+        // 2b. Provision the automation policy (default ON) and the calling
+        //     policy. Previously neither table had a writer, so every
+        //     automation was opt-in-by-accident and nothing ran for a new
+        //     account. Both writes are idempotent.
+        try {
+            const { error: autoErr } = await supabaseAdmin
+                .from('tenant_automations')
+                .upsert({ user_id: user.id }, { onConflict: 'user_id', ignoreDuplicates: true });
+            if (autoErr) console.warn('[Onboarding API] tenant_automations provision failed:', autoErr.message);
+
+            const { error: polErr } = await supabaseAdmin
+                .from('agent_policies')
+                .upsert({ user_id: user.id, is_enabled: true }, { onConflict: 'user_id', ignoreDuplicates: true });
+            if (polErr) console.warn('[Onboarding API] agent_policies provision failed:', polErr.message);
+        } catch (provErr: any) {
+            // Never fail onboarding because of automation provisioning.
+            console.warn('[Onboarding API] Automation provisioning error:', provErr?.message);
         }
 
         // 3. Resolve projects list (support multi-project OR legacy single-product)
@@ -188,7 +207,10 @@ export async function POST(request: Request) {
                     address: address || 'Online',
                     property_type: 'Generic',
                     status: 'Active',
-                    auto_generate: false
+                    // Enrolled by default: the marketing-department workflow is
+                    // ON for new accounts and controlled from
+                    // /dashboard/profile/creation-automation + automation toggles.
+                    auto_generate: true
                 })
                 .select()
                 .single();
@@ -408,7 +430,7 @@ ${summaryText}
 
 🌐 *Your Live Luxury Website*:
 ${liveWebsiteUrl}
-(Automatically deployed with 15 pages & dynamic inventory sync!)
+(Live now, with your inventory synced automatically. You can generate a fully branded version any time from Dashboard → Pages.)
 
 📲 *How Approvals & Revisions Work*:
 As each creative is synthesized, it will be delivered here with product copy in WhatsApp template format.

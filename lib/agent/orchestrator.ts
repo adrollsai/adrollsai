@@ -16,6 +16,7 @@ import { createSupabaseMcpTools } from './mcp/supabase-mcp';
 import { createVideoVisionTools } from './tools/video_vision';
 import { createMediaStudioTools } from './tools/media_studio';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
+import { createSkillTools, formatSkillCatalogue } from './tools/skills';
 import { createPublishingTools } from './tools/publishing';
 import { createSiteTools } from './tools/sites';
 import { createRecipeTools } from './tools/recipes';
@@ -97,6 +98,8 @@ export async function createAgentContext(
     ...(has('sandbox') ? createSandboxTools(supabase, userId) : {}),
     ...(has('media') ? createMediaStudioTools(supabase, userId) : {}),
     ...(has('media') ? createReferenceCreativeTools(supabase, userId) : {}),
+    // Business-uploaded skills: always on, because any task might fall inside one.
+    ...createSkillTools(supabase, userId),
     ...(has('media') ? create24fpsMotionTools() : {}),
     ...(has('publishing') ? createPublishingTools(supabase, userId) : {}),
     ...(has('sites') ? createSiteTools(supabase, userId) : {}),
@@ -112,6 +115,23 @@ export async function createAgentContext(
     ...(has('research') ? createWebFetchMcpTools() : {}),
     ...(has('vision') ? createVideoVisionTools() : {}),
   };
+
+  // The business's own skills: names and when-to-use only. Bodies are fetched by
+  // get_skill on demand, so twenty uploaded skills cost twenty lines, not twenty
+  // documents. A failed read must never break context building.
+  let skillCatalogue = '';
+  try {
+    const { data: skillRows } = await supabase
+      .from('agent_skills')
+      .select('name, description')
+      .eq('user_id', userId)
+      .eq('enabled', true)
+      .order('updated_at', { ascending: false })
+      .limit(40);
+    if (skillRows?.length) skillCatalogue = formatSkillCatalogue(skillRows as any);
+  } catch {
+    /* skills are optional */
+  }
 
   const impersonationNotice = isImpersonating ? `
 CLIENT ACCOUNT IMPERSONATION ACTIVE:
@@ -137,6 +157,7 @@ ALWAYS AVAILABLE — the business's own data:
 - 'nobogent_assets_list': stored business assets and media.
 - 'request_human_approval': reserved for irreversible or high-stakes actions (real ad spend, anything bulk).
 - 'request_user_input': when essential missing assets (such as user-recorded video clips) or instructions are needed.
+${skillCatalogue}
 `);
 
   if (has('sandbox')) parts.push(`

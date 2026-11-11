@@ -13,7 +13,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { action, propertyId, targetUserId, propertyData, autoGenerate, settings } = body
+    const { action, propertyId, targetUserId, propertyData, autoGenerate, autoGenerateVideo, settings } = body
 
     if (!action) {
       return NextResponse.json({ error: 'Missing action' }, { status: 400 })
@@ -226,6 +226,60 @@ export async function POST(request: Request) {
           auto_generate: autoGenerate,
           configurations: JSON.stringify(parsedConfig)
         })
+        .eq('id', propertyId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return NextResponse.json({ success: true, property: data })
+
+    } else if (action === 'toggle-auto-generate-video') {
+      // The delivery-plan tile has always posted this action, but the handler
+      // never existed — so enrolling a property in the video round-robin
+      // returned "Invalid action" and nobody could ever be enrolled.
+      if (autoGenerateVideo === undefined) {
+        return NextResponse.json({ error: 'Missing autoGenerateVideo status' }, { status: 400 })
+      }
+
+      const { data: currentProp, error: fetchErr } = await supabaseAdmin
+        .from('properties')
+        .select('configurations')
+        .eq('id', propertyId)
+        .single()
+
+      if (fetchErr || !currentProp) {
+        return NextResponse.json({ error: 'Property not found' }, { status: 404 })
+      }
+
+      let parsedConfig: Record<string, any> = {}
+      if (currentProp.configurations) {
+        if (typeof currentProp.configurations === 'object') {
+          parsedConfig = { ...currentProp.configurations }
+        } else {
+          try {
+            parsedConfig = JSON.parse(currentProp.configurations)
+          } catch (e) {
+            parsedConfig = {}
+          }
+        }
+      }
+
+      parsedConfig.auto_gen_video = !!autoGenerateVideo
+
+      if (autoGenerateVideo) {
+        parsedConfig.auto_gen_video_settings = {
+          duration: Number(settings?.duration) || 30,
+          caption_style: settings?.caption_style || 'goldenLuxury',
+          custom_prompt: typeof settings?.custom_prompt === 'string'
+            ? settings.custom_prompt.trim()
+            : (parsedConfig.auto_gen_video_settings?.custom_prompt || ''),
+          updated_at: new Date().toISOString()
+        }
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('properties')
+        .update({ configurations: JSON.stringify(parsedConfig) })
         .eq('id', propertyId)
         .select()
         .single()

@@ -142,8 +142,14 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     continue
                 }
 
-                const waToken = profile.whatsapp_access_token || profile.facebook_token || process.env.DEV_WHATSAPP_ACCESS_TOKEN
-                const waPhoneId = profile.whatsapp_phone_number_id || process.env.DEV_WHATSAPP_PHONE_ID
+                // MUST be the tenant's own WhatsApp Business credentials.
+                // This used to fall back to `facebook_token` and then to
+                // DEV_WHATSAPP_ACCESS_TOKEN / DEV_WHATSAPP_PHONE_ID, both of
+                // which are configured — so a tenant who had never connected
+                // WhatsApp still had their leads messaged, from Nobogent's own
+                // number, on Nobogent's Meta bill.
+                const waToken = profile.whatsapp_access_token
+                const waPhoneId = profile.whatsapp_phone_number_id
 
                 if (!waToken || !waPhoneId) {
                     skippedCount++

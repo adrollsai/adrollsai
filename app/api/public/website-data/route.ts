@@ -75,8 +75,13 @@ export async function GET(request: Request) {
     } else if (cleanHost && !cleanHost.includes('localhost') && !cleanHost.includes('nobogent.com') && !cleanHost.includes('vercel.app')) {
       profileQuery = profileQuery.or(`custom_domain.eq.${cleanHost},whitelabel_domain.eq.${cleanHost}`);
     } else {
-      // Fallback: look for rchopra489@gmail.com or most recently active admin
-      profileQuery = profileQuery.eq('email', 'rchopra489@gmail.com');
+      // No identifier resolvable from the request. Previously this fell back to
+      // a hardcoded tenant email, which served that customer's business identity
+      // and inventory to any mis-hosted hit. Refuse instead.
+      return NextResponse.json(
+        { error: 'No business identifier supplied' },
+        { status: 400 }
+      );
     }
 
     const { data: profile, error: profileErr } = await profileQuery.maybeSingle();

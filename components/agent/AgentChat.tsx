@@ -1597,7 +1597,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     type="file"
                     ref={fileInputRef}
                     onChange={handleFileUpload}
-                    accept=".csv,.xlsx,.tsv,.txt,image/*,video/*"
+                    accept="*/*"
                     className="hidden"
                   />
                   <button
