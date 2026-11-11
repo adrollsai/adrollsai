@@ -165,26 +165,30 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 const businessName = profile.business_name || 'our team'
                 const leadName = (lead.name && !lead.name.startsWith('+') && lead.name !== 'Customer') ? lead.name : 'there'
                 
-                // Industry-agnostic 3-button message copy approved for all client verticals
-                const promptText = `Hi ${leadName}! 👋 Checking in from ${businessName}. We are here to assist you with your requirements. How can our team best help you today?`
-
-                // Send 3-Button Weekly Follow-Up Message via Meta Graph API
+                // Business-initiated weekly re-engagement MUST be a template.
+                // The previous interactive message is rejected by Meta outside
+                // the 24h service window (131047), so it could only ever reach
+                // a lead who had already replied within the last day — i.e.
+                // essentially nobody. `nobogent_weekly_checkin` is registered by
+                // the template seeder on WhatsApp connect.
                 const metaUrl = `https://graph.facebook.com/v20.0/${waPhoneId}/messages`
                 const payload = {
                     messaging_product: 'whatsapp',
                     recipient_type: 'individual',
                     to: cleanPhone,
-                    type: 'interactive',
-                    interactive: {
-                        type: 'button',
-                        body: { text: promptText },
-                        action: {
-                            buttons: [
-                                { type: 'reply', reply: { id: 'view_properties', title: 'View Offerings' } },
-                                { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
-                                { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
-                            ]
-                        }
+                    type: 'template',
+                    template: {
+                        name: 'nobogent_weekly_checkin',
+                        language: { code: 'en_US' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: leadName },
+                                    { type: 'text', text: businessName }
+                                ]
+                            }
+                        ]
                     }
                 }
 

@@ -316,6 +316,102 @@ export async function registerDefaultTemplates(
             results.push({ name: 'real_estate_tailored_inventory', success: true, cached: true });
         }
 
+        // G. nobogent_daily_creative — the daily creative FIRST touch.
+        //    Business-initiated messages must be templates, so this is what
+        //    actually reaches a brand-new owner whose 24h window is closed.
+        //    Approve / Edit quick replies open the conversation; revisions are
+        //    then answered free-form and never need another template.
+        if (!existingNames.has('nobogent_daily_creative')) {
+            console.log('[TEMPLATE SEEDER] Registering nobogent_daily_creative template...');
+            const creativeHandle = await uploadSampleAndGetHandle(appId, whatsappToken);
+            if (creativeHandle) {
+                const creativePayload = {
+                    name: 'nobogent_daily_creative',
+                    category: 'MARKETING',
+                    language: 'en_US',
+                    components: [
+                        {
+                            type: 'HEADER',
+                            format: 'IMAGE',
+                            example: { header_handle: [creativeHandle] }
+                        },
+                        {
+                            type: 'BODY',
+                            text: "Hi! Here is today's creative for *{{1}}* from Nobogent.\n\n{{2}}\n\nReply APPROVE to schedule it, or EDIT to request changes.",
+                            example: {
+                                body_text: [[
+                                    'Prestige Lakeside Villa',
+                                    'Book your site visit this weekend and get priority allotment.'
+                                ]]
+                            }
+                        },
+                        {
+                            type: 'BUTTONS',
+                            buttons: [
+                                { type: 'QUICK_REPLY', text: 'Approve' },
+                                { type: 'QUICK_REPLY', text: 'Edit' }
+                            ]
+                        }
+                    ]
+                };
+                const cRes = await fetch(postMetaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${whatsappToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(creativePayload)
+                });
+                const cData = await cRes.json();
+                results.push({ name: 'nobogent_daily_creative', success: !cData.error, error: cData.error?.message || null });
+            } else {
+                results.push({ name: 'nobogent_daily_creative', success: false, error: 'Could not upload header handle' });
+            }
+        } else {
+            results.push({ name: 'nobogent_daily_creative', success: true, cached: true });
+        }
+
+        // H. nobogent_weekly_checkin — the weekly re-engagement template.
+        //    The weekly cron previously sent an interactive message, which Meta
+        //    rejects outside the 24h window, so it could never reach a cold lead.
+        if (!existingNames.has('nobogent_weekly_checkin')) {
+            console.log('[TEMPLATE SEEDER] Registering nobogent_weekly_checkin template...');
+            const weeklyPayload = {
+                name: 'nobogent_weekly_checkin',
+                category: 'MARKETING',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Hi {{1}}, a quick weekly check-in from {{2}}. Would you like to see our latest options?',
+                        example: {
+                            body_text: [['John', 'Nobogent']]
+                        }
+                    },
+                    {
+                        type: 'BUTTONS',
+                        buttons: [
+                            { type: 'QUICK_REPLY', text: 'View Offerings' },
+                            { type: 'QUICK_REPLY', text: 'Talk to Expert' },
+                            { type: 'QUICK_REPLY', text: 'Book an Appointment' }
+                        ]
+                    }
+                ]
+            };
+            const wRes = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(weeklyPayload)
+            });
+            const wData = await wRes.json();
+            results.push({ name: 'nobogent_weekly_checkin', success: !wData.error, error: wData.error?.message || null });
+        } else {
+            results.push({ name: 'nobogent_weekly_checkin', success: true, cached: true });
+        }
+
         return { success: true, results };
     } catch (err: any) {
         console.error('[TEMPLATE SEEDER] Seeding failed:', err);

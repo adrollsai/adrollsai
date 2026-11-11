@@ -26,6 +26,14 @@ export const NOBOGENT_WABA_TOKEN =
   process.env.WHATSAPP_ACCESS_TOKEN ||
   '';
 
+/**
+ * Approved marketing template used for the FIRST touch of each daily creative.
+ * Business-initiated messages must be templates; free-form only works inside the
+ * 24-hour customer service window, which a brand-new owner has never opened.
+ */
+export const DAILY_CREATIVE_TEMPLATE = 'nobogent_daily_creative';
+export const DAILY_CREATIVE_TEMPLATE_LANG = 'en_US';
+
 export interface SendCreativeWithButtonsParams {
   to: string;
   creativeUrl: string;
@@ -75,7 +83,57 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
   const resolvedAssetId = assetId || 'latest';
   const metaUrl = `https://graph.facebook.com/v20.0/${NOBOGENT_WABA_PHONE_ID}/messages`;
 
-  // 1. Primary: Interactive Button message with image header
+  // 0. PRIMARY: business-initiated delivery must be a TEMPLATE.
+  //    A brand-new owner has never messaged us, so their 24h service window is
+  //    closed and the interactive path below would be rejected by Meta with
+  //    131047 — which is why daily creatives were generated but never seen.
+  //    The template opens the window once. The Approve / Edit replies that
+  //    follow are answered free-form, which is valid because they replied.
+  try {
+    const templatePayload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: cleanPhone,
+      type: 'template',
+      template: {
+        name: DAILY_CREATIVE_TEMPLATE,
+        language: { code: DAILY_CREATIVE_TEMPLATE_LANG },
+        components: [
+          {
+            type: 'header',
+            parameters: [{ type: 'image', image: { link: creativeUrl } }]
+          },
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: (title || 'your listing').slice(0, 60) },
+              { type: 'text', text: (caption || '').replace(/\s+/g, ' ').slice(0, 400) }
+            ]
+          }
+        ]
+      }
+    };
+
+    const tRes = await fetch(metaUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOBOGENT_WABA_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(templatePayload)
+    });
+    const tData = await tRes.json().catch(() => ({}));
+
+    if (tRes.ok && !tData?.error) {
+      console.log(`[Nobogent WABA] Creative delivered via template to ${cleanPhone}`);
+      return true;
+    }
+    console.warn('[Nobogent WABA] Template delivery failed, trying interactive fallback:', tData?.error?.message || tRes.status);
+  } catch (tErr: any) {
+    console.warn('[Nobogent WABA] Template delivery threw, trying interactive fallback:', tErr?.message);
+  }
+
+  // 1. FALLBACK: interactive button message — valid only inside the 24h window
   try {
     console.log(`[Nobogent WABA] Dispatching creative with interactive buttons to ${cleanPhone}...`);
     const interactivePayload = {

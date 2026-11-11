@@ -27,6 +27,7 @@
     "verify:streaming": "esbuild scripts/verify-streaming.ts --bundle --platform=node --format=cjs --outfile=.tmp-st.cjs --log-level=warning && node .tmp-st.cjs",
     "verify:flow-engine": "esbuild scripts/verify-flow-engine.ts --bundle --platform=node --format=cjs --outfile=.tmp-fe.cjs --log-level=warning && node .tmp-fe.cjs",
     "audit:flows": "esbuild scripts/audit-flows.ts --bundle --platform=node --format=cjs --outfile=.tmp-audit.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-audit.cjs",
+    "verify:scenarios": "esbuild scripts/verify-scenarios.ts --bundle --platform=node --format=cjs --outfile=.tmp-scen.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-scen.cjs",
     "verify:flows": "esbuild scripts/verify-flows.ts --bundle --platform=node --format=cjs --outfile=.tmp-flows.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-flows.cjs",
     "verify:analytics": "esbuild scripts/verify-analytics.ts --bundle --platform=node --format=cjs --outfile=.tmp-analytics.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-analytics.cjs",
     "verify:reporting": "esbuild scripts/verify-reporting.ts --bundle --platform=node --format=cjs --outfile=.tmp-rep.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-rep.cjs",
