@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { isAvailable, appendEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
-import { enqueueRun, runsAvailableCheck, getRun, toSummary } from '@/lib/agent/harness/runs';
+import { enqueueRun, runsAvailableCheck, getRun, toSummary, hasLiveRun } from '@/lib/agent/harness/runs';
 
 export const maxDuration = 30;
 
@@ -39,6 +39,22 @@ export async function POST(req: Request) {
     .eq('user_id', user.id)
     .maybeSingle();
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+
+  // ONE run per session at a time. The client queues while a turn is running, but a
+  // reload, a second tab, another device or a direct call reaches this route with a
+  // run already live, and two runs appending to the same event log interleave their
+  // events. The client treats this 409 as "queue it", so a message is never lost.
+  if (await hasLiveRun(supabase, sessionId)) {
+    return NextResponse.json(
+      {
+        error: 'run_in_progress',
+        message:
+          'A run is already working on this chat. Your message was not started - send it again when ' +
+          'that finishes, or let the queue deliver it.',
+      },
+      { status: 409 }
+    );
+  }
 
   const message = typeof body.message === 'string' ? body.message.trim() : '';
   if (message) {

@@ -718,7 +718,16 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         toast.success('Running in the background — safe to close this tab.');
         return;
       }
-      toast.error('Could not queue the run; falling back to a live turn.');
+      // Do NOT fall through to a live turn here. The usual reason the queue refuses is
+      // that a run is already working on this chat (a reload, a second tab, or another
+      // device), and a fallback would start a SECOND run against the same event log —
+      // interleaving the transcript, which is the failure this guard exists to prevent.
+      // Queue it instead: the message is kept and delivered when the current run ends.
+      queueRef.current.push(fullPrompt);
+      setQueuedCount(queueRef.current.length);
+      setInput('');
+      toast.info('A run is already working on this chat — queued as a follow-up.');
+      return;
     }
 
     // Fallback only when the durable queue is unavailable.
