@@ -117,7 +117,10 @@ export function createAutomationTools(supabase: SupabaseClient, userId: string) 
   return {
     list_automation_flows: tool({
       description:
-        'Lists the automation flows and lead-routing rules that already exist on this account, with what triggers each one and whether it is live. ALWAYS call this before proposing or describing any automation — the user very often already has one, and creating a second flow on the same trigger causes double messaging and double calls.',
+        'The automations / flows / workflows / sequences this business has built: what triggers them, ' +
+        'what they do, and whether they are active. THIS is the tool for "what automations are running", ' +
+        '"which flows exist", or "is anything automated". Not to be confused with list_scheduled_tasks, ' +
+        'which is only one-off timers the agent set.',
       inputSchema: z.object({
         includeInactive: z.boolean().default(false).describe('Include disabled flows as well'),
       }),

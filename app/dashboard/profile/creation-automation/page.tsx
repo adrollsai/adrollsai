@@ -320,6 +320,12 @@ export default function CreationAutomationPage() {
               <p className="text-xs sm:text-sm text-slate-500 font-medium">
                 Sequence your products for automatic daily marketing posters and 3-day video reel round-robin.
               </p>
+              <a
+                href="/dashboard/profile/automation"
+                className="inline-flex items-center gap-1.5 mt-2 text-xs font-bold text-sky-600 hover:text-sky-700 hover:underline"
+              >
+                On/off switches &amp; timing for the whole workflow →
+              </a>
             </div>
           </div>
 

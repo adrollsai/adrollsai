@@ -315,6 +315,33 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         created_at: new Date().toISOString()
       }).select('id').single();
 
+      // F2. Meter the generated creative.
+      // Charged only AFTER the asset row exists, so a failed generation is never
+      // billed. Tenants can opt out with tenant_automations.bill_automation=false.
+      if (insertedAsset?.id) {
+        try {
+          const { CREDIT_COSTS, deductCredits } = await import('@/utils/credits')
+          const { data: autoPolicy } = await supabaseAdmin
+            .from('tenant_automations')
+            .select('bill_automation')
+            .eq('user_id', prop.user_id)
+            .maybeSingle()
+
+          if (autoPolicy?.bill_automation !== false) {
+            await deductCredits(
+              supabaseAdmin,
+              prop.user_id,
+              CREDIT_COSTS.AI_IMAGE_GENERATION,
+              'ai_generation',
+              `Daily creative — ${prop.title}`
+            )
+          }
+        } catch (creditErr: any) {
+          // Never fail a delivered creative over accounting.
+          console.warn('[Auto-Generate Worker] credit deduction failed:', creditErr?.message)
+        }
+      }
+
       // G. Trigger Push Notification to user
       await sendPushNotification(
         prop.user_id,

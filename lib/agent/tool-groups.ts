@@ -48,7 +48,7 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
   media: {
     with: ['sandbox'],
     signals:
-      /\b(image|images|creative|creatives|poster|banner|thumbnail|voiceover|voice ?over|narration|tts|audio|music|grok|imagine|video clip|b-?roll|generate (an? )?(image|video|voice)|logo|graphic|design|diwali|bhai ?dooj|holi|festival|wish(es)?)\b/i,
+      /\b(images?|creatives?|posters?|banners?|thumbnails?|voice ?overs?|narrations?|tts|audio|music|grok|imagine|video clips?|b-?roll|generate (an? )?(image|video|voice)|logos?|graphics?|designs?|diwali|bhai ?dooj|holi|festivals?|wishes|wish)\b/i,
   },
   meta: {
     signals:
@@ -56,19 +56,22 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
   },
   sites: {
     signals:
-      /\b(landing page|website|web ?page|slug|custom domain|domain|site|url|publish(ed)? page)\b/i,
+      /\b(landing pages?|websites?|web ?pages?|slugs?|custom domains?|domains?|sites?|urls?|published pages?)\b/i,
   },
   publishing: {
     signals:
-      /\b(post|publish|share|upload|broadcast|instagram|facebook page|linkedin|social|feed|reel post)\b/i,
+      /\b(posts?|posting|publish|sharing|shares?|uploads?|broadcasts?|instagram|facebook page|linkedin|social|feeds?|reel posts?)\b/i,
   },
   reporting: {
     signals:
-      /\b(how many|count|report|analytics|stats|statistics|summary|summarise|summarize|leads?|calls?|conversations?|today|yesterday|this week|this month|last \d+ days|funnel|performance|what did|transcript|positive)\b/i,
+      /\b(how many|counts?|reports?|reporting|analytics|stats|statistics|summar(?:y|ies|ise|ize)|lead|leads|calls?|conversations?|today|yesterday|this week|this month|last \d+ days|funnels?|performance|what did|transcripts?|positive)\b/i,
   },
   automation: {
+    // Plurals matter: "what automations are running" and "which flows exist" are the
+    // commonest phrasings, and a singular-only pattern loaded no automation tools at
+    // all, so the agent truthfully answered that it could not see them.
     signals:
-      /\b(automation|automate|workflow|flow|trigger|when a lead|whenever|sequence|follow ?up|drip|cadence)\b/i,
+      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?)\b/i,
   },
   research: {
     signals:

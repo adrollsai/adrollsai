@@ -60,7 +60,11 @@ export function createSchedulerTools(supabase: SupabaseClient, userId: string) {
     }),
 
     list_scheduled_tasks: tool({
-      description: 'Lists all scheduled agent tasks and crons for this user (both pending and recently processed).',
+      description:
+        'Lists SCHEDULED AGENT TASKS and cron jobs for this user (pending and recently processed). ' +
+        'These are one-off timers the agent set, NOT automations. If the user asks what automations, flows, ' +
+        'workflows or sequences are running, use list_automation_flows instead — answering that question from ' +
+        'this tool will wrongly tell them nothing is set up.',
       inputSchema: z.object({
         status: z.enum(['pending', 'completed', 'failed', 'all']).default('pending').describe('Filter tasks by status'),
         limit: z.number().default(10).describe('Max number of tasks to return'),

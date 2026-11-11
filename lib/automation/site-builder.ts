@@ -76,21 +76,36 @@ function digits(phone?: string | null): string {
   return d.length === 10 ? `91${d}` : d
 }
 
-export function siteBaseUrl(profile: SiteProfile): string {
-  const host =
-    (profile.custom_domain || profile.whitelabel_domain || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
-  if (host) return `https://${host}`
-  const app = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '')
-  return `${app}/shared/${profile.id}/index`
+/** Platform origin, used only for canonical/og URLs. Empty when unknown. */
+function platformOrigin(): string {
+  const explicit = (process.env.NEXT_PUBLIC_APP_URL || '').trim()
+  if (explicit) return explicit.replace(/\/$/, '')
+  const root = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || '').trim()
+  if (root) return `https://${root.replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+  return ''
 }
 
-/** Absolute URLs for template assets, so a custom domain can resolve them. */
-function assetBase(profile: SiteProfile): string {
-  const host = (profile.custom_domain || profile.whitelabel_domain || '').trim()
-  const app = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '')
-  if (host) return `${app}/real-estate-template/`
-  return '/real-estate-template/'
+export function siteBaseUrl(profile: SiteProfile): string {
+  const host = (profile.custom_domain || profile.whitelabel_domain || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+  if (host) return `https://${host}`
+  const rel = `/shared/${profile.id}/index`
+  const origin = platformOrigin()
+  return origin ? `${origin}${rel}` : rel
 }
+
+/**
+ * Template assets live in `public/` and are served on ANY host — platform domain
+ * or tenant custom domain — so they are referenced by a relative path and the
+ * template's own <base href> resolves them.
+ *
+ * An earlier version rewrote this to an absolute NEXT_PUBLIC_APP_URL, which meant
+ * every custom-domain site rendered completely unstyled whenever that env var was
+ * missing or wrong. Rendering must not depend on configuration.
+ */
+const ASSET_PATH = '/real-estate-template/'
 
 function propertyImage(p: SiteProperty): string | null {
   if (p.image_url) return p.image_url
@@ -133,9 +148,14 @@ export function buildSiteHtml(
   const address = (profile.address || '').trim()
   const city = address.split(',').slice(-1)[0]?.trim() || ''
   const canonical = (opts.baseUrl || siteBaseUrl(profile)).replace(/\/$/, '')
-  const assets = assetBase(profile)
-  const logo = profile.logo_url || `${assets}assets/img/logo-mark.svg`
-  const ogImage = activeProperties(properties).map(propertyImage).find(Boolean) || `${assets}assets/img/og-cover.svg`
+  // Absolute origin for social images (crawlers need absolute URLs); falls back
+  // to a relative path rather than inventing a domain we cannot verify.
+  const originMatch = canonical.match(/^https?:\/\/[^/]+/i)
+  const origin = originMatch ? originMatch[0] : ''
+  const absAsset = `${origin}${ASSET_PATH}`
+  const assets = ASSET_PATH
+  const logo = profile.logo_url || `${absAsset}assets/img/logo-mark.svg`
+  const ogImage = activeProperties(properties).map(propertyImage).find(Boolean) || `${absAsset}assets/img/og-cover.svg`
 
   const props = activeProperties(properties)
   const propertyBase = canonical.includes('/shared/')

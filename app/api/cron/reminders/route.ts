@@ -154,7 +154,27 @@ export async function GET(request: Request) {
         console.log('[Reminders Cron] Outside calling window (9 AM - 7 PM IST). Skipping voice call reminders.')
       } else {
         const { triggerOutboundCall } = await import('@/utils/voice-helper')
-        for (const vLead of voiceLeadsToCall) {
+
+        // Atomically claim BEFORE dialling.
+        // This cron runs every 10 minutes and /api/cron/voice-caller runs every
+        // 5, so both used to see the same due lead and dial it twice. The
+        // previous "clear scheduled_at first" was a non-atomic read-then-write.
+        // claim_calls() takes a 10-minute lease and is the single point of
+        // serialisation for every dialer in the system.
+        const candidateIds = voiceLeadsToCall.map((l) => l.id)
+        const { data: claimed, error: claimErr } = await supabaseAdmin
+          .rpc('claim_calls', { p_ids: candidateIds })
+
+        if (claimErr) {
+          console.warn('[Reminders Cron] claim_calls failed:', claimErr.message)
+        }
+
+        const claimedIds = new Set<string>((claimed || []).map((c: any) => c.id))
+        const leadById = new Map<string, any>(voiceLeadsToCall.map((l) => [l.id, l]))
+
+        for (const leadId of candidateIds) {
+          if (!claimedIds.has(leadId)) continue // another dialer owns this lead
+          const vLead: any = leadById.get(leadId)
           try {
             const cf = parseCustomFields(vLead.custom_fields)
             // If already qualified on WhatsApp in the meantime, cancel call and skip
