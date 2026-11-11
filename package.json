@@ -31,6 +31,7 @@
     "verify:analytics": "esbuild scripts/verify-analytics.ts --bundle --platform=node --format=cjs --outfile=.tmp-analytics.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-analytics.cjs",
     "verify:reporting": "esbuild scripts/verify-reporting.ts --bundle --platform=node --format=cjs --outfile=.tmp-rep.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-rep.cjs",
     "verify:billing": "esbuild scripts/verify-billing.ts --bundle --platform=node --format=cjs --outfile=.tmp-bill.cjs --log-level=warning && node .tmp-bill.cjs",
+    "spec:render:cloud": "esbuild scripts/render-cloud.ts --bundle --platform=node --format=cjs --outfile=.tmp-rc.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 --external:@e2b/code-interpreter && node .tmp-rc.cjs",
     "spec:compile": "esbuild scripts/compile-spec.ts --bundle --platform=node --format=cjs --outfile=.tmp-spec.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-spec.cjs",
     "verify:metering": "esbuild scripts/verify-metering.ts --bundle --platform=node --format=cjs --outfile=.tmp-meter.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-meter.cjs",
     "verify:continue": "esbuild scripts/verify-continue.ts --bundle --platform=node --format=cjs --outfile=.tmp-cont.cjs --log-level=warning && node .tmp-cont.cjs",

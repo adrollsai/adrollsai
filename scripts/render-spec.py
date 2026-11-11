@@ -30,7 +30,28 @@ try:
 except Exception:
     HAVE_ONNX = False
 
-DEFAULT_FONT = '.work/regalia/font/Montserrat.ttf'
+FONT_CANDIDATES = [
+    '.work/regalia/font/Montserrat.ttf',
+    '.work/regalia2/font/Montserrat.ttf',
+    # Linux (sandbox) fallbacks, in preference order for a heavy display face
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+]
+
+
+def pick_font(explicit=None):
+    """A missing font file used to abort the whole render inside the sandbox, where
+    the repo's Montserrat is not present. Resolve to whatever heavy face exists."""
+    if explicit and os.path.exists(explicit):
+        return explicit
+    for c in FONT_CANDIDATES:
+        if os.path.exists(c):
+            return c
+    return explicit or FONT_CANDIDATES[0]
+
+
+DEFAULT_FONT = pick_font()
 CREAM = np.array([246, 236, 210], dtype=np.float32)
 GOLD = np.array([226, 190, 120], dtype=np.float32)
 
@@ -166,6 +187,12 @@ def still_frame(path, W, H, mode, u, motion):
     im = _STILL_CACHE.get(path)
     if im is None:
         im = Image.open(path).convert('RGB')
+        # Cap the longest edge so a 4000px source cannot pin hundreds of MB per file.
+        if max(im.size) > 1800:
+            ratio = 1800 / max(im.size)
+            im = im.resize((max(2, int(im.width * ratio)), max(2, int(im.height * ratio))), Image.LANCZOS)
+        if len(_STILL_CACHE) >= 24:
+            _STILL_CACHE.clear()
         _STILL_CACHE[path] = im
     z = 1 + (0.10 if motion in ('push', 'pull') else 0.05)
     zz = 1 + (z - 1) * (u if motion == 'push' else (1 - u) if motion == 'pull' else 1)
@@ -279,6 +306,9 @@ def main():
             i += 1
         run_parallel(args, out)
         return
+
+    args.font = pick_font(args.font)
+    log(f'font: {args.font}')
 
     spec = json.load(open(args.spec, encoding='utf-8'))
     cf = spec.get('compiledFrom', {})
@@ -412,28 +442,50 @@ def main():
             return frame
 
     presenter_reader = Presenter(presenter) if sess and presenter else None
+    MASK_SCALE = 2
+    MASK_CACHE_MAX = 64
     mask_cache = {}
+
+    def _shrink(m):
+        small = Image.fromarray((m * 255).astype(np.uint8)).resize(
+            (max(2, W // MASK_SCALE), max(2, H // MASK_SCALE)), Image.BILINEAR)
+        return np.asarray(small, dtype=np.uint8)
+
+    def _grow(small_u8):
+        big = Image.fromarray(small_u8).resize((W, H), Image.BILINEAR)
+        return np.asarray(big, dtype=np.float32) / 255.0
 
     dilate_cache = {}
 
     def dilated_at(idx, mraw):
-        key = int(idx)
+        key = int(idx) // MASK_SCALE
         if key in dilate_cache:
-            return dilate_cache[key]
-        hide = Image.fromarray((mraw * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(9)).filter(ImageFilter.GaussianBlur(3))
-        d = np.asarray(hide, dtype=np.float32)[:, :, None] / 255.0
-        if len(dilate_cache) > 240:
+            return _grow(dilate_cache[key])[:, :, None]
+        hide = Image.fromarray((mraw * 255).astype(np.uint8)).filter(
+            ImageFilter.MaxFilter(9)).filter(ImageFilter.GaussianBlur(3))
+        small = np.asarray(hide.resize((max(2, W // MASK_SCALE), max(2, H // MASK_SCALE)),
+                                       Image.BILINEAR), dtype=np.uint8)
+        if len(dilate_cache) >= MASK_CACHE_MAX:
             dilate_cache.clear()
-        dilate_cache[key] = d
-        return d
+        dilate_cache[key] = small
+        return _grow(small)[:, :, None]
 
     def mask_at(idx, frame):
-        """Mask at reduced resolution — u2net works at 320x320 anyway, so doing the
-        feathered upscale once per frame index is wasted precision and real time."""
+        # Cached as HALF-RESOLUTION uint8, not full-resolution float32. At 720x1280 a
+        # float32 mask is 3.7MB, so 240 entries reached ~900MB per cache - fine on a
+        # laptop, but the cloud sandbox SIGKILLed the render (exit 137) with no
+        # python traceback to explain it. uint8 at half size is 0.23MB: a 16x cut,
+        # and the matte is upscaled for use anyway.
         stride = int(os.environ.get('MATTE_STRIDE', '3') or 3)
         key = int(idx) // max(1, stride)
-        if key in mask_cache:
-            return mask_cache[key]
+        cached = mask_cache.get(key)
+        if cached is not None:
+            return _grow(cached)
+        m = person_mask(frame)
+        if len(mask_cache) >= MASK_CACHE_MAX:
+            mask_cache.clear()
+        mask_cache[key] = _shrink(m)
+        return mask_cache[key]
         m = person_mask(frame)
         if len(mask_cache) > 240:
             mask_cache.clear()

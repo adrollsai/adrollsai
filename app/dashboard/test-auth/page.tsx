@@ -37,8 +37,7 @@ export default function TestAuthPage() {
                 },
                 resolvedAgency: agencyProfile ? {
                     id: agencyProfile.id,
-                    name: agencyProfile.business_name,
-                    hasToken: !!agencyProfile.facebook_token
+                    name: agencyProfile.business_name
                 } : 'NONE FOUND'
             })
             setLoading(false)
