@@ -127,7 +127,23 @@ export async function executeRunSlice(
   }
 
   // ── build the agent ───────────────────────────────────────────────────────
-  const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, run.user_id);
+  // The tool catalogue is selected from what the conversation is actually
+  // about, so a reporting question does not carry the Meta ads suite and a
+  // creative request does not carry the reporting suite.
+  const intentText = messages
+    .filter((m) => m.role === 'user')
+    .map((m) =>
+      typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((c: any) => (c.type === 'text' ? c.text : '')).join(' ')
+          : ''
+    )
+    .join('\n');
+  const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, {
+    operatorUserId: run.user_id,
+    intentText,
+  });
 
   // Seed occurrence counters from the conversation we are resuming, so a
   // re-issued call maps to the same ledger row it did before a crash, while a

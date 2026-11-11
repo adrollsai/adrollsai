@@ -15,6 +15,7 @@ dotenv.config({ path: '.env.local' });
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
+import { ALL_GROUPS } from '../lib/agent/tool-groups';
 import { McpClient } from '../lib/agent/mcp/client';
 
 const BASE = (process.env.VERIFY_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -44,7 +45,9 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   }
   console.log(`Using profile ${metaProfile.id} (${metaProfile.business_name})\n`);
 
-  const { tools } = await createAgentContext(sb, metaProfile.id);
+  // The catalogue is now selected per conversation; this script audits the full
+  // set, so it asks for every group.
+  const { tools } = await createAgentContext(sb, metaProfile.id, { forceGroups: ALL_GROUPS });
   const names = Object.keys(tools);
   const metaTools = names.filter((n) => n.startsWith('meta_'));
   record('catalogue has Meta layers', metaTools.length >= 14, `${names.length} tools total, ${metaTools.length} meta_*`);

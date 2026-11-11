@@ -112,7 +112,29 @@ export async function POST(req: Request) {
       }
     }
 
-    const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, user.id);
+    // Tool groups follow the conversation, so the turn only carries the tools it
+    // can plausibly need. Recent turns are included, not just the latest, so a
+    // follow-up like "and then post it" still resolves.
+    const intentText = [
+      ...messages
+        .filter((m: any) => m?.role === 'user')
+        .slice(-4)
+        .map((m: any) =>
+          Array.isArray(m.parts)
+            ? m.parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join(' ')
+            : typeof m.content === 'string'
+            ? m.content
+            : ''
+        ),
+      lastUserText,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, {
+      operatorUserId: user.id,
+      intentText,
+    });
     // The agent always runs on the multimodal flash model.
     const model = await getAgentModel();
 

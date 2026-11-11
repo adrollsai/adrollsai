@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient as createAdminClient, SupabaseClient } from '@supabase/supabase-js';
 import { createAgentContext } from '@/lib/agent/orchestrator';
+import { ALL_GROUPS } from '@/lib/agent/tool-groups';
 import { createClient as createServerClient } from '@/utils/supabase/server';
 
 /**
@@ -104,7 +105,12 @@ function safeText(value: any): string {
 }
 
 async function buildTools(userId: string, operatorUserId?: string) {
-  const { tools } = await createAgentContext(supabaseAdmin as SupabaseClient, userId, operatorUserId);
+  // This endpoint is a catalogue for external MCP clients, not a conversation:
+  // it always exposes every group in full.
+  const { tools } = await createAgentContext(supabaseAdmin as SupabaseClient, userId, {
+    operatorUserId,
+    forceGroups: ALL_GROUPS,
+  });
   return tools as Record<string, any>;
 }
 
