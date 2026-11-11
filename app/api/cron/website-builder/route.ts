@@ -3,16 +3,16 @@ import { createClient } from '@supabase/supabase-js'
 import { ensureTenantSite } from '@/lib/automation/site-builder'
 
 /**
- * Website builder cron.
+ * Website builder worker.
  *
- * "Your website gets made once onboarding is done" was previously false:
- * onboarding never touched `landing_pages`, and the only writer was a manual
- * button whose LLM call often blew its 60s budget, leaving a self-refreshing
- * placeholder behind forever.
+ * Deliberately NOT long-running. The old generator called an LLM inside the
+ * request, routinely exceeded its 60s budget, and left a self-refreshing
+ * placeholder on the public URL forever.
  *
- * This runs the deterministic builder (lib/automation/site-builder.ts) for every
- * tenant that has completed onboarding, has website_autobuild enabled, and has
- * no site yet. It never overwrites a page the tenant generated themselves.
+ * Here every unit of work is a durable row in `site_build_jobs`:
+ *   tick -> claim_site_build_jobs() -> build (fast, template-based) -> mark done
+ * A job takes milliseconds. If the platform kills the invocation, the lease
+ * expires and the next tick retries it. Nothing depends on Vercel's budget.
  */
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +26,9 @@ const supabaseAdmin = createClient(
   { auth: { persistSession: false } }
 )
 
-const MAX_PER_RUN = 40
+/** Small batches keep each tick far inside any function limit. */
+const BATCH = 5
+const ENQUEUE_LIMIT = 500
 
 export async function GET(request: Request) {
   return handle(request)
@@ -50,58 +52,89 @@ async function handle(request: Request) {
   }
 
   try {
-    const force = new URL(request.url).searchParams.get('force') === 'true'
+    const url = new URL(request.url)
+    const force = url.searchParams.get('force') === 'true'
 
-    const { data: policies, error: polErr } = await supabaseAdmin
-      .from('tenant_automations')
-      .select('user_id')
-      .eq('master_enabled', true)
-      .eq('website_autobuild', true)
-
-    if (polErr) throw polErr
-
-    const tenantIds = (policies || []).map((p) => p.user_id)
-    if (!tenantIds.length) {
-      return NextResponse.json({ success: true, built: 0, message: 'No tenants with website autobuild' })
+    // 1. Top up the queue (idempotent; partial unique index prevents duplicates).
+    let enqueued = 0
+    const { data: enq, error: enqErr } = await supabaseAdmin
+      .rpc('enqueue_missing_sites', { p_limit: ENQUEUE_LIMIT })
+    if (enqErr) {
+      console.warn('[Website Builder] enqueue failed:', enqErr.message)
+    } else {
+      enqueued = Number(enq) || 0
     }
 
-    // Only tenants who finished onboarding, and (unless forced) have no page yet.
-    const { data: eligibleProfiles, error: profErr } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .in('id', tenantIds)
-      .eq('onboarding_completed', true)
-      .limit(MAX_PER_RUN)
+    // 2. Claim a small batch with a lease.
+    const { data: jobs, error: claimErr } = await supabaseAdmin
+      .rpc('claim_site_build_jobs', { p_limit: BATCH })
 
-    if (profErr) throw profErr
-
-    const { data: withPages } = await supabaseAdmin
-      .from('landing_pages')
-      .select('user_id')
-      .in('user_id', (eligibleProfiles || []).map((p) => p.id))
-      .eq('slug', 'index')
-
-    const hasPage = new Set((withPages || []).map((r: any) => r.user_id))
+    if (claimErr) throw claimErr
 
     const built: string[] = []
+    const failed: Array<{ userId: string; error: string }> = []
     const skipped: Record<string, number> = {}
 
-    for (const p of eligibleProfiles || []) {
-      if (!force && hasPage.has(p.id)) {
-        skipped.already_exists = (skipped.already_exists || 0) + 1
-        continue
+    for (const job of jobs || []) {
+      try {
+        const res = await ensureTenantSite(supabaseAdmin, job.user_id, { force })
+
+        if (res.created) {
+          built.push(job.user_id)
+          await supabaseAdmin
+            .from('site_build_jobs')
+            .update({
+              status: 'completed',
+              locked_until: null,
+              result: { bytes: res.bytes ?? null },
+              last_error: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', job.id)
+        } else {
+          // Nothing to do (already exists / no name yet) — close the job so it
+          // does not spin, and record why.
+          skipped[res.skipped || 'unknown'] = (skipped[res.skipped || 'unknown'] || 0) + 1
+          await supabaseAdmin
+            .from('site_build_jobs')
+            .update({
+              status: 'completed',
+              locked_until: null,
+              result: { skipped: res.skipped },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', job.id)
+        }
+      } catch (err: any) {
+        const message = err?.message || String(err)
+        failed.push({ userId: job.user_id, error: message })
+        console.error(`[Website Builder] job ${job.id} failed:`, message)
+
+        // Leave the job open if attempts remain; the lease expiry makes it
+        // eligible again on the next tick. Give up after max_attempts.
+        const exhausted = Number(job.attempts) >= Number(job.max_attempts)
+        await supabaseAdmin
+          .from('site_build_jobs')
+          .update({
+            status: exhausted ? 'failed' : 'pending',
+            locked_until: null,
+            last_error: message,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', job.id)
       }
-      const res = await ensureTenantSite(supabaseAdmin, p.id, { force })
-      if (res.created) built.push(p.id)
-      else if (res.skipped) skipped[res.skipped] = (skipped[res.skipped] || 0) + 1
     }
 
-    console.log(`[Website Builder] built=${built.length} skipped=${JSON.stringify(skipped)}`)
+    if (built.length || failed.length) {
+      console.log(`[Website Builder] enqueued=${enqueued} built=${built.length} failed=${failed.length} skipped=${JSON.stringify(skipped)}`)
+    }
 
     return NextResponse.json({
       success: true,
-      candidates: (eligibleProfiles || []).length,
+      enqueued,
+      claimed: (jobs || []).length,
       built: built.length,
+      failed: failed.length,
       skipped,
     })
   } catch (err: any) {

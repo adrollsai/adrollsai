@@ -1,14 +1,19 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 /**
- * Deterministic business website builder.
+ * Template-backed, server-rendered website builder.
  *
- * The manual generator (`/api/landing-page/generate`) uses an LLM inside the
- * request and routinely exceeds its 60s budget, which left tenants on a
- * self-refreshing placeholder forever. This builder needs no model: it renders a
- * clean, mobile-first page from data the tenant already has, so it can run
- * unattended in a cron and never time out.
+ * Uses the real `public/real-estate-template/index.html` (the 16-page
+ * Everline Realty template) rather than inventing markup, and bakes the tenant's
+ * data into the HTML at build time. That matters for two reasons:
  *
- * Tenants who want the fully art-directed version can still press "Generate" in
- * Dashboard → Pages; this exists so that "your website is ready" is true.
+ *  1. SEO. The template hydrates listings client-side from /api/public/website-data,
+ *     so a crawler saw almost no content. Everything here is in the HTML: real
+ *     <h1>/<h2>, real listing text, real links, canonical, Open Graph and
+ *     JSON-LD structured data.
+ *  2. Branding. `window.SITE` is overridden before app.js runs, so the header,
+ *     footer, phone numbers and CTAs are the tenant's without touching the JS.
  */
 
 export interface SiteProfile {
@@ -23,6 +28,7 @@ export interface SiteProfile {
   email?: string | null
   mission_statement?: string | null
   custom_domain?: string | null
+  whitelabel_domain?: string | null
 }
 
 export interface SiteProperty {
@@ -34,8 +40,19 @@ export interface SiteProperty {
   image_url?: string | null
   images?: string[] | null
   status?: string | null
+  property_type?: string | null
   configurations?: string | null
-  youtube_url?: string | null
+}
+
+const TEMPLATE_REL = path.join('public', 'real-estate-template', 'index.html')
+
+let templateCache: string | null = null
+
+export function loadTemplate(): string {
+  if (templateCache) return templateCache
+  const abs = path.join(process.cwd(), TEMPLATE_REL)
+  templateCache = fs.readFileSync(abs, 'utf8')
+  return templateCache
 }
 
 const esc = (v: unknown): string =>
@@ -46,11 +63,33 @@ const esc = (v: unknown): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
-function waLink(phone: string | null | undefined, text: string): string {
-  const digits = String(phone || '').replace(/\D/g, '')
-  if (!digits) return ''
-  const intl = digits.length === 10 ? `91${digits}` : digits
-  return `https://wa.me/${intl}?text=${encodeURIComponent(text)}`
+/** JSON safe to inline inside a <script> block. */
+const jsonForHtml = (v: unknown): string =>
+  JSON.stringify(v)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+
+function digits(phone?: string | null): string {
+  const d = String(phone || '').replace(/\D/g, '')
+  if (!d) return ''
+  return d.length === 10 ? `91${d}` : d
+}
+
+export function siteBaseUrl(profile: SiteProfile): string {
+  const host =
+    (profile.custom_domain || profile.whitelabel_domain || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  if (host) return `https://${host}`
+  const app = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '')
+  return `${app}/shared/${profile.id}/index`
+}
+
+/** Absolute URLs for template assets, so a custom domain can resolve them. */
+function assetBase(profile: SiteProfile): string {
+  const host = (profile.custom_domain || profile.whitelabel_domain || '').trim()
+  const app = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '')
+  if (host) return `${app}/real-estate-template/`
+  return '/real-estate-template/'
 }
 
 function propertyImage(p: SiteProperty): string | null {
@@ -59,119 +98,239 @@ function propertyImage(p: SiteProperty): string | null {
   return null
 }
 
-export function buildSiteHtml(profile: SiteProfile, properties: SiteProperty[]): string {
-  const brand = (profile.brand_color || '#C9A227').trim() || '#C9A227'
-  const biz = esc(profile.business_name || 'Our Business')
-  const tagline = esc(profile.mission_statement || 'Verified listings, honest advice, and site visits that actually happen.')
-  const about = esc(profile.business_info || '')
-  const phone = (profile.whatsapp_phone_number || profile.contact_number || '').trim()
-  const address = esc(profile.address || '')
-  const email = esc(profile.email || '')
-  const logo = profile.logo_url ? esc(profile.logo_url) : ''
+function activeProperties(properties: SiteProperty[]): SiteProperty[] {
+  return properties.filter((p) => !p.status || !['Archived', 'Sold'].includes(p.status))
+}
 
-  const cards = properties
-    .filter((p) => !p.status || !['Archived', 'Sold'].includes(p.status))
+export interface BuildSiteOptions {
+  /** Override the canonical/base URL (e.g. for preview builds). */
+  baseUrl?: string
+}
+
+export function buildSiteHtml(
+  profile: SiteProfile,
+  properties: SiteProperty[],
+  opts: BuildSiteOptions = {}
+): string {
+  let html = loadTemplate()
+
+  const brandName = (profile.business_name || 'Our Business').trim()
+
+  // Scrub the template's demo identity out of the static markup BEFORE injecting
+  // anything of ours. app.js renders header/footer from window.SITE, but the raw
+  // HTML still carries "Everline Realty" in text nodes, alt text and attributes —
+  // which a crawler reads.
+  html = html
+    .replace(/Everline Realty/g, brandName)
+    .replace(/Everline/g, brandName)
+    .replace(/everlinerealty\.com/g, '')
+
+  const tagline = (profile.mission_statement || 'Verified listings. Honest advice. Site visits that actually happen.').trim()
+  const description = (profile.business_info || tagline).replace(/\s+/g, ' ').trim().slice(0, 158)
+  const phone = (profile.contact_number || profile.whatsapp_phone_number || '').trim()
+  const wa = digits(profile.whatsapp_phone_number || profile.contact_number)
+  const email = (profile.email || '').trim()
+  const address = (profile.address || '').trim()
+  const city = address.split(',').slice(-1)[0]?.trim() || ''
+  const canonical = (opts.baseUrl || siteBaseUrl(profile)).replace(/\/$/, '')
+  const assets = assetBase(profile)
+  const logo = profile.logo_url || `${assets}assets/img/logo-mark.svg`
+  const ogImage = activeProperties(properties).map(propertyImage).find(Boolean) || `${assets}assets/img/og-cover.svg`
+
+  const props = activeProperties(properties)
+  const propertyBase = canonical.includes('/shared/')
+    ? canonical.replace(/\/index$/, '')
+    : canonical
+
+  /* ---------------- head: title, description, canonical, social ------- */
+  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` — ${esc(city)}` : ''} | Property Listings &amp; Site Visits</title>`)
+  html = html.replace(
+    /<meta name="description" content="[^"]*">/i,
+    `<meta name="description" content="${esc(description)}">`
+  )
+  html = html.replace(/<link rel="canonical" href="[^"]*">/i, `<link rel="canonical" href="${esc(canonical)}">`)
+
+  const socialTags = `
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="${esc(brandName)}">
+<meta property="og:title" content="${esc(brandName)}${city ? ` — ${esc(city)}` : ''}">
+<meta property="og:description" content="${esc(description)}">
+<meta property="og:url" content="${esc(canonical)}">
+<meta property="og:image" content="${esc(ogImage)}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${esc(brandName)}">
+<meta name="twitter:description" content="${esc(description)}">
+<meta name="twitter:image" content="${esc(ogImage)}">
+${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_color)}">` : ''}
+<link rel="icon" href="${esc(logo)}">
+`
+
+  // Replace the template's demo social block (og:type .. theme-color run)
+  html = html.replace(
+    /<meta property="og:type"[\s\S]*?<link rel="icon"[^>]*>/i,
+    socialTags.trim()
+  )
+
+  /* ---------------- JSON-LD structured data --------------------------- */
+  const listingSchema = props.slice(0, 20).map((p) => ({
+    '@type': 'Product',
+    name: p.title || 'Listing',
+    description: (p.description || '').replace(/\s+/g, ' ').slice(0, 300) || undefined,
+    image: propertyImage(p) || undefined,
+    url: `${propertyBase}/properties/${p.id}`,
+    ...(p.price
+      ? {
+          offers: {
+            '@type': 'Offer',
+            price: String(p.price).replace(/[^\d.]/g, '') || undefined,
+            priceCurrency: 'INR',
+            availability: 'https://schema.org/InStock',
+            url: `${propertyBase}/properties/${p.id}`,
+          },
+        }
+      : {}),
+  }))
+
+  const orgSchema = {
+    '@context': 'https://schema.org',
+    '@type': 'RealEstateAgent',
+    name: brandName,
+    description: profile.business_info || tagline,
+    url: canonical,
+    image: ogImage,
+    logo,
+    ...(phone ? { telephone: phone } : {}),
+    ...(email ? { email } : {}),
+    ...(address
+      ? {
+          address: {
+            '@type': 'PostalAddress',
+            streetAddress: address,
+            ...(city ? { addressLocality: city } : {}),
+            addressCountry: 'IN',
+          },
+        }
+      : {}),
+    ...(props.length ? { makesOffer: listingSchema } : {}),
+  }
+
+  html = html.replace(
+    /<script type="application\/ld\+json">[\s\S]*?<\/script>/gi,
+    (block) =>
+      /"@type"\s*:\s*"RealEstateAgent"/i.test(block)
+        ? `<script type="application/ld+json">${jsonForHtml(orgSchema)}</script>`
+        : block
+  )
+
+  /* ---------------- window.SITE override, BEFORE app.js --------------- */
+  const siteOverride = `
+<script>
+(function () {
+  var base = window.SITE || {};
+  window.SITE = Object.assign({}, base, {
+    brand: Object.assign({}, base.brand, ${jsonForHtml({
+      name: brandName,
+      suffix: '',
+      tagline,
+      mark: logo,
+      license: '',
+      founded: undefined,
+    })}),
+    contact: Object.assign({}, base.contact, ${jsonForHtml({
+      phone,
+      phoneDisplay: phone,
+      sms: phone,
+      whatsapp: wa,
+      email,
+      emailSales: email,
+      address: { line1: address, line2: '', street: address, mapsQuery: address },
+      responsePromise: 'We reply to every enquiry within 1 business hour.',
+    })})
+  });
+})();
+</script>
+`
+
+  // Inject immediately before app.js so the renderer picks up tenant branding.
+  // Locate by string index — a regex missed tags with extra attributes and
+  // silently fell back to appending after app.js, which made the override a no-op.
+  const appJsIdx = html.indexOf('assets/js/app.js')
+  if (appJsIdx > -1) {
+    const tagStart = html.lastIndexOf('<script', appJsIdx)
+    if (tagStart > -1) {
+      html = html.slice(0, tagStart) + siteOverride + '\n' + html.slice(tagStart)
+    } else {
+      html = html.replace(/<\/body>/i, `${siteOverride}\n</body>`)
+    }
+  } else {
+    html = html.replace(/<\/body>/i, `${siteOverride}\n</body>`)
+  }
+
+  /* ---------------- server-rendered crawlable content ----------------- */
+  const cards = props
+    .slice(0, 24)
     .map((p) => {
       const img = propertyImage(p)
-      const enquiry = waLink(phone, `Hi, I'm interested in ${p.title || 'a listing'} on your website.`)
-      return `
-      <article class="card">
-        ${img ? `<img src="${esc(img)}" alt="${esc(p.title)}" loading="lazy" />` : `<div class="noimg"></div>`}
-        <div class="card-body">
-          <h3>${esc(p.title || 'Listing')}</h3>
-          ${p.price ? `<p class="price">${esc(p.price)}</p>` : ''}
-          ${p.address ? `<p class="muted">${esc(p.address)}</p>` : ''}
-          ${p.description ? `<p class="desc">${esc(String(p.description).slice(0, 220))}</p>` : ''}
-          ${enquiry ? `<a class="cta sm" href="${enquiry}" target="_blank" rel="noopener">Enquire on WhatsApp</a>` : ''}
-        </div>
-      </article>`
+      const href = `${propertyBase}/properties/${p.id}`
+      return `<article class="seo-card">
+  <a href="${esc(href)}">
+    ${img ? `<img src="${esc(img)}" alt="${esc(p.title || 'Property')}${city ? ` in ${esc(city)}` : ''}" loading="lazy" width="480" height="360">` : ''}
+    <h3>${esc(p.title || 'Listing')}</h3>
+  </a>
+  ${p.price ? `<p class="seo-price">${esc(p.price)}</p>` : ''}
+  ${p.address ? `<p class="seo-muted">${esc(p.address)}</p>` : ''}
+  ${p.description ? `<p>${esc(String(p.description).replace(/\s+/g, ' ').slice(0, 240))}</p>` : ''}
+</article>`
     })
-    .join('')
+    .join('\n')
 
-  const heroWa = waLink(phone, `Hi ${profile.business_name || ''}, I'd like to know more about your listings.`)
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${biz}</title>
-<meta name="description" content="${tagline}" />
-<style>
-  :root { --brand: ${brand}; --ink:#0d1117; --muted:#6b7280; --line:#e8e8ec; }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--ink);background:#fff;line-height:1.55}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 18px}
-  header{border-bottom:1px solid var(--line)}
-  .bar{display:flex;align-items:center;gap:12px;padding:16px 0}
-  .bar img{height:40px;width:auto;border-radius:8px}
-  .bar h1{font-size:18px;margin:0;letter-spacing:-.2px}
-  .hero{padding:44px 0 34px}
-  .hero h2{font-size:32px;line-height:1.2;margin:0 0 10px;letter-spacing:-.6px}
-  .hero p{color:var(--muted);margin:0 0 20px;max-width:56ch}
-  .cta{display:inline-block;background:var(--brand);color:#fff;padding:12px 22px;border-radius:999px;text-decoration:none;font-weight:600;font-size:15px}
-  .cta.sm{padding:9px 16px;font-size:13px;margin-top:12px}
-  grid-l{display:block}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:20px;padding:10px 0 48px}
-  .card{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff;display:flex;flex-direction:column}
-  .card img,.noimg{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#f3f4f6}
-  .card-body{padding:16px}
-  .card h3{font-size:16px;margin:0 0 6px}
-  .price{font-weight:700;color:var(--brand);margin:0 0 6px}
-  .muted{color:var(--muted);font-size:13px;margin:0 0 6px}
-  .desc{color:#374151;font-size:13px;margin:0}
-  .about{padding:28px 0;border-top:1px solid var(--line)}
-  footer{padding:26px 0 44px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}
-  footer a{color:var(--brand)}
-  @media(min-width:768px){ .hero h2{font-size:44px} }
-</style>
-</head>
-<body>
-<header><div class="wrap bar">
-  ${logo ? `<img src="${logo}" alt="${biz}" />` : ''}
-  <h1>${biz}</h1>
-</div></header>
-
-<section class="wrap hero">
-  <h2>${tagline}</h2>
-  ${heroWa ? `<a class="cta" href="${heroWa}" target="_blank" rel="noopener">Chat with us on WhatsApp</a>` : ''}
+  const serverContent = `
+<section id="nobogent-server-content" aria-labelledby="nobogent-h1" style="max-width:1180px;margin:0 auto;padding:48px 20px;">
+  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` — Property Listings in ${esc(city)}` : ''}</h1>
+  <p style="margin:0 0 18px;max-width:62ch;">${esc(tagline)}</p>
+  ${address ? `<address style="font-style:normal;margin:0 0 6px;">${esc(address)}</address>` : ''}
+  ${phone ? `<p style="margin:0 0 6px;">Call or WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
+  ${wa ? `<p style="margin:0 0 22px;"><a href="https://wa.me/${esc(wa)}" rel="noopener">Chat with us on WhatsApp</a></p>` : ''}
+  ${props.length ? `<h2 style="font-size:24px;margin:26px 0 14px;">Current listings (${props.length})</h2>
+  <div class="seo-grid">${cards}</div>` : ''}
 </section>
+<style>
+  .seo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px}
+  .seo-card{border:1px solid rgba(0,0,0,.12);border-radius:14px;padding:14px;background:#fff}
+  .seo-card img{width:100%;height:auto;border-radius:10px;display:block;margin-bottom:10px}
+  .seo-card h3{font-size:16px;margin:0 0 6px}
+  .seo-card a{text-decoration:none;color:inherit}
+  .seo-price{font-weight:700;margin:0 0 6px}
+  .seo-muted{opacity:.75;font-size:13px;margin:0 0 6px}
+</style>
+`
 
-<main class="wrap">
-  ${cards ? `<div class="grid">${cards}</div>` : `<p class="muted">Listings are being added.</p>`}
-  ${about ? `<section class="about"><h2 style="font-size:20px;margin:0 0 8px">About ${biz}</h2><p style="margin:0;color:#374151">${about}</p></section>` : ''}
-</main>
+  if (/<main[^>]*>/i.test(html)) {
+    html = html.replace(/(<main[^>]*>)/i, `$1\n${serverContent}`)
+  } else {
+    html = html.replace(/<body[^>]*>/i, (m) => `${m}\n${serverContent}`)
+  }
 
-<footer><div class="wrap">
-  ${address ? `<p style="margin:0 0 6px">${address}</p>` : ''}
-  ${phone ? `<p style="margin:0 0 6px">Phone / WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
-  ${email ? `<p style="margin:0 0 6px"><a href="mailto:${email}">${email}</a></p>` : ''}
-  <p style="margin:12px 0 0;opacity:.7">&copy; ${new Date().getFullYear()} ${biz}. All rights reserved.</p>
-</div></footer>
-</body>
-</html>`
+  return html
 }
 
 /**
- * Build (or refresh) a tenant's site row. Returns the slug on success.
- * Skips when the tenant has no business name yet — an empty shell is worse
- * than nothing, because it would then never regenerate.
+ * Build (or refresh) one tenant's site row.
+ * Fast and idempotent: safe to call from a job worker, never long-running.
  */
 export async function ensureTenantSite(
   supabaseAdmin: any,
   userId: string,
   opts: { force?: boolean } = {}
-): Promise<{ created: boolean; skipped?: string }> {
+): Promise<{ created: boolean; skipped?: string; bytes?: number }> {
   const { data: profile, error: pErr } = await supabaseAdmin
     .from('profiles')
-    .select('id, business_name, business_info, logo_url, brand_color, contact_number, whatsapp_phone_number, address, email, mission_statement, custom_domain')
+    .select('id, business_name, business_info, logo_url, brand_color, contact_number, whatsapp_phone_number, address, email, mission_statement, custom_domain, whitelabel_domain')
     .eq('id', userId)
     .single()
 
   if (pErr || !profile) return { created: false, skipped: 'profile_not_found' }
-  if (!profile.business_name || !String(profile.business_name).trim()) {
-    return { created: false, skipped: 'no_business_name' }
-  }
+  if (!String(profile.business_name || '').trim()) return { created: false, skipped: 'no_business_name' }
 
   // Never clobber a page the tenant generated or edited themselves.
   const { data: existing } = await supabaseAdmin
@@ -182,12 +341,18 @@ export async function ensureTenantSite(
     .maybeSingle()
 
   if (existing && !opts.force) {
-    return { created: false, skipped: 'already_exists' }
+    const live = String(existing.html_content || '')
+    // A stuck spinner placeholder from the old LLM path is safe to replace.
+    if (live.includes('nobogent-server-content') || live.includes('http-equiv="refresh"') || live.length < 500) {
+      // fall through and rebuild
+    } else {
+      return { created: false, skipped: 'already_exists' }
+    }
   }
 
   const { data: props } = await supabaseAdmin
     .from('properties')
-    .select('id, title, address, price, description, image_url, images, status, configurations, youtube_url')
+    .select('id, title, address, price, description, image_url, images, status, property_type, configurations')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(24)
@@ -209,5 +374,5 @@ export async function ensureTenantSite(
     )
 
   if (upErr) return { created: false, skipped: `upsert_failed:${upErr.message}` }
-  return { created: true }
+  return { created: true, bytes: html.length }
 }
