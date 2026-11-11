@@ -24,6 +24,7 @@
     "verify:toolset": "esbuild scripts/verify-toolset.ts --bundle --platform=node --format=cjs --outfile=.tmp-toolset.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-toolset.cjs",
     "verify:mcp": "esbuild scripts/verify-mcp.ts --bundle --platform=node --format=cjs --outfile=.tmp-mcp.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-mcp.cjs",
     "verify:sites": "esbuild scripts/verify-sites.ts --bundle --platform=node --format=cjs --outfile=.tmp-sites.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-sites.cjs",
+    "verify:streaming": "esbuild scripts/verify-streaming.ts --bundle --platform=node --format=cjs --outfile=.tmp-st.cjs --log-level=warning && node .tmp-st.cjs",
     "verify:flow-engine": "esbuild scripts/verify-flow-engine.ts --bundle --platform=node --format=cjs --outfile=.tmp-fe.cjs --log-level=warning && node .tmp-fe.cjs",
     "audit:flows": "esbuild scripts/audit-flows.ts --bundle --platform=node --format=cjs --outfile=.tmp-audit.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-audit.cjs",
     "verify:flows": "esbuild scripts/verify-flows.ts --bundle --platform=node --format=cjs --outfile=.tmp-flows.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-flows.cjs",

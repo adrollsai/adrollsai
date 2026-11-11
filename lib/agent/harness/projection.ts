@@ -137,13 +137,26 @@ export function applyEvent(state: HarnessState, event: HarnessEvent): HarnessSta
       if (typeof d.id !== 'string' || typeof d.text !== 'string' || !d.text.trim()) {
         return unchanged(state);
       }
-      if (state.seenIds[d.id]) return unchanged(state);
-      return {
-        ...state,
-        items: [...state.items, { kind: 'assistant', id: d.id, text: d.text }],
-        seenIds: { ...state.seenIds, [d.id]: true },
-        version: state.version + 1,
-      };
+      // Upsert by id rather than first-write-wins.
+      //
+      // The runner streams partial text and rewrites this event with the same id
+      // as the answer grows. Ignoring repeats meant the UI only ever showed the
+      // first fragment, so a long reply appeared to stall and then jump. Writing
+      // the same text twice is still a no-op, which keeps replay idempotent.
+      const at = state.items.findIndex((i) => i.kind === 'assistant' && i.id === d.id);
+      if (at === -1) {
+        return {
+          ...state,
+          items: [...state.items, { kind: 'assistant', id: d.id, text: d.text }],
+          seenIds: { ...state.seenIds, [d.id]: true },
+          version: state.version + 1,
+        };
+      }
+      const existing = state.items[at];
+      if (existing.kind === 'assistant' && existing.text === d.text) return unchanged(state);
+      const items = state.items.slice();
+      items[at] = { kind: 'assistant', id: d.id, text: d.text };
+      return { ...state, items, version: state.version + 1 };
     }
 
     case 'tool.call': {

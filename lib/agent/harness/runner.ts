@@ -15,7 +15,7 @@
  *   * backoff + attempts + dead-letter stop a broken run from spinning forever
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { generateText, stepCountIs } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 import { getAgentModel } from '../deepseek';
 import { createAgentContext } from '../orchestrator';
 import { appendEvents, loadEvents } from './store';
@@ -166,7 +166,13 @@ export async function executeRunSlice(
   const usageMeter = startUsageMeter();
 
   try {
-    const result = await generateText({
+    // Stream, not generateText.
+    //
+    // generateText only reports at step boundaries, so a durable run showed
+    // nothing for 5-20 seconds and then a whole step at once — which is precisely
+    // why it felt dead next to a live-streaming harness. streamText lets the
+    // partial answer be written incrementally, so the transcript animates.
+    const result = streamText({
       model,
       system: systemPrompt,
       messages,
@@ -190,6 +196,10 @@ export async function executeRunSlice(
         } catch (err: any) {
           console.warn('[Harness runner] persistStep failed:', err?.message);
         }
+        // Next step writes to a fresh text id so partials never overwrite the
+        // previous step's finished answer.
+        partialCounter++;
+        flushedLength = 0;
       },
       // Checkpoint at every step boundary, so a crash can lose at most the one
       // step that was in flight — not the whole slice.
@@ -199,7 +209,39 @@ export async function executeRunSlice(
       },
     });
 
-    const nextMessages = [...messages, ...(result.response?.messages ?? [])];
+    // Pump partial text into the event log so Realtime can render it live.
+    // Throttled: the projection upserts by id, so each write replaces the row.
+    let streamedText = '';
+    let flushedLength = 0;
+    let partialCounter = 0;
+    let lastFlushAt = 0;
+    try {
+      for await (const delta of result.textStream) {
+        streamedText += delta;
+        const now = Date.now();
+        // ~4 flushes a second is enough to look live without hammering Realtime.
+        if (now - lastFlushAt < 250) continue;
+        lastFlushAt = now;
+        if (streamedText.length <= flushedLength) continue;
+        flushedLength = streamedText.length;
+        try {
+          await appendEvents(supabase, run.session_id, [
+            createEvent('assistant.text', {
+              id: `${run.id.slice(0, 8)}_p${sliceNumber}_${partialCounter}`,
+              text: streamedText,
+            }),
+          ]);
+        } catch {
+          /* partial display is best-effort; the step event carries the truth */
+        }
+      }
+    } catch (streamErr: any) {
+      console.warn('[Harness runner] partial stream ended early:', streamErr?.message);
+    }
+
+    // streamText exposes these as promises (generateText resolved them inline).
+    const [response, finishReason] = await Promise.all([result.response, result.finishReason]);
+    const nextMessages = [...messages, ...((response as any)?.messages ?? [])];
 
     if (cancelled) {
       await appendRunStatus(supabase, run.session_id, 'cancelled', 'Stopped at your request.', sliceNumber);
@@ -210,7 +252,7 @@ export async function executeRunSlice(
     const compacted = await maybeCompact(nextMessages as any);
     const checkpoint = { messages: compacted.messages as unknown[], slices: sliceNumber };
 
-    const unfinished = result.finishReason === 'tool-calls';
+    const unfinished = finishReason === 'tool-calls';
     if (unfinished) {
       console.log(
         `[Harness runner] run ${run.id.slice(0, 8)} slice ${sliceNumber}: ${steps} step(s), more work pending — re-queueing`
