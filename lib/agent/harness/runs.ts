@@ -274,18 +274,57 @@ export async function requestCancel(
   runId: string,
   userId: string
 ): Promise<boolean> {
-  const { error } = await db(supabase)
-    .from('harness_runs')
-    .update({ cancel_requested: true, updated_at: new Date().toISOString() })
-    .eq('id', runId)
-    .eq('user_id', userId);
+  // A run that is still QUEUED has not been claimed, so there is nothing to interrupt:
+  // setting the cooperative flag alone left it queued forever, which meant the chat
+  // stayed blocked and every later message was refused as "run in progress". Close it
+  // here. A run that is already RUNNING is left to the worker, which checks the flag
+  // between steps and stops at a clean boundary.
+  try {
+    const { data: current } = await db(supabase)
+      .from('harness_runs')
+      .select('status')
+      .eq('id', runId)
+      .eq('user_id', userId)
+      .maybeSingle();
 
-  if (error) {
-    if (!isMissing(error)) console.error('[Harness] requestCancel failed:', error.message);
+    const status = String((current as any)?.status || '');
+    const nowIso = new Date().toISOString();
+
+    if (status === 'queued' || status === 'retrying') {
+      const { error } = await db(supabase)
+        .from('harness_runs')
+        .update({
+          status: 'cancelled',
+          cancel_requested: true,
+          finished_at: nowIso,
+          error: 'Cancelled before it started.',
+          updated_at: nowIso,
+        })
+        .eq('id', runId)
+        .eq('user_id', userId);
+      if (error) {
+        console.warn('[Harness] requestCancel (queued) failed:', error.message);
+        return false;
+      }
+      return true;
+    }
+
+    const { error } = await db(supabase)
+      .from('harness_runs')
+      .update({ cancel_requested: true, updated_at: nowIso })
+      .eq('id', runId)
+      .eq('user_id', userId);
+    if (error) {
+      console.warn('[Harness] requestCancel failed:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('[Harness] requestCancel threw:', err?.message || err);
     return false;
   }
-  return true;
 }
+
 
 /** Has the owner asked for this run to stop? Polled between model steps. */
 export async function isCancelRequested(
