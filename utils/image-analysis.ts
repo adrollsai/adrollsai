@@ -123,6 +123,22 @@ export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?:
         const text = result.response.text()?.trim();
         if (text) {
             console.log(`[Image Analysis] Gemini fallback analysis successful: "${text}"`);
+            try {
+                const { recordSpend, priceTokensInr } = await import('@/lib/agent/spend');
+                const meta: any = (result.response as any)?.usageMetadata || {};
+                const usage = {
+                    input: Number(meta.promptTokenCount || 0),
+                    output: Number(meta.candidatesTokenCount || 0),
+                };
+                await recordSpend({
+                    service: 'gemini',
+                    model: 'gemini-3.5-flash',
+                    units: usage.input + usage.output,
+                    unit: 'token',
+                    costInr: priceTokensInr('gemini-3.5-flash', usage),
+                    detail: `image analysis (${imageUrl.slice(0, 70)}): in ${usage.input}, out ${usage.output}`,
+                });
+            } catch {}
             return text;
         }
     } catch (err: any) {
@@ -256,7 +272,7 @@ export async function resolveImageDescriptions(
             }
         }
     } else {
-        console.log(`[Image Analysis] All ${cleanUrls.length} image descriptions loaded from cache! ⚡`);
+        console.log(`[Image Analysis] All ${cleanUrls.length} image descriptions loaded from cache! âš¡`);
     }
 
     // Return descriptions strictly ordered matching the input imageUrls array

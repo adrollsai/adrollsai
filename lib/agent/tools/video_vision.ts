@@ -35,15 +35,10 @@ export function createVideoVisionTools() {
       }),
       execute: async ({ videoUrl, prompt }) => {
         try {
+          // Billing happens inside analyzeVideoWithGemini (the vendor wrapper), so
+          // every caller is covered and this tool must NOT meter again — doing both
+          // charged the user twice for the same analysis.
           const result = await analyzeVideoWithGemini({ videoUrl, prompt });
-      try {
-        if (result.usage) {
-          meterOf()?.addModelUsage('gemini', {
-            inputTokens: result.usage.input,
-            outputTokens: result.usage.output,
-          });
-        }
-      } catch {}
           return {
             success: true,
             model: result.model,

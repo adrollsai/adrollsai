@@ -102,3 +102,8 @@ public/campaign-assets/
 .tmp-*
 .demo/
 .nobogent/
+
+# local media scratch (reel test passes)
+.work/
+Homeland-Regalia-Reel.mp4
+Homeland-Regalia-Rahul.mp4

@@ -214,6 +214,16 @@ export async function addCredits(
   }
 }
 
+/**
+ * DEPRECATED rate table — kept only so imports keep compiling.
+ *
+ * It under-billed badly: output was priced at ₹0.0238/1k for DeepSeek and
+ * ₹0.0252/1k for Gemini, against a real ₹0.1056 and ₹0.22 — a 4x to 9x
+ * shortfall, and with no cache tier at all, which for an agent turn is most of
+ * the input. `calculateLLMCost` now delegates to the canonical table in
+ * lib/agent/pricing.ts so the same Gemini call costs the same no matter which
+ * route made it.
+ */
 export const MODEL_RATES: Record<string, { inputPerK: number; outputPerK: number }> = {
   'gemini-1.5-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
   'gemini-2.0-flash': { inputPerK: 0.0063, outputPerK: 0.0252 },
@@ -227,22 +237,22 @@ export const MODEL_RATES: Record<string, { inputPerK: number; outputPerK: number
 
 /**
  * Calculates LLM generation cost in INR based on input and output token counts.
+ *
+ * Delegates to the canonical, cache-aware table in lib/agent/pricing.ts. This
+ * used to read MODEL_RATES above, which priced output 4x-9x below our real cost
+ * and ignored cache hits entirely — so the same Gemini call was billed
+ * differently depending on which route happened to make it.
  */
 export function calculateLLMCost(
   modelName: string,
   promptTokens: number,
   completionTokens: number
 ): number {
-  const model = (modelName || 'default').toLowerCase();
-  let rates = MODEL_RATES.default;
-  for (const key of Object.keys(MODEL_RATES)) {
-    if (model.includes(key)) {
-      rates = MODEL_RATES[key];
-      break;
-    }
-  }
-  const inputCost = (promptTokens / 1000) * rates.inputPerK;
-  const outputCost = (completionTokens / 1000) * rates.outputPerK;
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { priceForTextModel } = require('@/lib/agent/pricing') as typeof import('@/lib/agent/pricing')
+  const rates = priceForTextModel(modelName)
+  const inputCost = (Math.max(0, promptTokens) / 1000) * rates.cacheMissPer1k
+  const outputCost = (Math.max(0, completionTokens) / 1000) * rates.outputPer1k
   return inputCost + outputCost; // Cost in INR
 }
 

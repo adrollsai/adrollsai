@@ -158,6 +158,32 @@ export async function analyzeVideoWithGemini(options: {
     }
 
     console.log(`[Video Vision] analysed with ${usedModel} (${analysis.length} chars).`);
+
+    // Metered here, at the vendor wrapper, so every caller is covered — the agent
+    // tool, the dashboard routes and any script. Metering again in the tool would
+    // double-charge.
+    //
+    // `billed` is a widened alias on purpose: `lastUsage` is only assigned inside
+    // the `run` closure, so TypeScript's flow analysis narrows it to null here and
+    // rejects the property reads.
+    const billed = lastUsage as { input: number; output: number } | null;
+    try {
+      const { recordSpend, priceTokensInr } = await import('@/lib/agent/spend');
+      const costInr = priceTokensInr(usedModel, billed || undefined);
+      const inTokens = billed?.input || 0;
+      const outTokens = billed?.output || 0;
+      await recordSpend({
+        service: 'gemini',
+        model: usedModel,
+        units: inTokens + outTokens,
+        unit: 'token',
+        costInr,
+        detail: `video analysis (${videoUrl.slice(0, 70)}): in ${inTokens}, out ${outTokens}`,
+      });
+    } catch {
+      /* never block an analysis on billing */
+    }
+
     return { analysis: analysis.trim(), model: usedModel, uploaded: Boolean(uploadedName), usage: lastUsage };
   } finally {
     try {

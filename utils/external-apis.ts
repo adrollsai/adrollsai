@@ -78,6 +78,94 @@ async function fetchWithRetry(url: string, options: any, maxRetries = 3): Promis
  * 1. Kie.ai Task Generation (Video/Image/Misc)
  * Updated with robust error handling and standardized return objects.
  */
+/**
+ * Price one Kie task from its payload and record it.
+ *
+ * Every Kie model ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â TTS, Grok video, AI image, Veo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â creates its job through
+ * createKieTask, so metering here covers all of them at once instead of in each
+ * caller. Callers that also meter would double-charge; that is why the tool-level
+ * metering in media_studio was removed.
+ */
+async function meterKieTask(payload: any, taskId: string) {
+    try {
+        const { recordSpend } = await import('@/lib/agent/spend');
+        const { mediaPrice } = await import('@/lib/agent/pricing');
+        const model = String(payload?.model || 'unknown');
+        const input = payload?.input || {};
+
+        let key = '';
+        let units = 1;
+        let unit = 'call';
+        if (/tts/i.test(model)) {
+            const turns = Array.isArray(input?.dialogue_turns) ? input.dialogue_turns : [];
+            const chars = turns.reduce((n: number, t: any) => n + String(t?.text || '').length, 0);
+            key = 'tts';
+            units = Math.max(1, chars) / 1000;
+            unit = '1k chars';
+        } else if (/video/i.test(model) && !/image/i.test(model)) {
+            const res = String(input?.resolution || '720p').toLowerCase();
+            const bucket = res.includes('1080') ? '1080p' : res.includes('480') ? '480p' : '720p';
+            key = /grok/i.test(model)
+                ? `grok-video:${bucket}`
+                : process.env.AGENT_VEO_PRICE_KEY || `grok-video:${bucket}`;
+            units = Number(input?.duration) || 8;
+            unit = 'second of video';
+        } else if (/image/i.test(model)) {
+            key = 'image';
+            units = 1;
+            unit = 'image';
+        }
+
+        const price = key ? mediaPrice(key) : { each: 0, source: 'unpriced' };
+        const costInr =
+            price.per !== undefined ? price.per * units : (price.each || 0) * units;
+
+        await recordSpend({
+            service: /tts/i.test(model) ? 'kie_tts' : /image/i.test(model) ? 'kie_image' : 'kie_video',
+            model,
+            units,
+            unit,
+            costInr,
+            priced: Boolean(key) && costInr > 0,
+            detail: key
+                ? `${model} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${units.toFixed(2)} ${unit} @ ${(price as any).source || 'rate'}`
+                : `${model} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no rate configured, spend recorded unpriced`,
+            meta: { taskId },
+        });
+    } catch {
+        /* metering must never break task creation */
+    }
+}
+
+/**
+ * Record model-token spend with the canonical cache-aware price table.
+ *
+ * Called from every helper that gets token counts back, so a cron job, a
+ * dashboard route or an agent tool all end up on the same ledger.
+ */
+async function meterModelTokens(
+    service: 'deepseek' | 'gemini',
+    modelName: string,
+    promptTokens: number,
+    completionTokens: number,
+    note?: string
+) {
+    try {
+        const { recordSpend, priceTokensInr } = await import('@/lib/agent/spend');
+        const costInr = priceTokensInr(modelName, { input: promptTokens, output: completionTokens });
+        await recordSpend({
+            service,
+            model: modelName,
+            units: promptTokens + completionTokens,
+            unit: 'token',
+            costInr,
+            detail: `${modelName}: in ${promptTokens}, out ${completionTokens}${note ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${note}` : ''}`,
+        });
+    } catch {
+        /* metering must never break a model call */
+    }
+}
+
 export async function createKieTask(payload: any): Promise<{ taskId: string | null; error: string | null }> {
     if (!kieApiKey()) return { taskId: null, error: "KIE_API_KEY is not configured." };
     
@@ -100,8 +188,11 @@ export async function createKieTask(payload: any): Promise<{ taskId: string | nu
             };
         }
 
+        const taskId = result.data?.taskId || null;
+        if (taskId) await meterKieTask(payload, taskId);
+
         return { 
-            taskId: result.data?.taskId || null, 
+            taskId, 
             error: null 
         };
 
@@ -333,7 +424,7 @@ export async function postToFacebook(accessToken: string, mediaUrl: string, capt
 /**
  * 3. Instagram Posting (Upgraded with REELS support, Inline Polling & Rate Limit Resilience)
  * NOTE: All polling is done inline (awaited). Fire-and-forget background loops do NOT work
- * on serverless platforms like Vercel — the function context is killed when the response returns.
+ * on serverless platforms like Vercel ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the function context is killed when the response returns.
  */
 export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string, type: string = 'image'): Promise<any> {
     // 1. Get IG Account ID
@@ -382,7 +473,7 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS INLINE — must be awaited, NOT fire-and-forget
+    // 4. POLL STATUS INLINE ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â must be awaited, NOT fire-and-forget
     // Videos (Reels) typically take 30-90s to process on Meta's servers.
     // Images are usually instant but we poll a few times to be safe.
     const maxAttempts = isVideo ? 60 : 10;
@@ -660,6 +751,7 @@ export async function callDeepSeekWithUsage(
         const usage = data.usage || {};
         const promptTokens = usage.prompt_tokens || 0;
         const completionTokens = usage.completion_tokens || 0;
+        await meterModelTokens('deepseek', modelName, promptTokens, completionTokens);
 
         return {
             text,
@@ -721,6 +813,7 @@ export async function callDeepSeekVisionWithUsage(prompt: string, imageUrls: str
     const usage = data.usage || {};
     const promptTokens = usage.prompt_tokens || 0;
     const completionTokens = usage.completion_tokens || 0;
+    await meterModelTokens('deepseek', 'deepseek-flash', promptTokens, completionTokens, 'vision');
 
     return {
         text,
@@ -860,6 +953,7 @@ export async function callGeminiWithUsageOriginal(prompt: string, imageUrls?: st
         const promptTokens = (usage as any).promptTokenCount || 0;
         const completionTokens = (usage as any).candidatesTokenCount || 0;
         const modelName = (response as any).model || "gemini-3.5-flash";
+        await meterModelTokens('gemini', modelName, promptTokens, completionTokens);
 
         return { text, promptTokens, completionTokens, modelName };
 
@@ -1145,6 +1239,22 @@ export async function createKieImageTask(
         throw new Error(data.msg || data.error || `Image task creation failed with status ${response.status}`);
     }
     if (!data.data?.taskId) throw new Error("Kie AI response missing taskId");
+    // This path does not go through createKieTask, so it prices itself.
+    try {
+        const { recordSpend } = await import('@/lib/agent/spend');
+        const { mediaPrice } = await import('@/lib/agent/pricing');
+        const p = mediaPrice('image');
+        await recordSpend({
+            service: 'kie_image',
+            model,
+            units: 1,
+            unit: 'image',
+            costInr: p.each || 0,
+            priced: Boolean(p.each),
+            detail: `${model} - 1 image (${effectiveRatio})`,
+            meta: { taskId: data.data.taskId },
+        });
+    } catch {}
     return data.data.taskId;
 }
 
