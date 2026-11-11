@@ -46,7 +46,9 @@ const toolCallLog: string[] = [];
   if (!profile?.id) throw new Error('no profile');
 
   console.log(`profile: ${profile.business_name} (${profile.id})`);
-  const { systemPrompt, tools } = await createAgentContext(supabase as any, profile.id);
+  const ctx = await createAgentContext(supabase as any, profile.id, { intentText: REQUEST });
+  const { systemPrompt, tools } = ctx;
+  console.log(`tool groups: ${ctx.toolGroups.join(', ')}`);
   const model = await getAgentModel({});
   console.log(`model: ${JSON.stringify(model?.modelId || model)} · tools: ${Object.keys(tools).length}`);
   console.log(`\nREQUEST:\n${REQUEST.slice(0, 300)}\n${'='.repeat(70)}`);
