@@ -115,6 +115,62 @@ function check(name: string, ok: boolean, detail = '') {
     console.log('SKIP  no supabase credentials');
   }
 
+  console.log('\n=== two-phase: a failed job charges nothing ===');
+  {
+    const { beginSpend, finalizeSpend, voidSpend } = await import('../lib/agent/spend');
+    const live = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+    const idFail = await beginSpend({ service: 'kie_tts', costInr: 0, detail: 'two-phase test (will fail)', ref: 'test-fail' });
+    const idOk = await beginSpend({ service: 'kie_video', costInr: 0, detail: 'two-phase test (will succeed)', ref: 'test-ok' });
+    check('beginSpend returns a handle', !live || Boolean(idFail && idOk), live ? 'ledger ids returned' : 'no db, skipped');
+
+    if (idFail && idOk) {
+      const meter2 = startUsageMeter();
+      await finalizeSpend(idFail, { costInr: 0 });          // settled at zero
+      await voidSpend(idOk, 'deliberate test void');         // voided
+      check('finalising at zero charges nothing', meter2.totalInr() === 0, `₹${meter2.totalInr()}`);
+      clearUsageMeter();
+
+      const meter3 = startUsageMeter();
+      const idPaid = await beginSpend({ service: 'kie_video', costInr: 0, detail: 'two-phase test (paid)', ref: 'test-paid' });
+      await finalizeSpend(idPaid, { costInr: 17.82 });
+      check('finalising with a real amount charges it', Math.abs(meter3.totalInr() - 17.82) < 1e-6, `₹${meter3.totalInr()}`);
+
+      if (live) {
+        const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+          auth: { persistSession: false },
+        });
+        const { data } = await sb
+          .from('usage_events')
+          .select('ref, state, cost_inr')
+          .in('ref', ['test-fail', 'test-ok', 'test-paid']);
+        const byRef = Object.fromEntries((data || []).map((r: any) => [r.ref, r]));
+        check('voided row is marked void and costs 0', byRef['test-ok']?.state === 'void' && Number(byRef['test-ok']?.cost_inr) === 0, `${byRef['test-ok']?.state} ₹${byRef['test-ok']?.cost_inr}`);
+        check('paid row is settled at the final amount', byRef['test-paid']?.state === 'settled' && Math.abs(Number(byRef['test-paid']?.cost_inr) - 17.82) < 1e-6, `${byRef['test-paid']?.state} ₹${byRef['test-paid']?.cost_inr}`);
+        await sb.from('usage_events').delete().in('ref', ['test-fail', 'test-ok', 'test-paid']);
+      }
+      clearUsageMeter();
+    }
+  }
+
+  console.log('\n=== every Kie model now has a price ===');
+  {
+    const { priceKiePayload } = await import('../utils/external-apis');
+    const cases: { label: string; payload: any; expectPriced: boolean }[] = [
+      { label: 'grok video 720p 8s', payload: { model: 'grok-imagine-video-1-5-preview', input: { resolution: '720p', duration: 8 } }, expectPriced: true },
+      { label: 'grok video 1080p 15s', payload: { model: 'grok-imagine-video-1-5-preview', input: { resolution: '1080p', duration: 15 } }, expectPriced: true },
+      { label: 'veo lite 8s', payload: { model: 'veo3_lite', input: { duration: 8 } }, expectPriced: true },
+      { label: 'ai image', payload: { model: 'gpt-image-2-5-flare-text-to-image', input: {} }, expectPriced: true },
+      { label: 'gemini tts 1000 chars', payload: { model: 'google/gemini-3-1-flash-tts', input: { dialogue_turns: [{ text: 'x'.repeat(1000) }] } }, expectPriced: true },
+      { label: 'unknown model', payload: { model: 'mystery-model', input: {} }, expectPriced: false },
+    ];
+    for (const c of cases) {
+      const p = priceKiePayload(c.payload);
+      const ok = c.expectPriced ? p.costInr > 0 : p.costInr === 0;
+      check(`${c.label} -> ₹${p.costInr.toFixed(3)} (${p.key || 'unpriced'})`, ok);
+    }
+  }
+
   console.log(`\n=== ${pass}/${pass + fail} checks passed ===`);
   if (fail) process.exit(1);
 })().catch((e) => {

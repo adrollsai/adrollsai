@@ -15,6 +15,7 @@ import { createVercelMcpTools } from './mcp/vercel-mcp';
 import { createSupabaseMcpTools } from './mcp/supabase-mcp';
 import { createVideoVisionTools } from './tools/video_vision';
 import { createMediaStudioTools } from './tools/media_studio';
+import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createPublishingTools } from './tools/publishing';
 import { createSiteTools } from './tools/sites';
 import { createRecipeTools } from './tools/recipes';
@@ -95,6 +96,7 @@ export async function createAgentContext(
     ...(isSuperAdmin ? createSupabaseMcpTools(supabase, true) : {}),
     ...(has('sandbox') ? createSandboxTools(supabase, userId) : {}),
     ...(has('media') ? createMediaStudioTools(supabase, userId) : {}),
+    ...(has('media') ? createReferenceCreativeTools(supabase, userId) : {}),
     ...(has('media') ? create24fpsMotionTools() : {}),
     ...(has('publishing') ? createPublishingTools(supabase, userId) : {}),
     ...(has('sites') ? createSiteTools(supabase, userId) : {}),
@@ -163,6 +165,8 @@ MEDIA STUDIO — the app's own generation models, for actually creating media:
 - 'generate_grok_video': Grok Imagine 1.5 clip. Pass only a prompt for TEXT-TO-VIDEO, or add 1-7 public image URLs for IMAGE-TO-VIDEO (animate the user's own photos, a property, a product). Up to 15s, 9:16 / 16:9 / 1:1.
 - 'generate_ai_image': photorealistic ad creative, banner, product shot, festive graphic — or an edit/restyle of supplied reference images.
 - 'check_media_task': collect the result of any of the above that returned status "processing_in_background".
+- 'list_reference_creatives': the app's built-in reference creatives (35 finished ad designs, each with a public image URL). Use when the user says "like this one", "in that style", or asks what templates exist. Pass the chosen url to generate_ai_image as referenceImageUrls — and be clear the reference is a style guide, never their actual property.
+- 'get_creative_rules': the house visual rules for this business's vertical (composition, typography, lighting, what to avoid). Fetch these before writing any branded graphic or ad-creative prompt; the dashboard applies them automatically, the agent must ask for them.
 - 'search_24fps_motion_graphics', 'get_24fps_clip_source', 'search_24fps_editor_presets', 'get_24fps_editor_preset': search 7,000+ motion graphic clips, presets and GSAP templates.
 Voiceover + Grok video + HyperFrames is the full ad pipeline: generate the images, animate them with Grok, narrate with Gemini TTS, then mux or compose in the sandbox.
 AMBIGUOUS CREATIVE REQUESTS — ask ONE short question instead of guessing:

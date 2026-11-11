@@ -88,6 +88,28 @@ export const MEDIA_PRICES: Record<string, MediaPrice> = {
   'grok-video:1080p': { per: 0.04 * USD_TO_INR, source: 'Kie Grok Imagine 1.5 pricing page' },
   'image': { each: 0.03 * USD_TO_INR, source: 'Kie image (estimate)', estimated: true },
   'tts': { per: 0.0006 * USD_TO_INR, source: 'Kie Gemini TTS (estimate, per 1k chars)', estimated: true },
+  /**
+   * Veo had no rate at all, so every Veo call was recorded unpriced — we knew we
+   * spent money and valued it at zero. Default is a documented proxy (Grok 1080p)
+   * until the Kie invoice confirms it; override via AGENT_VEO_INR_PER_SECOND.
+   */
+  'veo-video': {
+    per: Number(
+      (process.env.AGENT_VEO_INR_PER_SECOND || '').replace(/^["']|["']$/g, '').trim() ||
+        (0.04 * USD_TO_INR).toFixed(4)
+    ),
+    source: 'Veo (proxy = Grok 1080p until invoiced)',
+    estimated: true,
+  },
+  /** ElevenLabs by character, when the voice path bills that way. */
+  'elevenlabs-tts': {
+    per: Number(
+      (process.env.AGENT_ELEVENLABS_INR_PER_1K_CHARS || '').replace(/^["']|["']$/g, '').trim() ||
+        (0.3 * USD_TO_INR).toFixed(4)
+    ),
+    source: 'ElevenLabs (proxy until invoiced)',
+    estimated: true,
+  },
 };
 
 export function mediaPrice(key: string): MediaPrice {

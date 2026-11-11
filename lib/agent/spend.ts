@@ -142,6 +142,137 @@ async function persist(ev: SpendEvent, userId: string | null, settledBy: 'turn' 
 }
 
 /**
+ * Open a spend record without committing money yet.
+ *
+ * Metering at submission was wrong in one direction: a Kie job can be created and
+ * then fail (a TTS task that dies with "generate task timeout" produces nothing),
+ * and billing it would charge for output that never existed. Metering only in the
+ * tool was wrong in the other: anything outside an agent turn vanished.
+ *
+ * So the row is born `pending` with cost 0, and only becomes `settled` when the
+ * result is in hand, or `void` when the job fails. A row left `pending` means we
+ * never learned the outcome, which is worth seeing rather than hiding.
+ */
+export async function beginSpend(ev: SpendEvent & { ref?: string }): Promise<string | null> {
+  try {
+    const ctx = spendContext();
+    const userId = ev.userId ?? ctx.userId ?? null;
+    const admin = adminClient();
+    if (!admin) return null;
+    const { data, error } = await admin
+      .from('usage_events')
+      .insert({
+        user_id: userId,
+        service: ev.service,
+        model: ev.model || null,
+        units: ev.units ?? null,
+        unit: ev.unit || null,
+        cost_inr: 0,
+        priced: ev.priced !== false,
+        state: 'pending',
+        settled_by: meterOf() ? 'turn' : 'route',
+        detail: (ev.detail || '').slice(0, 500),
+        meta: ev.meta || null,
+        ref: ev.ref || null,
+      })
+      .select('id')
+      .maybeSingle();
+    if (error) {
+      if (!missingTableWarned) {
+        missingTableWarned = true;
+        console.warn(`[spend] beginSpend failed (${error.message}) — continuing unmetered`);
+      }
+      return null;
+    }
+    return data?.id != null ? String(data.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Commit a pending record — this is where money is actually charged, at the point
+ * the vendor has delivered. The amount may be refined from the submission estimate.
+ */
+export async function finalizeSpend(
+  id: string | null,
+  patch: { costInr?: number; units?: number; detail?: string } = {}
+): Promise<void> {
+  if (!id) return;
+  try {
+    const meter = meterOf();
+    const costInr =
+      Number.isFinite(patch.costInr) && (patch.costInr as number) > 0 ? (patch.costInr as number) : 0;
+    const admin = adminClient();
+
+    let row: any = null;
+    if (admin) {
+      const { data } = await admin
+        .from('usage_events')
+        .select('id, service, detail, units, unit, priced, model')
+        .eq('id', id)
+        .maybeSingle();
+      row = data || null;
+      await admin
+        .from('usage_events')
+        .update({
+          cost_inr: costInr,
+          state: 'settled',
+          settled_at: new Date().toISOString(),
+          ...(patch.units != null ? { units: patch.units } : {}),
+          ...(patch.detail ? { detail: patch.detail.slice(0, 500) } : {}),
+        })
+        .eq('id', id);
+    }
+
+    if (costInr <= 0) return;
+
+    const label = row?.service || 'vendor';
+    const detail = patch.detail || row?.detail || '';
+    recent.push({ service: label as SpendService, costInr, detail });
+    if (recent.length > 200) recent.shift();
+
+    if (meter) {
+      meter.add({ label, costInr, detail });
+      return;
+    }
+    const ctx = spendContext();
+    if (ctx.userId && chargeEnabled(ctx) && admin) {
+      const { deductCreditsByCost } = await import('@/utils/credits');
+      await deductCreditsByCost(
+        admin as any,
+        ctx.userId,
+        costInr,
+        'ai_generation',
+        `${ctx.label || label} — ${detail}`.slice(0, 480)
+      );
+    }
+  } catch (err: any) {
+    console.warn(`[spend] finalize failed: ${err?.message || err}`);
+  }
+}
+
+/** Close a pending record that produced nothing. Charges nothing. */
+export async function voidSpend(id: string | null, reason: string): Promise<void> {
+  if (!id) return;
+  try {
+    const admin = adminClient();
+    if (!admin) return;
+    await admin
+      .from('usage_events')
+      .update({
+        state: 'void',
+        cost_inr: 0,
+        settled_at: new Date().toISOString(),
+        detail: `voided: ${reason}`.slice(0, 500),
+      })
+      .eq('id', id);
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
  * Record one billable vendor call. Safe to call from anywhere; never throws.
  */
 export async function recordSpend(ev: SpendEvent): Promise<void> {

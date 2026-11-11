@@ -79,65 +79,6 @@ async function fetchWithRetry(url: string, options: any, maxRetries = 3): Promis
  * Updated with robust error handling and standardized return objects.
  */
 /**
- * Price one Kie task from its payload and record it.
- *
- * Every Kie model ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â TTS, Grok video, AI image, Veo ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â creates its job through
- * createKieTask, so metering here covers all of them at once instead of in each
- * caller. Callers that also meter would double-charge; that is why the tool-level
- * metering in media_studio was removed.
- */
-async function meterKieTask(payload: any, taskId: string) {
-    try {
-        const { recordSpend } = await import('@/lib/agent/spend');
-        const { mediaPrice } = await import('@/lib/agent/pricing');
-        const model = String(payload?.model || 'unknown');
-        const input = payload?.input || {};
-
-        let key = '';
-        let units = 1;
-        let unit = 'call';
-        if (/tts/i.test(model)) {
-            const turns = Array.isArray(input?.dialogue_turns) ? input.dialogue_turns : [];
-            const chars = turns.reduce((n: number, t: any) => n + String(t?.text || '').length, 0);
-            key = 'tts';
-            units = Math.max(1, chars) / 1000;
-            unit = '1k chars';
-        } else if (/video/i.test(model) && !/image/i.test(model)) {
-            const res = String(input?.resolution || '720p').toLowerCase();
-            const bucket = res.includes('1080') ? '1080p' : res.includes('480') ? '480p' : '720p';
-            key = /grok/i.test(model)
-                ? `grok-video:${bucket}`
-                : process.env.AGENT_VEO_PRICE_KEY || `grok-video:${bucket}`;
-            units = Number(input?.duration) || 8;
-            unit = 'second of video';
-        } else if (/image/i.test(model)) {
-            key = 'image';
-            units = 1;
-            unit = 'image';
-        }
-
-        const price = key ? mediaPrice(key) : { each: 0, source: 'unpriced' };
-        const costInr =
-            price.per !== undefined ? price.per * units : (price.each || 0) * units;
-
-        await recordSpend({
-            service: /tts/i.test(model) ? 'kie_tts' : /image/i.test(model) ? 'kie_image' : 'kie_video',
-            model,
-            units,
-            unit,
-            costInr,
-            priced: Boolean(key) && costInr > 0,
-            detail: key
-                ? `${model} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${units.toFixed(2)} ${unit} @ ${(price as any).source || 'rate'}`
-                : `${model} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no rate configured, spend recorded unpriced`,
-            meta: { taskId },
-        });
-    } catch {
-        /* metering must never break task creation */
-    }
-}
-
-/**
  * Record model-token spend with the canonical cache-aware price table.
  *
  * Called from every helper that gets token counts back, so a cron job, a
@@ -159,10 +100,110 @@ async function meterModelTokens(
             units: promptTokens + completionTokens,
             unit: 'token',
             costInr,
-            detail: `${modelName}: in ${promptTokens}, out ${completionTokens}${note ? ` ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${note}` : ''}`,
+            detail: modelName + ': in ' + promptTokens + ', out ' + completionTokens + (note ? ' - ' + note : ''),
         });
     } catch {
         /* metering must never break a model call */
+    }
+}
+
+/**
+ * Open a pending spend record for a Kie task.
+ *
+ * Kie bills per completed job, and a job can be created then fail, so nothing is
+ * charged here: the row is written `pending` with cost 0 and only settled (or
+ * voided) when queryKieTask learns the outcome. Every Kie model — TTS, Grok
+ * video, AI image, Veo — creates its job through createKieTask, so this one place
+ * covers all of them.
+ */
+const PENDING_KIE = new Map<string, { spendId: string | null; costInr: number; units: number; unit: string; key: string }>();
+
+/** Price a Kie payload without recording anything. Pure, so it is testable. */
+export function priceKiePayload(payload: any): { key: string; service: string; costInr: number; units: number; unit: string } {
+    const { mediaPrice } = require('@/lib/agent/pricing');
+    const model = String(payload?.model || 'unknown');
+    const input = payload?.input || {};
+
+    let key = '';
+    let units = 1;
+    let unit = 'call';
+    let service = 'kie_video';
+
+    if (/tts|speech|audio/i.test(model)) {
+        const turns = Array.isArray(input?.dialogue_turns) ? input.dialogue_turns : [];
+        const chars = turns.reduce((n: number, t: any) => n + String(t?.text || '').length, 0);
+        key = 'tts';
+        units = Math.max(1, chars) / 1000;
+        unit = '1k chars';
+        service = 'kie_tts';
+    } else if (/image|image-|flare|gpt-image/i.test(model) && !/image-to-video|i2v/i.test(model)) {
+        key = 'image';
+        units = 1;
+        unit = 'image';
+        service = 'kie_image';
+    } else if (/veo/i.test(model)) {
+        // Veo is priced by our own env-overridable rate; Kie quote it per second of
+        // output, so the same unit applies.
+        key = 'veo-video';
+        units = Number(input?.duration) || 8;
+        unit = 'second of video';
+        service = 'kie_video';
+    } else if (/video|imagine|grok/i.test(model)) {
+        const res = String(input?.resolution || '720p').toLowerCase();
+        const bucket = res.includes('1080') ? '1080p' : res.includes('480') ? '480p' : '720p';
+        key = `grok-video:${bucket}`;
+        units = Number(input?.duration) || 8;
+        unit = 'second of video';
+        service = 'kie_video';
+    }
+
+    const p = key ? mediaPrice(key) : { each: 0, per: undefined } as any;
+    const costInr = p.per !== undefined ? p.per * units : (p.each || 0) * units;
+    return { key, service, costInr, units, unit };
+}
+
+async function beginKieSpend(payload: any, taskId: string) {
+    try {
+        const { beginSpend } = await import('@/lib/agent/spend');
+        const priced = priceKiePayload(payload);
+        const model = String(payload?.model || 'unknown');
+        const spendId = await beginSpend({
+            service: priced.service as any,
+            model,
+            units: priced.units,
+            unit: priced.unit,
+            costInr: 0,
+            priced: Boolean(priced.key) && priced.costInr > 0,
+            ref: taskId,
+            detail: priced.key
+                ? `${model} — ${priced.units.toFixed(2)} ${priced.unit}, pending`
+                : `${model} — no rate configured`,
+            meta: { taskId },
+        });
+        PENDING_KIE.set(taskId, { spendId, ...priced });
+        if (PENDING_KIE.size > 500) {
+            const oldest = PENDING_KIE.keys().next().value;
+            if (oldest) PENDING_KIE.delete(oldest);
+        }
+    } catch {
+        /* metering must never break task creation */
+    }
+}
+
+/** Settle a pending Kie record against the real outcome. */
+async function settleKieSpend(taskId: string, outcome: 'success' | 'fail', reason?: string) {
+    try {
+        const { finalizeSpend, voidSpend } = await import('@/lib/agent/spend');
+        const pending = PENDING_KIE.get(taskId);
+        if (!pending) return;
+        PENDING_KIE.delete(taskId);
+        if (outcome === 'success') {
+            await finalizeSpend(pending.spendId, { costInr: pending.costInr, units: pending.units });
+        } else {
+            await voidSpend(pending.spendId, reason || 'task failed');
+        }
+    } catch {
+        /* never break polling on billing */
     }
 }
 
@@ -189,7 +230,7 @@ export async function createKieTask(payload: any): Promise<{ taskId: string | nu
         }
 
         const taskId = result.data?.taskId || null;
-        if (taskId) await meterKieTask(payload, taskId);
+        if (taskId) await beginKieSpend(payload, taskId);
 
         return { 
             taskId, 
@@ -226,6 +267,7 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
         const isFail = ['fail', 'failed', 'error'].includes(rawState);
 
         if (isFail) {
+            await settleKieSpend(taskId, 'fail', data?.failMsg || data?.error || result?.msg || 'task failed on server');
             return { state: 'fail', resultUrl: null, error: data?.failMsg || data?.error || result?.msg || "Task failed on server" };
         }
 
@@ -261,12 +303,14 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
                 }
             }
 
+            await settleKieSpend(taskId, 'success');
             return { state: 'success', resultUrl, error: null };
         }
 
         return { state: rawState, resultUrl: null, error: null };
 
     } catch (e: any) {
+        await settleKieSpend(taskId, 'fail', e?.message || 'polling error');
         return { state: 'fail', resultUrl: null, error: e.message };
     }
 }
@@ -1239,22 +1283,9 @@ export async function createKieImageTask(
         throw new Error(data.msg || data.error || `Image task creation failed with status ${response.status}`);
     }
     if (!data.data?.taskId) throw new Error("Kie AI response missing taskId");
-    // This path does not go through createKieTask, so it prices itself.
-    try {
-        const { recordSpend } = await import('@/lib/agent/spend');
-        const { mediaPrice } = await import('@/lib/agent/pricing');
-        const p = mediaPrice('image');
-        await recordSpend({
-            service: 'kie_image',
-            model,
-            units: 1,
-            unit: 'image',
-            costInr: p.each || 0,
-            priced: Boolean(p.each),
-            detail: `${model} - 1 image (${effectiveRatio})`,
-            meta: { taskId: data.data.taskId },
-        });
-    } catch {}
+    // This path bypasses createKieTask, so it opens its own pending record. It is
+    // settled by the same queryKieTask when the image comes back.
+    await beginKieSpend({ model, input: inputPayload }, data.data.taskId);
     return data.data.taskId;
 }
 
