@@ -1,4 +1,9 @@
-import { NextResponse } from 'next/server'
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * The generated supabase/database.types.ts is stale (it is missing tables and
+ * columns this code legitimately uses), so typing these Supabase calls against
+ * it would produce false errors. `any` is the same choice utils/credits.ts and
+ * utils/voice-helper.ts make for the same reason.
+ */import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { registerDefaultTemplates } from '@/utils/whatsapp/template-seeder'
 

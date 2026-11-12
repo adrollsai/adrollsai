@@ -317,10 +317,12 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
 
       // F2. Meter the generated creative.
       // Charged only AFTER the asset row exists, so a failed generation is never
-      // billed. Tenants can opt out with tenant_automations.bill_automation=false.
+      // billed. Uses charge_automation() rather than deductCredits(): the latter
+      // refuses to charge unless subscription_status is active/trialing/pro/…,
+      // which would deliver the work without ever recording it.
       if (insertedAsset?.id) {
         try {
-          const { CREDIT_COSTS, deductCredits } = await import('@/utils/credits')
+          const { CREDIT_COSTS } = await import('@/utils/credits')
           const { data: autoPolicy } = await supabaseAdmin
             .from('tenant_automations')
             .select('bill_automation')
@@ -328,13 +330,14 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
             .maybeSingle()
 
           if (autoPolicy?.bill_automation !== false) {
-            await deductCredits(
-              supabaseAdmin,
-              prop.user_id,
-              CREDIT_COSTS.AI_IMAGE_GENERATION,
-              'ai_generation',
-              `Daily creative — ${prop.title}`
-            )
+            const { data: charge, error: chargeErr } = await supabaseAdmin.rpc('charge_automation', {
+              p_user_id: prop.user_id,
+              p_amount: CREDIT_COSTS.AI_IMAGE_GENERATION,
+              p_description: `Daily creative — ${prop.title}`,
+              p_category: 'ai_generation',
+            })
+            if (chargeErr) console.warn('[Auto-Generate Worker] charge failed:', chargeErr.message)
+            else if (!charge?.charged) console.log('[Auto-Generate Worker] not charged:', JSON.stringify(charge))
           }
         } catch (creditErr: any) {
           // Never fail a delivered creative over accounting.

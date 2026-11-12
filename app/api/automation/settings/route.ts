@@ -1,4 +1,9 @@
-import { NextResponse } from 'next/server'
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * The generated supabase/database.types.ts is stale (it is missing tables and
+ * columns this code legitimately uses), so typing these Supabase calls against
+ * it would produce false errors. `any` is the same choice utils/credits.ts and
+ * utils/voice-helper.ts make for the same reason.
+ */import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 
@@ -50,11 +55,14 @@ export async function GET() {
   )
 
   // Row should exist (onboarding/provisioning creates it) — create defensively.
-  let { data, error } = await admin
+  const first = await admin
     .from('tenant_automations')
     .select(SELECT_COLS)
     .eq('user_id', user.id)
     .maybeSingle()
+
+  const error = first.error
+  let data = first.data
 
   if (!data && !error) {
     const { data: created } = await admin

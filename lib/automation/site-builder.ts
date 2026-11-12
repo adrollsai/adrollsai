@@ -1,4 +1,9 @@
-import fs from 'node:fs'
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * The generated supabase/database.types.ts is stale (it is missing tables and
+ * columns this code legitimately uses), so typing these Supabase calls against
+ * it would produce false errors. `any` is the same choice utils/credits.ts and
+ * utils/voice-helper.ts make for the same reason.
+ */import fs from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -48,11 +53,37 @@ const TEMPLATE_REL = path.join('public', 'real-estate-template', 'index.html')
 
 let templateCache: string | null = null
 
+/**
+ * Minimal stand-in used only if the template file cannot be read (e.g. file
+ * tracing missed it in a serverless bundle). A tenant getting a plain but
+ * correct page beats a build job that fails five times and gives up.
+ */
+function fallbackTemplate(): string {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title><meta name="description" content="__DESC__">
+<link rel="canonical" href="__CANONICAL__">
+</head><body>
+<main id="main"></main>
+</body></html>`
+}
+
 export function loadTemplate(): string {
   if (templateCache) return templateCache
-  const abs = path.join(process.cwd(), TEMPLATE_REL)
-  templateCache = fs.readFileSync(abs, 'utf8')
+  try {
+    const abs = path.join(process.cwd(), TEMPLATE_REL)
+    templateCache = fs.readFileSync(abs, 'utf8')
+  } catch (err: any) {
+    console.error('[Site Builder] Template unreadable, using fallback shell:', err?.message)
+    templateCache = fallbackTemplate()
+  }
   return templateCache
+}
+
+/** Test seam: drop the cached template (used by scripts/verify-automation.ts). */
+export function __resetTemplateCache() {
+  templateCache = null
 }
 
 const esc = (v: unknown): string =>
@@ -135,10 +166,16 @@ export function buildSiteHtml(
   // anything of ours. app.js renders header/footer from window.SITE, but the raw
   // HTML still carries "Everline Realty" in text nodes, alt text and attributes —
   // which a crawler reads.
+  //
+  // NOTE: the replacement MUST be HTML-escaped, and the match MUST be
+  // case-insensitive. Substituting the raw business name here let a tenant put
+  // markup straight into their own page; matching only the exact casing left
+  // upper-case HTML comments (e.g. "<!-- WHY EVERLINE -->") in the output.
+  const safeBrand = esc(brandName)
   html = html
-    .replace(/Everline Realty/g, brandName)
-    .replace(/Everline/g, brandName)
-    .replace(/everlinerealty\.com/g, '')
+    .replace(/everlinerealty\.com/gi, '')
+    .replace(/everline\s+realty/gi, safeBrand)
+    .replace(/everline/gi, safeBrand)
 
   const tagline = (profile.mission_statement || 'Verified listings. Honest advice. Site visits that actually happen.').trim()
   const description = (profile.business_info || tagline).replace(/\s+/g, ' ').trim().slice(0, 158)
@@ -153,7 +190,6 @@ export function buildSiteHtml(
   const originMatch = canonical.match(/^https?:\/\/[^/]+/i)
   const origin = originMatch ? originMatch[0] : ''
   const absAsset = `${origin}${ASSET_PATH}`
-  const assets = ASSET_PATH
   const logo = profile.logo_url || `${absAsset}assets/img/logo-mark.svg`
   const ogImage = activeProperties(properties).map(propertyImage).find(Boolean) || `${absAsset}assets/img/og-cover.svg`
 

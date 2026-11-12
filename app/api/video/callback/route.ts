@@ -720,6 +720,41 @@ export async function POST(request: Request) {
                     finalAudioUrl,
                     supabaseAdmin
                 );
+
+                // Deliver the finished video on every channel: WhatsApp template,
+                // email (link + copy) and the in-app notification raised above.
+                try {
+                    const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery')
+                    const { data: finalAsset } = await supabaseAdmin
+                        .from('assets')
+                        .select('url, caption, property_id')
+                        .eq('id', videoTask.asset_id)
+                        .maybeSingle()
+
+                    let propertyTitle: string | null = null
+                    if (finalAsset?.property_id) {
+                        const { data: prop } = await supabaseAdmin
+                            .from('properties')
+                            .select('title')
+                            .eq('id', finalAsset.property_id)
+                            .maybeSingle()
+                        propertyTitle = prop?.title || null
+                    }
+
+                    if (finalAsset?.url) {
+                        const delivery = await deliverVideoToAdmin(supabaseAdmin, {
+                            userId: videoTask.user_id,
+                            assetId: videoTask.asset_id,
+                            videoUrl: finalAsset.url,
+                            title: propertyTitle,
+                            caption: finalAsset.caption || videoTask.final_caption || null
+                        })
+                        console.log('[Video Callback] Delivery result:', JSON.stringify(delivery))
+                    }
+                } catch (deliverErr: any) {
+                    console.warn('[Video Callback] Delivery failed (video still saved):', deliverErr?.message)
+                }
+
                 return NextResponse.json({
                     success: true,
                     message: `All ${siblings.length} scenes stitched with fast FFmpeg successfully.`

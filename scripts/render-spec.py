@@ -87,40 +87,133 @@ def font_at(path, size, weight='Black'):
 
 
 def render_type(lines, W, H, font_path, size_px, y_frac, style, ss=2):
-    """Cream/gold display type with grain and a soft drop shadow, at 2x then down."""
+    """Display type built the way the reference's is built.
+
+    Three things separate a premium title from a flat one, and the reference has all
+    three: a dimensional BEVEL (light top-left edge, dark bottom-right edge), a tight
+    TRACK (letters nearly touching), and a soft directional SHADOW plus glow. Rendering a
+    gradient fill alone - what this did before - reads as a slide, not as a title card.
+
+    Multi-line blocks follow the reference's shape too: the first line carries the
+    weight and the following lines step down to about half, rather than every line
+    sharing one size.
+    """
     txt = [l.upper() for l in lines]
-    size = size_px * ss
-    maxw = W * ss * 0.97
-    while size > 40:
-        f = font_at(font_path, size)
-        if max(f.getbbox(t)[2] - f.getbbox(t)[0] for t in txt) <= maxw:
-            break
-        size -= 4
-    f = font_at(font_path, size)
+    big = size_px * ss
 
-    layer = Image.new('L', (W * ss, H * ss), 0)
-    d = ImageDraw.Draw(layer)
-    boxes = [f.getbbox(t) for t in txt]
-    hs = [b[3] - b[1] for b in boxes]
-    gap = int(size * 0.10)
-    total = sum(hs) + gap * (len(txt) - 1)
-    y = H * ss * y_frac - total / 2
-    for t, b, h in zip(txt, boxes, hs):
-        d.text(((W * ss - (b[2] - b[0])) / 2 - b[0], y - b[1]), t, font=f, fill=255)
-        y += h + gap
-    alpha = np.asarray(layer, dtype=np.float32) / 255.0
+    def tracked_mask(text, font, track_px):
+        """Draw glyph by glyph so we can pull the letters tighter than default."""
+        widths = [font.getbbox(c)[2] - font.getbbox(c)[0] for c in text]
+        total = sum(widths) + track_px * (len(text) - 1)
+        layer = Image.new('L', (max(2, total + 40), big * 2), 0)
+        d = ImageDraw.Draw(layer)
+        x = 20.0
+        for c in text:
+            b = font.getbbox(c)
+            # Place by INK, not by advance: drawing at (x, 0) shifts every glyph right
+            # by its left side bearing, so a 12-character line overflowed its computed
+            # width by 40-80px and the title ran off both edges of the frame.
+            d.text((x - b[0], 0), c, font=font, fill=255)
+            x += (b[2] - b[0]) + track_px
+        return layer
 
-    ramp = np.linspace(0, 1, H * ss, dtype=np.float32)[:, None, None]
-    if style.get('typeTexture') == 'metallic':
-        ramp = np.abs(np.linspace(-1, 1, H * ss, dtype=np.float32))[:, None, None]
+    def fit_size(text, start_px, cap_px):
+        size = start_px
+        while size > 24:
+            f = font_at(font_path, size)
+            track = -int(size * 0.025)
+            w = sum(f.getbbox(c)[2] - f.getbbox(c)[0] for c in text) + track * (len(text) - 1)
+            if w <= cap_px:
+                return f, track, w
+            size -= 4
+        f = font_at(font_path, 24)
+        return f, 0, cap_px
+
+    cap_w = W * ss * 0.84 if len(txt) == 1 else W * ss * 0.80
+
+    # Per-line size: first line full, the rest stepped down.
+    rendered = []
+    for i, line in enumerate(txt):
+        start_px = big if i == 0 else int(big * 0.52)
+        f, track, w = fit_size(line, start_px, cap_w)
+        mask = tracked_mask(line, f, track)
+        bbox = mask.getbbox()
+        if not bbox:
+            continue
+        mask = mask.crop(bbox)
+        rendered.append((mask, w))
+
+    if not rendered:
+        return Image.new('RGBA', (W, H), (0, 0, 0, 0))
+
+    gap = int(big * 0.12)
+    block_w = max(m.width for m, _ in rendered)
+    block_h = sum(m.height for m, _ in rendered) + gap * (len(rendered) - 1)
+
+    # ── assemble the glyph mask, centred ─────────────────────────────────────
+    mask = Image.new('L', (block_w + 80, block_h + 80), 0)
+    y = 40
+    for m, _ in rendered:
+        mask.paste(m, (40 + (block_w - m.width) // 2, y))
+        y += m.height + gap
+
+    alpha = np.asarray(mask, dtype=np.float32) / 255.0
+
+    # ── fill: warm cream -> gold vertical gradient, plus fine grain ──────────
+    mh, mw = alpha.shape
+    ramp = np.linspace(0, 1, mh, dtype=np.float32)[:, None, None]
     rgb = CREAM[None, None, :] * (1 - ramp) + GOLD[None, None, :] * ramp
-    rgb = np.repeat(rgb, W * ss, axis=1)
+    rgb = np.repeat(rgb, mw, axis=1)
     if style.get('grain') in ('fine', 'heavy'):
-        amp = 7 if style.get('grain') == 'fine' else 14
-        rgb = np.clip(rgb + np.random.default_rng(11).normal(0, amp, (H * ss, W * ss, 1)).astype(np.float32), 0, 255)
+        amp = 6 if style.get('grain') == 'fine' else 12
+        rgb = np.clip(rgb + np.random.default_rng(7).normal(0, amp, (mh, mw, 1)).astype(np.float32), 0, 255)
 
-    img = Image.fromarray(np.dstack([rgb, alpha * 255]).astype(np.uint8), 'RGBA')
-    return img.resize((W, H), Image.LANCZOS)
+    fill = Image.fromarray(np.dstack([rgb, alpha * 255]).astype(np.uint8), 'RGBA')
+
+    # ── bevel: light edge up-left, dark edge down-right ─────────────────────
+    # This is the single biggest "premium" signal in the reference's type.
+    up = Image.new('L', mask.size, 0)
+    up.paste(mask, (0, 0))
+    up = up.transform(mask.size, Image.AFFINE, (1, 0, -2, 0, 1, -2), resample=Image.BILINEAR)
+    dn = mask.transform(mask.size, Image.AFFINE, (1, 0, 2, 0, 1, 2), resample=Image.BILINEAR)
+    a_up = np.asarray(up, dtype=np.float32) / 255.0
+    a_dn = np.asarray(dn, dtype=np.float32) / 255.0
+    edge_hi = np.clip(alpha - a_dn, 0, 1)     # top-left rim
+    edge_lo = np.clip(alpha - a_up, 0, 1)     # bottom-right rim
+
+    hi = Image.fromarray(
+        np.dstack([np.full((mh, mw), 255.0), np.full((mh, mw), 248.0), np.full((mh, mw), 226.0),
+                   edge_hi * 235]).astype(np.uint8), 'RGBA')
+    lo = Image.fromarray(
+        np.dstack([np.full((mh, mw), 96.0), np.full((mh, mw), 68.0), np.full((mh, mw), 30.0),
+                   edge_lo * 190]).astype(np.uint8), 'RGBA')
+
+    # ── shadow + glow underneath ────────────────────────────────────────────
+    sh = Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(7 * ss / 2))
+    shadow = Image.new('RGBA', mask.size, (0, 0, 0, 0))
+    shadow.putalpha(sh.point(lambda v: int(v * 0.62)))
+    glow = Image.new('RGBA', mask.size, (0, 0, 0, 0))
+    glow.putalpha(Image.fromarray((alpha * 255).astype(np.uint8))
+                  .filter(ImageFilter.GaussianBlur(16 * ss / 2)).point(lambda v: int(v * 0.30)))
+    glow = Image.composite(Image.new('RGBA', mask.size, (255, 240, 205, 255)), glow, glow.split()[3])
+
+    plate = Image.new('RGBA', mask.size, (0, 0, 0, 0))
+    plate.alpha_composite(shadow, (5, 9))       # directional: down-right
+    plate.alpha_composite(glow)
+    plate.alpha_composite(fill)
+    plate.alpha_composite(hi)
+    plate.alpha_composite(lo)
+
+    # Final clamp: whatever fit_size predicted, the ink decides. A block wider than the
+    # frame is a title running off both edges, which is worse than a slightly smaller one.
+    limit = int(W * ss * 0.86)
+    if plate.width > limit:
+        k = limit / plate.width
+        plate = plate.resize((limit, max(1, int(round(plate.height * k)))), Image.LANCZOS)
+
+    canvas = Image.new('RGBA', (W * ss, H * ss), (0, 0, 0, 0))
+    canvas.alpha_composite(plate, ((W * ss - plate.width) // 2, int(H * ss * y_frac - plate.height / 2)))
+    return canvas.resize((W, H), Image.LANCZOS)
 
 
 def render_caption(lines, W, H, font_path, ss=2, y_frac=0.80):
@@ -593,7 +686,12 @@ def main():
             u = fi / max(1, n - 1)
 
             # ---- base plate ----
-            if clip and op != 'end_card':
+            # A presenter shot keeps its OWN background. Using a separate clip here is
+            # what made the subject look cut out and pasted onto another scene.
+            if use_matte and presenter_reader:
+                pframe0 = presenter_reader.frame_at(int(t * fps))
+                base = fast_blur(pframe0.astype(np.float32), W, H, 11)
+            elif clip and op != 'end_card':
                 proc = clip_reader(clip, n)
                 framesz = CW * CH * 3
                 buf = proc.stdout.read(framesz)

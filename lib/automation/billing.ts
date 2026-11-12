@@ -1,4 +1,9 @@
-/**
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * The generated supabase/database.types.ts is stale (it is missing tables and
+ * columns this code legitimately uses), so typing these Supabase calls against
+ * it would produce false errors. `any` is the same choice utils/credits.ts and
+ * utils/voice-helper.ts make for the same reason.
+ *//**
  * Credit gating for automated (unattended) generation.
  *
  * WHY NOT `hasEnoughCredits()` FROM utils/credits.ts

@@ -8,12 +8,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const host = rawHost.split(':')[0]
 
   const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'nobogent.com'
+  // Unknown hosts (bare IPs, local previews, ephemeral deployments) must be
+  // treated as platform hosts. Otherwise they fall into the custom-domain branch
+  // below, match no tenant, and emit a one-URL sitemap.
   const isPlatform = host.includes(mainDomain) || 
                      host.includes('nobogent.com') || 
                      host.includes('adrolls.in') || 
                      host.includes('localhost') || 
+                     host.includes('127.0.0.1') || 
+                     host.includes('0.0.0.0') || 
                      host.includes('vercel.app') || 
-                     host.includes('ngrok-free.dev')
+                     host.includes('ngrok-free.dev') ||
+                     !host.includes('.')
 
   const protocol = host.includes('localhost') || host.includes('ngrok') ? 'http' : 'https'
   const baseUrl = `${protocol}://${host}`
@@ -38,7 +44,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         const [{ data: properties }, { data: landingPages }, { data: posts }] = await Promise.all([
           supabaseAdmin
             .from('properties')
-            .select('id, updated_at')
+            .select('id, created_at')
             .eq('user_id', profile.id)
             .neq('status', 'Archived')
             .neq('status', 'Sold'),
@@ -48,7 +54,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             .eq('user_id', profile.id),
           supabaseAdmin
             .from('posts')
-            .select('id, updated_at')
+            .select('id, created_at')
             .eq('user_id', profile.id)
             .eq('status', 'published')
         ])
@@ -85,7 +91,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           properties.forEach(p => {
             urls.push({
               url: `${baseUrl}/properties/${p.id}`,
-              lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+              lastModified: p.created_at ? new Date(p.created_at) : new Date(),
               changeFrequency: 'weekly',
               priority: 0.8,
             })
@@ -96,7 +102,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
           posts.forEach(p => {
             urls.push({
               url: `${baseUrl}?post=${p.id}`,
-              lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+              lastModified: p.created_at ? new Date(p.created_at) : new Date(),
               changeFrequency: 'weekly',
               priority: 0.7,
             })
@@ -163,7 +169,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     const { data: activeProfiles } = await supabaseAdmin
       .from('profiles')
-      .select('id, updated_at, business_name')
+      .select('id, created_at, business_name')
       .not('business_name', 'is', null)
       .neq('business_name', '')
       .in('role', ['super_admin', 'agency', 'admin', 'client'])
@@ -172,13 +178,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       for (const profile of activeProfiles) {
         platformUrls.push({
           url: `${baseUrl}/shared/${profile.id}`,
-          lastModified: profile.updated_at ? new Date(profile.updated_at) : new Date(),
+          lastModified: profile.created_at ? new Date(profile.created_at) : new Date(),
           changeFrequency: 'weekly',
           priority: 0.6,
         })
         platformUrls.push({
           url: `${baseUrl}/shared/${profile.id}/properties`,
-          lastModified: profile.updated_at ? new Date(profile.updated_at) : new Date(),
+          lastModified: profile.created_at ? new Date(profile.created_at) : new Date(),
           changeFrequency: 'weekly',
           priority: 0.6,
         })
@@ -187,7 +193,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       // Also add active properties for platform domain
       const { data: allActiveProperties } = await supabaseAdmin
         .from('properties')
-        .select('id, user_id, updated_at')
+        .select('id, user_id, created_at')
         .neq('status', 'Archived')
         .neq('status', 'Sold')
         .limit(200)
@@ -196,7 +202,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         allActiveProperties.forEach(p => {
           platformUrls.push({
             url: `${baseUrl}/shared/${p.user_id}/properties/${p.id}`,
-            lastModified: p.updated_at ? new Date(p.updated_at) : new Date(),
+            lastModified: p.created_at ? new Date(p.created_at) : new Date(),
             changeFrequency: 'weekly',
             priority: 0.5,
           })

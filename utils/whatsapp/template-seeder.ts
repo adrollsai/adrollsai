@@ -412,6 +412,59 @@ export async function registerDefaultTemplates(
             results.push({ name: 'nobogent_weekly_checkin', success: true, cached: true });
         }
 
+        // I. nobogent_video_ready_v2 — delivery notification for a finished video.
+        //    UTILITY: it is a transactional notification about a deliverable the
+        //    tenant already subscribes to.
+        //
+        //    v1 ('nobogent_video_ready') was REJECTED by Meta with
+        //    "Invalid parameter" because it carried the link as a body variable
+        //    ({{2}}). Meta will not accept a URL passed as a body parameter, and it
+        //    treats name+language as unique, so a rejected name cannot be reused —
+        //    hence the _v2 suffix.
+        //
+        //    Now: one body variable (the property title) plus a STATIC URL button.
+        //    A static button needs no example, no dynamic suffix and no per-send
+        //    parameter, so it is the most reliable thing Meta will approve.
+        if (!existingNames.has('nobogent_video_ready_v2')) {
+            console.log('[TEMPLATE SEEDER] Registering nobogent_video_ready_v2 template...');
+            const videoReadyPayload = {
+                name: 'nobogent_video_ready_v2',
+                category: 'UTILITY',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        text: 'Hi! Your new video for *{{1}}* is ready to review and post from your dashboard.',
+                        example: {
+                            body_text: [['Prestige Lakeside Villa']]
+                        }
+                    },
+                    {
+                        type: 'BUTTONS',
+                        buttons: [
+                            {
+                                type: 'URL',
+                                text: 'Open dashboard',
+                                url: 'https://app.nobogent.com/dashboard/assets'
+                            }
+                        ]
+                    }
+                ]
+            };
+            const vrRes = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(videoReadyPayload)
+            });
+            const vrData = await vrRes.json();
+            results.push({ name: 'nobogent_video_ready_v2', success: !vrData.error, error: vrData.error?.message || null });
+        } else {
+            results.push({ name: 'nobogent_video_ready_v2', success: true, cached: true });
+        }
+
         return { success: true, results };
     } catch (err: any) {
         console.error('[TEMPLATE SEEDER] Seeding failed:', err);
