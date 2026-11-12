@@ -15,6 +15,7 @@ import {
   ChevronRight, 
   RefreshCw, 
   AlertCircle, 
+  AlertTriangle,
   ArrowUpRight, 
   Zap, 
   CheckCircle2, 
@@ -253,6 +254,8 @@ export default function AnalyticsPage() {
 
   // --- STATE ---
   const [loading, setLoading] = useState(true)
+  // Set when the leads query itself fails, so the UI can say so instead of rendering zeros.
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [duration, setDuration] = useState<'today' | '7d' | '30d' | 'this_month' | 'last_month' | 'all'>('all')
   const [customDate, setCustomDate] = useState<string>('')
@@ -615,7 +618,14 @@ export default function AnalyticsPage() {
   // Every column listed here is read by the metric memos below. Dropping one does not
   // fail loudly - it silently reads as undefined and the KPI renders as a permanent 0,
   // so keep this list in sync with the board/matrix computations.
-  const leadFields = 'id, created_at, updated_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, dnp_count, reopened_count, last_call_at, last_call_status, last_followup_at, last_followup_type, next_action_date, next_action_type'
+  // ONLY real columns of public.leads may appear here. PostgREST rejects the whole
+  // query with "column leads.X does not exist" if even one is wrong, which empties the
+  // lead set and renders every metric as 0 (while the separate count query still
+  // succeeds, so "Total Leads" looks healthy). Verified against information_schema:
+  // reopened_count, last_followup_at, last_followup_type, next_action_date and
+  // next_action_type are NOT columns - they live in custom_fields, and the metric code
+  // already reads them from there (cf?.last_followup_type || l.last_followup_type).
+  const leadFields = 'id, created_at, updated_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, dnp_count, last_call_at, last_call_status'
 
   // Fetch Analytics — Direct Supabase parallel queries (no API route middleman)
   const fetchAnalytics = async (forceRefresh = false) => {
@@ -693,6 +703,21 @@ export default function AnalyticsPage() {
       const campaignsQ = supabase.from('campaigns').select('id, name, meta_campaign_id, status').in('user_id', workspaceTeamIds)
 
       const [firstPageRes, countRes, campaignsRes] = await Promise.all([firstPageQ, countQ, campaignsQ])
+
+      // A failed leads query used to be swallowed: the dashboard then rendered a complete
+      // set of zeros, and the only symptom was clients reporting "analytics is empty".
+      // Surface it loudly instead of showing misleading zeros.
+      if (firstPageRes?.error) {
+        const msg = firstPageRes.error.message || 'Failed to load leads'
+        console.error('[Analytics] leads query failed:', firstPageRes.error)
+        setLeads([])
+        setLoadError(msg)
+        setLoading(false)
+        setRefreshing(false)
+        toast.error(`Analytics could not load leads: ${msg}`)
+        return
+      }
+      setLoadError(null)
 
       if (campaignsRes?.data) {
         setCampaignsList(campaignsRes.data)
@@ -2519,6 +2544,25 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
+
+      {loadError && (
+        <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm font-black text-rose-900">Analytics could not load your leads</p>
+            <p className="text-xs text-rose-700 mt-0.5 break-words">
+              The numbers below are NOT real — the leads query failed. {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => fetchAnalytics(true)}
+              className="mt-2 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg cursor-pointer"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400 gap-3">
