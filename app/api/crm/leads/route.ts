@@ -12,6 +12,22 @@ const supabaseAdmin = createSupabaseAdmin(
 
 const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
 
+/** Hard ceiling on rows per response.
+ *
+ * WHY THIS EXISTS: this route used to ignore `page`/`limit` and assemble every
+ * matching lead - for a workspace with 16k leads that was 11,000 rows and a
+ * 19.05 MB JSON body. Vercel caps a function response at 4.5 MB, so the
+ * response could not be delivered at all. Paging keeps every response small.
+ */
+const DEFAULT_LIMIT = 200
+const MAX_LIMIT = 1000
+
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  if (!raw) return fallback
+  const n = Number.parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
 export async function GET(req: Request) {
   try {
     let user: any = null
@@ -36,9 +52,14 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url)
     const impersonateId = url.searchParams.get('impersonate')
-    const pageParam = url.searchParams.get('page')
-    const limitParam = url.searchParams.get('limit')
-    const fetchAll = url.searchParams.get('all') === 'true'
+
+    const limit = Math.min(
+      parsePositiveInt(url.searchParams.get('limit'), DEFAULT_LIMIT),
+      MAX_LIMIT
+    )
+    const page = parsePositiveInt(url.searchParams.get('page'), 1)
+    const from = (page - 1) * limit
+    const to = from + limit - 1
 
     // Fetch current user profile
     const { data: profile } = await supabaseAdmin
@@ -78,42 +99,27 @@ export async function GET(req: Request) {
       }
     }
 
-    // 1. Execute count query and primary leads query concurrently
-    const baseQuery = supabaseAdmin.from('leads').select(leadFields)
-    const firstPagePromise = applyFilters(baseQuery)
+    // One page of rows plus the exact total, concurrently.
+    const pagePromise = applyFilters(supabaseAdmin.from('leads').select(leadFields))
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
-      .range(0, 999)
+      .range(from, to)
 
-    const countPromise = applyFilters(supabaseAdmin.from('leads').select('*', { count: 'exact', head: true }))
+    const countPromise = applyFilters(
+      supabaseAdmin.from('leads').select('*', { count: 'exact', head: true })
+    )
 
-    const [firstPageRes, countRes] = await Promise.all([firstPagePromise, countPromise])
+    const [pageRes, countRes] = await Promise.all([pagePromise, countPromise])
 
-    const totalCount = countRes.count || (firstPageRes.data?.length || 0)
-    let allLeads: any[] = firstPageRes.data || []
-
-    // If more than 1000 leads, fetch remaining pages in parallel
-    if (totalCount > 1000) {
-      const remainingPagesNeeded = Math.min(Math.ceil(totalCount / 1000) - 1, 10)
-      const remainingPromises = Array.from({ length: remainingPagesNeeded }, (_, i) => {
-        const pageIdx = i + 1
-        const q = applyFilters(supabaseAdmin.from('leads').select(leadFields))
-        return q
-          .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
-      })
-
-      const remainingResults = await Promise.all(remainingPromises)
-      for (const r of remainingResults) {
-        if (r.data && r.data.length > 0) {
-          allLeads = allLeads.concat(r.data)
-        }
-      }
+    if (pageRes.error) {
+      console.error('[API CRM Leads] page query failed:', pageRes.error)
+      return NextResponse.json({ error: pageRes.error.message || 'Query failed' }, { status: 500 })
     }
 
+    const totalCount = countRes.count ?? pageRes.data?.length ?? 0
+
     // Parse custom_fields quickly
-    const parsedLeads = allLeads.map(lead => {
+    const parsedLeads = (pageRes.data || []).map((lead: any) => {
       let cf = lead.custom_fields
       if (cf && typeof cf === 'string') {
         try {
@@ -128,7 +134,10 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       leads: parsedLeads,
-      totalCount: totalCount
+      totalCount,
+      page,
+      limit,
+      hasMore: to + 1 < totalCount,
     }, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate'
