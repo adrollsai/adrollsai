@@ -16,7 +16,9 @@ export async function POST(req: Request) {
         }
 
         const bytes = await file.arrayBuffer();
-        let buffer = Buffer.from(bytes);
+        // Explicitly typed: sharp returns Buffer<ArrayBufferLike>, which is not assignable
+        // to the Buffer<ArrayBuffer> that Buffer.from(ArrayBuffer) infers.
+        let buffer: Buffer = Buffer.from(bytes);
         let contentType = file.type || 'image/jpeg';
         let ext = file.name.split('.').pop() || 'jpg';
 

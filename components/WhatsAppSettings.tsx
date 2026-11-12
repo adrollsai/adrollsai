@@ -401,6 +401,9 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   }
 
   const [campaignsWithCounts, setCampaignsWithCounts] = useState<{ name: string; count: number }[]>([])
+  // Normalised names of Meta campaigns whose status is ACTIVE, so the broadcast audience
+  // filter can mark live campaigns (the audience metadata endpoint only returns names).
+  const [activeMetaCampaignNames, setActiveMetaCampaignNames] = useState<Set<string>>(new Set())
   const [broadcastCampaignSearch, setBroadcastCampaignSearch] = useState('')
   const [selectedBroadcastSources, setSelectedBroadcastSources] = useState<string[]>([])
   const [selectedBroadcastMetaCampaigns, setSelectedBroadcastMetaCampaigns] = useState<string[]>([])
@@ -550,6 +553,24 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
         }
       } catch (err) {
         console.error('Failed to load audience metadata:', err)
+      }
+
+      // Which of those campaigns are currently ACTIVE in Meta (best effort; the filter
+      // still works without it, the "Active" pill just won't render).
+      try {
+        const adsRes = await fetch(`/api/meta-ads/campaigns${userId ? `?impersonate=${userId}` : ''}`)
+        if (adsRes.ok) {
+          const adsData = await adsRes.json()
+          if (Array.isArray(adsData?.campaigns)) {
+            const activeNames = adsData.campaigns
+              .filter((c: any) => String(c?.effective_status || c?.status || '').toUpperCase() === 'ACTIVE')
+              .map((c: any) => String(c?.name || '').replace(/\s+/g, ' ').trim().toLowerCase())
+              .filter(Boolean)
+            setActiveMetaCampaignNames(new Set(activeNames))
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load Meta campaign statuses:', err)
       }
 
 
@@ -2528,6 +2549,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                 {filteredList.length > 0 ? (
                                   filteredList.map(camp => {
                                     const isChecked = selectedBroadcastMetaCampaigns.includes(camp.name);
+                                    const isActiveCampaign = activeMetaCampaignNames.has(camp.name.replace(/\s+/g, ' ').trim().toLowerCase());
                                     return (
                                       <label key={camp.name} className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer select-none text-xs font-semibold text-slate-700" title={camp.name}>
                                         <div className="flex items-center gap-2 truncate">
@@ -2544,6 +2566,12 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                                             className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
                                           />
                                           <span className="truncate">{camp.name}</span>
+                                          {isActiveCampaign && (
+                                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                              <span>Active</span>
+                                            </span>
+                                          )}
                                         </div>
                                         {camp.count > 0 && (
                                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">

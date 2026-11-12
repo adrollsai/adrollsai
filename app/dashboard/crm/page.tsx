@@ -28,6 +28,8 @@ import { parseCustomFields, getLeadFollowupCount, getLeadReopenCount, isLeadLast
 import { openPhoneDialer } from '@/utils/dialer'
 import VoipCallingModal from '@/components/VoipCallingModal'
 import CrmDialerTab from '@/components/CrmDialerTab'
+import SearchableSelect from '@/components/SearchableSelect'
+import type { SearchableSelectOption } from '@/components/SearchableSelect'
 
 
 
@@ -51,6 +53,17 @@ const STAGES = [
   'Appointment Booked'
 ]
 
+
+// Campaign / form / stage names arrive from Meta, from the DB and from lead rows, so
+// they routinely differ only by surrounding or repeated whitespace and casing.
+// Every filter comparison goes through this normaliser so a campaign that is ACTIVE
+// in Meta is still recognised as active when the lead row spells it differently.
+function normalizeFilterLabel(value: any): string {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -312,6 +325,10 @@ function CRMPageContent() {
       try {
         sessionStorage.removeItem('nobogent_crm_leads_cache')
         sessionStorage.removeItem('nobogent_crm_total_count')
+        // Retired filter: it was applied to the lead list but never had any UI, so a
+        // stale value silently hid leads with no way to clear it. Drop the leftovers.
+        localStorage.removeItem('crm_filter_csv_audience')
+        sessionStorage.removeItem('crm_filter_csv_audience')
       } catch (e) {}
     }
   }, [])
@@ -499,12 +516,6 @@ function CRMPageContent() {
       return localStorage.getItem('crm_filter_date_range') || sessionStorage.getItem('crm_filter_date_range') || 'ALL'
     }
     return 'ALL'
-  })
-  const [selectedCsvAudience, setSelectedCsvAudience] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('crm_filter_csv_audience') || sessionStorage.getItem('crm_filter_csv_audience') || ''
-    }
-    return ''
   })
   const [callFeedbackLead, setCallFeedbackLead] = useState<any>(null)
   const [updateFollowupLead, setUpdateFollowupLead] = useState<any>(null)
@@ -720,16 +731,11 @@ function CRMPageContent() {
         localStorage.removeItem('crm_filter_end_date')
       }
 
-      if (selectedCsvAudience) {
-        localStorage.setItem('crm_filter_csv_audience', selectedCsvAudience)
-      } else {
-        localStorage.removeItem('crm_filter_csv_audience')
-      }
     } catch (e) {}
   }, [
     selectedAgentFilter, selectedSpecificStage, selectedDateRange, selectedDnpFilter,
     selectedNextActionFilter, selectedNextActionType, sortOrder, crmCustomDate,
-    crmStartDate, crmEndDate, selectedCsvAudience
+    crmStartDate, crmEndDate
   ])
 
   // Selected From Agent Filter State in Bulk Actions Modal
@@ -2080,12 +2086,25 @@ END:VCARD\n`
     campaigns.forEach((c: any) => {
       const status = String(c?.effective_status || c?.status || '').toUpperCase()
       if (status === 'ACTIVE') {
-        if (c.name) names.add(c.name.trim().toLowerCase())
+        if (c.name) names.add(normalizeFilterLabel(c.name))
+        // A lead may carry either the DB id or the Meta id, so index both.
         if (c.id) ids.add(String(c.id).trim())
+        if (c.meta_campaign_id) ids.add(String(c.meta_campaign_id).trim())
       }
     })
+
+    // A lead can point at an ACTIVE campaign by id while displaying an older or
+    // renamed campaign label (or only an ad name). Resolve those labels as active
+    // too, otherwise the campaign filter shows a live campaign as if it were dead.
+    leads.forEach((l: any) => {
+      const cId = String(l.campaign_id || '').trim()
+      if (!cId || !ids.has(cId)) return
+      const label = getLeadCampaignName(l)
+      if (label) names.add(normalizeFilterLabel(label))
+    })
+
     return { names, ids }
-  }, [campaigns])
+  }, [campaigns, leads, getLeadCampaignName])
 
   const activeFormSet = useMemo(() => {
     const names = new Set<string>()
@@ -2094,7 +2113,7 @@ END:VCARD\n`
     // 1. From live Meta forms API response (enriched with is_active_in_campaign)
     forms.forEach((f: any) => {
       if (f?.is_active_in_campaign) {
-        if (f.name) names.add(f.name.trim().toLowerCase())
+        if (f.name) names.add(normalizeFilterLabel(f.name))
         if (f.id) ids.add(String(f.id).trim())
       }
     })
@@ -2106,12 +2125,12 @@ END:VCARD\n`
       if (typeof parsedCf === 'string') {
         try { parsedCf = JSON.parse(parsedCf) } catch { parsedCf = {} }
       }
-      const cName = (parsedCf?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name || '')?.trim()?.toLowerCase()
-      const isLeadInActiveCampaign = (cId && activeCampaignSet.ids.has(cId)) || (cName && activeCampaignSet.names.has(cName))
+      const cName = normalizeFilterLabel(parsedCf?.meta_ad_origin?.campaign_name || l.campaign_name || l.ad_name)
+      const isLeadInActiveCampaign = Boolean(cId && activeCampaignSet.ids.has(cId)) || Boolean(cName && activeCampaignSet.names.has(cName))
 
       if (isLeadInActiveCampaign) {
-        if (l.form_name && typeof l.form_name === 'string') names.add(l.form_name.trim().toLowerCase())
-        if (l.source && typeof l.source === 'string') names.add(l.source.trim().toLowerCase())
+        if (l.form_name && typeof l.form_name === 'string') names.add(normalizeFilterLabel(l.form_name))
+        if (l.source && typeof l.source === 'string') names.add(normalizeFilterLabel(l.source))
         if (l.form_id) ids.add(String(l.form_id).trim())
       }
     })
@@ -2120,24 +2139,32 @@ END:VCARD\n`
   }, [forms, leads, activeCampaignSet])
 
   // --- DYNAMIC FILTER EXTRACTION ---
-  // Extract campaigns from current workspace's loaded leads AND live Meta campaigns
+  // Campaign labels come from the lead resolver (which already falls back through
+  // campaign_id -> live campaign name -> ad-name prefix -> raw ad name) plus the live
+  // campaign list. Adding l.ad_name / l.campaign_name on top of that used to dump every
+  // individual ad variation into the "campaign" dropdown as if it were a campaign.
   const uniqueCampaigns = useMemo(() => {
     const list: string[] = []
     leads.forEach(l => {
       const campName = getLeadCampaignName(l)
       if (campName && campName.trim()) list.push(campName.trim())
-      if (l.ad_name && l.ad_name.trim()) list.push(l.ad_name.trim())
-      if (l.campaign_name && l.campaign_name.trim()) list.push(l.campaign_name.trim())
     })
-    // Also include live active Meta campaigns from API so newly launched campaigns appear immediately in filter dropdown
+    // Also include live Meta campaigns from the API so newly launched campaigns appear immediately
     campaigns.forEach((c: any) => {
       const name = typeof c === 'string' ? c : c?.name
       if (name && name.trim()) list.push(name.trim())
     })
-    const unique = Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined')
+    const seen = new Set<string>()
+    const unique = list.filter(c => {
+      if (!c || c === 'null' || c === 'undefined') return false
+      const key = normalizeFilterLabel(c)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     return unique.sort((a, b) => {
-      const aActive = activeCampaignSet.names.has(a.toLowerCase())
-      const bActive = activeCampaignSet.names.has(b.toLowerCase())
+      const aActive = activeCampaignSet.names.has(normalizeFilterLabel(a))
+      const bActive = activeCampaignSet.names.has(normalizeFilterLabel(b))
       if (aActive && !bActive) return -1
       if (!aActive && bActive) return 1
       return a.localeCompare(b)
@@ -2160,20 +2187,84 @@ END:VCARD\n`
     })
     const unique = Array.from(new Set(list)).filter(Boolean)
     return unique.sort((a, b) => {
-      const aActive = activeFormSet.names.has(a.toLowerCase())
-      const bActive = activeFormSet.names.has(b.toLowerCase())
+      const aActive = activeFormSet.names.has(normalizeFilterLabel(a))
+      const bActive = activeFormSet.names.has(normalizeFilterLabel(b))
       if (aActive && !bActive) return -1
       if (!aActive && bActive) return 1
       return a.localeCompare(b)
     })
   }, [leads, forms, activeFormSet])
 
-  const uniqueCsvAudiences = useMemo(() => {
-    const audiences = leads
-      .map(l => l.csv_audience)
-      .filter(a => a && a !== 'null' && a !== 'undefined' && typeof a === 'string')
-    return [...new Set(audiences)] as string[]
-  }, [leads])
+  // Options for the "bulk transfer by filter" modal. These feed an API that matches
+  // campaigns on campaign_id OR ad_name, and forms on form_id OR form_name - so live
+  // records are offered by id (exact) and lead-only labels are offered by name.
+  const transferCampaignOptions = useMemo(() => {
+    const opts: SearchableSelectOption[] = []
+    const seenLabels = new Set<string>()
+    const push = (value: string, label: string, isActive: boolean) => {
+      const labelKey = normalizeFilterLabel(label)
+      if (!value || !labelKey || seenLabels.has(labelKey)) return
+      seenLabels.add(labelKey)
+      opts.push({ value, label, badge: isActive ? 'Active' : null, badgeTone: 'emerald' })
+    }
+
+    campaigns.forEach((c: any) => {
+      if (!c) return
+      if (typeof c === 'string') {
+        push(c, c, activeCampaignSet.names.has(normalizeFilterLabel(c)))
+        return
+      }
+      const label = String(c.name || c.id || '')
+      const value = String(c.id || c.name || '')
+      push(value, label, activeCampaignSet.names.has(normalizeFilterLabel(label)))
+    })
+
+    uniqueCampaigns.forEach(name => {
+      push(name, name, activeCampaignSet.names.has(normalizeFilterLabel(name)))
+    })
+
+    return opts.sort((a, b) => {
+      const aActive = Boolean(a.badge)
+      const bActive = Boolean(b.badge)
+      if (aActive && !bActive) return -1
+      if (!aActive && bActive) return 1
+      return a.label.localeCompare(b.label)
+    })
+  }, [campaigns, uniqueCampaigns, activeCampaignSet])
+
+  const transferFormOptions = useMemo(() => {
+    const opts: SearchableSelectOption[] = []
+    const seenLabels = new Set<string>()
+    const push = (value: string, label: string, isActive: boolean) => {
+      const labelKey = normalizeFilterLabel(label)
+      if (!value || !labelKey || seenLabels.has(labelKey)) return
+      seenLabels.add(labelKey)
+      opts.push({ value, label, badge: isActive ? 'Active' : null, badgeTone: 'emerald' })
+    }
+
+    forms.forEach((f: any) => {
+      if (!f) return
+      if (typeof f === 'string') {
+        push(f, f, activeFormSet.names.has(normalizeFilterLabel(f)))
+        return
+      }
+      const label = String(f.name || f.id || '')
+      const value = String(f.id || f.name || '')
+      push(value, label, activeFormSet.names.has(normalizeFilterLabel(label)))
+    })
+
+    uniqueForms.forEach(name => {
+      push(name, name, activeFormSet.names.has(normalizeFilterLabel(name)))
+    })
+
+    return opts.sort((a, b) => {
+      const aActive = Boolean(a.badge)
+      const bActive = Boolean(b.badge)
+      if (aActive && !bActive) return -1
+      if (!aActive && bActive) return 1
+      return a.label.localeCompare(b.label)
+    })
+  }, [forms, uniqueForms, activeFormSet])
 
   // --- ADVANCED FILTERING ---
   // 1. Leads matching search, campaign, form, agent, date range, and DNP filters
@@ -2314,36 +2405,35 @@ END:VCARD\n`
                           String(l.phone || '').includes(searchQuery) || 
                           String(l.email || '').toLowerCase().includes(searchQuery.toLowerCase())
       const matchCampaign = selectedCampaigns.length === 0 || (() => {
-        const cleanSelected = selectedCampaigns.map(c => String(c).trim().toLowerCase())
+        const cleanSelected = selectedCampaigns.map(c => normalizeFilterLabel(c))
         if (l.campaign_id) {
           const camp = campaigns.find(c => String(c.id) === String(l.campaign_id) || String(c.meta_campaign_id) === String(l.campaign_id))
-          if (camp && camp.name && typeof camp.name === 'string' && cleanSelected.includes(camp.name.trim().toLowerCase())) return true
+          if (camp && camp.name && typeof camp.name === 'string' && cleanSelected.includes(normalizeFilterLabel(camp.name))) return true
         }
         const leadCamp = getLeadCampaignName(l)
-        if (leadCamp && cleanSelected.includes(String(leadCamp).trim().toLowerCase())) return true
-        const adName = String(l.ad_name || '').trim().toLowerCase()
-        const campName = String(l.campaign_name || '').trim().toLowerCase()
+        if (leadCamp && cleanSelected.includes(normalizeFilterLabel(leadCamp))) return true
+        const adName = normalizeFilterLabel(l.ad_name)
+        const campName = normalizeFilterLabel(l.campaign_name)
         return (adName && cleanSelected.includes(adName)) || 
                (campName && cleanSelected.includes(campName))
       })()
       const matchForm = selectedForm === '' || (() => {
-        const cleanSelectedForm = selectedForm.trim().toLowerCase()
+        const cleanSelectedForm = normalizeFilterLabel(selectedForm)
         let cf = l.custom_fields
         if (typeof cf === 'string') {
           try { while (typeof cf === 'string') cf = JSON.parse(cf) } catch (e) { cf = null }
         }
-        const f1 = String(l.form_name || '').trim().toLowerCase()
-        const f2 = String(l.source || '').trim().toLowerCase()
-        const f3 = String(cf?.form_name || cf?.meta_form_name || '').trim().toLowerCase()
-        const f4 = String(l.form_id || '').trim().toLowerCase()
+        const f1 = normalizeFilterLabel(l.form_name)
+        const f2 = normalizeFilterLabel(l.source)
+        const f3 = normalizeFilterLabel(cf?.form_name || cf?.meta_form_name)
+        const f4 = normalizeFilterLabel(l.form_id)
         return f1 === cleanSelectedForm || f2 === cleanSelectedForm || f3 === cleanSelectedForm || f4 === cleanSelectedForm
       })()
-      const matchCsvAudience = selectedCsvAudience === '' || 
-                               String(l.csv_audience || '').trim() === selectedCsvAudience.trim()
+      const matchCsvAudience = true
       
       return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaigns, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaigns, selectedForm, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
@@ -2408,7 +2498,10 @@ END:VCARD\n`
     const fresh = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'fresh').length
     const ongoing = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'ongoing').length
     const not_interested = leadsMatchingFilters.filter(l => categorizeLeadStage(l, customStages) === 'not_interested').length
-    const all = fresh + ongoing + not_interested
+    // "All Leads" lists every matching lead (categorizeLeadStage can also return
+    // 'trash'), so its badge must be the real total rather than the sum of the three
+    // buckets - otherwise the tab advertised fewer leads than it rendered.
+    const all = leadsMatchingFilters.length
 
     return { all, fresh, ongoing, not_interested }
   }, [leadsMatchingFilters, customStages])
@@ -2432,7 +2525,9 @@ END:VCARD\n`
       }
 
       // 2. Main Section Filter
-      if (activeSection === 'all') {
+      // 'dialer' is not a stage bucket - it swaps in the dialer view - so it must not
+      // be compared against a lead category (that comparison emptied the list).
+      if (activeSection === 'all' || activeSection === 'dialer') {
         return true
       }
       return categorizeLeadStage(l, customStages) === activeSection
@@ -3132,7 +3227,7 @@ END:VCARD\n`
                                                         .filter(camp => !campaignFilterSearch.trim() || camp.toLowerCase().includes(campaignFilterSearch.toLowerCase().trim()))
                                                         .map((camp, idx) => {
                                                             const isSelected = selectedCampaigns.includes(camp)
-                                                            const isCampActive = activeCampaignSet.names.has(camp.toLowerCase())
+                                                            const isCampActive = activeCampaignSet.names.has(normalizeFilterLabel(camp))
                                                             return (
                                                                 <div
                                                                     key={idx}
@@ -3206,7 +3301,7 @@ END:VCARD\n`
                                         >
                                             <span className="truncate flex-1 flex items-center gap-1.5">
                                                 <span className="truncate">{selectedForm ? selectedForm : 'All Lead Forms'}</span>
-                                                {selectedForm && activeFormSet.names.has(selectedForm.toLowerCase()) && (
+                                                {selectedForm && activeFormSet.names.has(normalizeFilterLabel(selectedForm)) && (
                                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
                                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                                         <span>Active</span>
@@ -3275,7 +3370,7 @@ END:VCARD\n`
                                                         .filter(form => !formFilterSearch.trim() || form.toLowerCase().includes(formFilterSearch.toLowerCase().trim()))
                                                         .map((form, idx) => {
                                                             const isSelected = selectedForm === form
-                                                            const isFormActive = activeFormSet.names.has(form.toLowerCase())
+                                                            const isFormActive = activeFormSet.names.has(normalizeFilterLabel(form))
                                                             return (
                                                                 <button
                                                                     key={idx}
@@ -3324,17 +3419,27 @@ END:VCARD\n`
                                     <Users size={14} className="text-indigo-600" /> Ownership & Pipeline Stage
                                 </h4>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Agent Filter */}
+                                    {/* Agent Filter (searchable - teams run to dozens of members) */}
                                     <div className="relative flex-1">
                                         <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Assigned Agent</label>
-                                        <select value={selectedAgentFilter} onChange={(e) => setSelectedAgentFilter(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                                            <option value="ALL">All Team Members</option>
-                                            <option value="UNASSIGNED">Unassigned Only</option>
-                                            {team.map(m => (
-                                                <option key={m.id} value={m.id}>{m.business_name || m.full_name || m.email || 'Team Member'}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                                        <SearchableSelect
+                                            value={selectedAgentFilter}
+                                            onChange={(next) => { setSelectedAgentFilter(next); setCurrentPage(1) }}
+                                            allLabel="All Team Members"
+                                            searchPlaceholder="Search team members..."
+                                            placeholder="All Team Members"
+                                            emptyText="No team member found"
+                                            options={[
+                                                { value: 'UNASSIGNED', label: 'Unassigned Only' },
+                                                ...team.map(m => ({
+                                                    value: m.id as string,
+                                                    label: (m.business_name || m.full_name || m.email || 'Team Member') as string,
+                                                })),
+                                            ]}
+                                            buttonClassName={`bg-slate-50 hover:bg-slate-100/80 border ${
+                                                selectedAgentFilter !== 'ALL' ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200 text-slate-700'
+                                            }`}
+                                        />
                                     </div>
 
                                     {/* Specific Pipeline Stage Filter */}
@@ -3353,20 +3458,18 @@ END:VCARD\n`
                                                 </button>
                                             )}
                                         </div>
-                                        <select 
-                                            value={selectedSpecificStage} 
-                                            onChange={(e) => {
-                                                setSelectedSpecificStage(e.target.value)
-                                                setCurrentPage(1)
-                                            }} 
-                                            className="w-full appearance-none bg-indigo-50/60 hover:bg-indigo-100/60 border border-indigo-200/80 text-indigo-950 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-indigo-500/20 transition-all cursor-pointer truncate"
-                                        >
-                                            <option value="ALL">All Stages in {activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}</option>
-                                            {availableStagesForSection.map(s => (
-                                                <option key={s.id} value={s.name}>{s.name}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-indigo-400 pointer-events-none" />
+                                        <SearchableSelect
+                                            value={selectedSpecificStage}
+                                            onChange={(next) => { setSelectedSpecificStage(next); setCurrentPage(1) }}
+                                            allLabel={`All Stages in ${activeSection === 'ongoing' ? 'Ongoing' : activeSection === 'not_interested' ? 'Not Interested' : activeSection === 'fresh' ? 'Fresh' : 'View'}`}
+                                            searchPlaceholder="Search stages..."
+                                            placeholder="All Stages"
+                                            emptyText="No stage found"
+                                            options={availableStagesForSection.map(s => ({ value: s.name, label: s.name }))}
+                                            buttonClassName={`bg-indigo-50/60 hover:bg-indigo-100/60 border ${
+                                                selectedSpecificStage !== 'ALL' ? 'border-indigo-500 bg-indigo-50 text-indigo-900' : 'border-indigo-200/80 text-indigo-950'
+                                            }`}
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -5092,39 +5195,43 @@ END:VCARD\n`
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     
-                    {/* From Agent Filter */}
+                    {/* From Agent Filter (searchable) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">From Owner / Agent</label>
-                      <select
+                      <SearchableSelect
                         value={filteredTransferFromIds[0] || 'ALL'}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          if (val === 'ALL') setFilteredTransferFromIds(['ALL'])
-                          else setFilteredTransferFromIds([val])
+                        onChange={(next) => {
+                          if (next === 'ALL') setFilteredTransferFromIds(['ALL'])
+                          else setFilteredTransferFromIds([next])
                         }}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
-                      >
-                        <option value="ALL">🌐 All Team Members</option>
-                        <option value="UNASSIGNED">👤 Unassigned Only</option>
-                        {team.map(m => (
-                          <option key={m.id} value={m.id}>👤 {m.business_name || m.full_name || m.email}</option>
-                        ))}
-                      </select>
+                        allLabel="🌐 All Team Members"
+                        searchPlaceholder="Search team members..."
+                        placeholder="All Team Members"
+                        emptyText="No team member found"
+                        options={[
+                          { value: 'UNASSIGNED', label: '👤 Unassigned Only' },
+                          ...team.map(m => ({
+                            value: m.id as string,
+                            label: `👤 ${m.business_name || m.full_name || m.email || 'Team Member'}`,
+                          })),
+                        ]}
+                        buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
+                      />
                     </div>
 
-                    {/* Pipeline Stage Filter */}
+                    {/* Pipeline Stage Filter (searchable) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Pipeline Stage</label>
-                      <select
+                      <SearchableSelect
                         value={filteredTransferStage}
-                        onChange={(e) => setFilteredTransferStage(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
-                      >
-                        <option value="ALL">ALL Stages</option>
-                        {STAGES.filter(s => s !== 'All Leads').map(stage => (
-                          <option key={stage} value={stage}>{stage}</option>
-                        ))}
-                      </select>
+                        onChange={setFilteredTransferStage}
+                        allLabel="ALL Stages"
+                        searchPlaceholder="Search stages..."
+                        placeholder="ALL Stages"
+                        emptyText="No stage found"
+                        options={STAGES.filter(s => s !== 'All Leads').map(stage => ({ value: stage, label: stage }))}
+                        buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
+                      />
                     </div>
 
                     {/* DNP / Call Status Filter */}
@@ -5160,31 +5267,31 @@ END:VCARD\n`
                     {/* Campaign Filter */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Campaign</label>
-                      <select
+                      <SearchableSelect
                         value={filteredTransferCampaign}
-                        onChange={(e) => setFilteredTransferCampaign(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
-                      >
-                        <option value="ALL">All Campaigns</option>
-                        {campaigns.map((c: any) => (
-                          <option key={c.id || c.name} value={c.id || c.name}>{c.name || c.id}</option>
-                        ))}
-                      </select>
+                        onChange={setFilteredTransferCampaign}
+                        allLabel={`All Campaigns (${transferCampaignOptions.length})`}
+                        searchPlaceholder="Search campaigns..."
+                        placeholder="All Campaigns"
+                        emptyText="No campaign found"
+                        options={transferCampaignOptions}
+                        buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
+                      />
                     </div>
 
-                    {/* Form Filter */}
+                    {/* Form Filter (searchable) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Lead Form</label>
-                      <select
+                      <SearchableSelect
                         value={filteredTransferForm}
-                        onChange={(e) => setFilteredTransferForm(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl py-2.5 px-3 outline-none focus:border-indigo-500"
-                      >
-                        <option value="ALL">All Forms</option>
-                        {forms.map((f: any) => (
-                          <option key={f.id || f.name} value={f.id || f.name}>{f.name || f.id}</option>
-                        ))}
-                      </select>
+                        onChange={setFilteredTransferForm}
+                        allLabel={`All Forms (${transferFormOptions.length})`}
+                        searchPlaceholder="Search lead forms..."
+                        placeholder="All Forms"
+                        emptyText="No lead form found"
+                        options={transferFormOptions}
+                        buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
+                      />
                     </div>
 
                   </div>
@@ -5199,16 +5306,18 @@ END:VCARD\n`
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Assign Leads To</label>
-                      <select
+                      <SearchableSelect
                         value={filteredTransferTargetAgentId}
-                        onChange={(e) => setFilteredTransferTargetAgentId(e.target.value)}
-                        className="w-full bg-indigo-50/60 border border-indigo-200 text-indigo-950 text-xs font-extrabold rounded-xl py-3 px-3 outline-none focus:ring-4 focus:ring-indigo-500/20"
-                      >
-                        <option value="">-- Choose Target Team Member --</option>
-                        {team.map(m => (
-                          <option key={m.id} value={m.id}>👤 {m.business_name || m.full_name || m.email}</option>
-                        ))}
-                      </select>
+                        onChange={setFilteredTransferTargetAgentId}
+                        placeholder="-- Choose Target Team Member --"
+                        searchPlaceholder="Search team members..."
+                        emptyText="No team member found"
+                        options={team.map(m => ({
+                          value: m.id as string,
+                          label: `👤 ${m.business_name || m.full_name || m.email || 'Team Member'}`,
+                        }))}
+                        buttonClassName="bg-indigo-50/60 border border-indigo-200 text-indigo-950 hover:bg-indigo-100/60 focus:ring-4 focus:ring-indigo-500/20 font-extrabold"
+                      />
                     </div>
 
                     <div>
@@ -5377,7 +5486,6 @@ END:VCARD\n`
             crmEndDate,
             selectedCampaign: selectedCampaigns,
             selectedForm,
-            selectedCsvAudience,
             selectedDnpFilter,
             selectedNextActionFilter,
             selectedNextActionType

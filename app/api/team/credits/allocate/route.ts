@@ -70,7 +70,10 @@ export async function POST(req: Request) {
     const newClientCredits = currentClientCredits + transferAmount
 
     // 4. Update balances and insert audit ledger records
-    const updates: Promise<any>[] = [
+    // The builders are thenables, not Promises, so the array is typed as PromiseLike and
+    // each result is inspected - previously every write was fire-and-forget and the API
+    // reported success even when a balance update or ledger insert had failed.
+    const updates: PromiseLike<{ error: any }>[] = [
       supabaseAdmin
         .from('profiles')
         .update({ credits: newClientCredits })
@@ -98,7 +101,15 @@ export async function POST(req: Request) {
       )
     }
 
-    await Promise.all(updates)
+    const results = await Promise.all(updates)
+    const failed = results.find((r) => r && r.error)
+    if (failed) {
+      console.error('[CREDIT ALLOCATION API] Write failed:', failed.error)
+      return NextResponse.json(
+        { error: failed.error?.message || 'Failed to persist credit allocation' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       success: true,

@@ -24,7 +24,7 @@ export async function GET(req: Request) {
     let targetUserId = user.id
     const { data: callerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('id, role, parent_id, agency_id, business_name, email')
+      .select('id, role, parent_id, agency_id, business_name, email, custom_domain, whitelabel_domain')
       .eq('id', user.id)
       .single()
 

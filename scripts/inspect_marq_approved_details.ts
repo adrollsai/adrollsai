@@ -15,6 +15,7 @@ async function inspectMarqDetails() {
     .eq('id', adminId)
     .single()
 
+  if (!p) throw new Error('Profile not found: ' + adminId)
   const token = p.whatsapp_access_token
   const templateId = '2568758363553630'
 

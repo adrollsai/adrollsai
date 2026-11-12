@@ -771,12 +771,14 @@ async function handleSync(request: Request) {
                     .update({ voice_call_status: 'skipped_international' })
                     .eq('id', savedLead.id)
                     .then(() => {});
-                  supabaseAdmin.from('lead_history').insert({
+                  // Fire-and-forget. PostgrestFilterBuilder is only a thenable - it has no
+                  // .catch() - so errors are swallowed via the onRejected slot of .then().
+                  void supabaseAdmin.from('lead_history').insert({
                     lead_id: savedLead.id,
                     user_id: profile.id,
                     action_type: 'REMARK',
                     description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
-                  }).catch(() => {});
+                  }).then(() => {}, () => {});
                 }
               }
             }

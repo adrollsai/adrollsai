@@ -1901,7 +1901,7 @@ export default function AdsPage() {
     
     setIsSubmitting(true)
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number').eq('id', user?.id).single();
+    const { data: profile } = await supabase.from('profiles').select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number, pixel_id').eq('id', user?.id).single();
     
     // Resolve targetUserId
     const urlParams = new URLSearchParams(window.location.search);
@@ -1917,7 +1917,7 @@ export default function AdsPage() {
     if (tUserId !== user?.id) {
         const { data: tProf } = await supabase
           .from('profiles')
-          .select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number')
+          .select('role, parent_id, agency_id, business_name, contact_number, whatsapp_phone_number, pixel_id')
           .eq('id', tUserId)
           .single();
         if (tProf) targetProfile = tProf;

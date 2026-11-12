@@ -22,6 +22,7 @@ async function sendToClientNumber() {
     .eq('id', HOMCOM_USER_ID)
     .single()
 
+  if (!profile) throw new Error('Profile not found: ' + HOMCOM_USER_ID)
   const phoneId = profile.whatsapp_phone_number_id
   const accessToken = profile.whatsapp_access_token
 

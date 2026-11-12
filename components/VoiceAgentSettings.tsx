@@ -135,6 +135,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
   const [targetAudienceType, setTargetAudienceType] = useState<'all' | 'custom'>('all')
 
   const [metaCampaignSearchQuery, setMetaCampaignSearchQuery] = useState('')
+  // Meta campaign IDs currently ACTIVE, so the audience filter can mark live campaigns.
+  const [activeMetaCampaignIds, setActiveMetaCampaignIds] = useState<Set<string>>(new Set())
   const [csvAudienceSearchQuery, setCsvAudienceSearchQuery] = useState('')
   const [showCreateAudienceGroupModal, setShowCreateAudienceGroupModal] = useState(false)
 
@@ -309,6 +311,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           metaApiCampaignItems = metaData.campaigns
             .filter((c: any) => c.name && c.id)
             .map((c: any) => `${c.id}|${c.name}`)
+          // Same response carries the status, so mark the live ones for the filter UI.
+          setActiveMetaCampaignIds(new Set(
+            metaData.campaigns
+              .filter((c: any) => String(c?.effective_status || c?.status || '').toUpperCase() === 'ACTIVE')
+              .map((c: any) => String(c.id))
+          ))
         }
       } catch (err) {
         console.error("[META API CAMPAIGNS FETCH ERROR]", err)
@@ -1839,6 +1847,12 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                 className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer shrink-0"
                               />
                               <span className="truncate">{camp.includes('|') ? camp.split('|')[1] : camp}</span>
+                              {camp.includes('|') && activeMetaCampaignIds.has(camp.split('|')[0]) && (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                                  <span>Active</span>
+                                </span>
+                              )}
                             </label>
                           )
                         })}

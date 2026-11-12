@@ -991,7 +991,7 @@ export default function SharedCataloguePage() {
       {/* 5. FOOTER */}
       <footer className="mt-12 py-8 border-t border-slate-200/60 text-center">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
-            © {new Date().getFullYear()} {profile?.company_name || profile?.business_name || 'All Rights Reserved'}
+            © {new Date().getFullYear()} {profile?.business_name || 'All Rights Reserved'}
           </p>
           <a 
             href={`/privacy/${profile?.id}`} 

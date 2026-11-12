@@ -87,6 +87,10 @@ export async function GET(request: Request, { params }: RouteProps) {
     const allImages = Array.isArray(prop.images) && prop.images.length > 0 ? prop.images : [mainImg]
     const cleanDesc = (prop.description || `${prop.title} in ${prop.address}`).replace(/"/g, '&quot;')
 
+    // Declared before first use: it was previously defined after the schema block that
+    // reads it, which threw a TDZ ReferenceError and broke the public property page.
+    const isBioque = domain.includes('bioque') || (profile.business_name || '').toLowerCase().includes('bioque')
+
     // Schema.org Structured Data
     const schemaLd = {
       '@context': 'https://schema.org',
@@ -98,7 +102,7 @@ export async function GET(request: Request, { params }: RouteProps) {
       address: {
         '@type': 'PostalAddress',
         streetAddress: prop.address || region,
-        addressLocality: region === 'Dubai' ? 'Dubai' : (region === 'Tri-City' ? 'Mohali' : (profile.city || profile.address || (isBioque ? 'New Chandigarh' : 'India'))),
+        addressLocality: region === 'Dubai' ? 'Dubai' : (region === 'Tri-City' ? 'Mohali' : (profile.address || (isBioque ? 'New Chandigarh' : 'India'))),
         addressCountry: region === 'Dubai' ? 'AE' : 'IN'
       },
       offers: {
@@ -115,7 +119,6 @@ export async function GET(request: Request, { params }: RouteProps) {
       }
     }
 
-    const isBioque = domain.includes('bioque') || (profile.business_name || '').toLowerCase().includes('bioque')
     const primaryGold = '#D4AF37'
     const secondaryGold = '#C59E2B'
     const darkBg = '#0F172A'
@@ -445,7 +448,7 @@ export async function GET(request: Request, { params }: RouteProps) {
       <div class="flex flex-col md:flex-row justify-between items-center gap-6 pb-8 border-b border-slate-800">
         <div>
           <span class="font-display text-lg font-bold text-[#D4AF37]">${profile.business_name}</span>
-          <p class="text-xs text-slate-400 mt-1">${profile.address || profile.city || (isBioque ? 'New Chandigarh, Tri-City & Dubai' : '')}</p>
+          <p class="text-xs text-slate-400 mt-1">${profile.address || (isBioque ? 'New Chandigarh, Tri-City & Dubai' : '')}</p>
         </div>
         <div class="flex items-center space-x-6 text-xs text-slate-300">
           <a href="${homeUrl}" class="hover:text-[#D4AF37]">Home</a>

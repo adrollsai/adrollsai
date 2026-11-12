@@ -59,7 +59,9 @@ interface CampaignOption {
   objective?: string
 }
 
-export const GENERIC_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
+// NOTE: not exported. A Next.js page module may only export `default` plus the reserved
+// page config names; exporting these broke the generated page type contract at build time.
+const GENERIC_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
   {
     question: 'What specific service or requirement are you looking for?',
     options: ['Standard Consultation', 'Enterprise Solution', 'Custom Inquiries'],
@@ -77,7 +79,7 @@ export const GENERIC_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
   }
 ]
 
-export const REAL_ESTATE_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
+const REAL_ESTATE_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
   {
     question: 'What type of property are you interested in?',
     options: ['Residential', 'Commercial', 'Plots / Land'],
@@ -95,7 +97,7 @@ export const REAL_ESTATE_DEFAULT_QUESTIONS: QualifyingQuestionItem[] = [
   }
 ]
 
-export const INDUSTRY_QUALIFYING_TEMPLATES: Record<string, { label: string; icon: string; name: string; questions: QualifyingQuestionItem[] }> = {
+const INDUSTRY_QUALIFYING_TEMPLATES: Record<string, { label: string; icon: string; name: string; questions: QualifyingQuestionItem[] }> = {
   universal: {
     label: 'Universal Business',
     icon: '💼',

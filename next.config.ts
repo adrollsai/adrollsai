@@ -18,7 +18,12 @@ const pwa = withPWA({
 
 const nextConfig: NextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    // Build-time type checking is now ON. It was previously disabled, which is how
+    // runtime-fatal defects (a TDZ `ReferenceError` in the caption route, `.catch()` on
+    // Supabase query builders in the voice/webhook paths, missing profile columns) reached
+    // production silently. `npm run typecheck` is green, so a red build now means a real
+    // regression rather than pre-existing noise.
+    ignoreBuildErrors: false,
   },
   turbopack: {},
   serverExternalPackages: [

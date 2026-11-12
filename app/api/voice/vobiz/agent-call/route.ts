@@ -231,11 +231,19 @@ Output JSON ONLY with the following schema:
                     is_qualified: isQualified
                 }
 
-                await adminSupabase.from('lead_history').insert({
-                    lead_id: leadId,
-                    action_type: 'REMARK',
-                    description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
-                }).catch(e => console.warn('[AGENT CALL API] History insert warning:', e.message))
+                // NOTE: PostgrestFilterBuilder is a thenable without .catch(), so calling
+                // .catch() directly threw a TypeError - which aborted this whole block and
+                // lost the call summary/transcript/status writeback. Await and inspect error.
+                try {
+                    const { error: historyError } = await adminSupabase.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `🎙️ CALL_JSON:${JSON.stringify(historyData)}`
+                    })
+                    if (historyError) console.warn('[AGENT CALL API] History insert warning:', historyError.message)
+                } catch (historyErr: any) {
+                    console.warn('[AGENT CALL API] History insert warning:', historyErr?.message || historyErr)
+                }
 
                 const leadUpdate: any = {
                     voice_call_status: 'completed',
@@ -249,7 +257,12 @@ Output JSON ONLY with the following schema:
                     leadUpdate.voice_recording_url = recordingUrl
                 }
 
-                await adminSupabase.from('leads').update(leadUpdate).eq('id', leadId).catch(e => console.warn('[AGENT CALL API] Lead update warning:', e.message))
+                try {
+                    const { error: leadUpdateError } = await adminSupabase.from('leads').update(leadUpdate).eq('id', leadId)
+                    if (leadUpdateError) console.warn('[AGENT CALL API] Lead update warning:', leadUpdateError.message)
+                } catch (leadUpdateErr: any) {
+                    console.warn('[AGENT CALL API] Lead update warning:', leadUpdateErr?.message || leadUpdateErr)
+                }
             }
 
             return NextResponse.json({

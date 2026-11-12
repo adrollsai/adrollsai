@@ -60,6 +60,29 @@ export interface GBPOptimizationData {
   opening_hours?: string[]
   health_score?: number
   score_grade?: string
+  // The profile is persisted as an untyped JSON blob (profiles.business_info.gbp_suite_data
+  // or landing_pages.html_content), and the suite UI reads/writes these extra fields.
+  // Declaring them optional documents the real contract instead of leaving them as `any`.
+  website_url?: string
+  additional_categories?: string[]
+  target_keywords?: string[]
+  ai_audit_summary?: string
+  geotag_keywords?: string[]
+  location_address?: string
+  latitude?: number
+  longitude?: number
+  manual_action_steps?: Array<{
+    step_number?: number
+    title: string
+    // Both shapes exist in the wild: AI-generated steps use description/why_it_matters
+    // (+ step_number) while the built-in fallback list in the suite uses
+    // priority/impact/instructions. Declaring both as optional keeps both renderable.
+    description?: string
+    why_it_matters?: string
+    priority?: string
+    impact?: string
+    instructions?: string
+  }>
   shortcomings?: Array<{
     id: string
     category: 'nap' | 'categories' | 'description' | 'media' | 'reviews' | 'posts' | 'hours' | 'qa'

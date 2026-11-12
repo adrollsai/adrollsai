@@ -16,6 +16,7 @@ async function main() {
     .eq('id', '426490e7-c7ec-43b7-979f-a891f947ab3c')
     .single();
 
+  if (!profile) throw new Error('Profile not found');
   const token = profile.facebook_token;
 
   async function searchTargeting(q: string, type: string) {

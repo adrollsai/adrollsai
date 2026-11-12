@@ -157,7 +157,11 @@ ffprobe -v error -show_entries format=duration,size -of default=nw=1 final.mp4
 
   const run = await sandbox.commands.run(script, {
     timeoutMs: 1_200_000,
-    onStdout: (d: string) => process.stdout.write(d),
+    // Depending on the SDK build this callback receives either a raw string or an
+    // OutputMessage ({ line }), so handle both at runtime.
+    onStdout: (output: any) => {
+      process.stdout.write(typeof output === 'string' ? output : (output?.line ?? ''))
+    },
   });
 
   if (run.exitCode !== 0) {

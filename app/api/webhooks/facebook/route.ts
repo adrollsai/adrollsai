@@ -1577,7 +1577,7 @@ export async function POST(request: Request) {
 
                                     let { data: latestLead } = await supabaseAdmin
                                         .from('leads')
-                                        .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                        .select('id, name, phone, status, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                         .eq('user_id', ownerUserId)
                                         .ilike('phone', `%${cleanFrom.slice(-10)}%`)
                                         .order('created_at', { ascending: false, nullsFirst: false })
@@ -1588,7 +1588,7 @@ export async function POST(request: Request) {
                                     if (!latestLead && prefillData.extractedPhone) {
                                         const { data: leadByPrefillPhone } = await supabaseAdmin
                                             .from('leads')
-                                            .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                            .select('id, name, phone, status, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                             .eq('user_id', ownerUserId)
                                             .ilike('phone', `%${prefillData.extractedPhone.slice(-10)}%`)
                                             .order('created_at', { ascending: false, nullsFirst: false })
@@ -1605,7 +1605,7 @@ export async function POST(request: Request) {
                                     if (!latestLead && cleanFrom.replace(/\D/g, '').slice(-10).length >= 10) {
                                         const { data: leadAnyTenant } = await supabaseAdmin
                                             .from('leads')
-                                            .select('id, name, phone, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                            .select('id, name, phone, status, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                             .ilike('phone', `%${cleanFrom.replace(/\D/g, '').slice(-10)}%`)
                                             .order('created_at', { ascending: false, nullsFirst: false })
                                             .limit(1)
@@ -1681,7 +1681,7 @@ export async function POST(request: Request) {
                                         const { data: createdLead, error: createLeadErr } = await supabaseAdmin
                                             .from('leads')
                                             .insert(newLeadPayload)
-                                            .select('id, name, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
+                                            .select('id, name, phone, status, custom_fields, booked_time, pipeline_stage, assigned_to, ad_name, campaign_id, source, facebook_lead_id, form_id, form_name, voice_call_status, voice_call_scheduled_at')
                                             .single();
 
                                         if (createdLead) {
@@ -4609,12 +4609,14 @@ RULES:
                       .from('leads')
                       .update({ voice_call_status: 'skipped_international' })
                       .eq('id', savedLead.id);
+                  // PostgrestFilterBuilder has no .catch(); swallow errors via .then()'s
+                  // onRejected slot so this cannot throw inside the leadgen webhook.
                   await supabaseAdmin.from('lead_history').insert({
                       lead_id: savedLead.id,
                       user_id: profile.id,
                       action_type: 'REMARK',
                       description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
-                  }).catch(() => {});
+                  }).then(() => {}, () => {});
               }
           }
           } finally {

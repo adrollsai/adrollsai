@@ -8,6 +8,7 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env
 
 async function main() {
   const { data: p } = await supabase.from('profiles').select('facebook_token').eq('id', '426490e7-c7ec-43b7-979f-a891f947ab3c').single();
+  if (!p) throw new Error('Profile not found');
   const token = p.facebook_token;
 
   const ads = ['120252584939940286', '120252584941120286', '120252584942450286'];

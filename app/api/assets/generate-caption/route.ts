@@ -204,6 +204,10 @@ You must generate exactly three pieces of copy:
 Output ONLY a JSON object:
 {"headline": "...", "primary_text": "...", "social_post_description": "..."}`;
 
+        // Declared before first use: this was previously read on the line above its
+        // `const` declaration, which threw a TDZ ReferenceError on every request.
+        const isVideo = type === 'video' || mimeType.startsWith('video');
+
         let mediaDataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
         if (!isVideo) {
             try {
@@ -214,8 +218,6 @@ Output ONLY a JSON object:
                 mediaDataUrl = `data:image/jpeg;base64,${compressed.toString('base64')}`;
             } catch {}
         }
-
-        const isVideo = type === 'video' || mimeType.startsWith('video');
 
         console.log(`[Generate Caption] Generating caption directly using Google Gemini 3.5 Flash (${isVideo ? 'video' : 'image'})...`);
         const geminiResult = await generateText({

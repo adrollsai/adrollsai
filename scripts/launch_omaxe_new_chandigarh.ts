@@ -15,7 +15,8 @@ const BIOQUE_USER_ID = '68b55a31-a16d-454d-a20f-11adabf590b0';
 
 async function main() {
   console.log('🚀 Initializing Meta Ads MCP for Bioque Estates...');
-  const metaMcp = createMetaAdsMcpTools(supabaseAdmin, BIOQUE_USER_ID);
+  // Loosely typed on purpose - see note in launch_bioque_mcp_campaigns.ts.
+  const metaMcp: any = createMetaAdsMcpTools(supabaseAdmin, BIOQUE_USER_ID);
 
   console.log('\n======================================================');
   console.log('📌 LAUNCHING OMAXE NEW CHANDIGARH LEADGEN CAMPAIGN VIA MCP');

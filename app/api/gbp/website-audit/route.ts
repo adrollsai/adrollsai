@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     const titleHasBrand = businessName ? title.toLowerCase().includes(businessName.toLowerCase()) : false
     
     // Extract city or region from address
-    const addressParts = businessAddress.split(',').map(p => p.trim()).filter(Boolean)
+    const addressParts = String(businessAddress || '').split(',').map((p: string) => p.trim()).filter(Boolean)
     const city = addressParts.length > 1 ? addressParts[addressParts.length - 2] : addressParts[0] || ''
     const titleHasLocation = city ? title.toLowerCase().includes(city.toLowerCase()) : false
 

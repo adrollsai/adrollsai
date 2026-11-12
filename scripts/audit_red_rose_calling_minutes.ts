@@ -153,14 +153,16 @@ async function fullAudit() {
   if (twilioSid && twilioToken) {
     console.log('\n=== 4. MASTER TWILIO ACCOUNT CHECK ===');
     const authHeader = 'Basic ' + Buffer.from(twilioSid + ':' + twilioToken).toString('base64');
-    let twUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json?PageSize=100`;
+    let twUrl: string | null = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json?PageSize=100`;
     let pageCount = 0;
     while (twUrl && pageCount < 10) {
-      const twRes = await fetch(twUrl, {
+      // Copy into a const so the narrowing survives into the fetch() call.
+      const currentTwUrl: string = twUrl;
+      const twRes = await fetch(currentTwUrl, {
         headers: { 'Authorization': authHeader }
       });
       if (!twRes.ok) break;
-      const twData = await twRes.json();
+      const twData: any = await twRes.json();
       const pageCalls = twData.calls || [];
       const twRedRose = pageCalls.filter((c: any) => {
         const toClean = (c.to || '').replace(/\D/g, '').slice(-10);

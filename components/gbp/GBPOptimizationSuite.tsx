@@ -45,7 +45,7 @@ import {
   CheckCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { GBPOptimizationProfile, GBPPost, ReviewFeedback } from '@/utils/gbp-suite-storage'
+import { GBPOptimizationData as GBPOptimizationProfile, GBPPost, ReviewFeedback } from '@/utils/gbp-suite-storage'
 
 interface GBPOptimizationSuiteProps {
   currentUserId?: string
@@ -1065,9 +1065,9 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                         {step.priority}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-normal">{step.instructions}</p>
+                    <p className="text-[11px] text-slate-600 leading-normal">{step.instructions || step.description}</p>
                     <div className="text-[10px] font-bold text-emerald-700 flex items-center gap-1">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> {step.impact}
+                      <CheckCircle2 className="w-2.5 h-2.5" /> {step.impact || step.why_it_matters}
                     </div>
                   </div>
                 ))}
@@ -1105,7 +1105,7 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                     className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       item.status === 'pass'
                         ? 'bg-emerald-50/40 border-emerald-100 text-emerald-950'
-                        : item.severity === 'high'
+                        : item.impact === 'high'
                         ? 'bg-rose-50/50 border-rose-200 text-rose-950'
                         : 'bg-amber-50/50 border-amber-200 text-amber-950'
                     }`}
@@ -1114,7 +1114,7 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                       <div className="mt-0.5">
                         {item.status === 'pass' ? (
                           <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                        ) : item.severity === 'high' ? (
+                        ) : item.impact === 'high' ? (
                           <AlertTriangle className="w-5 h-5 text-rose-600" />
                         ) : (
                           <AlertTriangle className="w-5 h-5 text-amber-600" />
@@ -1126,14 +1126,14 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                           <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
                             item.status === 'pass'
                               ? 'bg-emerald-100 text-emerald-800'
-                              : item.severity === 'high'
+                              : item.impact === 'high'
                               ? 'bg-rose-100 text-rose-800'
                               : 'bg-amber-100 text-amber-800'
                           }`}>
-                            {item.status === 'pass' ? 'RESOLVED' : `${item.severity} priority`}
+                            {item.status === 'pass' ? 'RESOLVED' : `${item.impact} priority`}
                           </span>
                         </div>
-                        <p className="text-xs opacity-90 leading-relaxed">{item.description}</p>
+                        <p className="text-xs opacity-90 leading-relaxed">{item.current_state}</p>
                         <p className="text-[11px] font-semibold text-blue-700 pt-0.5">
                           💡 How to fix: {item.recommendation}
                         </p>
@@ -1237,18 +1237,18 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                           {post.post_type}
                         </span>
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          post.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
+                          post.status === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'
                         }`}>
                           {post.status}
                         </span>
                       </div>
-                      {post.title && <h3 className="text-xs font-extrabold text-slate-900 mt-2">{post.title}</h3>}
-                      <p className="text-xs text-slate-700 mt-1.5 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                      {post.event_title && <h3 className="text-xs font-extrabold text-slate-900 mt-2">{post.event_title}</h3>}
+                      <p className="text-xs text-slate-700 mt-1.5 leading-relaxed whitespace-pre-wrap">{post.summary}</p>
                     </div>
 
                     <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>CTA: {post.cta_type || 'None'}</span>
-                      <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                      <span>CTA: {post.call_to_action_type || 'None'}</span>
+                      <span>{post.created_at ? new Date(post.created_at).toLocaleDateString() : '—'}</span>
                     </div>
                   </div>
                 ))}
@@ -1840,15 +1840,15 @@ export default function GBPOptimizationSuite({ currentUserId }: GBPOptimizationS
                             <span className="ml-1 text-[11px] text-slate-600">({fb.rating}/5)</span>
                           </span>
                         </div>
-                        {fb.feedback_text && (
+                        {fb.feedback && (
                           <p className="text-xs text-slate-700 italic bg-white/80 p-2.5 rounded-xl border border-rose-100/60">
-                            "{fb.feedback_text}"
+                            "{fb.feedback}"
                           </p>
                         )}
                         <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 pt-1">
                           {fb.customer_phone && <span>📞 {fb.customer_phone}</span>}
                           {fb.customer_email && <span>✉️ {fb.customer_email}</span>}
-                          <span>📅 {new Date(fb.created_at).toLocaleDateString()}</span>
+                          <span>📅 {fb.created_at ? new Date(fb.created_at).toLocaleDateString() : '—'}</span>
                         </div>
                       </div>
 

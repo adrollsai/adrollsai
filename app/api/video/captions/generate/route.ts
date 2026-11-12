@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
         // 1. Get Word-Level Transcript using Gemini 3.8 Flash in selected language (audio-first)
         console.log(`[Captions API] Transcribing audio with Gemini 3.8 Flash (language: ${language}, audioUrl: ${audioUrl || 'none (extracting from video)'})...`);
-        const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl, language);
+        const rawTranscript = await transcribeVideoWithGemini(videoUrl, audioUrl ?? undefined, language);
 
         // 2. Optimize for Viral Retention & Visual Effects in target language
         console.log(`[Captions API] Optimizing captions and effects in ${language}...`);

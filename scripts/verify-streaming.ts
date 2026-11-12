@@ -21,11 +21,17 @@ const check = (name: string, ok: boolean, detail = '') => {
 const assistantTexts = (state: any) =>
   state.items.filter((i: any) => i.kind === 'assistant').map((i: any) => i.text);
 
-const ev = (text: string, id = 'run1_p1_0') => createEvent('assistant.text', { id, text });
+// createEvent() intentionally omits `seq` (the runner assigns it when persisting), so the
+// script stamps its own monotonic seq to satisfy the HarnessEvent type.
+let seqCounter = 0;
+const withSeq = <T extends { type: string; data: Record<string, unknown> }>(e: T) =>
+  ({ ...e, seq: ++seqCounter });
+
+const ev = (text: string, id = 'run1_p1_0') => withSeq(createEvent('assistant.text', { id, text }));
 
 // Simulate the runner flushing partials as the answer grows.
 const partials = ['Hello', 'Hello, thanks', 'Hello, thanks for reaching'];
-let state = project('s1', [createEvent('session.opened', { title: 't', workspaceId: 'ws' })]);
+let state = project('s1', [withSeq(createEvent('session.opened', { title: 't', workspaceId: 'ws' }))]);
 const versions: number[] = [];
 for (const p of partials) {
   state = applyEvent(state, ev(p));

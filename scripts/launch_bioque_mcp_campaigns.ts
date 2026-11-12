@@ -15,7 +15,10 @@ const BIOQUE_USER_ID = '68b55a31-a16d-454d-a20f-11adabf590b0';
 
 async function main() {
   console.log('🚀 Initializing Meta Ads MCP for Bioque Estates...');
-  const metaMcp = createMetaAdsMcpTools(supabaseAdmin, BIOQUE_USER_ID);
+  // Loosely typed on purpose: the MCP tool's execute() is declared with a generic
+  // (args, extra) signature and a union return (result | AsyncIterable), which does not
+  // describe how a one-off launcher script awaits it.
+  const metaMcp: any = createMetaAdsMcpTools(supabaseAdmin, BIOQUE_USER_ID);
 
   // 1. Amritsar Omaxe Campaign Launch
   console.log('\n======================================================');

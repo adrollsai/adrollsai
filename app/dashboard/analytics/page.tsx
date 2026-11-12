@@ -53,6 +53,7 @@ import LeadHistoryModal from '@/components/LeadHistoryModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import CRMErrorBoundary from '@/components/CRMErrorBoundary'
+import SearchableSelect from '@/components/SearchableSelect'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES, isFreshStageName } from '@/utils/pipeline-stages'
 import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark, parseCustomFields } from '@/utils/lead-helpers'
 
@@ -211,6 +212,39 @@ function parseActionDate(text?: string, fallbackCreatedAt?: string): Date | null
   return null
 }
 
+// Campaign / form names reach this page from Meta, from the DB and from lead rows, so
+// they routinely differ only by casing and stray whitespace. Normalising keeps the
+// campaign filter, the campaign grouping and the "Active" pill in agreement.
+function normalizeFilterLabel(value: any): string {
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+// A lead is won/lost when EITHER of its two stage fields says so. Reading only
+// `status || pipeline_stage` (or only one field) made the same lead count as won on the
+// KPI cards and as in-progress/lost on the leaderboard boards.
+function isWonLead(l: any): boolean {
+  const byPipeline = String(l?.pipeline_stage || '').trim().toLowerCase()
+  const byStatus = String(l?.status || '').trim().toLowerCase()
+  return ['won', 'closed', 'deal/token'].includes(byPipeline) || ['won', 'closed', 'deal/token'].includes(byStatus)
+}
+
+function isLostLead(l: any): boolean {
+  const byPipeline = String(l?.pipeline_stage || '').trim().toLowerCase()
+  const byStatus = String(l?.status || '').trim().toLowerCase()
+  return ['lost', 'unqualified', 'lost/ni'].includes(byPipeline) || ['lost', 'unqualified', 'lost/ni'].includes(byStatus)
+}
+
+// Shifts a YYYY-MM-DD calendar day by N days without involving any timezone.
+function shiftIsoDate(iso: string, days: number): string {
+  const [y, m, d] = String(iso).split('-').map(Number)
+  if (!y || !m || !d) return iso
+  const dt = new Date(Date.UTC(y, m - 1, d + days))
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+}
+
 export default function AnalyticsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -234,16 +268,19 @@ export default function AnalyticsPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Sub-Tab Navigation (persisted in localStorage + URL)
+  // Only tabs that actually render a panel are allowed here. 'dnp_mgr' and 'team_mgr'
+  // used to be accepted from ?tab= / localStorage but have no render block, which
+  // produced a header over an empty page - normalise them to the analytics tab.
   const [activeTab, setActiveTabState] = useState<'analytics' | 'action_mgr' | 'report' | 'lead_mgr' | 'dnp_mgr' | 'team_mgr' | 'leaderboard'>(() => {
     if (typeof window !== 'undefined') {
       try {
         const urlParams = new URLSearchParams(window.location.search)
         const tabParam = urlParams.get('tab')
-        if (tabParam && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'dnp_mgr', 'team_mgr', 'leaderboard'].includes(tabParam)) {
+        if (tabParam && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'leaderboard'].includes(tabParam)) {
           return tabParam as any
         }
         const saved = localStorage.getItem('analytics_active_tab') || sessionStorage.getItem('analytics_active_tab')
-        if (saved && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'dnp_mgr', 'team_mgr', 'leaderboard'].includes(saved)) {
+        if (saved && ['analytics', 'action_mgr', 'report', 'lead_mgr', 'leaderboard'].includes(saved)) {
           return saved as any
         }
       } catch (e) {}
@@ -346,7 +383,7 @@ export default function AnalyticsPage() {
   const [drilldownDateFilterMode, setDrilldownDateFilterMode] = useState<'single' | 'range'>('single')
   const [drilldownCampaign, setDrilldownCampaign] = useState<string>('')
   const [drilldownForm, setDrilldownForm] = useState<string>('')
-  const [campaignsList, setCampaignsList] = useState<{ id: string; name: string; meta_campaign_id?: string | null }[]>([])
+  const [campaignsList, setCampaignsList] = useState<{ id: string; name: string; meta_campaign_id?: string | null; status?: string | null }[]>([])
 
   // Map of campaign ID / meta_campaign_id -> Official Campaign Name
   const campaignLookupMap = useMemo(() => {
@@ -356,6 +393,27 @@ export default function AnalyticsPage() {
       if (c.meta_campaign_id && c.name) map.set(String(c.meta_campaign_id), c.name)
     })
     return map
+  }, [campaignsList])
+
+  // Known campaign names, longest first so an ad name that begins with a campaign name
+  // is attributed to the most specific campaign rather than the shortest coincidental one.
+  const campaignNameList = useMemo(() => {
+    const names = new Set<string>()
+    campaignsList.forEach(c => {
+      if (c.name && String(c.name).trim()) names.add(String(c.name).trim())
+    })
+    return Array.from(names).sort((a, b) => b.length - a.length)
+  }, [campaignsList])
+
+  // Campaigns Meta reports as ACTIVE - drives the "Active" pill on campaign filters.
+  const activeCampaignNames = useMemo(() => {
+    const set = new Set<string>()
+    campaignsList.forEach(c => {
+      if (String(c.status || '').toUpperCase() === 'ACTIVE' && c.name) {
+        set.add(normalizeFilterLabel(c.name))
+      }
+    })
+    return set
   }, [campaignsList])
 
   // Action Report Horizontal Scrollbar Refs & Sync Handlers
@@ -428,6 +486,12 @@ export default function AnalyticsPage() {
       if (trimmed.includes(' / ')) {
         return trimmed.split(' / ')[0].trim()
       }
+      // A bare ad name is often just "<campaign name> <ad label>". Attribute it to the
+      // real campaign so one campaign does not surface as several ad-level "campaigns".
+      const matchedCampaign = campaignNameList.find(name =>
+        trimmed.length >= name.length && normalizeFilterLabel(trimmed).startsWith(normalizeFilterLabel(name))
+      )
+      if (matchedCampaign) return matchedCampaign
       if (trimmed && trimmed !== 'null' && trimmed !== 'undefined') {
         return trimmed
       }
@@ -437,7 +501,7 @@ export default function AnalyticsPage() {
     if (l.property?.name) return l.property.name
 
     return 'Direct Campaign'
-  }, [campaignLookupMap])
+  }, [campaignLookupMap, campaignNameList])
 
   // Clean resolver for Lead Form or Source (including WhatsApp Qualification Flow names)
   const resolveLeadFormOrSource = useCallback((l: any): string => {
@@ -548,7 +612,10 @@ export default function AnalyticsPage() {
     }
   }, [])
 
-  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled'
+  // Every column listed here is read by the metric memos below. Dropping one does not
+  // fail loudly - it silently reads as undefined and the KPI renders as a permanent 0,
+  // so keep this list in sync with the board/matrix computations.
+  const leadFields = 'id, created_at, updated_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, dnp_count, reopened_count, last_call_at, last_call_status, last_followup_at, last_followup_type, next_action_date, next_action_type'
 
   // Fetch Analytics — Direct Supabase parallel queries (no API route middleman)
   const fetchAnalytics = async (forceRefresh = false) => {
@@ -623,7 +690,7 @@ export default function AnalyticsPage() {
         .order('id', { ascending: true })
         .range(0, 999)
       const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
-      const campaignsQ = supabase.from('campaigns').select('id, name, meta_campaign_id').in('user_id', workspaceTeamIds)
+      const campaignsQ = supabase.from('campaigns').select('id, name, meta_campaign_id, status').in('user_id', workspaceTeamIds)
 
       const [firstPageRes, countRes, campaignsRes] = await Promise.all([firstPageQ, countQ, campaignsQ])
 
@@ -683,21 +750,44 @@ export default function AnalyticsPage() {
 
           // Lead history (for call tracking)
           let historyLeads: any[] = []
-          const { count: historyCount } = await supabase.from('lead_history')
-            .select('*', { count: 'exact', head: true })
-            .in('user_id', workspaceTeamIds)
-          
+          // Scope the history query to the selected range server-side. Previously the
+          // newest 2,000 rows were fetched with no date filter and then filtered in the
+          // browser, so older ranges (last month, a specific day) under-reported call
+          // attempts instead of showing the real numbers.
+          const historyRangeStart = dateCutoffs.startCutoff ? new Date(dateCutoffs.startCutoff).toISOString() : null
+          const historyRangeEnd = dateCutoffs.endCutoff ? new Date(dateCutoffs.endCutoff).toISOString() : null
+          const applyHistoryRange = (q: any) => {
+            let scoped = q
+            if (historyRangeStart) scoped = scoped.gte('created_at', historyRangeStart)
+            if (historyRangeEnd) scoped = scoped.lte('created_at', historyRangeEnd)
+            return scoped
+          }
+
+          const { count: historyCount } = await applyHistoryRange(
+            supabase.from('lead_history')
+              .select('*', { count: 'exact', head: true })
+              .in('user_id', workspaceTeamIds)
+          )
+
           const historyTotal = historyCount || 0
           if (historyTotal > 0) {
-            // Cap history fetch to most recent 2,000 records to prevent memory crashes on mobile
-            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 2)
-            const historyPromises = Array.from({ length: historyPages }, (_, i) => {
-              return supabase.from('lead_history')
-                .select('id, lead_id, user_id, action_type, description, created_at')
-                .in('user_id', workspaceTeamIds)
+            // Cap to 3,000 in-range rows to protect mobile browsers.
+            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 3)
+            if (historyTotal > historyPages * 1000) {
+              console.warn(
+                `[Analytics] lead_history truncated: showing ${historyPages * 1000} of ${historyTotal} in-range rows. ` +
+                'Narrow the date range for exact action counts.'
+              )
+            }
+            const historyPromises = Array.from({ length: historyPages }, (_, i) =>
+              applyHistoryRange(
+                supabase.from('lead_history')
+                  .select('id, lead_id, user_id, action_type, description, created_at')
+                  .in('user_id', workspaceTeamIds)
+              )
                 .order('created_at', { ascending: false })
                 .range(i * 1000, (i + 1) * 1000 - 1)
-            })
+            )
             const historyResults = await Promise.all(historyPromises)
             for (const r of historyResults) {
               if (r.data && r.data.length > 0) historyLeads = historyLeads.concat(r.data)
@@ -793,7 +883,10 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     fetchAnalytics()
-  }, [duration, selectedAgentId, customDate, startDate, endDate])
+    // profile?.timezone is included because the history query is now date-scoped
+    // server-side using profile-timezone cutoffs: when the profile arrives (or the
+    // timezone changes) the already-fetched history must be re-scoped.
+  }, [duration, selectedAgentId, customDate, startDate, endDate, profile?.timezone])
 
   // Helper to determine whether workspace has multiple team members/agents
   const hasTeamMembers = useMemo(() => {
@@ -805,11 +898,15 @@ export default function AnalyticsPage() {
     if (repId === 'unassigned') {
       return !l.assigned_to
     }
+    const ownerId = profile?.parent_id || profile?.agency_id || profile?.id
     if (!hasTeamMembers) {
-      return l.assigned_to === repId || l.user_id === repId || !l.assigned_to
+      // Single-seat workspaces never populate assigned_to, so the owner still owns those
+      // leads. Previously EVERY rep matched `!l.assigned_to`, which inflated per-rep
+      // totals beyond the workspace total; now only the actual owner picks them up.
+      return l.assigned_to === repId || l.user_id === repId || (!l.assigned_to && repId === ownerId)
     }
     return l.assigned_to === repId
-  }, [hasTeamMembers])
+  }, [hasTeamMembers, profile?.parent_id, profile?.agency_id, profile?.id])
 
   // All sales reps resolved from team profiles AND assigned lead records
   const allSalesReps = useMemo(() => {
@@ -987,7 +1084,29 @@ export default function AnalyticsPage() {
       return true
     }
 
-    return { startCutoff, endCutoff, isDateInRange }
+    // A timestamp's calendar day in the user's own timezone, as YYYY-MM-DD.
+    // `new Date().toISOString().split('T')[0]` returns the UTC day, which is still
+    // yesterday for an IST user until 05:30 local - that made "today" boards wrong.
+    const dateStrFormatter = (() => {
+      try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: userTz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      } catch (e) {
+        return null
+      }
+    })()
+
+    const isoDateInZone = (value: any): string | null => {
+      if (!value) return null
+      const d = value instanceof Date ? value : new Date(value)
+      if (isNaN(d.getTime())) return null
+      if (dateStrFormatter) return dateStrFormatter.format(d)
+      const fallback = value instanceof Date ? value : d
+      return `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}-${String(fallback.getDate()).padStart(2, '0')}`
+    }
+
+    const todayStr = isoDateInZone(new Date()) ?? ''
+
+    return { startCutoff, endCutoff, isDateInRange, todayStr, isoDateInZone }
   }, [duration, customDate, startDate, endDate, profile?.timezone])
 
   // Filter leads based on selectedAgentId AND selected date range
@@ -1233,31 +1352,32 @@ export default function AnalyticsPage() {
       { id: 'unassigned', name: 'Unassigned', email: '' }
     ]
 
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = dateCutoffs.todayStr
+    const isoDateInZone = dateCutoffs.isoDateInZone
 
     let rows = salesReps.map(rep => {
-      const repLeads = leads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
+      const repLeads = filteredLeads.filter(l => rep.id === 'unassigned' ? !l.assigned_to : l.assigned_to === rep.id)
       
       const todayDnpLeads = repLeads.filter(l => {
         const dnpCnt = l.dnp_count || l.custom_fields?.dnp_count || 0
-        const isToday = l.updated_at && l.updated_at.startsWith(todayStr)
+        const isToday = isoDateInZone(l.updated_at) === todayStr
         return dnpCnt > 0 && isToday
       })
 
       const todayUntouchedLeads = repLeads.filter(l => {
-        const isToday = l.created_at && l.created_at.startsWith(todayStr)
+        const isToday = isoDateInZone(l.created_at) === todayStr
         const noCalls = !l.last_call_at && (!l.dnp_count || l.dnp_count === 0)
         return isToday && noCalls
       })
 
       const pendingOldDnpLeads = repLeads.filter(l => {
         const dnpCnt = l.dnp_count || l.custom_fields?.dnp_count || 0
-        const isOld = !l.created_at || !l.created_at.startsWith(todayStr)
+        const isOld = isoDateInZone(l.created_at) !== todayStr
         return dnpCnt > 0 && isOld
       })
 
       const pendingUntouchedLeads = repLeads.filter(l => {
-        const isOld = !l.created_at || !l.created_at.startsWith(todayStr)
+        const isOld = isoDateInZone(l.created_at) !== todayStr
         const noCalls = !l.last_call_at && (!l.dnp_count || l.dnp_count === 0)
         return isOld && noCalls
       })
@@ -1292,13 +1412,13 @@ export default function AnalyticsPage() {
       total: rows.reduce((a, b) => a + b.total, 0)
     }
 
-    const totalUntouchedLeads = leads.filter(l => {
+    const totalUntouchedLeads = filteredLeads.filter(l => {
       const stage = (l.pipeline_stage || l.status || '').trim().toLowerCase()
       const isFresh = ['new', 'new lead', 'fresh', 'uncontacted', 'unprocessed'].includes(stage) || !stage
       const hasContact = !!(l.last_call_at || l.last_call_status || l.custom_fields?.last_followup_at || l.custom_fields?.last_action_date || (l.dnp_count > 0))
       return isFresh && !hasContact
     })
-    const totalDnpLeads = leads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
+    const totalDnpLeads = filteredLeads.filter(l => (l.dnp_count > 0 || l.custom_fields?.dnp_count > 0))
 
     return { 
       rows, 
@@ -1308,7 +1428,7 @@ export default function AnalyticsPage() {
       totalUntouched: totalUntouchedLeads.length, 
       totalDnp: totalDnpLeads.length 
     }
-  }, [leads, allSalesReps, searchQuery])
+  }, [filteredLeads, dateCutoffs, allSalesReps, searchQuery])
 
   const isAdminLike = ['super_admin', 'agency', 'admin', 'client'].includes(profile?.role || 'admin')
 
@@ -1345,7 +1465,7 @@ export default function AnalyticsPage() {
     ]
 
     let rows = allSalesReps.map(rep => {
-      const repLeadsRaw = leads.filter(l => isLeadAssignedToRep(l, rep.id))
+      const repLeadsRaw = filteredLeads.filter(l => isLeadAssignedToRep(l, rep.id))
 
       // Deduplicate by ID and phone number
       const seenIds = new Set()
@@ -1474,11 +1594,11 @@ export default function AnalyticsPage() {
     }
 
     return { rows, actionTypes }
-  }, [leads, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery, isLeadAssignedToRep])
+  }, [filteredLeads, dateCutoffs, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery, isLeadAssignedToRep])
 
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
-    // Always compute from leads (date-filtered) for consistency across all tabs
+    // Computed from the date/agent-filtered lead set so every board agrees with the KPI cards
     const isActualCallAction = (h: any) => {
       const type = (h.action_type || '').toUpperCase()
       const desc = (h.description || '').toLowerCase()
@@ -1493,11 +1613,19 @@ export default function AnalyticsPage() {
     const reps = allSalesReps
 
     return reps.map(rep => {
-      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
+      const repLeads = filteredLeads.filter(l => isLeadAssignedToRep(l, rep.id))
       const repLeadIds = new Set(repLeads.map(l => l.id))
 
       // Count call attempts from history for this rep's leads in range
-      const repHistory = history.filter(h => (h.user_id === rep.id || repLeadIds.has(h.lead_id)) && dateCutoffs.isDateInRange(h.created_at))
+      // Credit each action to the rep who performed it. Matching on
+      // `user_id === rep.id || owns lead` counted one call for BOTH the caller and the
+      // lead owner, so per-rep follow-up totals could exceed the workspace total.
+      // Rows with no user_id (legacy imports) fall back to the lead owner.
+      const repHistory = history.filter(h => {
+        if (!dateCutoffs.isDateInRange(h.created_at)) return false
+        if (h.user_id) return h.user_id === rep.id
+        return repLeadIds.has(h.lead_id)
+      })
       const totalFollowups = repHistory.filter(isActualCallAction).length
 
       const closingMeetings = repLeads.filter(l => {
@@ -1525,10 +1653,7 @@ export default function AnalyticsPage() {
         return cf?.last_call_dnp === true || (cf?.dnp_count > 0) || (l.dnp_count > 0) || stageLower.includes('dnp') || stageLower === 'never picked'
       }).length
 
-      const won = repLeads.filter(l => {
-        const st = (l.status || l.pipeline_stage || '').toLowerCase()
-        return st === 'deal/token' || st === 'closed' || st === 'won'
-      }).length
+      const won = repLeads.filter(isWonLead).length
       const conversionRate = repLeads.length > 0 ? ((won / repLeads.length) * 100).toFixed(1) : '0.0'
 
       return {
@@ -1541,18 +1666,22 @@ export default function AnalyticsPage() {
         conversionRate
       }
     }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-  }, [allSalesReps, leads, history, isLeadAssignedToRep])
+  }, [allSalesReps, filteredLeads, dateCutoffs, history, isLeadAssignedToRep])
 
   const statusBoardRows = useMemo(() => {
-    // Always compute from leads for consistency with date filters
+    // Computed from the date/agent-filtered lead set so every board agrees with the KPI cards
     const reps = allSalesReps
 
     return reps.map(rep => {
-      const repLeads = leads.filter(l => isLeadAssignedToRep(l, rep.id))
+      const repLeads = filteredLeads.filter(l => isLeadAssignedToRep(l, rep.id))
 
+      // Check both stage fields rather than `status || pipeline_stage`, so a lead whose
+      // status is stale ("New Lead") but whose pipeline says "Won" is still counted.
       const matchStatus = (l: any, ...targets: string[]) => {
-        const st = (l.status || l.pipeline_stage || '').toLowerCase()
-        return targets.some(t => st === t.toLowerCase())
+        const lowered = targets.map(t => t.toLowerCase())
+        const byStatus = String(l.status || '').trim().toLowerCase()
+        const byPipeline = String(l.pipeline_stage || '').trim().toLowerCase()
+        return lowered.includes(byStatus) || lowered.includes(byPipeline)
       }
 
       const reqTaken = repLeads.filter(l => matchStatus(l, 'Requirement Taken', 'Contacted')).length
@@ -1573,26 +1702,28 @@ export default function AnalyticsPage() {
         dealToken
       }
     }).sort((a, b) => b.dealToken - a.dealToken || b.negotiation - a.negotiation)
-  }, [allSalesReps, leads, isLeadAssignedToRep])
+  }, [allSalesReps, filteredLeads, dateCutoffs, isLeadAssignedToRep])
 
   const sourceBoardRows = useMemo(() => {
     const map: Record<string, any[]> = {}
-    leads.forEach(l => {
-      let src = l.source || l.channel || 'Direct / Organic'
-      if (src.toLowerCase().includes('whatsapp')) src = 'WhatsApp Ad'
-      else if (src.toLowerCase().includes('facebook') || src.toLowerCase().includes('meta')) src = 'Facebook Ad'
-      else if (src.toLowerCase().includes('reference')) src = 'Reference'
+    filteredLeads.forEach(l => {
+      const src = String(l.source || l.channel || 'Direct / Organic')
+      const srcLower = src.toLowerCase()
+      let bucket = src
+      if (srcLower.includes('whatsapp')) bucket = 'WhatsApp Ad'
+      else if (srcLower.includes('facebook') || srcLower.includes('meta')) bucket = 'Facebook Ad'
+      else if (srcLower.includes('reference')) bucket = 'Reference'
       
-      if (!map[src]) map[src] = []
-      map[src].push(l)
+      if (!map[bucket]) map[bucket] = []
+      map[bucket].push(l)
     })
 
     return Object.keys(map).map(src => {
       const sourceLeads = map[src]
       const totalLeads = sourceLeads.length
-      const won = sourceLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
-      const lost = sourceLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Lost').length
-      const ongoing = totalLeads - won - lost
+      const won = sourceLeads.filter(isWonLead).length
+      const lost = sourceLeads.filter(isLostLead).length
+      const ongoing = Math.max(0, totalLeads - won - lost)
 
       return {
         source: src,
@@ -1603,11 +1734,11 @@ export default function AnalyticsPage() {
         lost
       }
     }).sort((a, b) => b.totalLeads - a.totalLeads)
-  }, [leads])
+  }, [filteredLeads, dateCutoffs])
 
   const campaignBoardRows = useMemo(() => {
     const map: Record<string, any[]> = {}
-    leads.forEach(l => {
+    filteredLeads.forEach(l => {
       const camp = resolveLeadCampaign(l)
       if (!map[camp]) map[camp] = []
       map[camp].push(l)
@@ -1616,9 +1747,9 @@ export default function AnalyticsPage() {
     return Object.keys(map).map(camp => {
       const campaignLeads = map[camp]
       const totalLeads = campaignLeads.length
-      const won = campaignLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
-      const lost = campaignLeads.filter(l => l.status === 'Lost/NI' || l.pipeline_stage === 'Unqualified' || l.pipeline_stage === 'Lost').length
-      const ongoing = totalLeads - won - lost
+      const won = campaignLeads.filter(isWonLead).length
+      const lost = campaignLeads.filter(isLostLead).length
+      const ongoing = Math.max(0, totalLeads - won - lost)
 
       return {
         campaign: camp,
@@ -1629,7 +1760,7 @@ export default function AnalyticsPage() {
         lost
       }
     }).sort((a, b) => b.totalLeads - a.totalLeads)
-  }, [leads])
+  }, [filteredLeads, resolveLeadCampaign])
 
   // --- ACTION REPORT COMPUTATIONS (Agent Action Attempts) ---
   const actionReportData = useMemo(() => {
@@ -2361,8 +2492,11 @@ export default function AnalyticsPage() {
           </button>
         </div>
 
-        {/* Search Input for Matrix Tables */}
-        {activeTab === 'lead_mgr' && (
+        {/* Search Input for Matrix Tables
+            Shown on every tab whose matrix consumes `searchQuery` (lead_mgr, action_mgr);
+            it used to be visible only on lead_mgr, so switching tabs could filter rows by
+            an invisible term the user had no way to clear. */}
+        {(activeTab === 'lead_mgr' || activeTab === 'action_mgr') && (
           <div className="relative shrink-0 w-full sm:w-64">
             <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
             <input
@@ -2372,6 +2506,16 @@ export default function AnalyticsPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-white border border-slate-200 text-xs text-slate-900 font-bold rounded-xl pl-9 pr-3 py-1.5 focus:ring-2 focus:ring-blue-500/20"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                title="Clear rep search"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -2392,7 +2536,16 @@ export default function AnalyticsPage() {
                 
                 {/* Total Leads */}
                 <div 
-                  onClick={() => openLeadsDrilldown('Total Leads', `All ${stats.totalLeads} active leads`, filteredLeads)}
+                  onClick={() => openLeadsDrilldown(
+                    'Total Leads',
+                    // The card reads the server count, but the drilldown list is built from
+                    // the locally loaded leads (capped for performance). Say so, instead of
+                    // opening a drawer whose total silently differs from the card.
+                    filteredLeads.length < stats.totalLeads
+                      ? `Showing the ${filteredLeads.length.toLocaleString()} most recent of ${stats.totalLeads.toLocaleString()} leads (list capped for performance)`
+                      : `All ${stats.totalLeads} active leads`,
+                    filteredLeads
+                  )}
                   className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1 cursor-pointer hover:border-blue-500 hover:shadow-md transition-all group"
                 >
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Total Leads</span>
@@ -2837,7 +2990,12 @@ export default function AnalyticsPage() {
 
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-blue-200 bg-white/10 px-3 py-1.5 rounded-xl backdrop-blur-md border border-white/10">
-                    Range: {duration === 'all' ? 'All Time' : duration.toUpperCase()}
+                    {/* Custom single/range dates used to be labelled "All Time" here. */}
+                    Range: {customDate
+                      ? customDate
+                      : (startDate && endDate)
+                        ? `${startDate} → ${endDate}`
+                        : duration === 'all' ? 'All Time' : duration.toUpperCase()}
                   </span>
                 </div>
               </div>
@@ -2998,7 +3156,16 @@ export default function AnalyticsPage() {
                   <span className="px-3 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold">
                     {selectedAgentId ? `Rep: ${allSalesReps.find(r => r.id === selectedAgentId)?.name}` : 'All Sales Reps'}
                   </span>
-                  <span className="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold">Created On: {duration}</span>
+                  <span
+                    className="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 font-bold"
+                    title="A lead matches when ANY of its dates (created, updated, last follow-up, last action, last call) falls inside this range."
+                  >
+                    Activity In: {customDate
+                      ? customDate
+                      : (startDate && endDate)
+                        ? `${startDate} → ${endDate}`
+                        : duration === 'all' ? 'All Time' : duration}
+                  </span>
                 </div>
                 <div className="text-xs text-slate-500 font-medium">
                   Click any table header to <strong>sort</strong> • Click any number cell to <strong>drilldown leads</strong>
@@ -3545,23 +3712,24 @@ export default function AnalyticsPage() {
                         <span>Assigned Agent</span>
                       </label>
                       <div className="relative">
-                        <select
+                        <SearchableSelect
                           value={drilldownAgentFilter}
-                          onChange={(e) => {
-                            setDrilldownAgentFilter(e.target.value)
+                          onChange={(next) => {
+                            setDrilldownAgentFilter(next)
                             setDrilldownPage(1)
                           }}
-                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                          allLabel={`All Team Members (${allSalesReps.length})`}
+                          searchPlaceholder="Search team members..."
+                          placeholder="All Team Members"
+                          emptyText="No team member found"
+                          options={[
+                            { value: 'UNASSIGNED', label: '⚠️ Unassigned Only' },
+                            ...allSalesReps.map(rep => ({ value: rep.id, label: `👤 ${rep.name}` })),
+                          ]}
+                          buttonClassName={`border ${
                             drilldownAgentFilter !== 'ALL' ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
-                        >
-                          <option value="ALL">All Team Members ({allSalesReps.length})</option>
-                          <option value="UNASSIGNED">⚠️ Unassigned Only</option>
-                          {allSalesReps.map(rep => (
-                            <option key={rep.id} value={rep.id}>👤 {rep.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        />
                       </div>
                     </div>
 
@@ -3832,22 +4000,27 @@ export default function AnalyticsPage() {
                     <div className="relative flex-1">
                       <label className="block text-[9px] font-black text-slate-500 uppercase mb-1">Campaign</label>
                       <div className="relative">
-                        <select
+                        <SearchableSelect
                           value={drilldownCampaign}
-                          onChange={(e) => {
-                            setDrilldownCampaign(e.target.value)
+                          onChange={(next) => {
+                            setDrilldownCampaign(next)
                             setDrilldownPage(1)
                           }}
-                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                          allLabel={`All Campaigns (${modalCampaigns.length})`}
+                          allValue=""
+                          searchPlaceholder="Search campaigns..."
+                          placeholder="All Campaigns"
+                          emptyText="No campaign found"
+                          options={modalCampaigns.map(camp => ({
+                            value: camp,
+                            label: camp,
+                            badge: activeCampaignNames.has(normalizeFilterLabel(camp)) ? 'Active' : null,
+                            badgeTone: 'emerald' as const,
+                          }))}
+                          buttonClassName={`border ${
                             drilldownCampaign ? 'bg-blue-50/80 border-blue-300 text-blue-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
-                        >
-                          <option value="">All Campaigns ({modalCampaigns.length})</option>
-                          {modalCampaigns.map((camp, idx) => (
-                            <option key={idx} value={camp}>{camp}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        />
                       </div>
                     </div>
 
@@ -3855,22 +4028,22 @@ export default function AnalyticsPage() {
                     <div className="relative flex-1">
                       <label className="block text-[9px] font-black text-purple-600 uppercase mb-1">Lead Form / Source</label>
                       <div className="relative">
-                        <select
+                        <SearchableSelect
                           value={drilldownForm}
-                          onChange={(e) => {
-                            setDrilldownForm(e.target.value)
+                          onChange={(next) => {
+                            setDrilldownForm(next)
                             setDrilldownPage(1)
                           }}
-                          className={`w-full appearance-none rounded-xl text-xs font-bold py-2 pl-3 pr-8 outline-none border transition-all cursor-pointer truncate ${
+                          allLabel={`All Forms / Sources (${modalForms.length})`}
+                          allValue=""
+                          searchPlaceholder="Search lead forms & sources..."
+                          placeholder="All Forms / Sources"
+                          emptyText="No form or source found"
+                          options={modalForms.map(f => ({ value: f, label: f }))}
+                          buttonClassName={`border ${
                             drilldownForm ? 'bg-purple-50/80 border-purple-300 text-purple-950 font-black' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
-                        >
-                          <option value="">All Forms / Sources ({modalForms.length})</option>
-                          {modalForms.map((f, idx) => (
-                            <option key={idx} value={f}>{f}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 pointer-events-none" />
+                        />
                       </div>
                     </div>
                   </div>
@@ -4079,29 +4252,28 @@ export default function AnalyticsPage() {
                   const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
                   if (targetDates.length === 0) return false
 
-                  const now = new Date()
-                  const matchesPreset = targetDates.some(leadDate => {
-                    if (drilldownDateRange === 'TODAY') {
-                      return leadDate.getFullYear() === now.getFullYear() &&
-                             leadDate.getMonth() === now.getMonth() &&
-                             leadDate.getDate() === now.getDate()
-                    } else if (drilldownDateRange === 'YESTERDAY') {
-                      const yest = new Date(now)
-                      yest.setDate(now.getDate() - 1)
-                      return leadDate.getFullYear() === yest.getFullYear() &&
-                             leadDate.getMonth() === yest.getMonth() &&
-                             leadDate.getDate() === yest.getDate()
-                    } else if (drilldownDateRange === '7D') {
-                      const limit = new Date(now)
-                      limit.setDate(now.getDate() - 7)
-                      return leadDate >= limit
-                    } else if (drilldownDateRange === '30D') {
-                      const limit = new Date(now)
-                      limit.setDate(now.getDate() - 30)
-                      return leadDate >= limit
-                    }
-                    return true
-                  })
+                  // Compare in the user's own timezone, as YYYY-MM-DD strings. The
+                  // dashboard cards already work off profile-timezone cutoffs; using the
+                  // browser's local date here made the drawer disagree with the cards.
+                  const todayStr = dateCutoffs.todayStr
+                  const zonedDates = targetDates
+                    .map(d => dateCutoffs.isoDateInZone(d))
+                    .filter((d): d is string => Boolean(d))
+
+                  if (zonedDates.length === 0) return false
+
+                  const matchesPreset = zonedDates.some(zoned =>
+                    drilldownDateRange === 'TODAY'
+                      ? zoned === todayStr
+                      : drilldownDateRange === 'YESTERDAY'
+                        ? zoned === shiftIsoDate(todayStr, -1)
+                        : drilldownDateRange === '7D'
+                          // Today plus the previous 6 days, matching the dashboard window.
+                          ? zoned >= shiftIsoDate(todayStr, -6) && zoned <= todayStr
+                          : drilldownDateRange === '30D'
+                            ? zoned >= shiftIsoDate(todayStr, -29) && zoned <= todayStr
+                            : true
+                  )
 
                   if (!matchesPreset) return false
                 }
@@ -4110,29 +4282,19 @@ export default function AnalyticsPage() {
                 if (drilldownCustomDate && typeof drilldownCustomDate === 'string' && drilldownCustomDate.includes('-')) {
                   const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
                   if (targetDates.length === 0) return false
-                  const dateParts = drilldownCustomDate.split('-').map(Number)
-                  if (dateParts.length === 3 && !dateParts.some(isNaN)) {
-                    const [tY, tM, tD] = dateParts
-                    const matchesCustom = targetDates.some(leadDate => 
-                      leadDate.getFullYear() === tY &&
-                      (leadDate.getMonth() + 1) === tM &&
-                      leadDate.getDate() === tD
-                    )
-                    if (!matchesCustom) return false
-                  }
+                  // Zoned calendar day comparison (see preset note above).
+                  const matchesCustom = targetDates.some(leadDate => dateCutoffs.isoDateInZone(leadDate) === drilldownCustomDate)
+                  if (!matchesCustom) return false
                 } else if (drilldownStartDate && drilldownEndDate && typeof drilldownStartDate === 'string' && typeof drilldownEndDate === 'string' && drilldownStartDate.includes('-') && drilldownEndDate.includes('-')) {
                   const targetDates = getLeadDatesForBasis(l, drilldownDateBasis)
                   if (targetDates.length === 0) return false
-                  const sParts = drilldownStartDate.split('-').map(Number)
-                  const eParts = drilldownEndDate.split('-').map(Number)
-                  if (sParts.length === 3 && eParts.length === 3 && !sParts.some(isNaN) && !eParts.some(isNaN)) {
-                    const [sY, sM, sD] = sParts
-                    const [eY, eM, eD] = eParts
-                    const start = new Date(sY, sM - 1, sD, 0, 0, 0, 0)
-                    const end = new Date(eY, eM - 1, eD, 23, 59, 59, 999)
-                    const matchesRange = targetDates.some(leadDate => leadDate >= start && leadDate <= end)
-                    if (!matchesRange) return false
-                  }
+                  // YYYY-MM-DD strings sort lexicographically, so an inclusive range is a
+                  // plain string comparison - no browser-local midnight involved.
+                  const matchesRange = targetDates.some(leadDate => {
+                    const zoned = dateCutoffs.isoDateInZone(leadDate)
+                    return Boolean(zoned) && zoned! >= drilldownStartDate && zoned! <= drilldownEndDate
+                  })
+                  if (!matchesRange) return false
                 }
 
                 // 6. DNP Filter

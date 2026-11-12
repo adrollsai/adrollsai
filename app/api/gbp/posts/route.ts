@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getGBPPosts, saveGBPPost, deleteGBPPost } from '@/utils/gbp-suite-storage'
@@ -92,24 +92,34 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json()
+    // Accept both naming conventions. The suite UI historically sent camelCase
+    // (`postType`/`content`/`title`/`ctaType`/`ctaUrl`) while this handler read snake_case
+    // (`summary`/`call_to_action_type`), so every post created from the UI failed with
+    // "Post summary/caption is required". Normalising here keeps both clients working.
     const {
-      post_type = 'update',
-      summary,
-      call_to_action_type = 'LEARN_MORE',
-      call_to_action_url,
-      media_url,
-      offer_coupon_code,
-      offer_terms,
-      event_title,
-      event_start_time,
-      event_end_time,
-      status = 'published',
-      scheduled_at
+      post_type = body.postType || 'update',
+      summary = body.content ?? body.title,
+      call_to_action_type = body.ctaType || 'LEARN_MORE',
+      call_to_action_url = body.ctaUrl,
+      media_url = body.mediaUrl,
+      offer_coupon_code = body.couponCode,
+      offer_terms = body.offerTerms,
+      event_title = body.eventTitle,
+      event_start_time = body.eventStartTime,
+      event_end_time = body.eventEndTime,
+      status: rawStatus = 'published',
+      scheduled_at = body.scheduledAt
     } = body
 
-    if (!summary || summary.trim().length === 0) {
+    // Google/the DB store a lower-case status; tolerate upper-case senders.
+    const status = String(rawStatus || 'published').toLowerCase()
+
+    if (!summary || String(summary).trim().length === 0) {
       return NextResponse.json({ error: 'Post summary/caption is required' }, { status: 400 })
     }
+
+    // Coerced once so the Google payload and the DB insert cannot diverge or throw.
+    const cleanSummary = String(summary).trim()
 
     // Fetch target profile for Google API tokens if available
     const { data: targetProfile } = await supabaseAdmin
@@ -128,7 +138,7 @@ export async function POST(req: Request) {
 
         const gbpPayload: any = {
           languageCode: 'en-US',
-          summary: summary.trim(),
+          summary: cleanSummary,
           topicType: post_type === 'offer' ? 'OFFER' : post_type === 'event' ? 'EVENT' : 'STANDARD'
         }
 
@@ -183,7 +193,7 @@ export async function POST(req: Request) {
     const savedPost = await saveGBPPost({
       user_id: targetUserId,
       post_type,
-      summary: summary.trim(),
+      summary: cleanSummary,
       call_to_action_type,
       call_to_action_url: call_to_action_url || (targetProfile?.custom_domain ? `https://${targetProfile.custom_domain}` : ''),
       media_url,
@@ -243,3 +253,4 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: err.message || 'Failed to delete post' }, { status: 500 })
   }
 }
+

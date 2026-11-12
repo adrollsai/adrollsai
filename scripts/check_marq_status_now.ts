@@ -15,6 +15,7 @@ async function checkMarqStatus() {
     .eq('id', adminId)
     .single()
 
+  if (!p) throw new Error('Profile not found: ' + adminId)
   const wabaId = p.whatsapp_waba_id
   const token = p.whatsapp_access_token
 

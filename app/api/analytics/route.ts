@@ -184,15 +184,31 @@ export async function GET(req: Request) {
 
         // Helper to apply workspace/agent filter to queries
         const applyLeadFilters = (queryBuilder: any) => {
+            let q = queryBuilder
+
+            // Apply the requested date range to the LEADS too. Previously the range was
+            // only used for lead_history, so /api/analytics?duration=today returned every
+            // lead ever created while dividing by a one-day numerator.
+            // Semantics match the analytics UI: a lead counts when ANY of its activity
+            // timestamps (created / updated / last call) falls inside the window.
+            if (startDate && endDate) {
+                const from = new Date(startDate).toISOString()
+                const to = new Date(endDate).toISOString()
+                const dateClauses = ['created_at', 'updated_at', 'last_call_at']
+                    .map((col) => `and(${col}.gte.${from},${col}.lte.${to})`)
+                    .join(',')
+                q = q.or(dateClauses)
+            }
+
             if (isTeamUser && activeAgentId) {
-                return queryBuilder.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+                return q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else if (activeAgentId && activeAgentId !== 'unassigned') {
-                return queryBuilder.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
+                return q.or(`assigned_to.eq.${activeAgentId},user_id.eq.${activeAgentId}`)
             } else if (activeAgentId === 'unassigned') {
-                return queryBuilder.is('assigned_to', null).in('user_id', workspaceTeamIds)
+                return q.is('assigned_to', null).in('user_id', workspaceTeamIds)
             } else {
                 const workspaceOrConditions = workspaceTeamIds.flatMap(id => [`user_id.eq.${id}`, `assigned_to.eq.${id}`]).join(',')
-                return queryBuilder.or(workspaceOrConditions)
+                return q.or(workspaceOrConditions)
             }
         }
 
@@ -418,6 +434,14 @@ export async function GET(req: Request) {
         // Privacy scoping for lead cards if team member user
         const safeLeads = isTeamUser ? finalLeads.filter(l => l.assigned_to === user.id || l.user_id === user.id) : finalLeads
 
+        // Scope history the same way. It used to be returned workspace-wide, which exposed
+        // other reps' call notes/remarks to a team member.
+        let safeHistoryLogsScoped = safeHistoryLogs
+        if (isTeamUser) {
+            const ownLeadIds = new Set(safeLeads.map((l: any) => l.id))
+            safeHistoryLogsScoped = safeHistoryLogs.filter((h: any) => h.user_id === user.id || ownLeadIds.has(h.lead_id))
+        }
+
         return NextResponse.json({
             success: true,
             duration,
@@ -427,7 +451,7 @@ export async function GET(req: Request) {
             totalCount: safeLeads.length,
             chats: [],
             messages: [],
-            history: safeHistoryLogs,
+            history: safeHistoryLogsScoped,
             team: teamData
         }, {
             headers: {
@@ -437,6 +461,8 @@ export async function GET(req: Request) {
 
     } catch (e: any) {
         console.error('[Analytics API error]:', e)
-        return NextResponse.json({ success: false, error: e.message || 'Internal Server Error' }, { status: 200 })
+        // Was previously returned with HTTP 200, so callers and uptime checks treated a
+        // hard failure as a successful empty response.
+        return NextResponse.json({ success: false, error: e.message || 'Internal Server Error' }, { status: 500 })
     }
 }
