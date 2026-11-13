@@ -4,15 +4,15 @@ import { sendBookingConfirmationEmail } from '@/utils/email-helper'
 import { hasEnoughCredits } from '@/utils/credits'
 import { triggerVobizOutboundCall } from '@/utils/vobiz-helper'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
+import { resolveAppUrl, resolveVoiceBridgeHttpUrl } from '@/utils/app-url'
 export { isIndianPhoneNumber }
 
 /**
  * Warms up the Cloud Run Voice Bridge container & pre-warms Gemini session context before Twilio dials.
  */
 export async function warmupVoiceBridge(leadId?: string, profileId?: string, campaignId?: string, voiceName?: string): Promise<void> {
-    const bridgeUrl = process.env.GEMINI_VOICE_BRIDGE_URL || 'wss://gemini-voice-bridge-805895515412.us-central1.run.app';
-    if (bridgeUrl.startsWith('ws')) {
-        const httpBase = bridgeUrl.replace(/^ws/, 'http');
+    const httpBase = resolveVoiceBridgeHttpUrl()
+    if (httpBase) {
         const healthUrl = httpBase + '/health';
         console.log(`[VOICE HELPER] Warming up Voice Bridge container at: ${healthUrl}`);
         try {
@@ -152,9 +152,12 @@ export async function triggerOutboundCall(
         const activeCalls: any[] = [];
 
         for (const c of (activeLeads || [])) {
-            const updatedAtTime = new Date(c.voice_call_scheduled_at || c.created_at || 0).getTime();
+            const rawTs = c.voice_call_scheduled_at || c.created_at;
+            const updatedAtTime = rawTs ? new Date(rawTs).getTime() : 0;
             const elapsed = nowTs - updatedAtTime;
-            if (updatedAtTime > 0 && elapsed >= 7 * 60 * 1000) {
+            // A row with no usable timestamp can never look "old", so it would
+            // hold a concurrency slot forever. Treat a missing timestamp as stale.
+            if (!updatedAtTime || Number.isNaN(updatedAtTime) || elapsed >= 7 * 60 * 1000) {
                 console.warn(`[VOICE HELPER] Auto-recovering stale call stuck in calling status for lead ${c.id}`);
                 await supabaseAdmin
                     .from('leads')
@@ -351,10 +354,7 @@ export async function triggerOutboundCall(
             .eq('id', lead.id)
 
         // 5. Call Twilio REST API
-        let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-        if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
-            appUrl = 'https://app.nobogent.com'
-        }
+        let appUrl = resolveAppUrl()
         const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Calls.json`
         const twilioAuth = Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64')
 

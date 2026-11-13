@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleAuth } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
+import { resolveAppUrl } from '@/utils/app-url';
 
 let isVapidInitialized = false;
 
@@ -291,8 +292,7 @@ export async function sendAdminMultiChannelNotification({
     console.log(`[MULTI-CHANNEL] Processing notifications for owner: ${ownerUserId}`);
 
     // Build absolute lead page URL for admin direct access (Always force production domain for external alerts)
-    const rawBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com';
-    const baseUrl = rawBaseUrl.includes('local.nobogent.com') || rawBaseUrl.includes('localhost') ? 'https://app.nobogent.com' : rawBaseUrl;
+    const baseUrl = resolveAppUrl();
     let leadPageUrl = url.startsWith('http') ? url : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
     if (leadId && !leadPageUrl.includes('leadId=') && !leadPageUrl.includes(`/dashboard/crm/${leadId}`)) {
       leadPageUrl = `${baseUrl}/dashboard/crm/${leadId}`;

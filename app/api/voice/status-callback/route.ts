@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { callGemini, callGeminiWithUsage } from '@/utils/external-apis'
 import { bookAppointment, dispatchNextCall } from '@/utils/voice-helper'
 import { updateLeadScoreInDB } from '@/utils/lead-scoring'
+import { resolveAppUrl } from '@/utils/app-url'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -188,10 +189,7 @@ export async function POST(req: Request) {
             // Trigger delayed billing calculation (QStash or background setTimeout)
             const callSid = formData.get('CallSid') as string || ''
             if (callSid) {
-                let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-                if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com')) {
-                    appUrl = 'https://app.nobogent.com'
-                }
+                let appUrl = resolveAppUrl()
                 const qstashToken = process.env.QSTASH_TOKEN
                 
                 console.log(`[TWILIO STATUS CALLBACK] Scheduling delayed billing for call ${callSid}...`)
@@ -763,7 +761,7 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
 
             if (!updateErr && !bookingTime && isQualified) {
                 try {
-                    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
+                    const appUrl = resolveAppUrl()
                     fetch(`${appUrl}/api/voice/post-call-notify`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },

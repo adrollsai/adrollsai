@@ -3,6 +3,7 @@ import { hasEnoughCredits } from '@/utils/credits'
 import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalog'
 import { computeValidCallingSlot } from '@/utils/calling-window'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
+import { resolveAppUrl, isAbsoluteHttpsUrl, describeUrlProblem } from '@/utils/app-url'
 
 export { VOBIZ_NUMBER_CATALOG, type VobizAvailableNumber }
 
@@ -139,10 +140,14 @@ export async function triggerVobizOutboundCall(
     const activeCalls: any[] = []
 
     for (const c of (activeLeads || [])) {
-        const updatedAtTime = new Date(c.voice_call_scheduled_at || c.created_at || 0).getTime()
+        const rawTs = c.voice_call_scheduled_at || c.created_at
+        const updatedAtTime = rawTs ? new Date(rawTs).getTime() : 0
         const elapsed = nowTs - updatedAtTime
-        // Auto-recover calls stuck in calling for >= 7 minutes
-        if (updatedAtTime > 0 && elapsed >= 7 * 60 * 1000) {
+        // Auto-recover calls stuck in calling for >= 7 minutes.
+        // A row with NO usable timestamp can never become "old" by comparison,
+        // so it used to sit in 'calling' forever and permanently occupy a
+        // concurrency slot. Treat a missing timestamp as stale as well.
+        if (!updatedAtTime || Number.isNaN(updatedAtTime) || elapsed >= 7 * 60 * 1000) {
             console.warn(`[VOBIZ HELPER] Auto-recovering stale call stuck for lead ${c.id}`)
             await supabaseAdmin
                 .from('leads')
@@ -232,10 +237,7 @@ export async function triggerVobizOutboundCall(
 
     let callerId = assignedNumber;
 
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com'
-    if (appUrl.includes('localhost') || appUrl.includes('local.nobogent.com') || appUrl.includes('127.0.0.1')) {
-        appUrl = 'https://app.nobogent.com'
-    }
+    let appUrl = resolveAppUrl()
 
     // Format destination number to E.164 (+91 standard)
     let cleanPhone = toPhone.replace(/\D/g, '')
@@ -265,8 +267,36 @@ export async function triggerVobizOutboundCall(
         console.warn('[VOBIZ HELPER] Failed to update lead status:', dbErr)
     }
 
-    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${leadId}&profileId=${profileId}${campaignId ? `&campaignId=${campaignId}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
-    const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${leadId}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${encodeURIComponent(leadId)}&profileId=${encodeURIComponent(profileId)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+    const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${encodeURIComponent(leadId)}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+
+    // Fail loudly here rather than letting Vobiz answer with its deliberately
+    // vague "answer_url parameter is not valid". That response used to surface
+    // in the demo as a generic failure while the real cause - a corrupt env
+    // value such as a BOM-prefixed NEXT_PUBLIC_APP_URL - stayed invisible.
+    for (const [label, candidate] of [['answer_url', answerUrl], ['hangup_url', hangupUrl]] as const) {
+        if (!isAbsoluteHttpsUrl(candidate)) {
+            const problem = describeUrlProblem(candidate)
+            console.error(`[VOBIZ HELPER] Refusing to dial lead ${leadId}: ${label} is unusable (${problem}). Value starts with ${JSON.stringify(candidate.slice(0, 12))}`)
+            if (leadId) {
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ voice_call_status: 'failed' })
+                    .eq('id', leadId)
+                try {
+                    await supabaseAdmin.from('lead_history').insert({
+                        lead_id: leadId,
+                        action_type: 'REMARK',
+                        description: `❌ Outbound call aborted: ${label} is not a valid https URL (${problem}). Check NEXT_PUBLIC_APP_URL for invisible characters.`
+                    })
+                } catch (hErr) {}
+            }
+            return {
+                success: false,
+                error: `TELEPHONY_URL_INVALID: ${label} is not a valid https URL (${problem}).`
+            }
+        }
+    }
 
     const requestPayload = {
         from: callerId,

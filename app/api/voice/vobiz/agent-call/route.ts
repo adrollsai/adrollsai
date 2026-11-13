@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { formatCallPhone } from '@/utils/dialer'
+import { resolveAppUrl, resolveVoiceBridgeHttpUrl } from '@/utils/app-url'
 
 const BLUESQUARE_DID = '+917965480905'
 const BLUESQUARE_VOBIZ_AUTH_ID = 'SA_RUY0ZNCH'
@@ -283,11 +284,13 @@ Output JSON ONLY with the following schema:
             return NextResponse.json({ error: 'Invalid destination phone number' }, { status: 400 })
         }
 
-        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://app.nobogent.com').replace(/\/$/, '')
-        const bridgeHttpHost = (process.env.GEMINI_VOICE_BRIDGE_URL || process.env.NEXT_PUBLIC_VOICE_BRIDGE_URL || 'https://gemini-voice-bridge-805895515412.us-central1.run.app')
-            .replace(/^wss:\/\//, 'https://')
-            .replace(/^ws:\/\//, 'http://')
-            .replace(/\/$/, '');
+        const appUrl = resolveAppUrl()
+        // Strips invisible characters (BOM/zero-width), surrounding quotes,
+        // whitespace and trailing slashes. A pasted env value that carries a BOM
+        // or a quote stops the scheme swap below from matching; Vobiz is then
+        // handed an invalid answer_url, the call rings once and dies with no
+        // audio, which looks like "VoIP just doesn't work".
+        const bridgeHttpHost = resolveVoiceBridgeHttpUrl()
         const effectiveSessionId = sessionId || `agent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
 
         const answerUrl = `${bridgeHttpHost}/vobiz-xml?isAgentCall=true&sessionId=${encodeURIComponent(effectiveSessionId)}&leadId=${encodeURIComponent(leadId || '')}&profileId=${encodeURIComponent(user.id)}&vobizAuthId=${encodeURIComponent(effectiveAuthId)}&vobizAuthToken=${encodeURIComponent(effectiveAuthToken)}`
