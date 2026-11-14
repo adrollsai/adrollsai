@@ -782,6 +782,71 @@ export function checkReportCommand(): string {
 }
 
 /**
+ * Warning codes that are ERRORS for this skill, because each one describes an
+ * element whose real position or size is unknown to the audit.
+ *
+ * `nested_structure_needs_subcomposition` was the exact finding on `#brand-bug`
+ * while it was a root-level `<div class="clip">` with an `<img>` inside: the report
+ * said `bbox {x:0,y:0,width:0,height:0}` and `ok: true` while the render painted an
+ * opaque cream bar over the left fifth of every frame. A zero-size box that is
+ * nonetheless drawing is the "hidden overlay" case — it must stop a render, not
+ * appear in a warning list nobody reads.
+ */
+export const FATAL_WARNING_CODES: readonly string[] = ['nested_structure_needs_subcomposition'];
+
+export interface CheckFinding {
+  code: string;
+  severity: string;
+  message: string;
+  selector: string;
+}
+
+/** Every finding in a report, whichever shape it arrived in. */
+export function checkFindings(raw: unknown): CheckFinding[] {
+  const out: CheckFinding[] = [];
+  const collect = (value: unknown): void => {
+    if (!Array.isArray(value)) return;
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object') continue;
+      const finding = entry as Record<string, unknown>;
+      if (typeof finding.code !== 'string') continue;
+      out.push({
+        code: finding.code,
+        severity: String(finding.severity ?? ''),
+        message: String(finding.message ?? ''),
+        selector: String(finding.selector ?? ''),
+      });
+    }
+  };
+  const root = (raw ?? {}) as Record<string, unknown>;
+  collect(root.findings);
+  for (const value of Object.values(root)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      collect((value as Record<string, unknown>).findings);
+    }
+  }
+  return out;
+}
+
+/**
+ * Findings that must stop a render even though the audit called them warnings.
+ *
+ * Trap 8 restated as code: `check` reporting `ok: true` is not proof that what was
+ * drawn is what was authored. Anything describing a box it could not measure, or a
+ * root element that is really a scene, is treated as fatal here.
+ */
+export function fatalCheckFindings(raw: unknown): string[] {
+  return checkFindings(raw)
+    .filter(
+      (finding) =>
+        FATAL_WARNING_CODES.includes(finding.code) ||
+        /bbox[^;]*\b(0|0px)\b/i.test(finding.message) ||
+        /width["']?:\s*0/.test(finding.message),
+    )
+    .map((finding) => `${finding.code} [${finding.selector || 'no selector'}]: ${finding.message.slice(0, 240)}`);
+}
+
+/**
  * The render step: check, render, publish to R2, record the key on the run.
  *
  * `check --json` must report 0 errors BEFORE a frame is rendered — that is the
@@ -805,7 +870,7 @@ async function runRenderStep(
   // Two places the report can be: the JSON the CLI printed, and the file it saves.
   // Try the stream, then the file, and only then give up — a report we cannot read
   // is a failed check, never a clean one.
-  let parsed: { errors: number; warnings: number };
+  let parsed: { errors: number; warnings: number; raw: unknown };
   try {
     parsed = parseCheckJson(`${check.stdout}\n${check.stderr}`);
   } catch (streamError) {
@@ -826,6 +891,18 @@ async function runRenderStep(
       `[video-skill] hyperframes check reports ${parsed.errors} error(s) in ${projectSlug(beats)}; ` +
         'refusing to render. Fix the composition first — a render that starts dirty wastes the ' +
         'whole step and the sandbox time it burns.',
+    );
+  }
+
+  // `ok: true` is not the same as "what was drawn is what was authored" (trap 8). A
+  // finding describing an element whose box the audit could not measure — the exact
+  // shape of the brand-bug bar that shipped past a clean check — stops the render.
+  const fatal = fatalCheckFindings(parsed.raw);
+  if (fatal.length) {
+    throw new Error(
+      `[video-skill] hyperframes check reported no errors but flagged ${fatal.length} ` +
+        `structurally-invisible element(s) in ${projectSlug(beats)}; refusing to render. A box the ` +
+        `audit cannot measure is a box that can paint over the film:\n  - ${fatal.join('\n  - ')}`,
     );
   }
 

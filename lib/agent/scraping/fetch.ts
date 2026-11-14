@@ -57,7 +57,7 @@ export type RefusalKind =
   | 'rate_limited'
   | 'server_error'
   | 'network'
-  | 'content-type';
+  | 'status';
 
 export class ScrapeRefusedError extends Error {
   readonly kind: RefusalKind;
@@ -769,7 +769,7 @@ async function performWithRedirects(url: string, options: HopOptions): Promise<S
 
     if (status < 200 || status >= 300) {
       result.classification = 'client_error';
-      result.refusal = { kind: 'content-type', reason: `HTTP ${status} — not retried` };
+      result.refusal = { kind: 'status', reason: `HTTP ${status} — not retried` };
       return result;
     }
 

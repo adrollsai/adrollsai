@@ -35,16 +35,20 @@ import {
   type VoOnset,
 } from '../lib/agent/tools/skills/video/timing';
 import {
+  brandBugSize,
   compositionFiles,
   emitProject,
   emittedText,
+  estimatedWidth,
   GRADE_FILTER,
   layoutFor,
   PROJECT_CLI_VERSION,
   projectSlug,
 } from '../lib/agent/tools/skills/video/emit';
 import {
+  checkFindings,
   estimateVideoCredits,
+  fatalCheckFindings,
   onsetFromMeasurement,
   parseCheckJson,
   parseSilenceDetect,
@@ -565,16 +569,41 @@ console.log('\n=== traps: the .clip box, the lead-in, the copied plate, the bake
     `${safe.safeTop}-${safe.safeBottom} px`,
   );
 
-  // A real frame showed the brand bug stretched to full height: `class="clip"` brings
-  // `inset: 0` with it, and with only a width set the plate ran to the bottom of the
-  // frame. The root must pin the inset back and give both dimensions.
+  // The brand bug shipped once as a root-level `<div class="clip">` with an `<img>`
+  // inside: `.clip` brings `inset: 0`, so a width-only box stretched to full height and
+  // painted an opaque cream bar over the left fifth of every frame, while `check`
+  // reported ok with a zero-size bbox. It is a SUB-COMPOSITION now, with a real box.
   const root = first.files.find((f) => f.path === 'index.html')!.content;
+  const bugSlot = root.match(/<div\s+id="brand-bug"[\s\S]*?><\/div>/)?.[0] ?? '';
   check(
-    'the brand bug is a small plate, not a full-height bar',
-    /#brand-bug\s*\{[^}]*right:\s*auto;[^}]*bottom:\s*auto;[^}]*height:\s*\d+px;/.test(root) &&
-      /#brand-bug img\s*\{[^}]*object-fit:\s*contain/.test(root),
-    'inset pinned, explicit height, object-fit: contain',
+    'the brand bug is its own sub-composition with an explicit box',
+    first.files.some((f) => f.path === 'compositions/brand-bug.html') &&
+      bugSlot.includes('data-composition-src="compositions/brand-bug.html"') &&
+      /data-width="\d+"/.test(bugSlot) &&
+      /data-height="\d+"/.test(bugSlot) &&
+      /style="[^"]*left:\s*\d+px;[^"]*top:\s*\d+px;[^"]*width:\s*\d+px;[^"]*height:\s*\d+px;/.test(bugSlot),
+    bugSlot ? 'slot has src + width + height + position' : 'no brand-bug slot',
   );
+  check(
+    'the brand bug slot carries no .clip class (inset:0 must never size it)',
+    bugSlot.length > 0 && !/class="[^"]*\bclip\b/.test(bugSlot) && !/#brand-bug\s*\{[^}]*inset:/.test(root),
+    'no clip class, no inset rule',
+  );
+  {
+    const bugLayout = layoutFor('9:16');
+    const size = brandBugSize(bugLayout);
+    const bug = first.files.find((f) => f.path === 'compositions/brand-bug.html')!.content;
+    check(
+      'the brand bug plate is small, fixed-size, and above the type band',
+      size.width === Math.round(bugLayout.width * 0.198) &&
+        size.height < bugLayout.height * 0.1 &&
+        size.top >= bugLayout.safeTop &&
+        size.top + size.height <= bugLayout.safeTop + Math.round((bugLayout.safeBottom - bugLayout.safeTop) * 0.16) &&
+        bug.includes(`data-width="${size.width}"`) &&
+        bug.includes('object-fit: contain'),
+      `${size.width}x${size.height} at (${size.left}, ${size.top})`,
+    );
+  }
 
   // Read the positions back out of the emitted CSS: the safe area is a property of
   // the files that will render, not of the numbers the emitter hoped for.
@@ -594,6 +623,48 @@ console.log('\n=== traps: the .clip box, the lead-in, the copied plate, the bake
     boxes.length >= 15 && outOfBand.length === 0,
     outOfBand.map((b) => `${b.id} at ${b.top}px`).join(', ') || `${boxes.length} blocks inside the band`,
   );
+
+  // HORIZONTAL safe area: type is `nowrap`, so a line wider than the 948 px box runs
+  // out of the frame and is cropped. Two delivered frames read "…OPERTY?" and "…4BHK".
+  const safeWidth = safe.width - 2 * safe.margin;
+  const overflowing = first.typeRead.filter(
+    (line) => !line.fitsFrame || line.left < safe.margin || line.left + line.width > safe.width - safe.margin,
+  );
+  check(
+    'every on-screen line sits inside the safe box horizontally (nothing clips the frame edge)',
+    overflowing.length === 0 && first.typeRead.length >= 15,
+    overflowing
+      .map((l) => `${l.scene} "${l.text}" ${l.left}+${l.width}px`)
+      .join(', ') ||
+      `${first.typeRead.length} lines, widest ${Math.max(...first.typeRead.map((l) => l.width))}px in ${safeWidth}px`,
+  );
+  check(
+    'no emitted element is positioned outside the frame',
+    boxes.every((box) => box.top >= 0 && box.top + box.size <= safe.height) &&
+      first.typeRead.every((line) => line.left >= 0),
+    `${boxes.length} blocks inside 0-${safe.height}px`,
+  );
+  {
+    // The fitter has to actually fire: a five-word hook line at 128 px would be
+    // ~1030 px wide in a 948 px box, so it must be stepped down.
+    const longBeats = parseBeats({
+      ...fixtureBeats(),
+      beats: [
+        { id: 'p01', vo: 'Tricity mein ghar dhoond rahe ho?', lines: ['PROPERTY FINDER'], plate: 'hook-a' },
+        ...(fixtureBeats().beats as any[]).slice(1),
+      ],
+    });
+    const longTiming = measureVoiceover(fixtureOnsets(), scenePlanFor(longBeats), { minTotal: 30 });
+    const longProject = emitProject(longBeats, longTiming);
+    const hookLine = longProject.typeRead.find((line) => line.text === 'PROPERTY FINDER')!;
+    check(
+      'a long line is stepped down the size ladder until it fits the safe box',
+      hookLine.size < layoutFor('9:16').hookSize &&
+        hookLine.width <= safeWidth &&
+        estimatedWidth('PROPERTY FINDER', layoutFor('9:16').hookSize) > safeWidth,
+      `${hookLine.size}px (base ${layoutFor('9:16').hookSize}px), ~${hookLine.width}px wide`,
+    );
+  }
 
   const fourLines = throws(() =>
     parseBeats({
@@ -766,6 +837,59 @@ console.log('\n=== measurement + run record ===');
     'the check artefact path is the CLI’s own report file',
     checkReportCommand().includes('.hyperframes/artifacts/checks'),
     checkReportCommand(),
+  );
+
+  // THE HIDDEN-OVERLAY GATE. This is the exact finding the CLI produced for the
+  // root-level brand bug that shipped past a clean check and painted a cream bar over
+  // every frame: severity "warning", a zero-size bbox, ok: true. It must stop a render.
+  const brandBugReport = {
+    ok: true,
+    lint: {
+      ok: true,
+      errorCount: 0,
+      warningCount: 1,
+      findings: [
+        {
+          code: 'nested_structure_needs_subcomposition',
+          severity: 'warning',
+          message:
+            '<div id="brand-bug"> is a timeline element that contains nested <img>. The timeline shows ' +
+            'one row per top-level element…',
+          selector: '#brand-bug',
+          bbox: { x: 0, y: 0, width: 0, height: 0 },
+        },
+      ],
+    },
+  };
+  const fatal = fatalCheckFindings(brandBugReport);
+  check(
+    'a zero-size bbox finding stops the render even though check says ok:true',
+    fatal.length === 1 &&
+      fatal[0].includes('nested_structure_needs_subcomposition') &&
+      fatal[0].includes('#brand-bug'),
+    fatal[0]?.slice(0, 90) ?? 'nothing flagged',
+  );
+  check(
+    'checkFindings reads findings from sections and from the root',
+    checkFindings(brandBugReport).length === 1 &&
+      checkFindings({ findings: [{ code: 'x', severity: 'error' }] }).length === 1,
+    'both shapes',
+  );
+  check(
+    'a clean report has nothing fatal to say',
+    fatalCheckFindings({ lint: { errorCount: 0, findings: [] }, layout: { errorCount: 0, findings: [] } })
+      .length === 0,
+    '0 fatal findings',
+  );
+  check(
+    'an unresolvable-font finding is NOT fatal (it is a style opinion, not a hidden box)',
+    fatalCheckFindings({
+      lint: {
+        errorCount: 0,
+        findings: [{ code: 'font_family_without_font_face', severity: 'error', message: 'Font family used without @font-face: impact.' }],
+      },
+    }).length === 0,
+    'errors are already counted separately',
   );
 
   // A fake PostgREST: the writer is the only thing between a finished render and a

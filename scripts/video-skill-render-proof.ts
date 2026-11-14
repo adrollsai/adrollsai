@@ -24,22 +24,24 @@
  *   node scripts/video-skill-render-proof.ts --start 0 --end 7
  */
 import { execFileSync, execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  artefactKeyFor,
   buildProject,
+  fatalCheckFindings,
   onsetFromMeasurement,
   parseCheckJson,
   parseSilenceDetect,
   planVideoSkill,
   probeDurationCommand,
+  projectArtefactKeyFor,
   silenceDetectCommand,
   trimSilenceCommand,
-  projectArtefactKeyFor,
-  artefactKeyFor,
 } from '../lib/agent/tools/skills/video/index';
 import { PROJECT_CLI_VERSION } from '../lib/agent/tools/skills/video/emit';
-import type { VoOnset } from '../lib/agent/tools/skills/video/timing';
+import type { Timing, VoOnset } from '../lib/agent/tools/skills/video/timing';
 
 const ROOT = process.env.NOBO_RENDER_ROOT || 'D:\\nobo-renders';
 const TMP = process.env.NOBO_TMP_ROOT || 'D:\\nobo-tmp';
@@ -138,6 +140,7 @@ const BEATS = {
   plates: [
     { id: 'hook-a', source: 'asset' as const, key: 'assets/src/hook-a.mp4' },
     { id: 'types-a', source: 'generate' as const, prompt: 'slow push in on towers', seconds: 5 },
+    { id: 'wide-a', source: 'asset' as const, key: 'assets/src/wide-a.mp4' },
     { id: 'card-a', source: 'asset' as const, key: 'assets/src/card-a.mp4' },
     { id: 'cta-a', source: 'generate' as const, prompt: 'slow pan over a dusk skyline', seconds: 4 },
     { id: 'numbers-a', source: 'asset' as const, key: 'assets/src/numbers-a.mp4' },
@@ -147,9 +150,9 @@ const BEATS = {
     { id: 'p01', vo: 'Tricity mein ghar dhoond rahe ho?', lines: ['HOME OR', 'PROPERTY?'], label: 'TRICITY PUNJAB', plate: 'hook-a' },
     { id: 'p02', vo: 'Ek BHK se lekar char BHK tak.', lines: ['1BHK TO 4BHK'], label: 'EVERY SIZE', plate: 'types-a' },
     { id: 'p03', vo: 'Har budget ke liye option hai.', lines: ['EVERY BUDGET'], plate: 'types-a' },
-    { id: 'p04', vo: 'Mohali, Zirakpur, Kharar.', lines: ['MOHAALI'], plate: 'hook-a' },
-    { id: 'p05', vo: 'Landran, Banur, Kurali Road.', lines: ['ZIRAKPUR'], plate: 'hook-a' },
-    { id: 'p06', vo: 'Poori Tricity cover karte hain.', lines: ['THE WHOLE TRICITY'], plate: 'hook-a' },
+    { id: 'p04', vo: 'Mohali, Zirakpur, Kharar.', lines: ['MOHAALI'], plate: 'wide-a' },
+    { id: 'p05', vo: 'Landran, Banur, Kurali Road.', lines: ['ZIRAKPUR'], plate: 'wide-a' },
+    { id: 'p06', vo: 'Poori Tricity cover karte hain.', lines: ['THE WHOLE TRICITY'], plate: 'wide-a' },
     { id: 'p07', vo: 'Bas teen cheezein bhejo.', lines: ['BUDGET'], label: 'JUST SEND', plate: 'card-a' },
     { id: 'p08', vo: 'Budget, location, property type.', lines: ['LOCATION'], plate: 'card-a' },
     { id: 'p09', vo: 'Abhi call ya WhatsApp karo.', lines: ['CALL NOW', 'OR WHATSAPP'], plate: 'cta-a' },
@@ -158,12 +161,30 @@ const BEATS = {
   scenes: [
     { id: 's1', kind: 'hook' as const, beats: ['p01'], plate: 'hook-a' },
     { id: 's2', kind: 'beat' as const, beats: ['p02', 'p03'], plate: 'types-a' },
-    { id: 's3', kind: 'list' as const, beats: ['p04', 'p05', 'p06'], plate: 'hook-a' },
+    { id: 's3', kind: 'list' as const, beats: ['p04', 'p05', 'p06'], plate: 'wide-a' },
     { id: 's4', kind: 'info' as const, beats: ['p07', 'p08'], plate: 'card-a' },
     { id: 's5', kind: 'cta' as const, beats: ['p09'], plate: 'cta-a' },
     { id: 's6', kind: 'numbers' as const, beats: [], dur: 2.4, plate: 'numbers-a' },
     { id: 's7', kind: 'endcard' as const, beats: ['p10'], plate: 'end-a' },
   ],
+};
+
+/**
+ * REAL footage, from the delivered reference film on this machine.
+ *
+ * Not generated, not downloaded, not a test pattern: 1080x1920 graded plates that
+ * the gnr-homes-tricity film shipped with. Each is long enough for the scene that
+ * plays it (a plate shorter than its scene freezes at the end).
+ */
+const FOOTAGE_DIR = 'C:\\Users\\Adrolls\\Desktop\\Nobo Native App\\gnr-homes-tricity\\assets\\footage';
+const PLATE_SOURCES: Record<string, string> = {
+  'hook-a': 'hook-a.mp4',
+  'types-a': 'gen-towers.mp4',
+  'wide-a': 'tricity-wide.mp4',
+  'card-a': 'loc-mohali.mp4',
+  'cta-a': 'gen-villa-dusk.mp4',
+  'numbers-a': 'tricity-b.mp4',
+  'end-a': 'end-bg.mp4',
 };
 
 /** How long each synthetic "voice line" speaks, so the clock has real material. */
@@ -252,26 +273,27 @@ function main(): void {
   }
   console.log(`\nemitted ${project.files.length} files (${project.copies.length} plate copies)`);
 
-  // ── 4: plates + the emitted grading.sh, run for real ────────────────────────
-  const SOURCES: [string, string, string][] = [
-    // id, lavfi source, extra
-    ['hook-a', 'gradients=s=1080x1920:c0=0x8a5a20:c1=0x1a1208:x0=0:y0=0:x1=1080:y1=1920:d=8', '0.4'],
-    ['card-a', 'gradients=s=1080x1920:c0=0x16301f:c1=0x0b1710:x0=0:y0=0:x1=1080:y1=1920:d=6', '0.2'],
-    ['numbers-a', 'gradients=s=1080x1920:c0=0x2a1a3a:c1=0x0b0a08:x0=0:y0=0:x1=1080:y1=1920:d=5', '0.6'],
-    ['end-a', 'gradients=s=1080x1920:c0=0x3a2a12:c1=0x0b0a08:x0=0:y0=0:x1=1080:y1=1920:d=8', '1.0'],
-  ];
-  for (const [id, source] of SOURCES) {
-    bashScript(
-      `ffmpeg -y -v error -f lavfi -i "${source}" -t 8 -r 30 -pix_fmt yuv420p -c:v libx264 -preset veryfast -crf 20 "${path.join(dir, 'assets', 'src', `${id}.mp4`)}"`,
+  // ── 4: REAL plates + the emitted grading.sh, run for real ───────────────────
+  const footage = arg('footage', FOOTAGE_DIR);
+  for (const plate of beats.plates) {
+    const file = PLATE_SOURCES[plate.id];
+    if (!file) throw new Error(`no source mapped for plate ${plate.id}`);
+    const source = path.join(footage, file);
+    if (!fs.existsSync(source)) throw new Error(`missing footage: ${source}`);
+
+    // A generated plate's slot is filled with real footage here, because no vendor is
+    // called in this harness. The grading path is identical; only the pixels' origin
+    // differs, and the render cannot tell.
+    const target =
+      plate.source === 'asset'
+        ? path.join(dir, 'assets', 'src', `${plate.id}.mp4`)
+        : path.join(dir, 'assets', 'footage', `${plate.id}.raw.mp4`);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(source, target);
+    console.log(
+      `plate ${plate.id.padEnd(9)} ${plate.source === 'asset' ? 'supplied' : 'generated (stood in)'}  ← ${file}`,
     );
   }
-  for (const plate of beats.plates.filter((p) => p.source === 'generate')) {
-    const seconds = plate.seconds ?? 6;
-    bashScript(
-      `ffmpeg -y -v error -f lavfi -i "testsrc2=s=1080x1920:r=30:d=${seconds}" -t ${seconds} -pix_fmt yuv420p -c:v libx264 -preset veryfast -crf 22 "${path.join(dir, 'assets', 'footage', `${plate.id}.raw.mp4`)}"`,
-    );
-  }
-  console.log('plates synthesised');
 
   // The supplied logo: a flat brand plate, so the end card's <img> and the brand
   // bug have a real file to reference (a missing one is a 404 at render time).
@@ -285,22 +307,55 @@ function main(): void {
   const gradeOut = bashScript(`cd '${posix(dir)}' && FFMPEG=ffmpeg sh grading.sh 2>&1`, dir);
   console.log(`grading.sh: ${gradeOut.trim().split(/\r?\n/).slice(-1)[0]}`);
 
-  // ── 5: check, render a ≤8 s span, then look at real frames ──────────────────
-  inspect(dir, beats.fps);
+  // ── 5: check, render, then look at real frames ──────────────────────────────
+  inspect(dir, beats.fps, timing);
+}
+
+const round = (value: number, dp = 2) => Math.round(value * 10 ** dp) / 10 ** dp;
+
+/**
+ * Frames to pull, chosen from the MEASURED clock rather than hand-typed: each
+ * scene's first reveal gets a frame just before and just after it (so the type is
+ * provably absent, then present), plus the first frame of the lead-in and the last
+ * frame of the held end card.
+ */
+function framePlan(timing: Timing | null, duration: number): { at: number; why: string }[] {
+  const plan: { at: number; why: string }[] = [{ at: 0.2, why: 's0 lead-in, plate only' }];
+  if (timing) {
+    for (const id of Object.keys(timing.scenes)) {
+      const scene = timing.scenes[id];
+      const start = timing.sceneList[id].start;
+      const first = scene.beats[0];
+      if (first === undefined) {
+        plan.push({ at: round(start + Math.min(0.9, scene.dur / 2), 2), why: `${id} silent scene` });
+        continue;
+      }
+      plan.push({ at: round(Math.max(0.02, start + first - 0.1), 2), why: `${id} before its first line` });
+      plan.push({ at: round(start + first + 0.35, 2), why: `${id} first line on screen` });
+      // The hook reveals two lines inside one beat: prove the stagger is real.
+      if (scene.beats.length === 1 && id === 's1') {
+        plan.push({ at: round(start + first + 1.3, 2), why: 's1 second line landed' });
+      }
+    }
+  }
+  plan.push({ at: round(Math.max(0.2, duration - 0.5), 2), why: 'end card, held still' });
+  return [...new Map(plan.map((entry) => [entry.at, entry])).values()]
+    .filter((entry) => entry.at > 0 && entry.at < duration)
+    .sort((a, b) => a.at - b.at);
 }
 
 /**
- * Step 5 on its own: verify the check report, render a ≤8 s span of the film, and
- * pull frames out of the delivered MP4.
+ * Step 5 on its own: verify the check report, render the film, and pull frames out
+ * of the delivered MP4 — then prove they actually differ from one another.
  *
  * `--reuse <dir>` runs just this, so a project that is already graded and checked
  * can be re-rendered without repeating two minutes of ffmpeg and five of audits.
  */
-function inspect(dir: string, fps: number): void {
+function inspect(dir: string, fps: number, timing: Timing | null): void {
   const cli = `npx --yes hyperframes@${PROJECT_CLI_VERSION}`;
 
   const checkRun = runSafe(`${cli} check --json 2>&1`, dir);
-  let parsed: { errors: number; warnings: number };
+  let parsed: { errors: number; warnings: number; raw?: unknown };
   let source = 'stdout';
   try {
     parsed = parseCheckJson(checkRun.out);
@@ -313,18 +368,27 @@ function inspect(dir: string, fps: number): void {
     source = path.relative(dir, report);
   }
   console.log(`\ncheck: ${parsed.errors} error(s), ${parsed.warnings} warning(s) — from ${source}`);
+
+  // Trap 8 as a gate: `ok: true` is not proof. Anything the audit could not measure
+  // (a zero-size box on an element that still paints) stops the render here too.
+  const fatal = fatalCheckFindings(parsed.raw);
+  if (fatal.length) {
+    console.log(`check flagged ${fatal.length} structurally-invisible element(s):\n  - ${fatal.join('\n  - ')}`);
+    process.exit(3);
+  }
   if (parsed.errors > 0) {
     console.log(checkRun.out.slice(-6000));
     process.exit(2);
   }
 
-  const start = arg('start', '0');
-  const end = arg('end', '7');
-  console.log(`\nrender: ${start}s -> ${end}s at ${fps}fps`);
-  const renderOut = run(
-    `${cli} render . -o proof.mp4 --quality looks --fps ${fps} --start ${start} --end ${end}`,
-    dir,
-  );
+  const startArg = arg('start', '');
+  const endArg = arg('end', '');
+  const span =
+    startArg || endArg
+      ? ` --start ${startArg || '0'} --end ${endArg || '8'}`
+      : '';
+  console.log(`\nrender: whole film${span || ''} at ${fps}fps`);
+  const renderOut = run(`${cli} render . -o proof.mp4 --quality looks --fps ${fps}${span}`, dir);
   console.log(renderOut.trim().split(/\r?\n/).slice(-6).join('\n'));
 
   const probe = JSON.parse(
@@ -332,25 +396,47 @@ function inspect(dir: string, fps: number): void {
       `ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames -show_entries format=duration,size -of json "${path.join(dir, 'proof.mp4')}"`,
     ),
   );
+  const duration = Number(probe.format?.duration ?? 0);
   console.log(`\nproof.mp4: ${JSON.stringify(probe.format)} ${JSON.stringify(probe.streams?.[0] ?? {})}`);
 
+  // ── frames, and the proof that they are not all the same picture ────────────
   const frames = path.join(dir, 'frames');
   fs.mkdirSync(frames, { recursive: true });
-  const at = ['0.20', '1.10', '2.20', '3.40', '4.60', '6.20'];
-  for (const second of at) {
-    const target = path.join(frames, `f${second.replace('.', '_')}.png`);
+  const plan = framePlan(timing, duration).filter((entry) => entry.at < duration);
+
+  const shots: { at: number; why: string; file: string; hash: string }[] = [];
+  for (const entry of plan) {
+    const file = `f${entry.at.toFixed(2).replace('.', '_')}.png`;
     bashScript(
-      `ffmpeg -y -v error -ss ${second} -i "${path.join(dir, 'proof.mp4')}" -frames:v 1 "${target}"`,
+      `ffmpeg -y -v error -ss ${entry.at} -i "${path.join(dir, 'proof.mp4')}" -frames:v 1 "${path.join(frames, file)}"`,
     );
+    const hash = createHash('sha256')
+      .update(fs.readFileSync(path.join(frames, file)))
+      .digest('hex')
+      .slice(0, 12);
+    shots.push({ at: entry.at, why: entry.why, file, hash });
   }
-  console.log(`frames: ${at.map((s) => `f${s.replace('.', '_')}.png`).join(' ')}`);
-  console.log(`\nDONE — ${path.join(dir, 'proof.mp4')}`);
+
+  console.log('\ntimestamp   hash          what it should show');
+  for (const shot of shots) {
+    console.log(`  ${String(shot.at).padEnd(8)}  ${shot.hash}  ${shot.why}`);
+  }
+  const unique = new Set(shots.map((shot) => shot.hash));
+  console.log(`\nframes: ${shots.length} pulled, ${unique.size} distinct`);
+  if (unique.size !== shots.length) {
+    const dupes = shots.filter((shot, i) => shots.findIndex((other) => other.hash === shot.hash) !== i);
+    console.log(`FAIL: identical frames at ${dupes.map((d) => d.at).join(', ')}s — the type is not changing`);
+    process.exit(4);
+  }
+  console.log('\nDONE — every frame differs from every other frame');
+  console.log(`  video:  ${path.join(dir, 'proof.mp4')}`);
+  console.log(`  frames: ${frames}`);
 }
 
 const reuseDir = arg('reuse', '');
 if (reuseDir) {
   console.log(`reusing project: ${reuseDir}`);
-  inspect(reuseDir, 30);
+  inspect(reuseDir, 30, null);
 } else {
   main();
 }
