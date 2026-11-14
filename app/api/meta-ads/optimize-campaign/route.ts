@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server';
 import { generateKieChat, createKieImageTask, callGemini } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
+import { MEDIA_MODELS } from '@/lib/agent/media-models';
 
 const FB_GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -292,7 +293,7 @@ export async function POST(request: Request) {
 
             for (let i = 0; i < requestedVariations.length; i++) {
                 const variant = requestedVariations[i];
-                const modelToUse = 'image-2.0';
+                const modelToUse = MEDIA_MODELS.image.id;
                 const aspectRatio = '3:4';
                 
                 const cookieHeader = request.headers.get('cookie') || '';

@@ -121,7 +121,7 @@ export function videoCredits(seconds: number): number {
 
 /** Guard: refuse any model id that is not in the registry. */
 export function assertKnownModel(modelId: string): string {
-  const known = Object.values(MEDIA_MODELS).flatMap((m) => [m.id, ...m.fallbacks]);
+  const known: string[] = Object.values(MEDIA_MODELS).flatMap((m) => [m.id, ...m.fallbacks]);
   if (!known.includes(modelId)) {
     throw new Error(
       `Model "${modelId}" is not in MEDIA_MODELS. Add it to lib/agent/media-models.ts instead of inlining it.`,
