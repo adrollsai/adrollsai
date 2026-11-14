@@ -19,6 +19,7 @@ import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createSkillTools, formatSkillCatalogue } from './tools/skills';
+import { createScrapeTools } from './tools/skills/scrape';
 import { createPublishingTools } from './tools/publishing';
 import { createSiteTools } from './tools/sites';
 import { createPlaybookTools } from './tools/playbook';
@@ -126,6 +127,10 @@ export async function createAgentContext(
     ...(has('meta') ? { meta_mcp_launch_leadgen_campaign: metaLegacy.meta_mcp_launch_leadgen_campaign } : {}),
     ...(has('research') ? createDeepSeekSearchTools() : {}),
     ...(has('research') ? createWebFetchMcpTools() : {}),
+    // The scrape skill: a stored, versioned definition -> rows, with robots.txt,
+    // per-host rate limits, an SSRF guard and an R2 cache behind it. It refuses
+    // login walls and CAPTCHAs rather than working around them.
+    ...(has('research') ? createScrapeTools(supabase, userId) : {}),
     ...(has('vision') ? createVideoVisionTools() : {}),
   };
 
@@ -305,6 +310,10 @@ Every number you state must come from one of these, scoped and timezoned. Read t
 LIVE WEB & RESEARCH:
 - 'deepseek_web_search', 'deepseek_web_fetch'.
 - Use them for anything current, factual or price-related rather than answering from memory.
+- 'scrape_definitions' / 'scrape_save_definition' / 'scrape_run': structured extraction from a public page using a STORED definition.
+  Prefer a stored definition when the same page will be read more than once — it is versioned, cached, and re-runnable.
+  A scrape refuses a login wall, a CAPTCHA, a 401/403 or a disallowed robots.txt path; when that happens, report the refusal
+  and say why. Never describe a refusal as "the page had no data".
 `);
 
   if (has('vision')) parts.push(`
