@@ -29,8 +29,9 @@
  *   4. copy the stand-in plates and run the emitted `grading.sh` for real (Git Bash
  *      + ffmpeg), including the per-scene plate copies;
  *   5. `hyperframes check --json` (0 errors, and no structurally-invisible element),
- *      then `render`, then pull frames out of the MP4 at every reveal and FAIL if any
- *      two are identical.
+ *      then `render`, then the project's own `master.sh` (loudnorm to -16 LUFS), then
+ *      MEASURE the mastered file — peak must be above -12 dB or this exits non-zero —
+ *      and finally pull frames out of it at every reveal, failing if any two match.
  *
  * Everything is written under D:\nobo-renders (this machine has ~2.4 GB free on C:
  * and ~145 GB on D:), and TMPDIR points at D:\nobo-tmp.
@@ -105,6 +106,18 @@ function bashScript(script: string, cwd?: string): string {
 function runSafe(command: string, cwd?: string): { code: number; out: string } {
   try {
     return { code: 0, out: run(command, cwd) };
+  } catch (error: any) {
+    return {
+      code: typeof error?.status === 'number' ? error.status : 1,
+      out: `${error?.stdout ?? ''}${error?.stderr ?? ''}`,
+    };
+  }
+}
+
+/** Same as `bashScript`, but a non-zero exit is a RESULT (master.sh gates itself). */
+function bashScriptSafe(script: string): { code: number; out: string } {
+  try {
+    return { code: 0, out: bashScript(script) };
   } catch (error: any) {
     return {
       code: typeof error?.status === 'number' ? error.status : 1,
@@ -207,6 +220,23 @@ const PLATE_SOURCES: Record<string, string> = {
 const SPEECH_SECONDS: Record<string, number> = {
   p01: 3.0, p02: 2.6, p03: 2.4, p04: 3.2, p05: 2.2, p06: 2.6, p07: 2.0, p08: 2.2, p09: 2.2, p10: 3.2,
 };
+
+/**
+ * Re-measure the voice files already in a project dir, so an existing project can be
+ * re-emitted (with whatever the emitter has learned since) without re-synthesising it.
+ */
+function measureExistingVoice(dir: string, beats: ReturnType<typeof planVideoSkill>['beats']): VoOnset[] {
+  const onsets: VoOnset[] = [];
+  for (const beat of beats.beats) {
+    if (!beat.vo) continue;
+    const trimmed = path.join(dir, 'assets', 'voice', `${beat.id}.wav`);
+    if (!fs.existsSync(trimmed)) throw new Error(`--reemit needs ${trimmed}`);
+    const total = Number(bashScript(probeDurationCommand(trimmed)).trim());
+    const detected = bashScript(silenceDetectCommand(trimmed));
+    onsets.push(onsetFromMeasurement(beat.id, total, parseSilenceDetect(detected)));
+  }
+  return onsets;
+}
 
 function main(): void {
   fs.mkdirSync(TMP, { recursive: true });
@@ -404,16 +434,21 @@ function inspect(dir: string, fps: number, timing: Timing | null): void {
       ? ` --start ${startArg || '0'} --end ${endArg || '8'}`
       : '';
   console.log(`\nrender: whole film${span || ''} at ${fps}fps`);
-  const renderOut = run(`${cli} render . -o proof.mp4 --quality looks --fps ${fps}${span}`, dir);
+  const renderOut = run(`${cli} render . -o out.mp4 --quality looks --fps ${fps}${span}`, dir);
   console.log(renderOut.trim().split(/\r?\n/).slice(-6).join('\n'));
 
   const probe = JSON.parse(
     bashScript(
-      `ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames -show_entries format=duration,size -of json "${path.join(dir, 'proof.mp4')}"`,
+      `ffprobe -v error -show_entries stream=codec_name,width,height,nb_frames -show_entries format=duration,size -of json "${path.join(dir, 'out.mp4')}"`,
     ),
   );
   const duration = Number(probe.format?.duration ?? 0);
-  console.log(`\nproof.mp4: ${JSON.stringify(probe.format)} ${JSON.stringify(probe.streams?.[0] ?? {})}`);
+  console.log(`\nout.mp4: ${JSON.stringify(probe.format)} ${JSON.stringify(probe.streams?.[0] ?? {})}`);
+
+  // The render is not the deliverable until the audio is mastered. `master.sh` is the
+  // project's own pass (the same one `runVideoSkill` executes), and it fails if the
+  // result is still too quiet.
+  const mastered = masterAndMeasure(dir, path.join(dir, 'out.mp4'));
 
   // ── frames, and the proof that they are not all the same picture ────────────
   const frames = path.join(dir, 'frames');
@@ -424,7 +459,7 @@ function inspect(dir: string, fps: number, timing: Timing | null): void {
   for (const entry of plan) {
     const file = `f${entry.at.toFixed(2).replace('.', '_')}.png`;
     bashScript(
-      `ffmpeg -y -v error -ss ${entry.at} -i "${path.join(dir, 'proof.mp4')}" -frames:v 1 "${path.join(frames, file)}"`,
+      `ffmpeg -y -v error -ss ${entry.at} -i "${mastered.file}" -frames:v 1 "${path.join(frames, file)}"`,
     );
     const hash = createHash('sha256')
       .update(fs.readFileSync(path.join(frames, file)))
@@ -445,14 +480,104 @@ function inspect(dir: string, fps: number, timing: Timing | null): void {
     process.exit(4);
   }
   console.log('\nDONE — every frame differs from every other frame');
-  console.log(`  video:  ${path.join(dir, 'proof.mp4')}`);
+  console.log(`  video:  ${mastered.file}  (${mastered.peak} dB peak, ${mastered.lufs} LUFS)`);
   console.log(`  frames: ${frames}`);
 }
 
+/**
+ * Run the project's OWN mastering pass and then measure the file it produced.
+ *
+ * The parent finding this answers: the first proof film's audio measured -31.6 LUFS
+ * with a -26.2 dB peak — about 4% of full scale, inaudible on a phone — because
+ * nothing normalised whatever the voice (or the stand-in) produced. `master.sh`
+ * measures the mix, applies a linear gain to -16 LUFS / -1.5 dBTP, and fails itself
+ * below -12 dB peak; this harness re-measures the result from the outside so the
+ * gate is not taken on trust.
+ */
+function masterAndMeasure(dir: string, input: string): { file: string; peak: number; lufs: number } {
+  const script = path.join(dir, 'master.sh');
+  if (!fs.existsSync(script)) throw new Error(`no master.sh in ${dir} — re-emit the project first`);
+  const out = path.join(dir, 'final.mp4');
+
+  const run = bashScriptSafe(`cd '${posix(dir)}' && TMPDIR='${posix(TMP)}' sh master.sh '${path.basename(input)}' final.mp4 2>&1`);
+  console.log(`\nmaster.sh (exit ${run.code}):`);
+  for (const line of run.out.trim().split(/\r?\n/).filter((l) => l.startsWith('master:'))) {
+    console.log(`  ${line}`);
+  }
+  if (run.code !== 0 || !fs.existsSync(out)) {
+    console.log(`master.sh FAILED — the film is rendered but not deliverable`);
+    process.exit(5);
+  }
+
+  const measure = (args: string): string =>
+    bashScript(`cd '${posix(dir)}' && ${args} 2>&1 || true`);
+
+  const peakText = measure(
+    `ffmpeg -hide_banner -nostats -i final.mp4 -map 0:a:0 -af volumedetect -f null -`,
+  );
+  const peak = Number(/max_volume:\s*(-?[\d.]+) dB/.exec(peakText)?.[1] ?? NaN);
+
+  const loudText = measure(
+    `ffmpeg -hide_banner -nostats -i final.mp4 -map 0:a:0 -af ebur128=framelog=quiet -f null -`,
+  );
+  const lufsMatches = [...loudText.matchAll(/I:\s*(-?[\d.]+) LUFS/g)];
+  const lufs = Number(lufsMatches.at(-1)?.[1] ?? NaN);
+
+  const probe = JSON.parse(
+    measure(
+      `ffprobe -v error -show_entries stream=codec_name,channels,sample_rate -show_entries format=duration,size -of json final.mp4`,
+    ),
+  );
+  console.log(
+    `\nfinal.mp4 measured: peak ${peak} dB, integrated ${lufs} LUFS ` +
+      `(${JSON.stringify(probe.streams?.[0] ?? {})}, ${JSON.stringify(probe.format ?? {})})`,
+  );
+
+  // The delivery gates, applied to the artefact rather than to the intention.
+  if (!Number.isFinite(peak) || peak <= -12) {
+    console.log(`FAIL — peak ${peak} dB is not a deliverable level (needs > -12 dB)`);
+    process.exit(6);
+  }
+  if (!Number.isFinite(lufs) || Math.abs(lufs + 16) > 2.5) {
+    console.log(`FAIL — integrated ${lufs} LUFS is not within 2.5 LU of -16 LUFS`);
+    process.exit(6);
+  }
+  console.log(`PASS — audio is deliverable: ${peak} dB peak, ${lufs} LUFS integrated`);
+  return { file: out, peak, lufs };
+}
+
 const reuseDir = arg('reuse', '');
+const reemitDir = arg('reemit', '');
+
 if (reuseDir) {
   console.log(`reusing project: ${reuseDir}`);
   inspect(reuseDir, 30, null);
+} else if (reemitDir) {
+  // Re-emit into an existing project (keeping its graded plates and voice files), so a
+  // change to the emitter can be proved against a real render without re-doing the
+  // expensive steps. `--only-master` stops after the audio pass.
+  console.log(`re-emitting into: ${reemitDir}`);
+  const plan = planVideoSkill({ beats: BEATS });
+  const onsets = measureExistingVoice(reemitDir, plan.beats);
+  const { timing, project } = buildProject(plan.beats, onsets);
+  for (const file of project.files) {
+    const target = path.join(reemitDir, file.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.content);
+  }
+  console.log(
+    `re-emitted ${project.files.length} files (${Object.keys(timing.sceneList).length} scenes, ${timing.total}s)`,
+  );
+  if (process.argv.includes('--only-master')) {
+    // Master whichever render exists: `out.mp4` (fresh) or `proof.mp4` (older runs).
+    const rendered = ['out.mp4', 'proof.mp4']
+      .map((name) => path.join(reemitDir, name))
+      .find((candidate) => fs.existsSync(candidate));
+    if (!rendered) throw new Error(`--only-master found no out.mp4 or proof.mp4 in ${reemitDir}`);
+    masterAndMeasure(reemitDir, rendered);
+  } else {
+    inspect(reemitDir, plan.beats.fps, timing);
+  }
 } else {
   main();
 }

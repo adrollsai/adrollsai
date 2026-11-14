@@ -624,7 +624,9 @@ async function writeProject(sandbox: AgentSandbox, workDir: string, project: Emi
   for (const file of project.files) {
     await sandbox.writeFile(`${workDir}/${file.path}`, file.content);
   }
-  await sandbox.exec(`chmod +x ${shellQuote(`${workDir}/grading.sh`)}`);
+  await sandbox.exec(
+    `chmod +x ${shellQuote(`${workDir}/grading.sh`)} ${shellQuote(`${workDir}/master.sh`)}`,
+  );
 }
 
 /**
@@ -924,14 +926,48 @@ async function runRenderStep(
     );
   }
 
-  const seconds = await probeDuration(sandbox, `${workDir}/out.mp4`);
-  const sizeOut = await sandbox.exec(`wc -c < ${shellQuote(`${workDir}/out.mp4`)}`);
+  // The rendered length is a sanity check on the render itself: mastering copies the
+  // video stream, so a mismatch afterwards would mean the wrong file was published.
+  const renderedSeconds = await probeDuration(sandbox, `${workDir}/out.mp4`);
+
+  // ── master the audio before anything is published ────────────────────────────
+  // A render's audio is whatever the voice model returned. The first proof film
+  // shipped at -31.6 LUFS / -26.2 dB peak: about 4% of full scale, inaudible on a
+  // phone. `master.sh` measures the mix, applies a LINEAR gain to the delivery
+  // target, and then measures the file it wrote — exiting non-zero if it is still
+  // too quiet. A film that fails here is not published.
+  const master = await sandbox.exec(
+    `cd ${shellQuote(workDir)} && TMPDIR="\${TMPDIR:-/tmp}" sh master.sh out.mp4 final.mp4 2>&1`,
+    { allowNonZero: true, timeoutMs: 15 * 60_000 },
+  );
+  if (master.exitCode !== 0) {
+    throw new Error(
+      `[video-skill] mastering failed (exit ${master.exitCode}) for ${projectSlug(beats)}; the film is ` +
+        `rendered but NOT deliverable, so it is not published:\n  ` +
+        `${String(master.stdout).split(/\r?\n/).filter(Boolean).slice(-6).join('\n  ')}`,
+    );
+  }
+  const mastered = String(master.stdout)
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('master:'))
+    .slice(-2)
+    .join(' | ');
+  log('video.mastered', { detail: mastered });
+
+  const finalProbe = await sandbox.exec(`test -s ${shellQuote(`${workDir}/final.mp4`)}`, {
+    allowNonZero: true,
+  });
+  if (finalProbe.exitCode !== 0) {
+    throw new Error(`[video-skill] mastering reported success but left no final.mp4 in ${workDir}`);
+  }
+
+  const sizeOut = await sandbox.exec(`wc -c < ${shellQuote(`${workDir}/final.mp4`)}`);
   const bytes = Number(sizeOut.stdout.trim()) || 0;
 
   const key = artefactKeyFor(beats);
   const published = await (deps.publish ?? defaultPublish)({
     sandbox,
-    sandboxPath: `${workDir}/out.mp4`,
+    sandboxPath: `${workDir}/final.mp4`,
     key,
     contentType: 'video/mp4',
   });
@@ -939,7 +975,7 @@ async function runRenderStep(
   const artefact: RunArtefact = {
     key,
     url: published.url,
-    seconds,
+    seconds: await probeDuration(sandbox, `${workDir}/final.mp4`),
     bytes: bytes || published.bytes,
     fps: beats.fps,
     aspect: beats.aspect,
@@ -948,12 +984,24 @@ async function runRenderStep(
     check: checkSummary,
   };
 
+  // Mastering must not change the picture: it copies the video stream and replaces
+  // the audio. If the duration moved at all, something else happened and the file is
+  // not the film that was checked.
+  if (Math.abs(artefact.seconds - renderedSeconds) > 0.25) {
+    throw new Error(
+      `[video-skill] mastering changed the film's length (${renderedSeconds}s rendered, ` +
+        `${artefact.seconds}s mastered) for ${projectSlug(beats)}; refusing to publish a file that is ` +
+        'not the film that passed check.',
+    );
+  }
+
   const recorded = await (deps.record ?? defaultRecord)(runId, artefact);
   log(recorded.recorded ? 'video.artefact.recorded' : 'video.artefact.record_failed', {
     runId,
     key,
     url: published.url,
-    seconds,
+    seconds: artefact.seconds,
+    loudness: mastered,
     reason: recorded.reason,
   });
 
