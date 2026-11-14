@@ -150,9 +150,32 @@ exactly as the reference film's measured timing file had it.
 
 ## What the emitted project contains
 
-`index.html`, `compositions/s0-lead.html`, one composition per scene,
-`timing.json`, `beats.json`, `grading.sh`, `package.json` (CLI pinned to
-`hyperframes@0.9.43`), `hyperframes.json`, `meta.json`.
+`index.html`, `compositions/s0-lead.html`, one composition per scene (plus
+`compositions/brand-bug.html` when a logo is supplied), `timing.json`, `beats.json`,
+`grading.sh`, `master.sh`, `package.json` (CLI pinned to `hyperframes@0.9.43`),
+`hyperframes.json`, `meta.json`.
+
+## Audio: two gates, because a render is not a deliverable
+
+A render carries whatever level the voice model returned. The first proof film
+measured **-31.6 LUFS with a -26.2 dB peak** — about 4% of full scale, inaudible on
+a phone — and nothing in the composition can fix that. So:
+
+1. **No plate brings sound.** `grading.sh` re-encodes every plate with `-an`, and
+   every `<video>` in every composition is `muted`. A plate is picture only; a scene
+   that shipped its source audio would put a bed under the voice.
+2. **`master.sh` masters the film before it is published.** Pass 1 measures the mix
+   with `loudnorm=print_format=json`; pass 2 applies a **linear** gain to
+   `I=-16 LUFS, TP=-1.5 dBTP, LRA=11` (`linear=true`, so the performance is not
+   compressed); then it measures the file it just wrote with `volumedetect` and
+   `ebur128` and **exits non-zero** if the peak is below `-12 dB` or the integrated
+   loudness is more than 2.5 LU off target. It also refuses a file with no audio
+   stream at all (`exit 4`).
+
+`runVideoSkill` runs `master.sh` between render and publish, publishes `final.mp4`
+(not the raw render), and re-probes the duration to prove the picture was not
+altered. Measured on a real render: in `-31.61 LUFS / -25.71 dBTP` → out
+**`-16.0 LUFS / -10.6 dB peak`**.
 
 Non-negotiables the emitter encodes (each one cost the reference film a failed
 render or a QA pass):

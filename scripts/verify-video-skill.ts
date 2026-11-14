@@ -37,11 +37,15 @@ import {
 import {
   brandBugSize,
   compositionFiles,
+  DELIVERY_LRA,
+  DELIVERY_LUFS,
+  DELIVERY_TRUE_PEAK_DB,
   emitProject,
   emittedText,
   estimatedWidth,
   GRADE_FILTER,
   layoutFor,
+  MIN_DELIVERY_PEAK_DB,
   PROJECT_CLI_VERSION,
   projectSlug,
 } from '../lib/agent/tools/skills/video/emit';
@@ -555,6 +559,57 @@ console.log('\n=== traps: the .clip box, the lead-in, the copied plate, the bake
       !compositions.some((file) => /filter:\s*(saturate|contrast|sepia|grayscale)\(/.test(file.content)),
     'one warm grade across every plate',
   );
+
+  // ── AUDIO. The first proof film measured -31.6 LUFS with a -26.2 dB peak: about 4%
+  // of full scale, inaudible on a phone. Three assertions on the emitted command
+  // lists keep that from regressing, none of which needs a render.
+  const plateCommands = grading
+    .split(/\r?\n/)
+    .filter((line) => line.includes('$FFMPEG') && line.includes('-vf'));
+  check(
+    'every plate-to-scene conversion strips audio with -an (a plate never brings sound)',
+    plateCommands.length >= 5 && plateCommands.every((line) => /(^|\s)-an(\s|$)/.test(line)),
+    `${plateCommands.length} plate conversions, all with -an`,
+  );
+  const videoTags = compositions.flatMap((file) => file.content.match(/<video[^>]*>/g) ?? []);
+  check(
+    'every <video> is muted, so no plate audio can reach the mix',
+    videoTags.length >= 6 && videoTags.every((tag) => /\bmuted\b/.test(tag)),
+    `${videoTags.length} video tags, all muted`,
+  );
+
+  const master = first.files.find((file) => file.path === 'master.sh')?.content ?? '';
+  check(
+    'the project carries a mastering pass with an explicit loudness target',
+    master.includes(`loudnorm=I=${DELIVERY_LUFS}:TP=${DELIVERY_TRUE_PEAK_DB}:LRA=${DELIVERY_LRA}`) &&
+      DELIVERY_LUFS === -16 &&
+      DELIVERY_TRUE_PEAK_DB === -1.5 &&
+      DELIVERY_LRA === 11,
+    `${DELIVERY_LUFS} LUFS / ${DELIVERY_TRUE_PEAK_DB} dBTP`,
+  );
+  check(
+    'mastering is LINEAR gain (measure, then apply), not a compressor',
+    /loudnorm=I=.*measured_I=/.test(master) &&
+      master.includes('linear=true') &&
+      master.includes('print_format=json'),
+    'two-pass with linear=true',
+  );
+  check(
+    'master.sh measures the file it wrote and fails below -12 dB peak',
+    MIN_DELIVERY_PEAK_DB === -12 &&
+      master.includes('volumedetect') &&
+      master.includes('ebur128') &&
+      master.includes('MIN_PEAK=-12') &&
+      /too quiet for delivery/.test(master) &&
+      /exit 3/.test(master),
+    'peak and integrated loudness both gated',
+  );
+  check(
+    'a film with no audio stream is refused rather than published silent',
+    /has no audio stream/.test(master) && /exit 4/.test(master),
+    'exit 4',
+  );
+
   check(
     'the CLI version is pinned, so a project re-renders identically',
     PROJECT_CLI_VERSION === '0.9.43' && grading.length > 0 &&
