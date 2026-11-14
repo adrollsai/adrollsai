@@ -26,6 +26,11 @@ render step  ── check --json (must be 0 errors) → render → R2 ──▶ 
 | `emit.ts` | none | the HyperFrames project as strings: layouts, scenes, grade, copies |
 | `index.ts` | all of it | plan → credits → `runVideoPipeline` → R2 → `agent_runs` |
 
+No model id is written in any of these files, in code **or comments**: every id and
+price comes from `lib/agent/media-models.ts` (`MEDIA_MODELS`, `estimateCredits`,
+`videoCredits`), and `npm run verify:media-models` fails if a second copy of an id
+appears anywhere in application code.
+
 ## The call
 
 ```ts
@@ -56,7 +61,7 @@ geometry input. Everything is derived from the plan plus the *measured* voice.
 
   "voice": {                          // what the voice SPEAKS
     "language": "hinglish",
-    "speaker": "Charon",              // kie voice name (google/gemini-3-8-flash-tts)
+    "speaker": "Charon",              // a kie voice name; the MODEL is MEDIA_MODELS.voice.id
     "scene": "Confident Indian narrator, warm authority, no shouting.",
     "sampleContext": "optional"
   },
@@ -159,12 +164,22 @@ render or a QA pass):
 3. Every text block is `position: absolute`.
 4. One warm grade, baked with ffmpeg in `grading.sh` (`eq`, `colorbalance`,
    `unsharp`, `vignette`, `noise`) — never a CSS filter.
-5. Type stays inside the safe band (168–1330 px at 9:16), and the end card shrinks
-   on a fixed scale ladder before it would run past the floor.
+5. Type stays inside the safe BOX, not just the band. Lines are `nowrap`, so a line
+   wider than the box is cropped by `overflow: hidden`: every line is measured
+   (`estimatedWidth`, a deliberately pessimistic advance) and stepped down a fixed
+   size ladder until it fits, and the end card shrinks the same way before it would
+   pass the floor.
 6. Only font families the CLI can auto-resolve (`Archivo Black`, `Inter`) are
    named; a stack falling back to `Impact` fails `check`.
 7. No `Date.now()`, no `Math.random()`: the same beats + the same onsets emit
    byte-identical files, so the artefact key means something.
+8. `check` returning `ok: true` is NOT the gate. The brand bug is a SUB-COMPOSITION
+   with `data-width`/`data-height` rather than a `.clip` div, because `.clip` brings
+   `inset: 0` and a width-only div then stretches from its `top` to the bottom of the
+   frame — a delivered frame showed a 1700 px cream bar over the left fifth of the
+   film while `check` reported `ok: true` with a zero-height bbox. The render step
+   also fails on any finding that describes a box the audit could not measure
+   (`fatalCheckFindings`), so that shape cannot ship again.
 
 ## Money
 
@@ -183,8 +198,16 @@ and, if the migration has not been applied, returns
 
 ## Verifying
 
-* `npm run verify:video-skill` — 73 checks, no network, no render.
-* `node scripts/video-skill-render-proof.ts` (bundled like the other `scripts/`
-  entries) — synthesises voice + plates, measures them with the real ffmpeg
-  commands, emits, runs `grading.sh`, then `check --json` and a ≤8 s 9:16 render
-  under `D:\nobo-renders`, and pulls frames out of the MP4 to look at.
+* `npm run verify:video-skill` — 86 checks, no network, no render. Includes the
+  horizontal safe-area assertion (no line clips the frame edge), the brand-bug
+  sub-composition shape, and the hidden-overlay gate.
+* `scripts/video-skill-render-proof.ts` (bundled like the other `scripts/` entries) —
+  synthesises the voice with ffmpeg and measures it with the pipeline's own
+  commands, copies REAL 1080×1920 footage in as the plates, emits, runs the emitted
+  `grading.sh`, then `check --json` and a render under `D:\nobo-renders`. It pulls
+  frames at every scene's first reveal (before and after), hashes them, and **fails
+  if any two are identical** — a static film is a bug, not a pass.
+
+  `--start/--end` renders a span; `--reuse <dir>` re-renders an already-graded
+  project; `--footage <dir>` points at another plate source. The colour-bar/gradient
+  variant is only ever a labelled toolchain probe, never the delivered proof.
