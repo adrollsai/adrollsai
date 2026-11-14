@@ -143,3 +143,22 @@ Hinglish by default; on-screen text English only.
   applied and verified).
 - The management endpoint also mangles non-ASCII when read via
   `Get-Content` without `-Encoding UTF8`; read utf8, send utf8 bytes.
+
+## Migrations applied to production (verified in the live DB)
+
+- `20261213000000` / `20261213000100` — credit_holds + atomic spend/grant RPCs
+- `20261214000000` — realtime publication (leads, notifications) + `last_activity_at`
+- `20261215000000` — `agent_runs` (+2 indexes, 1 policy)
+- `20261216000000` — `agent_runs` artefact columns (`artefact_key/url/meta` + index)
+- `18_scrape_definitions` — `agent_scrape_definitions`: 1 table, **4 RLS policies**,
+  3 indexes. APPLIED (12/12 statements). P8's Supabase definition store is therefore
+  live; the earlier note that it was unapplied is obsolete.
+
+**Still open, and it matters:** neither live proof writes `agent_runs`. A fabricated
+`run_id` UPDATEs zero rows while Supabase returns `error: null`, so a naive check
+reads as success. Fix that before anything bills off the artefact records.
+
+**Tooling note (cost me a wasted attempt):** splitting a migration on `');\n'` misses
+every statement in a CRLF file — the CREATE TABLE silently never runs and every
+dependent `alter index`/`policy` then fails 400 for a legitimate reason. Split on
+`';\\s*\n'` after stripping `--` comment lines.
