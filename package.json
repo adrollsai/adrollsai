@@ -68,7 +68,8 @@
     "verify:routines": "esbuild scripts/verify-routines.ts --bundle --platform=node --format=cjs --outfile=.tmp-routines.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-routines.cjs",
     "verify:ceo": "esbuild scripts/verify-ceo.ts --bundle --platform=node --format=cjs --outfile=.tmp-ceo.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-ceo.cjs",
     "verify:stt": "esbuild scripts/verify-stt.ts --bundle --platform=node --format=cjs --outfile=.tmp-stt.cjs --log-level=warning && node .tmp-stt.cjs",
-    "verify:scraping": "esbuild scripts/verify-scraping.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape.cjs"
+    "verify:scraping": "esbuild scripts/verify-scraping.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape.cjs",
+    "accept:scraping": "esbuild scripts/scrape-live-acceptance.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape-live.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape-live.cjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

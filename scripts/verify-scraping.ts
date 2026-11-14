@@ -730,6 +730,50 @@ const JSON_DEFINITION: ScrapeDefinition = parseDefinition({
       '2 anchors',
     );
 
+    // A field can be the row element itself (`rows: h2` + `selector: ":self"`).
+    const selfDefinition = parseDefinition({
+      version: 1,
+      name: 'feed-headlines-self',
+      format: 'html',
+      urls: ['https://example.org/feed'],
+      rows: { selector: 'h2' },
+      fields: [{ name: 'heading', selector: ':self' }],
+    });
+    const selfRows = extractRows(selfDefinition, FEED_HTML);
+    check(
+      'extract: ":self" reads the row element itself',
+      selfRows.length === 3 && selfRows[0].heading === 'First thing that happened',
+      String(selfRows[0]?.heading),
+    );
+
+    // Feeds are XML: `<link>` is an element there (not an HTML void tag), and CDATA is text.
+    const feedXml =
+      '<?xml version="1.0"?><rss version="2.0"><channel><item><title><![CDATA[Headline &amp; more]]></title>' +
+      '<link>https://example.org/a/one</link><pubDate>Sat, 01 Nov 2026 10:00:00 GMT</pubDate></item></channel></rss>';
+    const rssDefinition = parseDefinition({
+      version: 1,
+      name: 'feed-rss',
+      format: 'html',
+      urls: ['https://example.org/rss.xml'],
+      rows: { selector: 'item' },
+      fields: [
+        { name: 'headline', selector: 'title' },
+        { name: 'link', selector: 'link' },
+        { name: 'published', selector: 'pubDate', optional: true },
+      ],
+    });
+    const rssRows = extractRows(rssDefinition, feedXml);
+    check(
+      'extract: an RSS <link> keeps its text (XML mode, not an HTML void tag)',
+      rssRows[0].link === 'https://example.org/a/one',
+      String(rssRows[0].link),
+    );
+    check(
+      'extract: CDATA content is text, and entities inside it are decoded',
+      rssRows[0].headline === 'Headline & more',
+      String(rssRows[0].headline),
+    );
+
     const brokenDefinition = parseDefinition({
       version: 1,
       name: 'feed-with-byline',

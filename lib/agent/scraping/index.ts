@@ -438,7 +438,10 @@ export function describeScrapeRun(report: ScrapeRunReport): string {
     parts.push(`${report.duplicates} duplicate URL${report.duplicates === 1 ? ' was' : 's were'} skipped inside the cache window.`);
   }
 
-  const refused = report.pages.filter((page) => page.classification === 'refused' || page.refusal);
+  // "Refused" is the host's decision (robots, SSRF, login, CAPTCHA, 401/403).
+  // Anything else that produced no rows is a FAILURE, and calling a parse error
+  // or a 500 "refused" would blame the site for our own problem.
+  const refused = report.pages.filter((page) => page.classification === 'refused' || page.refusal?.kind === 'robots');
   if (refused.length) {
     const detail = refused
       .slice(0, 3)
@@ -446,6 +449,16 @@ export function describeScrapeRun(report: ScrapeRunReport): string {
       .join('; ');
     const more = refused.length > 3 ? ` (+${refused.length - 3} more)` : '';
     parts.push(`${refused.length} page${refused.length === 1 ? ' was' : 's were'} refused: ${detail}${more}`);
+  }
+
+  const failed = report.pages.filter((page) => !refused.includes(page) && !page.ok);
+  if (failed.length) {
+    const detail = failed
+      .slice(0, 3)
+      .map((page) => `${page.host}${pathOf(page.url)} — ${page.refusal?.reason ?? page.classification}`)
+      .join('; ');
+    const more = failed.length > 3 ? ` (+${failed.length - 3} more)` : '';
+    parts.push(`${failed.length} page${failed.length === 1 ? '' : 's'} could not be read: ${detail}${more}`);
   }
 
   const waited = report.pages.reduce((sum, page) => sum + page.waitedMs, 0);

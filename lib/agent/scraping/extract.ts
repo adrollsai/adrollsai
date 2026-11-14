@@ -482,6 +482,15 @@ export function parseHtml(html: string): HtmlNode {
   const source = String(html ?? '');
   let index = 0;
 
+  /**
+   * XML documents have NO void elements: `<link>https://…</link>` in an RSS item
+   * is an element with text, and treating it as an HTML void tag would read that
+   * URL as part of the item's own text and lose the field entirely. Feeds are the
+   * single most common scrape target, so this is detected rather than assumed.
+   */
+  const xmlMode =
+    /^\s*(?:<\?xml[\s?]|<rss[\s>]|<feed[\s>]|<rdf:RDF[\s>])/i.test(source) || /^\s*<rdf:RDF/i.test(source);
+
   const top = () => stack[stack.length - 1];
 
   while (index < source.length) {
@@ -495,6 +504,15 @@ export function parseHtml(html: string): HtmlNode {
     // Comments, doctype, CDATA.
     if (source.startsWith('<!--', lt)) {
       const end = source.indexOf('-->', lt + 4);
+      index = end === -1 ? source.length : end + 3;
+      continue;
+    }
+    // CDATA is TEXT, not markup to skip: a feed that wraps its headlines in
+    // <![CDATA[…]]> would otherwise extract empty strings and look like a site
+    // with no content at all.
+    if (source.startsWith('<![CDATA[', lt)) {
+      const end = source.indexOf(']]>', lt + 9);
+      pushText(top(), source.slice(lt + 9, end === -1 ? source.length : end));
       index = end === -1 ? source.length : end + 3;
       continue;
     }
@@ -531,7 +549,7 @@ export function parseHtml(html: string): HtmlNode {
     const node: HtmlNode = { tag, attrs: parseAttributes(body.slice(nameMatch[0].length)), children: [] };
     top().children.push(node);
 
-    if (selfClosing || VOID_TAGS.has(tag)) continue;
+    if (selfClosing || (!xmlMode && VOID_TAGS.has(tag))) continue;
 
     if (RAW_TEXT_TAGS.has(tag)) {
       const closer = new RegExp(`</${tag}\\s*>`, 'i');
@@ -683,9 +701,15 @@ export function selectOne(root: HtmlNode, selector: string): HtmlNode | null {
   return selectAll(root, selector)[0] ?? null;
 }
 
-/** Visible text of a node, whitespace-collapsed, entities decoded. */
+/**
+ * Visible text of a node, entities decoded.
+ *
+ * Decoding happens HERE rather than at each call site, because a headline that
+ * reaches a client as `Q&amp;A` is a visible defect, and CDATA bodies (feeds)
+ * otherwise slip past every other decoder.
+ */
 export function textOf(node: HtmlNode): string {
-  if (node.tag === '#text') return node.text ?? '';
+  if (node.tag === '#text') return decodeEntities(node.text ?? '');
   if (RAW_TEXT_TAGS.has(node.tag)) return '';
   return node.children.map(textOf).join(' ');
 }
@@ -846,10 +870,14 @@ export function extractRows(
   return rows;
 }
 
+/** Field selector meaning "the row element itself" — `rows: h2` + `field: :self`. */
+export const SELF_SELECTOR = ':self';
+
 function readHtmlRow(definition: ScrapeDefinition, node: HtmlNode, index: number, pageUrl?: string): ScrapeRow {
   const row: ScrapeRow = {};
   for (const field of definition.fields) {
-    const matches = selectAll(node, field.selector ?? '');
+    const matches =
+      field.selector === SELF_SELECTOR ? [node] : selectAll(node, field.selector ?? '');
     const value = valueFromHtmlMatches(field, matches, pageUrl);
     if (value === null) {
       if (field.optional) {

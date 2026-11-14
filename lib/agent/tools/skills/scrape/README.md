@@ -45,9 +45,15 @@ inputs ────────────────────────�
 
 `format: "json"` swaps `rows.selector` for `rows.path` (`$.items[*]`) and each
 field's `selector` for a `path` (`title`, `attributes.url`). Supported selector
-syntax is `tag`, `.class`, `#id`, `[attr]`, `[attr=value]` and descendant chains;
+syntax is `tag`, `.class`, `#id`, `[attr]`, `[attr=value]`, descendant chains and
+`:self` (the row element itself — for `rows: h2` with a single `:self` field);
 `>`, `+`, `~` and `,` are rejected loudly rather than half-honoured. Paths support
 `.name`, `[0]` and `[*]`.
+
+XML feeds are detected (`<?xml`, `<rss>`, `<feed>`, `<rdf:RDF>`) and parsed
+without HTML void-tag rules, so an RSS `<link>` keeps its text instead of being
+treated as an empty `<link>` element, and `<![CDATA[…]]>` is read as text rather
+than skipped as markup. HTML entities are decoded when text is read.
 
 A field is **required unless `optional: true`**. A required field that produces
 nothing throws `ExtractionError` naming the field, the row and the selector — no

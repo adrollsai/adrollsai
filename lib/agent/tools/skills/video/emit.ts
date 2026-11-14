@@ -513,19 +513,34 @@ function sceneElements(
     const cardAdvance = (kind: TypeReadCheck['kind']) =>
       kind === 'address' || kind === 'tagline' || kind === 'label' ? BODY_ADVANCE : DISPLAY_ADVANCE;
 
-    let placed: { item: CardItem; top: number; height: number; width: number }[] | null = null;
+    interface Placed {
+      item: CardItem;
+      top: number;
+      /** Emitted font-size (text) or box height (logo), px. */
+      size: number;
+      /** Vertical advance this item consumes, px. */
+      advance: number;
+      /** Estimated rendered width, px. */
+      width: number;
+    }
+
+    let placed: Placed[] | null = null;
     for (const scale of FIT_LADDER) {
-      const attempt: { item: CardItem; top: number; height: number; width: number }[] = [];
+      const attempt: Placed[] = [];
       let cursorTop = origin;
       let fits = true;
       for (const item of items) {
-        const height = Math.round((item.src ? item.size : item.size * layout.lineHeight) * scale);
+        // Text: the font size is the size; the line height is what the stack advances
+        // by. (Treating the line-height-multiplied value as the font size is how the
+        // card grew 10% and pushed its tagline past the safe width.)
+        const size = item.src ? Math.round(item.size * scale) : Math.round(item.size * scale);
+        const advance = item.src ? size : Math.round(size * layout.lineHeight);
         const width = item.src
           ? Math.round(layout.width * 0.56)
-          : estimatedWidth(item.text, Math.round(item.size * scale), cardAdvance(item.kind));
+          : estimatedWidth(item.text, size, cardAdvance(item.kind));
         if (width > safeWidth) fits = false;
-        attempt.push({ item, top: roundTo(cursorTop, 1), height, width });
-        cursorTop += height + Math.round(band * item.gap * scale);
+        attempt.push({ item, top: roundTo(cursorTop, 1), size, advance, width });
+        cursorTop += advance + Math.round(band * item.gap * scale);
       }
       placed = attempt;
       if (fits && cursorTop <= layout.safeBottom) break;
@@ -547,13 +562,13 @@ function sceneElements(
         text: item.text,
         ...(item.src ? { src: item.src } : {}),
         top: entry.top,
-        size: entry.height,
+        size: entry.size,
         reveal: roundTo(reveal + item.after, 3),
         leave: dur,
         wrapper: wrapper.id,
         track: wrapper.track,
         kind: item.kind,
-        css: item.src ? `height: ${entry.height}px;` : item.css,
+        css: item.src ? `height: ${entry.size}px;` : item.css,
       };
       elements.push(element);
       if (!item.src) {
@@ -562,7 +577,7 @@ function sceneElements(
     });
 
     const bottom = roundTo(
-      placed.reduce((max, entry) => Math.max(max, entry.top + entry.height), layout.safeTop),
+      placed.reduce((max, entry) => Math.max(max, entry.top + entry.advance), layout.safeTop),
       1,
     );
     if (bottom > layout.safeBottom) {
@@ -928,6 +943,58 @@ ${sceneScript(compositionId, wrapperList, elementList)}
 `;
 }
 
+/** The brand bug's plate size in px, for the aspect in hand. */
+export function brandBugSize(layout: Layout): { width: number; height: number; left: number; top: number } {
+  return {
+    width: Math.round(layout.width * 0.198),
+    height: Math.round(layout.width * 0.092),
+    left: Math.round(layout.margin * 0.94),
+    top: layout.safeTop + 26,
+  };
+}
+
+/**
+ * `compositions/brand-bug.html` — the logo bug, as a real sub-composition.
+ *
+ * It used to be a root-level `<div class="clip">` holding an `<img>`. Two things went
+ * wrong with that, both only visible in a rendered frame: `class="clip"` brings
+ * `inset: 0` with it, so a div with only a width set stretched from `top` to the
+ * bottom of the frame and painted an opaque cream bar over the left fifth of every
+ * shot; and the lint's own finding for it reported `bbox` with zero height, which is
+ * exactly the "hidden overlay" signature. A sub-composition with explicit
+ * `data-width`/`data-height` has a real box, so neither can happen.
+ */
+function brandBugComposition(beats: Beats, layout: Layout): string {
+  const size = brandBugSize(layout);
+  return `<template>
+  <style>
+    .clip { position: absolute; inset: 0; }
+    #root { position: absolute; inset: 0; background: transparent; overflow: hidden; }
+    #bug-plate {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: ${size.width}px;
+      height: ${size.height}px;
+      box-sizing: border-box;
+      padding: ${Math.round(size.height * 0.13)}px ${Math.round(size.width * 0.07)}px;
+      background: #fffdf8;
+      border-radius: 6px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    }
+    #bug-plate img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  </style>
+  <div id="root" data-composition-id="brand-bug" data-width="${size.width}" data-height="${size.height}">
+    <div id="bug-plate"><img src="${esc(beats.endCard.logo ?? '')}" alt="${esc(beats.endCard.name)}" /></div>
+  </div>
+  <script>
+    window.__timelines = window.__timelines || {};
+    window.__timelines["brand-bug"] = gsap.timeline({ paused: true });
+  </script>
+</template>
+`;
+}
+
 /** The root composition: scene slots, brand bug, voice tracks. */
 function rootComposition(beats: Beats, timing: Timing, layout: Layout): string {
   const sceneIds = ['s0-lead', ...beats.scenes.map(slugFor)];
@@ -953,15 +1020,24 @@ function rootComposition(beats: Beats, timing: Timing, layout: Layout): string {
   // The brand bug needs a logo FILE. Emitting the element without one is a broken
   // <img> (check: missing_local_asset / http_error 404) and the renderer silently
   // drops it, so the flag alone is not enough — `endCard.logo` has to be set.
+  const bug = brandBugSize(layout);
   const brandBug =
     beats.logoOnScreen && beats.endCard.logo
       ? `
-      <!-- the brand bug rides above every scene except the end card -->
-      <div id="brand-bug" class="clip" data-start="${num(timing.vobug.start)}" data-duration="${num(
-        roundTo(timing.vobug.end - timing.vobug.start, 3),
-      )}" data-track-index="0" data-layout-ignore>
-        <img src="${esc(beats.endCard.logo)}" alt="${esc(beats.endCard.name)}" />
-      </div>`
+      <!-- the brand bug rides above every scene except the end card, as its own
+           sub-composition with a real box (never a .clip div: inset:0 stretches it) -->
+      <div
+        id="brand-bug"
+        data-composition-id="brand-bug"
+        data-composition-src="compositions/brand-bug.html"
+        data-start="${num(timing.vobug.start)}"
+        data-duration="${num(roundTo(timing.vobug.end - timing.vobug.start, 3))}"
+        data-track-index="0"
+        data-track-kind="graphics"
+        data-width="${bug.width}"
+        data-height="${bug.height}"
+        style="position: absolute; left: ${bug.left}px; top: ${bug.top}px; width: ${bug.width}px; height: ${bug.height}px;"
+      ></div>`
       : '';
 
   const voice = timing.vo
@@ -989,17 +1065,11 @@ function rootComposition(beats: Beats, timing: Timing, layout: Layout): string {
       .clip { position: absolute; inset: 0; }
       html, body { width: ${layout.width}px; height: ${layout.height}px; overflow: hidden; background: #0b0a08; }
       #root { position: relative; width: 100%; height: 100%; background: #0b0a08; }
-      /* The brand bug is a SMALL plate. class="clip" brings inset: 0 with it, and
-         with only a width set that stretches the element from top to the bottom of
-         the frame — a real frame showed a 1700 px cream bar over a third of the film.
-         So the inset is pinned back here and both dimensions are explicit. */
-      #brand-bug { position: absolute; left: ${Math.round(layout.margin * 0.94)}px; top: ${
-        layout.safeTop + 26
-      }px; right: auto; bottom: auto; width: ${Math.round(layout.width * 0.198)}px; height: ${Math.round(
-        layout.width * 0.092,
-      )}px; padding: 13px 15px; box-sizing: border-box;
-        background: #fffdf8; border-radius: 6px; z-index: 60; box-shadow: 0 10px 30px rgba(0,0,0,0.45); }
-      #brand-bug img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      /* The brand bug is a sub-composition with an explicit box, positioned by the
+         inline style on its slot. It deliberately carries NO .clip class: that rule
+         sets inset: 0, which stretched a width-only div into a full-height cream bar
+         over the left fifth of every frame. z-index keeps it above the scene slots. */
+      #brand-bug { z-index: 60; }
     </style>
   </head>
   <body>
@@ -1177,6 +1247,10 @@ export function emitProject(beats: Beats, timing: Timing): EmittedProject {
 
   files.push({ path: 'compositions/s0-lead.html', content: leadInComposition(beats, layout, leadUsages, leadDur) });
 
+  if (beats.logoOnScreen && beats.endCard.logo) {
+    files.push({ path: 'compositions/brand-bug.html', content: brandBugComposition(beats, layout) });
+  }
+
   for (const scene of beats.scenes) {
     const sceneTiming = timing.scenes[scene.id];
     if (!sceneTiming) throw new EmitError([`timing has no entry for scene ${scene.id}`]);
@@ -1214,6 +1288,21 @@ export function emitProject(beats: Beats, timing: Timing): EmittedProject {
         (check) =>
           `${check.scene}/${check.beat}: "${check.text}" is on screen ${check.hold}s but needs ` +
           `${check.minHold}s (0.5s + 0.3s × ${check.words} words). Give the beat more voice, or cut a line.`,
+      ),
+    );
+  }
+
+  // Nothing may leave the safe box. Type cropped by `overflow: hidden` is unreadable
+  // in exactly the way the readability rule is trying to prevent, and two delivered
+  // frames read "…OPERTY?" / "…4BHK" before this gate existed.
+  const outOfFrame = typeRead.filter((check) => !check.fitsFrame);
+  if (outOfFrame.length) {
+    throw new EmitError(
+      outOfFrame.map(
+        (check) =>
+          `${check.scene}/${check.beat}: "${check.text}" is ~${check.width}px wide from x=${check.left}px ` +
+          `at ${check.size}px, which runs past the ${layout.width - layout.margin}px edge of the ` +
+          `${layout.width}px frame. Shorten the line.`,
       ),
     );
   }
