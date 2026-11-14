@@ -102,6 +102,9 @@ export interface CreditsAdapter extends RunnerCredits {
   settle(runId: string, reason?: string): Promise<void>;
 }
 
+/** The ledger categories a charge can use (billing.ts is the source of truth). */
+export type ChargeCategory = NonNullable<billing.ChargeOptions['category']>;
+
 export interface SupabaseCreditsOptions {
   supabase: any;
   /** Who pays. `resolveBillingOwner` maps a team member to the owner's wallet. */
@@ -110,7 +113,7 @@ export interface SupabaseCreditsOptions {
   /** How long the reservation survives without progress. */
   ttlMinutes?: number;
   /** Ledger category for every charge this adapter makes. */
-  category?: billing.CreditCategory;
+  category?: ChargeCategory;
   log?: AgentLogger;
 }
 

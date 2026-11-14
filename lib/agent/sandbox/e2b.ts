@@ -232,6 +232,9 @@ export function createE2BSandboxes(options: E2BAdapterOptions = {}): E2BSandboxe
       } catch (error) {
         // Swallowed on purpose: the run is still valid and the workspace is
         // intact. The runner recounts pauses itself, so this is log-level only.
+        // The backstop is the sandbox's own `lifecycle.onTimeout: pause`: if we
+        // never manage to pause by hand, the platform pauses at the TTL and the
+        // next command auto-resumes it, which still resets the runtime clock.
         log('sandbox.adapter.pause_failed', { sandboxId, why, error: detailOf(error) });
       }
     };
