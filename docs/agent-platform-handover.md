@@ -85,30 +85,42 @@ Hinglish by default; on-screen text English only.
   Fixed two real bugs: `estimateCredits('video', n)` returned **0** (so the
   pre-spend reservation reserved nothing), and `media_studio` sent reference-image
   edits to a text-to-image model.
-- **P3 in flight, UNCOMMITTED and RED at handover.** Do not commit it as-is.
-  Present and untracked: `lib/agent/tools/skills/video/{beats,emit,index,timing}.ts`,
-  plus edits to `lib/agent/sandbox/pipeline.ts`. `D:\nobo-renders` now exists
-  (the render attempt started).
+- **P3 code-complete and gate-green, but the film is visually WRONG — do not
+  commit it as done.** Untracked: `lib/agent/tools/skills/video/{beats,emit,index,timing}.ts`
+  + `README.md`, `scripts/verify-video-skill.ts`, `scripts/video-skill-render-proof.ts`,
+  plus edits to `lib/agent/sandbox/pipeline.ts` and `package.json`.
 
-  Migration `20261216000000_agent_run_artefact.sql` **was applied and verified**
-  (agent_runs gains `artefact_key` / `artefact_url` / `artefact_meta` +
-  `agent_runs_artefact_idx`) — that part is safe and already live.
+  Green now: `tsc` clean · `npm run verify:video-skill` **77/77** ·
+  `verify:media-models` **35/35** · `agent-selftest` **78/78** · `npm run build`
+  exit 0. Migration `20261216000000_agent_run_artefact.sql` applied and verified
+  live (`agent_runs.artefact_key/url/meta` + index).
 
-  Outstanding, in order of cheapness:
-  1. **5 import errors**, all the same mistake — `lib/agent/tools/skills/video/index.ts`
-     is four levels below `lib/agent/`, so `'../../media-models'` lands on
-     `lib/agent/tools/`. Needs `'../../../media-models'` / `'../../../sandbox/{pipeline,e2b,log,runner}'`,
-     or better, the `@/lib/agent/...` alias the sibling skills use (index.ts:35,50,51,52,53,54 and 1060).
-  2. `index.ts(122,8)` TS2872 always-truthy expression.
-  3. `index.ts(795,60)` TS2322 — the `hyperframes check --json` result typed
-     `| null` being coerced into a non-null shape. Per trap 8 a missing check
-     must FAIL the step, not be coerced into a pass.
-  4. `index.ts(1193,32)` TS2339 `Property 'total' does not exist on type 'never'`.
-  5. No `scripts/verify-video-skill.ts` and no `verify:video-skill` npm script.
-  6. No render evidence yet (no frames pulled from an MP4).
+  A real film DID render: `D:\nobo-renders\proof\proof-toolchain-9x16-8e489094-r1\proof.mp4`
+  — 1080x1920, 30 fps, 7.02 s, H.264 + AAC. Its `check.json` reports `ok:true` with
+  **errorCount 0** in lint/runtime/layout/contrast(4/4)/craft/audio.
 
-  A previous feedback message with these same diagnostics was sent to the P3
-  worker; it had not yet applied them when the session ended.
+  **And yet the frames are broken.** Four frames inspected (1.2 / 3.0 / 4.8 / 6.4 s):
+  1. a tall opaque **white slab covers the left third** of every frame, above the type.
+     The linter even pointed at it: warning on `#brand-bug` with
+     `bbox {x:0,y:0,width:0,height:0}` — a zero-size box painting a huge white area.
+  2. **type is clipped off the left edge**: "…UNJAB", "…ME OR", "…OPERTY?", "…NK TO
+     4BHK" — outside the 9:16 safe area, while `layout` reported totalIssueCount 0.
+  3. the composited plate is **SMPTE colour bars** (the `probe/t.sh` test pattern),
+     not footage. The plate DOES animate (streaks shift 4.8->6.4 s) but the **type does
+     not change between 1.2 s and 3.0 s**, so the bug is in the type layer, not a
+     frozen render.
+
+  This is trap 8 in one sentence: a film can pass every automated check and still have
+  a white slab over the words. Always pull frames from the MP4 and look.
+
+  Still to do: fix the plate so it cannot occlude; make the zero-size `#brand-bug`
+  bbox a hard failure rather than a warning; keep every text block inside the safe area
+  and assert it; re-render one film with real (non-colour-bar) plates and type that
+  visibly changes between beats.
+- **P5 (images) and P8 (scraping) are running in parallel** — both independent of the
+  video toolchain. P5 must delete every background+HTML-overlay path (banned by
+  section 0) and prove 10 live images on `D:\nobo-images\`. P8 must refuse login
+  walls, honour robots.txt + per-host rate limits, guard SSRF, and cache to R2.
 - **P4–P10 not started.**
 - **P4–P10 not started.**
 
