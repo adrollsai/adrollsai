@@ -371,7 +371,7 @@ Requirements:
 - Static Meta Ad prompt optimized for 3:4 aspect ratio.
 - Must look 100% authentic photograph, not plastic or artificial.
 - Photorealistic humans matching context ethnicity.
-- DO NOT draw text overlays or placeholder circles. Clean visual layout.
+- Render the FINISHED design in this one image, typography and all: headline, price badge and CTA set as real type in the artwork. There is no second compositing step, so anything missing from the render is missing from the ad. No placeholder circles or layout notes.
 - Emulate the aesthetic tone of "${templateStyleName}".
 - If custom instructions are provided, honor them explicitly.
 `;

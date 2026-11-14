@@ -156,6 +156,14 @@ export interface TypeReadCheck {
   hold: number;
   minHold: number;
   ok: boolean;
+  /** Emitted font size, px (after the width-fitting ladder). */
+  size: number;
+  /** The container's left edge, px. */
+  left: number;
+  /** Estimated rendered line width, px. */
+  width: number;
+  /** True when the whole line sits inside the safe box, left AND right. */
+  fitsFrame: boolean;
 }
 
 export interface SceneEmit {
@@ -304,6 +312,51 @@ interface Wrapper {
   track: number;
 }
 
+/**
+ * Conservative per-character advance for each face, in em.
+ *
+ * Measured off real frames of this emitter's own output ("HOME OR" at 128 px spans
+ * ~666 px, "1BHK TO 4BHK" at 110 px spans ~915 px) and rounded UP, because this
+ * number's job is to stop type leaving the frame — too tight and a line clips.
+ */
+const DISPLAY_ADVANCE = 0.76;
+const BODY_ADVANCE = 0.6;
+
+/** The deterministic shrink ladder. Same input, same output, every time. */
+const FIT_LADDER = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64, 0.58, 0.52, 0.46, 0.4];
+
+/** Estimated rendered width of one line, in px. Deliberately pessimistic. */
+export function estimatedWidth(text: string, size: number, advance = DISPLAY_ADVANCE): number {
+  return Math.round(Math.max(1, text.trim().length) * advance * size);
+}
+
+/**
+ * The largest size on the ladder at which EVERY line of a block fits the safe width.
+ *
+ * `white-space: nowrap` means a long line does not wrap — it runs out of the frame
+ * and is cropped by `#root { overflow: hidden }`. Two real frames read "…OPERTY?"
+ * and "…4BHK" before this existed. Shrinking a step or two is the honest fix;
+ * clipping the words is not.
+ */
+function fitBlockSize(
+  texts: readonly string[],
+  baseSize: number,
+  maxWidth: number,
+  advance = DISPLAY_ADVANCE,
+): { size: number; width: number; fits: boolean } {
+  for (const scale of FIT_LADDER) {
+    const size = Math.round(baseSize * scale);
+    const width = Math.max(...texts.map((text) => estimatedWidth(text, size, advance)));
+    if (width <= maxWidth) return { size, width, fits: true };
+  }
+  const size = Math.round(baseSize * FIT_LADDER[FIT_LADDER.length - 1]);
+  return {
+    size,
+    width: Math.max(...texts.map((text) => estimatedWidth(text, size, advance))),
+    fits: false,
+  };
+}
+
 /** Where a kind's type starts, and how the beats stack. */
 function typeOrigin(layout: Layout, kind: SceneKind): number {
   const band = layout.safeBottom - layout.safeTop;
@@ -349,6 +402,7 @@ function sceneElements(
   const plates: PlateUsage[] = [];
 
   const origin = typeOrigin(layout, scene.kind);
+  const safeWidth = layout.width - 2 * layout.margin;
   let track = 10;
 
   const pushCheck = (
@@ -356,9 +410,11 @@ function sceneElements(
     beatId: string,
     from: number,
     to: number,
+    advance: number,
   ): void => {
     const hold = roundTo(to - from, 3);
     const minHold = minHoldSeconds(wordsOf(element.text));
+    const width = estimatedWidth(element.text, element.size, advance);
     checks.push({
       scene: scene.id,
       beat: beatId,
@@ -369,6 +425,10 @@ function sceneElements(
       hold,
       minHold,
       ok: hold + 1e-9 >= minHold,
+      size: element.size,
+      left: layout.margin,
+      width,
+      fitsFrame: element.top >= layout.safeTop && layout.margin + width <= layout.width - layout.margin,
     });
   };
 
@@ -446,23 +506,29 @@ function sceneElements(
       });
     }
 
-    // The card must FIT its safe band in either aspect, so the stack is tried on a
-    // fixed ladder of scales and the largest one that fits is used. Deterministic,
-    // and a long address degrades the type instead of running off the frame.
-    const LADDER = [1, 0.94, 0.88, 0.82, 0.76, 0.7, 0.64, 0.58, 0.52, 0.46, 0.4];
-    let placed: { item: CardItem; top: number; height: number }[] | null = null;
-    for (const scale of LADDER) {
-      const attempt: { item: CardItem; top: number; height: number }[] = [];
+    // The card must FIT its safe box in either aspect — height AND width — so the
+    // stack is tried on a fixed ladder of scales and the largest one that fits is
+    // used. Deterministic, and a long address or a long number degrades the type
+    // instead of running off the frame.
+    const cardAdvance = (kind: TypeReadCheck['kind']) =>
+      kind === 'address' || kind === 'tagline' || kind === 'label' ? BODY_ADVANCE : DISPLAY_ADVANCE;
+
+    let placed: { item: CardItem; top: number; height: number; width: number }[] | null = null;
+    for (const scale of FIT_LADDER) {
+      const attempt: { item: CardItem; top: number; height: number; width: number }[] = [];
       let cursorTop = origin;
+      let fits = true;
       for (const item of items) {
-        const height = Math.round(
-          (item.src ? item.size : item.size * layout.lineHeight) * scale,
-        );
-        attempt.push({ item, top: roundTo(cursorTop, 1), height });
+        const height = Math.round((item.src ? item.size : item.size * layout.lineHeight) * scale);
+        const width = item.src
+          ? Math.round(layout.width * 0.56)
+          : estimatedWidth(item.text, Math.round(item.size * scale), cardAdvance(item.kind));
+        if (width > safeWidth) fits = false;
+        attempt.push({ item, top: roundTo(cursorTop, 1), height, width });
         cursorTop += height + Math.round(band * item.gap * scale);
       }
       placed = attempt;
-      if (cursorTop <= layout.safeBottom) break;
+      if (fits && cursorTop <= layout.safeBottom) break;
     }
     if (!placed) throw new EmitError([`end card has nothing to draw`]);
 
@@ -490,7 +556,9 @@ function sceneElements(
         css: item.src ? `height: ${entry.height}px;` : item.css,
       };
       elements.push(element);
-      if (!item.src) pushCheck(element, beatList[0]?.id ?? scene.id, element.reveal, dur);
+      if (!item.src) {
+        pushCheck(element, beatList[0]?.id ?? scene.id, element.reveal, dur, cardAdvance(item.kind));
+      }
     });
 
     const bottom = roundTo(
@@ -546,7 +614,7 @@ function sceneElements(
     };
     wrappers.push(wrapper);
 
-    const size =
+    const baseSize =
       scene.kind === 'hook'
         ? layout.hookSize
         : scene.kind === 'list' || scene.kind === 'info'
@@ -555,18 +623,32 @@ function sceneElements(
             ? layout.plaqueSize
             : layout.beatSize;
 
+    // Fit the block to the safe WIDTH before laying it out: a 12-character line at
+    // 110 px is ~1000 px wide in a 948 px box, and `nowrap` + `overflow:hidden` crops
+    // it (two real frames read "…4BHK" and "…OPERTY?" before this existed).
+    const fitted = fitBlockSize(beat.lines, baseSize, safeWidth);
+    const size = fitted.size;
+    if (!fitted.fits) {
+      throw new EmitError([
+        `scene ${scene.id} beat ${beat.id}: "${beat.lines[0]}" is still ${fitted.width}px wide at the ` +
+          `smallest type step (${size}px) in a ${safeWidth}px safe box. Shorten the line — cropping it ` +
+          'is not an option.',
+      ]);
+    }
+
     // The replacing kinds (hook, beat, cta) all draw from the same origin and hand
     // the frame over at the next reveal; the accumulating kinds (list, info,
     // numbers) continue below whatever the previous beat actually used.
     let top = roundTo(accumulates ? stackTop : origin, 1);
 
     if (beat.label) {
+      const labelFit = fitBlockSize([beat.label], layout.labelSize, safeWidth, BODY_ADVANCE);
       const element: Element = {
         id: `a-label-${index}`,
         className: 'txt lbl',
         text: beat.label,
         top: roundTo(top, 1),
-        size: layout.labelSize,
+        size: labelFit.size,
         reveal,
         leave: visibleTo,
         wrapper: wrapper.id,
@@ -574,8 +656,8 @@ function sceneElements(
         kind: 'label',
       };
       elements.push(element);
-      pushCheck(element, beat.id, reveal, visibleTo);
-      top += Math.round(layout.labelSize * 1.6) + 18;
+      pushCheck(element, beat.id, reveal, visibleTo, BODY_ADVANCE);
+      top += Math.round(labelFit.size * 1.6) + 18;
     }
 
     for (const [j, text] of beat.lines.entries()) {
@@ -593,7 +675,7 @@ function sceneElements(
         kind: scene.kind === 'numbers' ? 'number' : 'line',
       };
       elements.push(element);
-      pushCheck(element, beat.id, at, visibleTo);
+      pushCheck(element, beat.id, at, visibleTo, DISPLAY_ADVANCE);
       top += Math.round(size * layout.lineHeight) + 14;
     }
 
