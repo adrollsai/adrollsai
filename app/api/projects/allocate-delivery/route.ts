@@ -136,7 +136,7 @@ ${visualProductionRules}
 
 Requirements:
 - Static Meta Ad prompt optimized for 3:4 aspect ratio.
-- High quality photography, authentic lighting, no text overlays or awkward placeholder graphics.
+- High quality photography, authentic lighting, and the complete designed layout — headline, price badge, badge chips and CTA — set as real typography INSIDE this one image. Nothing is composited on top afterwards, so every element the ad needs must be part of the design the model renders. No placeholder graphics or layout notes.
 - Clean presentation highlighting the product/property strengths.
 `;
 

@@ -46,6 +46,8 @@
     "verify:metering": "esbuild scripts/verify-metering.ts --bundle --platform=node --format=cjs --outfile=.tmp-meter.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-meter.cjs",
     "verify:media-models": "esbuild scripts/verify-media-models.ts --bundle --platform=node --format=cjs --outfile=.tmp-models.cjs --log-level=warning && node .tmp-models.cjs",
     "verify:video-skill": "esbuild scripts/verify-video-skill.ts --bundle --platform=node --format=esm --outfile=.tmp-vskill.mjs --log-level=warning --alias:@/utils/r2=./utils/r2 --external:@aws-sdk/client-s3 --external:@aws-sdk/s3-request-presigner --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@/utils/external-apis && node .tmp-vskill.mjs",
+    "verify:image-skill": "esbuild scripts/verify-image-skill.ts --bundle --platform=node --format=esm --outfile=.tmp-imgskill.mjs --log-level=warning --external:@/* --external:@aws-sdk/client-s3 --external:@supabase/supabase-js && node .tmp-imgskill.mjs",
+    "proof:image-skill": "esbuild scripts/image-skill-live-proof.ts --bundle --platform=node --format=esm --outfile=.tmp-imgproof.mjs --log-level=warning --external:@aws-sdk/client-s3 --external:dotenv --external:@supabase/supabase-js && node .tmp-imgproof.mjs",
     "verify:continue": "esbuild scripts/verify-continue.ts --bundle --platform=node --format=cjs --outfile=.tmp-cont.cjs --log-level=warning && node .tmp-cont.cjs",
     "test:recipe": "esbuild scripts/test-recipe.ts --bundle --platform=node --format=cjs --outfile=.tmp-recipe.cjs --log-level=warning --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 --alias:@/utils/r2=./utils/r2 && node .tmp-recipe.cjs",
     "demo:behind": "esbuild scripts/demo-behind-subject.ts --bundle --platform=node --format=cjs --outfile=.tmp-behind.cjs --log-level=warning --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 --alias:@/utils/r2=./utils/r2 && node .tmp-behind.cjs",
@@ -65,7 +67,8 @@
     "verify:skills": "esbuild scripts/verify-skills.ts --bundle --platform=node --format=cjs --outfile=.tmp-skills.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-skills.cjs",
     "verify:routines": "esbuild scripts/verify-routines.ts --bundle --platform=node --format=cjs --outfile=.tmp-routines.cjs --log-level=warning --external:@supabase/supabase-js && node .tmp-routines.cjs",
     "verify:ceo": "esbuild scripts/verify-ceo.ts --bundle --platform=node --format=cjs --outfile=.tmp-ceo.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-ceo.cjs",
-    "verify:stt": "esbuild scripts/verify-stt.ts --bundle --platform=node --format=cjs --outfile=.tmp-stt.cjs --log-level=warning && node .tmp-stt.cjs"
+    "verify:stt": "esbuild scripts/verify-stt.ts --bundle --platform=node --format=cjs --outfile=.tmp-stt.cjs --log-level=warning && node .tmp-stt.cjs",
+    "verify:scraping": "esbuild scripts/verify-scraping.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape.cjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",
