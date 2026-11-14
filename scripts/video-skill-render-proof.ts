@@ -1,27 +1,43 @@
 /**
- * ACCEPTANCE HARNESS — proves the video skill's toolchain on a real render.
+ * TOOLCHAIN PROBE — **not** the P3 deliverable. Read this before trusting a frame.
  *
- *   npm run proof:video-skill
+ * This harness exists to prove one thing: that the emitted project compiles,
+ * validates and renders, and that the beat timings actually drive picture and type.
+ * Every pixel of input is a STAND-IN:
  *
- * It runs the SAME pipeline the skill runs, minus the sandbox and minus the
- * vendors:
+ *   - the "voice" is one ffmpeg tone burst per beat, not TTS. No vendor is called
+ *     and no credit is spent, so nothing here tests voice, pricing or R2;
+ *   - the plates are borrowed 1080x1920 footage from the delivered reference film
+ *     (`--footage`), copied into the slots a generated clip would fill. Earlier
+ *     revisions of this harness used flat gradient / colour-bar plates instead; in
+ *     both cases the plate is a placeholder, never deliverable footage;
+ *   - the logo is a solid cream PNG, so the end card's wordmark area is blank.
  *
- *   1. synthesise one voice file per beat (ffmpeg tones, NOT real TTS — no vendor
- *      is called and no money is spent);
+ * A film delivered by the `video` skill has real voiceover from the registry's voice
+ * model, plates that are either the client's own footage or generated motion, and a
+ * real brand asset. This file is the harness that proves the plumbing, not a film —
+ * do not ship its output to a client.
+ *
+ * What it does, in order:
+ *
+ *   1. synthesise one voice file per beat (ffmpeg tones, NOT real TTS);
  *   2. MEASURE them with the exact commands `index.ts` issues
  *      (`probeDurationCommand`, `SILENCE_DETECT_FILTER`, `trimSilenceCommand`),
  *      parsed by the exact pure helpers (`parseSilenceDetect`,
  *      `onsetFromMeasurement`), so the clock in the film is a measured clock;
  *   3. emit the HyperFrames project with `buildProject` and write it to disk;
- *   4. synthesise the plates and run the emitted `grading.sh` for real (Git Bash +
- *      ffmpeg), including the per-scene plate copies;
- *   5. `hyperframes check --json` (must be 0 errors), then `render` a ≤8 s span at
- *      9:16, then pull frames out of the delivered MP4 to look at.
+ *   4. copy the stand-in plates and run the emitted `grading.sh` for real (Git Bash
+ *      + ffmpeg), including the per-scene plate copies;
+ *   5. `hyperframes check --json` (0 errors, and no structurally-invisible element),
+ *      then `render`, then pull frames out of the MP4 at every reveal and FAIL if any
+ *      two are identical.
  *
  * Everything is written under D:\nobo-renders (this machine has ~2.4 GB free on C:
  * and ~145 GB on D:), and TMPDIR points at D:\nobo-tmp.
  *
- *   node scripts/video-skill-render-proof.ts --start 0 --end 7
+ *   node scripts/video-skill-render-proof.ts                 # whole film, real-ish plates
+ *   node scripts/video-skill-render-proof.ts --start 0 --end 7   # a span
+ *   node scripts/video-skill-render-proof.ts --reuse <dir>       # re-render, skip grading
  */
 import { execFileSync, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
