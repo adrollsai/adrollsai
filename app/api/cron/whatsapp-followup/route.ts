@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { outboundRecipient } from '@/lib/automation/test-mode';
 import { calculateLeadScore, parseCustomFields } from '@/utils/lead-scoring'
 
 // Force dynamic execution to bypass Next.js static build cache
@@ -156,7 +157,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     continue
                 }
 
-                const cleanPhone = (lead.phone || '').replace(/\D/g, '')
+                const cleanPhone = (outboundRecipient(lead.phone) || '').replace(/\D/g, '')
                 if (cleanPhone.length < 10) {
                     skippedCount++
                     continue
@@ -206,8 +207,29 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     body: JSON.stringify(payload)
                 })
 
-                if (sendRes.ok) {
+                // Guardrail: daily message cap.
+                let sendAllowed = true
+                try {
+                  const { canSpend } = await import('@/lib/automation/ceo')
+                  const cap = await canSpend(supabaseAdmin, lead.user_id, 'message', 0, 1)
+                  if (!cap.allowed) {
+                    console.log(
+                      '[Weekly Followup] daily message cap reached for ' + lead.user_id +
+                      ' (' + (cap.reason || 'cap') + ' ' + cap.used + '/' + cap.cap + ')'
+                    )
+                    skippedCount++
+                    sendAllowed = false
+                  }
+                } catch {}
+
+                if (sendAllowed && sendRes.ok) {
                     sentCount++
+
+                    // Ledger for the message cap.
+                    try {
+                      const { recordSpend } = await import('@/lib/automation/ceo')
+                      await recordSpend(supabaseAdmin, lead.user_id, 'message', 0, 1)
+                    } catch {}
 
                     // Update lead custom fields with timestamp & count
                     const updatedCount = (cf.weekly_followup_count || 0) + 1

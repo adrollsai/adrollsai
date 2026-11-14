@@ -23,6 +23,17 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 
 const defaultApiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
+// ============================================================================
+// Gemini TTS-Flash pipeline (STT -> LLM -> TTS over REST, no Live API).
+// Self-contained module: /tts-flash-stream WebSocket + /tts-flash-* HTTP routes.
+// ============================================================================
+let ttsFlashPipeline = null;
+try {
+    ttsFlashPipeline = require('./tts-flash-pipeline');
+} catch (e) {
+    console.error('[BRIDGE] TTS-Flash pipeline failed to load:', e.message);
+}
+
 function computeValidCallingSlot(targetDate = new Date(), timeZone = 'Asia/Kolkata') {
     // Ensure targetDate is in the future
     if (targetDate.getTime() <= Date.now() + (5 * 60 * 1000)) {
@@ -890,6 +901,16 @@ app.post('/prewarm', async (req, res) => {
     }
 });
 
+// Register the Gemini TTS-Flash pipeline HTTP routes (prewarm / voice design / health)
+if (ttsFlashPipeline && typeof ttsFlashPipeline.register === 'function') {
+    try {
+        ttsFlashPipeline.register(app);
+        console.log('[BRIDGE SERVER] TTS-Flash pipeline routes registered (/tts-flash-prewarm, /tts-flash-voice, /tts-flash-health)');
+    } catch (e) {
+        console.error('[BRIDGE SERVER] Failed to register TTS-Flash routes:', e.message);
+    }
+}
+
 const server = app.listen(PORT, () => {
     console.log(`[BRIDGE SERVER] Listening on port ${PORT}`);
 });
@@ -1511,6 +1532,16 @@ wss.on('connection', (wsConnection, req) => {
 
     if (urlObj && (urlObj.pathname === '/agent-bridge' || urlObj.pathname.includes('/agent-bridge'))) {
         return handleAgentBridgeConnection(wsConnection, req, urlObj);
+    }
+
+    // Gemini TTS-Flash pipeline (STT -> LLM -> streaming TTS, no Live API)
+    if (urlObj && urlObj.pathname.includes('/tts-flash-stream')) {
+        if (ttsFlashPipeline && typeof ttsFlashPipeline.handleTtsFlashConnection === 'function') {
+            return ttsFlashPipeline.handleTtsFlashConnection(wsConnection, req, urlObj);
+        }
+        console.error('[BRIDGE] TTS-Flash pipeline not loaded — rejecting stream connection');
+        try { wsConnection.close(1011, 'TTS-Flash pipeline unavailable'); } catch (e) { }
+        return;
     }
 
     const queryLeadId = urlObj?.searchParams?.get('leadId') || urlObj?.searchParams?.get('amp;leadId');

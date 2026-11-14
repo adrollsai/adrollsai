@@ -169,15 +169,21 @@ export function shouldContinueAfterTurn(input: {
   steps?: Array<any>;
   finalText?: string;
 }): boolean {
-  const stoppedByLimit = input.stopReason !== null || input.finishReason === 'tool-calls';
-  if (!stoppedByLimit) return false;
-
   const steps = Array.isArray(input.steps) ? input.steps : [];
   const last = steps[steps.length - 1];
   const lastWantedTools =
     (last?.toolCalls?.length || 0) > 0 ||
     (Array.isArray(last?.content) && last.content.some((p: any) => p?.type === 'tool-call'));
 
-  const answered = typeof input.finalText === 'string' && input.finalText.trim().length > 80;
-  return lastWantedTools || !answered;
+  // Only a turn that was cut off mid-work continues. The previous rule also re-queued
+  // turns whose closing text looked "thin", which re-ran answers that had already been
+  // delivered: the user saw the same reply two or three times and paid for each one.
+  // Two cases are genuinely unfinished — it still wants a tool, or it produced no words
+  // at all before the clock ran out — and everything else is done.
+  const stoppedByLimit = input.stopReason !== null || input.finishReason === 'tool-calls';
+  if (!stoppedByLimit) return false;
+  if (lastWantedTools) return true;
+
+  const saidSomething = typeof input.finalText === 'string' && input.finalText.trim().length > 0;
+  return !saidSomething;
 }

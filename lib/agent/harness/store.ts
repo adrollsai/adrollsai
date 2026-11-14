@@ -38,6 +38,46 @@ export interface HarnessSessionSummary {
 
 const MISSING_TABLE = new Set(['42P01', 'PGRST205', 'PGRST202']);
 
+/**
+ * The CEO thread lives in its own workspace so it can be pinned above the day-to-day
+ * sessions and kept out of both the "delete" action and any workspace cleanup.
+ */
+export const CEO_WORKSPACE = 'ceo';
+export const CEO_TITLE = 'CEO';
+
+/**
+ * Find or create the business's permanent CEO conversation.
+ *
+ * Idempotent: the agent UI asks for this every time it loads, and there must only ever
+ * be one. Serialised by a unique-ish read-then-insert on (user_id, workspace_id) — a rare
+ * double insert would be harmless because the caller takes the newest.
+ */
+export async function ensureCeoSession(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<string | null> {
+  const { data: existing, error } = await db(supabase)
+    .from('harness_sessions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('workspace_id', CEO_WORKSPACE)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!error && existing?.id) return existing.id as string;
+  if (error && !isMissingTable(error)) {
+    console.error('[Harness] ensureCeoSession lookup failed:', error.message);
+    return null;
+  }
+
+  const created = await createSession(supabase, userId, {
+    title: CEO_TITLE,
+    workspaceId: CEO_WORKSPACE,
+  });
+  return created?.id ?? null;
+}
+
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   if (error.code && MISSING_TABLE.has(error.code)) return true;
@@ -266,6 +306,20 @@ export async function deleteSession(
   userId: string,
   sessionId: string
 ): Promise<boolean> {
+  // The CEO thread is the business's permanent conversation. It is not a chat record
+  // that a user tidies away — deleting it would throw away the agent's memory of the
+  // business, so it is refused here at the data layer and not only hidden in the UI.
+  const { data: target } = await db(supabase)
+    .from('harness_sessions')
+    .select('workspace_id')
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (target?.workspace_id === CEO_WORKSPACE) {
+    console.warn('[Harness] refusing to delete the CEO thread');
+    return false;
+  }
+
   // Delete children first. `harness_events` and `harness_runs` reference the
   // session, and without an ON DELETE CASCADE the delete is rejected by the
   // foreign key — which surfaced in the UI as a delete button that did nothing,
@@ -298,8 +352,7 @@ export async function deleteSession(
   return true;
 }
 
-export async function listWorkspaces(supabase: SupabaseClient, userId: string) {
-  const { data, error } = await db(supabase)
+export async function listWorkspaces(supabase: SupabaseClient, userId: string) {  const { data, error } = await db(supabase)
     .from('harness_workspaces')
     .select('id, name, created_at')
     .eq('user_id', userId)

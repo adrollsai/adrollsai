@@ -360,7 +360,13 @@ export default function VoipCallingModal({
                         setStatusMessage(`Ringing client phone...`)
                     } catch (dialErr: any) {
                         setCallState('error')
-                        setErrorMessage(dialErr.message || 'Call initiation failed')
+                        // Keep the server's own words. A bare "Call initiation failed" hid
+                        // whether it was auth, an invalid number or the carrier rejecting it.
+                        setErrorMessage(
+                            dialErr.message
+                                ? `Call could not be started: ${dialErr.message}`
+                                : 'Call could not be started. The dialer got no response from the call provider.'
+                        )
                     }
                 }
 
@@ -465,10 +471,16 @@ export default function VoipCallingModal({
                 }
 
                 ws.onerror = (e) => {
-                    console.error('[VOIP MODAL] WebSocket error:', e)
+                    console.error('[VOIP MODAL] WebSocket error:', e, 'url:', wsUrl)
                     if (callState !== 'completed' && callState !== 'in_call') {
                         setCallState('error')
-                        setErrorMessage('VoIP bridge connection failed. Please check network.')
+                        // Name the host: "check network" sent people to their router when
+                        // the real cause was the audio bridge itself being unreachable.
+                        setErrorMessage(
+                            `Could not reach the call audio service (${bridgeWsHost.replace(/^wss?:\/\//, '')}). ` +
+                            `The dialer needs this connection before it can ring the phone. ` +
+                            `Retry in a moment; if it repeats, tell support this exact line.`
+                        )
                     }
                 }
 

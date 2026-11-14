@@ -835,7 +835,15 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       config_id: process.env.NEXT_PUBLIC_FACEBOOK_LOGIN_CONFIG_ID || '4311232925804423',
       response_type: 'code',
       override_default_response_type: true,
-      display: isMobile ? 'touch' : 'popup'
+      display: isMobile ? 'touch' : 'popup',
+      // REQUIRED for WhatsApp Embedded Signup: without `extras` Meta never posts the
+      // WA_EMBEDDED_SIGNUP session info (waba_id + phone_number_id) back to this page,
+      // so the connect silently completes with no account data and whatsapp_waba_id stays null.
+      extras: {
+        feature: 'whatsapp_embedded_signup',
+        sessionInfoVersion: 3,
+        setup: {}
+      }
     })
   }
 

@@ -1062,7 +1062,7 @@ function CRMPageContent() {
 
   const isFetchingLeadsRef = useRef(false)
 
-  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, calling_enabled, dnp_count, last_call_at, last_call_status, facebook_created_at'
+  const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, pipeline_stage, source, ad_name, form_name, next_followup, assigned_to, budget, custom_fields, booked_time, pixel_id, property_id, campaign_id, csv_audience, whatsapp_enabled, calling_enabled, dnp_count, last_call_at, last_call_status, facebook_created_at, last_activity_at'
 
   // 1. DIRECT SUPABASE PARALLEL FETCH — No API route middleman
   const fetchLeads = async (force = false, silent = false) => {
@@ -1137,7 +1137,11 @@ function CRMPageContent() {
 
       // Step 1: Get total count + first 1000 leads in parallel
       const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
-        .order('created_at', { ascending: false })
+        // Order by ACTIVITY, not arrival: a lead that goes cold and is reopened
+        // months later is new work today, but created_at would pin it to the bottom
+        // for ever. last_activity_at is bumped by a DB trigger on every insert and
+        // update, so reopened and recently-touched leads surface at the top.
+        .order('last_activity_at', { ascending: false })
         .range(0, 999)
       const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
 
@@ -1170,7 +1174,7 @@ function CRMPageContent() {
         const batchPromises = Array.from({ length: remainingPages }, (_, i) => {
           const pageIdx = i + 1
           return filterFn(supabase.from('leads').select(leadFields))
-            .order('created_at', { ascending: false })
+            .order('last_activity_at', { ascending: false })
             .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
         })
 
@@ -1536,6 +1540,64 @@ function CRMPageContent() {
     return () => clearTimeout(delayDebounce)
   }, [searchQuery])
  
+  // 1b. LIVE IN-APP NOTIFICATIONS.
+  //
+  // A new lead, an appointment booked, a lead assigned to someone, a zero-credit
+  // pause — all of those already write a row into `notifications` (see
+  // utils/notification-helper.ts). That table was not in the realtime publication,
+  // so nothing arrived until a manual reload, and the CRM never listened for it.
+  // Both are fixed: the row is published now, and this channel picks it up.
+  //
+  // Filtered on `user_id=eq.<me>`, so an agent receives their own assignments and
+  // the owner receives business-wide events, without either seeing the other's noise.
+  useEffect(() => {
+    if (!userId) return
+
+    const channel = supabase
+      .channel('crm_notifications_live')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const row: any = payload.new
+          if (!row) return
+
+          const title = String(row.title || 'Notification')
+          const body = String(row.message || '')
+
+          toast(title, { description: body.slice(0, 140), duration: 8000 })
+
+          // A real browser notification too, so it is seen when the CRM is in a
+          // background tab — which is exactly when a new lead used to be missed.
+          try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+              const n = new Notification(title, { body: body.slice(0, 140), tag: String(row.id || '') })
+              if (row.action_link) {
+                n.onclick = () => {
+                  window.focus()
+                  window.location.href = row.action_link
+                }
+              }
+            }
+          } catch {
+            /* a bonus, never load-bearing */
+          }
+
+          // Anything lead-shaped should land in the list immediately. The leads
+          // channel normally does this; this covers the insert that happened before
+          // that subscription was live.
+          if (String(row.type || '').includes('lead')) {
+            void fetchLeads(true, true)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, supabase])
   // 2. SUPABASE REAL-TIME (Listen for Webhook Insertions & Updates)
   useEffect(() => {
     if (!userId) return
@@ -5490,6 +5552,10 @@ END:VCARD\n`
             selectedNextActionFilter,
             selectedNextActionType
           }}
+          // The exporter filters its own copy of the data, so "same filter as the
+          // CRM" was never actually true. Handing it the already-filtered rows is
+          // the only way the download matches what is on screen.
+          currentViewLeads={filteredLeads}
         />
 
         {/* ROBUST CSV IMPORT MAPPING MODAL */}

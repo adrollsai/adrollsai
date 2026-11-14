@@ -18,6 +18,9 @@ import {
   CheckCircle2,
   AlertCircle,
   FolderOpen,
+  BookOpen,
+  Mic,
+  Crown,
   FolderPlus,
   FileVideo,
   FileSpreadsheet,
@@ -56,9 +59,15 @@ import {
 import VoiceInputButton from './VoiceInputButton';
 import HtmlArtifactPreview from './HtmlArtifactPreview';
 import ActionConfirmationCard from './ActionConfirmationCard';
+import CreatePanel from './CreatePanel';
 import ProgressTrackerCard from './ProgressTrackerCard';
 import FileManagerDrawer from './FileManagerDrawer';
+import SkillsDrawer from './SkillsDrawer';
+import DictateButton from './DictateButton';
 import AgentMarkdown from './AgentMarkdown';
+import AgentWelcome from './AgentWelcome';
+import QuestionPanel, { normalizeQuestions, type QuestionPayload } from './QuestionPanel';
+import { NoboOrb } from './NoboMascot';
 import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
 import HarnessTranscript from './HarnessTranscript';
 import HarnessDetails from './HarnessDetails';
@@ -133,7 +142,7 @@ function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleC
         <div key={m.id || mIdx} className="my-3 flex justify-end font-sans">
           <div className="flex flex-col items-end max-w-[80%]">
             <div
-              className="rounded-[16px] px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
+              className="nobo-bubble-user rounded-[16px] px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
               style={{
                 background: 'var(--dsw-alias-bg-layer-2)',
                 border: '1px solid var(--dsw-alias-border-l1)',
@@ -208,6 +217,7 @@ function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleC
                   tool={part}
                   isLoading={isLoading && mIdx === messages.length - 1}
                   onOptionSelect={handleSend}
+                  onResume={handleSend}
                 />
               );
             }
@@ -216,20 +226,27 @@ function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleC
         })}
 
         {finalTexts && (
-          <div className="pt-2 dsh-t-prose dsh-label-primary">
-            <AgentMarkdown content={finalTexts} />
-            {!isLoading && (
-              <div className="flex items-center gap-3 pt-2 dsh-label-caption dsh-t-xs">
-                <button onClick={() => handleCopyMessage(finalTexts, mIdx)} className="dsh-interactive" title="Copy">
-                  {copiedIndex === mIdx ? <Check size={13} className="dsh-success" /> : <Copy size={13} />}
-                </button>
-                {mIdx === messages.length - 1 && reload && (
-                  <button onClick={() => reload()} className="dsh-interactive" title="Retry">
-                    <RotateCcw size={13} />
+          <div className="flex items-start gap-2.5 pt-2">
+            {/* The mascot doubles as the assistant avatar, so a reply is visibly
+                Nobo's and reads as a conversation rather than a wall of tool logs. */}
+            <div className="pt-0.5">
+              <NoboOrb size="sm" state={isLoading && mIdx === messages.length - 1 ? 'talking' : 'idle'} />
+            </div>
+            <div className="nobo-bubble-agent min-w-0 flex-1 dsh-t-prose dsh-label-primary">
+              <AgentMarkdown content={finalTexts} />
+              {!isLoading && (
+                <div className="flex items-center gap-3 pt-2 dsh-label-caption dsh-t-xs">
+                  <button onClick={() => handleCopyMessage(finalTexts, mIdx)} className="dsh-interactive" title="Copy">
+                    {copiedIndex === mIdx ? <Check size={13} className="dsh-success" /> : <Copy size={13} />}
                   </button>
-                )}
-              </div>
-            )}
+                  {mIdx === messages.length - 1 && reload && (
+                    <button onClick={() => reload()} className="dsh-interactive" title="Retry">
+                      <RotateCcw size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -290,6 +307,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // Sessions state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('session_init');
+  // The permanent CEO thread. Created server-side on first load and refusal-protected
+  // there too, so this is a view of something the user cannot accidentally destroy.
+  const [ceoSessionId, setCeoSessionId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabled = useRef(true);
@@ -363,6 +383,45 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // Two-step delete confirmation: holds the id awaiting a second click.
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
+  // Ask the server for the permanent CEO thread, and honour a deep link from the CEO
+  // tab (?ceo=1). The server creates it on first look, so there is exactly one.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/agent/v2/sessions');
+        const data = await res.json();
+        if (!alive || !data?.ceoSessionId) return;
+        setCeoSessionId(data.ceoSessionId);
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('ceo') === '1' || params.get('session') === data.ceoSessionId) {
+          setActiveSessionId(data.ceoSessionId);
+          setActiveWorkspaceId('ws_ceo');
+        }
+      } catch {
+        /* the tab still works without it; the row simply does not appear */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Create panel: the front door to a production job (kind, dimensions, reference, brief).
+  const [createOpen, setCreateOpen] = useState(false);
+  // Business skills live here, beside the files, because that is where a user looks
+  // for "things I have taught the agent".
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  // Voice dialogue: talk to the agent instead of typing.
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceActivity, setVoiceActivity] = useState<string | null>(null);
+
+  // While a turn is running, the voice panel is told what is happening so it can say it
+  // out loud rather than going silent.
+  useEffect(() => {
+    setVoiceActivity(isLoading ? 'finishing your request' : null);
+  }, [isLoading]);
+
   // Theme. Light is the default; the choice persists per browser.
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   useEffect(() => {
@@ -402,10 +461,52 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   useEffect(() => {
     if (wasStreaming.current && !isLoading && logSessionId) {
       void harness.openSession(logSessionId);
+      // The server names a session from its first message (`maybeAutoTitle`), and
+      // that write lands DURING the turn. The sidebar list was only fetched on
+      // mount, so the tile kept saying "New session" until a full page reload —
+      // which is exactly what made naming look broken. Refetch it now.
+      void harness.refresh();
     }
     wasStreaming.current = isLoading;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, logSessionId]);
+
+  // Adopt an existing session on load.
+  //
+  // Without this `logSessionId` stayed null until the user sent something, and the
+  // send path then created a brand-new session — so every page load plus one
+  // message left another empty "New session" tile behind. Reopening the most
+  // recent chat instead makes the sidebar behave like a history, not a log of
+  // visits.
+  const adoptedSession = useRef(false);
+  useEffect(() => {
+    if (adoptedSession.current) return;
+    if (harness.available !== true) return;
+    if (logSessionId) {
+      adoptedSession.current = true;
+      return;
+    }
+    const list = harness.sessions;
+    if (!Array.isArray(list)) return;
+
+    adoptedSession.current = true;
+    if (list.length === 0) return; // nothing to adopt; a session is made on first send
+
+    let lastId: string | null = null;
+    try {
+      lastId = localStorage.getItem(lastSessionStorageKey);
+    } catch {
+      /* storage blocked — fall through to the newest */
+    }
+    const target = list.find((s) => s.id === lastId) || list[0];
+    if (!target) return;
+
+    setActiveSessionId(target.id);
+    setLogSessionId(target.id);
+    if (target.workspaceId) setActiveWorkspaceId(target.workspaceId);
+    void harness.openSession(target.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [harness.available, harness.sessions, logSessionId, lastSessionStorageKey]);
 
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
@@ -916,6 +1017,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
+    // The CEO thread is permanent. The store refuses it as well; this is the polite
+    // half of the same rule, so the user gets a reason instead of a dead button.
+    if (ceoSessionId && id === ceoSessionId) {
+      toast.error('The CEO thread is permanent — it holds what the agent knows about your business.');
+      return;
+    }
+
     // Two-step confirm so a stray click cannot wipe a conversation.
     if (pendingDelete !== id) {
       setPendingDelete(id);
@@ -936,10 +1044,17 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       }
       toast.success('Chat deleted');
       if (logSessionId === id) {
+        // Deleting a chat must leave you with one FEWER chat, not a fresh empty
+        // one. This used to call handleNewSession(), which created a row
+        // server-side — so the list never shrank: delete one, gain one.
+        //
+        // A session is now created lazily on the next send (see handleSend), so
+        // the sidebar stays empty until the owner actually starts talking.
         setLogSessionId(null);
         setMessages([]);
-        await handleNewSession();
+        setActiveSessionId(`session_${Date.now()}`);
       }
+      void harness.refresh();
       return;
     }
 
@@ -949,7 +1064,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       localStorage.setItem(sessionStorageKey, JSON.stringify(updated));
     } catch (e) {}
     if (activeSessionId === id) {
-      void handleNewSession();
+      // Same rule without the event log: clear the view, create nothing.
+      setMessages([]);
+      try {
+        localStorage.removeItem(`nobo_msg_${id}`);
+      } catch (e) {}
+      setActiveSessionId(`session_${Date.now()}`);
     }
   };
 
@@ -972,6 +1092,33 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       updatedAt: s.updatedAt,
     }));
   }, [harness.available, harness.sessions, sessions]);
+
+  /* ── the agent's unanswered question, if there is one ────────────────────
+   * `request_user_input` writes a `user_input_prompt` artifact into the tool
+   * output. The panel below the transcript reads the LAST one and only shows it
+   * while nothing newer has been said, so it never nags about a question that has
+   * already been answered.
+   */
+  const [dismissedQuestionId, setDismissedQuestionId] = useState<string | null>(null);
+  const pendingQuestion: QuestionPayload | null = useMemo(() => {
+    const items = projected?.items ?? [];
+
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item: any = items[i];
+      // Anything the user said after the question means it was answered.
+      if (item?.kind === 'user') return null;
+      if (item?.kind !== 'tool') continue;
+
+      const artifact = item?.output?.artifact;
+      if (artifact?.type !== 'user_input_prompt') continue;
+
+      const payload = normalizeQuestions(artifact);
+      if (!payload) return null;
+      if (dismissedQuestionId && payload.id === dismissedQuestionId) return null;
+      return payload;
+    }
+    return null;
+  }, [projected?.items, dismissedQuestionId]);
 
   const allWorkspaces: WorkspaceFolder[] = useMemo(() => {
     if (harness.available !== true) return workspaces;
@@ -1006,7 +1153,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
       {/* 1. DeepSeek Harness Left Sidebar */}
       <div
-        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
+        className={`nobo-sidebar fixed inset-y-0 left-0 z-40 w-64 flex flex-col transition-transform duration-200 md:static md:translate-x-0 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:hidden'
         }`}
         style={{
@@ -1098,6 +1245,39 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               </button>
             </div>
           </div>
+
+          {/* The CEO thread — permanent, pinned, and not part of the workspace tree.
+              It is the standing conversation about the business: never deleted, never
+              filed away, always one click from anywhere in the agent. */}
+          {ceoSessionId && (
+            <div className="mb-2">
+              <button
+                onClick={() => {
+                  setActiveSessionId(ceoSessionId);
+                  setActiveWorkspaceId('ws_ceo');
+                }}
+                className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-[10px] transition ${
+                  activeSessionId === ceoSessionId ? 'dsh-strong' : ''
+                }`}
+                style={{
+                  background:
+                    activeSessionId === ceoSessionId
+                      ? 'var(--dsw-alias-state-warn-tertiary)'
+                      : 'var(--dsw-alias-bg-layer-2)',
+                  border: '1px solid var(--dsw-alias-border-l1)',
+                  color:
+                    activeSessionId === ceoSessionId
+                      ? 'var(--dsw-alias-state-warn-secondary)'
+                      : 'var(--dsw-alias-label-primary)',
+                }}
+                title="Your permanent conversation about the business"
+              >
+                <Crown size={14} className="shrink-0" />
+                <span className="dsh-t-s dsh-strong truncate flex-1 text-left">CEO</span>
+                <span className="dsh-t-xxxs dsh-label-caption dsh-mono">always on</span>
+              </button>
+            </div>
+          )}
 
           {/* Folder & Nested Sessions List */}
           <div className="space-y-2">
@@ -1216,6 +1396,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         {/* Sidebar Bottom Controls */}
         <div className="p-3 dsh-border-t space-y-1.5 dsh-t-xs dsh-label-tertiary">
           <button
+            onClick={() => setSkillsOpen(true)}
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] dsh-interactive"
+            title="Procedures you have taught the agent"
+          >
+            <BookOpen size={15} className="dsh-accent" />
+            <span>Business Skills</span>
+          </button>
+
+          <button
             onClick={() => setShowFileManager(true)}
             className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-[8px] dsh-interactive"
           >
@@ -1290,9 +1479,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             </div>
           </div>
 
-          {/* Chat | Trajectory — toggles the third column */}
+          {/* Chat | Trajectory — toggles the third column. Sized down on phones:
+              at full size the pill and the session title did not both fit, and
+              "Trajectory" was clipped at the viewport edge. */}
           <div
-            className="flex items-center gap-1 p-0.5 dsh-t-xs dsh-strong"
+            className="flex items-center gap-1 p-0.5 dsh-t-xs dsh-strong shrink-0 text-[11px] sm:text-[13px]"
             style={{
               background: 'var(--dsw-alias-bg-layer-2)',
               border: '1px solid var(--dsw-alias-border-l1)',
@@ -1304,7 +1495,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 setActiveTab('chat');
                 setShowDetails(false);
               }}
-              className="px-3 py-1 transition"
+              className="px-2 sm:px-3 py-1 transition"
               style={{
                 borderRadius: 'var(--dsh-radius-xs)',
                 background: activeTab === 'chat' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
@@ -1321,7 +1512,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 setActiveTab('trajectory');
                 setShowDetails(true);
               }}
-              className="px-3 py-1 transition"
+              className="px-2 sm:px-3 py-1 transition"
               style={{
                 borderRadius: 'var(--dsh-radius-xs)',
                 background: activeTab === 'trajectory' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
@@ -1354,31 +1545,17 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         >
           <div className="max-w-3xl mx-auto space-y-4">
             {messages.length === 0 && !(logEnabled && (projected?.items.length ?? 0) > 0) ? (
-              <div className="py-20 flex flex-col items-center justify-center text-center font-sans">
-                <div className="w-12 h-12 rounded-[16px] dsh-surface-2 dsh-label-tertiary flex items-center justify-center mb-4">
-                  <Bot size={26} />
-                </div>
-                <h3 className="dsh-t-xl dsh-label-primary mb-2">Nobogent Harness</h3>
-                <p className="dsh-t-s dsh-label-tertiary max-w-sm mb-6">
-                  Autonomous sandbox operator for code-based video compilation, motion graphics, and workflows.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left max-w-lg">
-                  <button
-                    onClick={() => handleSend('i want you to make a video for wishing happy diwali to our clients on behalf of nobogent, 15 sec would be enough make it in 9:16')}
-                    className="p-3 rounded-[12px] dsh-surface-2 dsh-border dsh-interactive text-left"
-                  >
-                    <p className="dsh-t-s dsh-strong dsh-label-primary">Happy Diwali Video (9:16)</p>
-                    <p className="dsh-t-xs dsh-label-tertiary mt-0.5">Render 15s vertical motion graphics greeting</p>
-                  </button>
-                  <button
-                    onClick={() => handleSend('Use Meta Ads MCP to inspect active campaigns and launch a high-intent lead generation campaign on Instagram Reels with ₹1,500/day budget.')}
-                    className="p-3 rounded-[12px] dsh-surface-2 dsh-border dsh-interactive text-left"
-                  >
-                    <p className="dsh-t-s dsh-strong dsh-label-primary">Launch Meta Campaign</p>
-                    <p className="dsh-t-xs dsh-label-tertiary mt-0.5">Targeted leadgen on Instagram Reels</p>
-                  </button>
-                </div>
-              </div>
+              <AgentWelcome
+                disabled={isLoading || isUploading}
+                onPrompt={(text) => handleSend(text)}
+                onGetStarted={() => {
+                  const el = textareaRef.current;
+                  if (el) {
+                    el.focus();
+                    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                  }
+                }}
+              />
             ) : logEnabled ? (
               // Log-backed session: the committed transcript is a projection of
               // the event log, and only the in-flight turn comes from the live
@@ -1456,6 +1633,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 <Loader2 size={14} className="animate-spin shrink-0" />
                 <span className="dsh-strong" style={{ color: 'var(--dsw-alias-label-primary)' }}>
                   {harness.runInProgress ? 'Agent is working' : 'Working'}
+                </span>
+                <span className="nobo-thinking-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
                 </span>
                 <span className="dsh-tnum" style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
                   {secondsElapsed}s
@@ -1564,9 +1746,27 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               </div>
             )}
 
+            {/* The agent's question, brought to the composer instead of buried in
+                the transcript. Answers, custom text and skip all route through the
+                same handleSend the composer uses. */}
+            {pendingQuestion && (
+              <QuestionPanel
+                payload={pendingQuestion}
+                disabled={isUploading}
+                onSubmit={(answer) => {
+                  setDismissedQuestionId(pendingQuestion.id);
+                  void handleSend(answer);
+                }}
+                onSkip={() => {
+                  setDismissedQuestionId(pendingQuestion.id);
+                  void handleSend('Skip that question — use your best judgement and carry on.');
+                }}
+              />
+            )}
+
             {/* Rounded Dock Container */}
             <div
-              className="p-3 transition"
+              className="nobo-dock p-3 transition"
               style={{
                 background: 'var(--dsw-alias-bg-layer-1)',
                 border: '1px solid var(--dsw-alias-border-l2)',
@@ -1591,7 +1791,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 placeholder={
                   isLoading
                     ? 'Type a correction — it queues and sends when this run finishes'
-                    : 'Describe the outcome you want — e.g. "Bhai Dooj image creative, then post it to Facebook"'
+                    : 'Ask for anything — a poster, a reel, a campaign…'
                 }
                 aria-label="Message the agent"
                 rows={1}
@@ -1612,18 +1812,44 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-1 rounded-full dsh-label-tertiary dsh-interactive"
+                    className="nobo-tap p-1.5 rounded-full dsh-label-tertiary dsh-interactive"
                     title="Attach file"
                   >
                     <Plus size={16} />
                   </button>
 
-                  {/* Mode Pill */}
+                  {/* Dictation: speak, and the words land in the box to edit and send.
+                      Part of the composer, so it is in every session automatically. */}
+                  <DictateButton
+                    disabled={isLoading || isUploading}
+                    onText={(text) => setInput((prev) => (prev ? `${prev} ${text}` : text))}
+                  />
+
+                  {/* Create — the fixed-form Creation tab cannot bend, so this seeds
+                      the same job as a conversation the user can keep editing. */}
+                  <button
+                    type="button"
+                    onClick={() => setCreateOpen(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 dsh-t-xs dsh-strong transition"
+                    style={{
+                      background: 'var(--dsw-alias-bg-layer-2)',
+                      color: 'var(--dsw-alias-label-secondary)',
+                      border: '1px solid var(--dsw-alias-border-l1)',
+                      borderRadius: 'var(--dsh-radius-full)',
+                    }}
+                    title="Start a creative job — pick dimensions and a reference, then talk it through"
+                  >
+                    <Sparkles size={12} />
+                    Create
+                  </button>
+
+
                   {/* Permission mode — a status chip, not a control. There is no
                       permission-preset system wired yet, so this must not look
-                      clickable. */}
+                      clickable. Hidden on phones: at 390px wide it wrapped onto
+                      two lines and pushed the send button off the row. */}
                   <span
-                    className="flex items-center gap-1 px-2.5 py-1 dsh-t-xs dsh-mono"
+                    className="hidden sm:flex items-center gap-1 px-2.5 py-1 dsh-t-xs dsh-mono"
                     style={{
                       background: 'var(--dsw-alias-bg-layer-2)',
                       color: 'var(--dsw-alias-label-tertiary)',
@@ -1638,9 +1864,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 <div className="flex items-center gap-2.5">
                   {/* Model badge — the agent always runs on the multimodal
                       flash model, so images attached to a message are seen
-                      directly. Static label, not a control. */}
+                      directly. Static label, not a control. Hidden on phones so
+                      the send button keeps its place on the row. */}
                   <span
-                    className="flex items-center gap-1.5 dsh-t-xs dsh-mono"
+                    className="hidden sm:flex items-center gap-1.5 dsh-t-xs dsh-mono"
                     style={{ color: 'var(--dsw-alias-label-tertiary)' }}
                     title="Vision-enabled agent model"
                   >
@@ -1657,7 +1884,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     type="button"
                     onClick={handleStartRun}
                     disabled={(!input.trim() && !attachedFile) || isUploading || harness.runInProgress}
-                    className="w-7 h-7 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
+                    className="nobo-tap w-8 h-8 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
                     title="Run in the background (survives closing this tab)"
                   >
                     <Rocket size={12} />
@@ -1674,7 +1901,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                         if (harness.runInProgress) void harness.cancelRun();
                         else stop();
                       }}
-                      className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap w-8 h-8 rounded-full dsh-btn-primary flex items-center justify-center"
                       title="Stop"
                     >
                       <Square size={12} className="fill-current" />
@@ -1684,7 +1911,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       type="button"
                       onClick={() => handleSend()}
                       disabled={(!input.trim() && !attachedFile) || isUploading}
-                      className="w-7 h-7 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap w-8 h-8 rounded-full dsh-btn-primary flex items-center justify-center"
                       title={isLoading ? 'Queue message (sends when the current turn finishes)' : 'Send'}
                     >
                       <Send size={12} />
@@ -1766,6 +1993,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
           toast.success(`Selected ${name}`);
         }}
       />
+
+      <CreatePanel open={createOpen} onClose={() => setCreateOpen(false)} onSend={handleSend} />
+      <SkillsDrawer open={skillsOpen} onClose={() => setSkillsOpen(false)} />
     </div>
   );
 }
+

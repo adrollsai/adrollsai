@@ -1,4 +1,7 @@
-/**
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * Supabase rows and provider payloads are untyped (generated database.types.ts
+ * is stale), matching the convention in utils/credits.ts and utils/voice-helper.ts.
+ *//**
  * Multi-channel delivery for a finished video.
  *
  * The video pipeline previously stopped at an in-app notification, so the owner
@@ -12,6 +15,7 @@
  */
 
 import nodemailer from 'nodemailer'
+import { outboundRecipient, outboundEmail } from '@/lib/automation/test-mode';
 
 const WA_PHONE_ID =
   process.env.NOBOGENT_WHATSAPP_PHONE_ID ||
@@ -61,14 +65,16 @@ export async function deliverVideoToAdmin(
   }
 
   try {
-    // Idempotency: a video can be finalized by more than one path (local FFmpeg,
-    // Cloud Run, Lambda). Only ever notify once per asset.
+    // One read serves three purposes: the idempotency guard, and recovering the
+    // caption / listing so callers can pass nothing but a URL.
+    let assetRow: any = null
     if (assetId) {
       const { data: asset } = await supabaseAdmin
         .from('assets')
-        .select('metadata')
+        .select('metadata, caption, property_id')
         .eq('id', assetId)
         .maybeSingle()
+      assetRow = asset
       if (asset?.metadata?.video_delivered === true) {
         return { ...result, skipped: 'already_delivered' }
       }
@@ -83,8 +89,23 @@ export async function deliverVideoToAdmin(
     if (!profile) return { ...result, skipped: 'profile_not_found' }
 
     const businessName = profile.business_name || 'Nobogent'
-    const subjectTitle = (title || 'your listing').toString()
-    const phone = normalisePhone(profile.whatsapp_personal_number || profile.contact_number)
+
+    // Resolve a human title: explicit > listing title > generic.
+    let resolvedTitle = String(title || '').trim()
+    if (!resolvedTitle && assetRow?.property_id) {
+      const { data: prop } = await supabaseAdmin
+        .from('properties')
+        .select('title')
+        .eq('id', assetRow.property_id)
+        .maybeSingle()
+      resolvedTitle = String(prop?.title || '').trim()
+    }
+    if (!resolvedTitle) resolvedTitle = 'your listing'
+
+    const resolvedCaption = String(caption || assetRow?.caption || '').trim()
+
+    const subjectTitle = resolvedTitle
+    const phone = normalisePhone(outboundRecipient(profile.whatsapp_personal_number || profile.contact_number))
 
     // ---- 1. WhatsApp template -------------------------------------------
     if (phone && WA_TOKEN && WA_PHONE_ID) {
@@ -133,10 +154,10 @@ export async function deliverVideoToAdmin(
       <a href="${escapeHtml(videoUrl)}" style="display:inline-block;padding:13px 26px;background:#0f172a;color:#fff;text-decoration:none;border-radius:12px;font-size:13px;font-weight:800">▶ Watch the video</a>
       <p style="margin:14px 0 0;font-size:12px;color:#64748b">Direct link: <a href="${escapeHtml(videoUrl)}" style="color:#2563eb">${escapeHtml(videoUrl)}</a></p>
     </div>
-    ${caption ? `
+    ${resolvedCaption ? `
     <div style="padding:18px 22px 22px">
       <p style="margin:0 0 6px;font-size:12px;font-weight:800;letter-spacing:.06em;color:#64748b">📝 RECOMMENDED POST CAPTION</p>
-      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;font-size:13px;line-height:1.6;color:#1e293b;white-space:pre-wrap">${escapeHtml(caption)}</div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px;font-size:13px;line-height:1.6;color:#1e293b;white-space:pre-wrap">${escapeHtml(resolvedCaption)}</div>
     </div>` : ''}
     <div style="border-top:1px solid #f1f5f9;padding:16px 22px;text-align:center;color:#94a3b8;font-size:11px;font-weight:600">
       Sent automatically by Nobogent
@@ -146,7 +167,7 @@ export async function deliverVideoToAdmin(
 
         await transporter.sendMail({
           from: `"${businessName}" <no-reply@mail.nobogent.com>`,
-          to: profile.email,
+          to: outboundEmail(profile.email),
           subject: `Your video for ${subjectTitle} is ready`,
           html
         })
@@ -160,7 +181,10 @@ export async function deliverVideoToAdmin(
       await supabaseAdmin
         .from('assets')
         .update({
+          // MERGE, never replace: the stitcher stores thumbnailUrl, audioUrl and
+          // videoModel in here, and overwriting would silently drop them.
           metadata: {
+            ...(assetRow?.metadata || {}),
             video_delivered: true,
             video_delivered_at: new Date().toISOString(),
             video_delivered_channels: result

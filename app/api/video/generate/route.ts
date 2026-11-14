@@ -6,6 +6,7 @@ import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import crypto from 'crypto';
+import { workerSecretHeaders } from '@/lib/worker-auth';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
@@ -54,7 +55,7 @@ async function getTrimmedReferenceVideo(avatarUrl: string, userId: string): Prom
             console.log(`[Trim Video] Calling Cloud Run renderer microservice to trim/scale: ${rendererUrl}/process-avatar`);
             const trimRes = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...workerSecretHeaders() },
                 body: JSON.stringify({ avatarUrl, userId })
             });
             if (trimRes.ok) {

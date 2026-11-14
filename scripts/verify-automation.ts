@@ -190,6 +190,7 @@ function testSiteBuilder() {
     email: 'hello@bluesquare.in',
     mission_statement: 'Luxury living, verified.',
     custom_domain: 'bluesquare.in',
+    industry: 'real_estate',
     logo_url: 'https://cdn.example/x.png',
   }
   const props: SiteProperty[] = [
@@ -205,7 +206,12 @@ function testSiteBuilder() {
   check('demo brand scrubbed', !/Everline/.test(html))
   check('canonical uses tenant domain', html.includes('<link rel="canonical" href="https://bluesquare.in">'))
   check('og:url present', html.includes('property="og:url"'))
-  check('JSON-LD is RealEstateAgent', html.includes('RealEstateAgent'))
+  check('JSON-LD is RealEstateAgent for a real_estate tenant', html.includes('RealEstateAgent'))
+  // Behaviour change: unknown/NULL industry must NOT assume real estate.
+  const neutral = buildSiteHtml({ ...profile, industry: null, custom_domain: null, whitelabel_domain: null }, props)
+  check('unknown industry gets neutral schema, not RealEstateAgent', !neutral.includes('RealEstateAgent'))
+  const academy = buildSiteHtml({ ...profile, industry: 'education', custom_domain: null, whitelabel_domain: null }, props)
+  check('education tenant gets EducationalOrganization', academy.includes('EducationalOrganization'))
   check('JSON-LD carries tenant name', /RealEstateAgent[\s\S]*Blue Square Infra|Blue Square Infra[\s\S]*RealEstateAgent/.test(html))
   check('server-rendered h1 present', html.includes('nobogent-h1'))
   check('listings server-rendered', html.includes('Prestige Lakeside 3BHK'))
@@ -266,7 +272,17 @@ async function testDatabase(db: any) {
   check('candidates never include an in-flight call', rows.every((r: any) => r.voice_call_status !== 'calling'))
   check('candidates are never already booked', rows.every((r: any) => !r.booked_time))
   const tenants = new Set(rows.map((r: any) => r.user_id))
-  check('candidate batch is spread across tenants (fairness)', rows.length === 0 || tenants.size > 1, `tenants=${tenants.size} rows=${rows.length}`)
+  // Fairness is only meaningful when more than one tenant has calling enabled.
+  const { count: callingTenants } = await db
+    .from('tenant_automations')
+    .select('user_id', { head: true, count: 'exact' })
+    .eq('ai_calling', true)
+    .eq('master_enabled', true)
+  if ((callingTenants ?? 0) > 1) {
+    check('candidate batch is spread across tenants (fairness)', rows.length === 0 || tenants.size > 1, `tenants=${tenants.size} rows=${rows.length}`)
+  } else {
+    console.log(`  (fairness check skipped — ${callingTenants ?? 0} tenant(s) have calling enabled)`)
+  }
 
   // enqueue_missing_sites must be idempotent
   const first = await db.rpc('enqueue_missing_sites', { p_limit: 500 })

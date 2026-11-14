@@ -2,10 +2,12 @@ import { createKieTask, queryKieTask } from './external-apis';
 import sharp from 'sharp';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from './r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { MEDIA_MODELS } from '../lib/agent/media-models';
 
 /**
  * Creates 9:16 grid collages from product image URLs.
- * Uses GPT 2.0 (gpt-image-2-image-to-image via Kie.ai) to generate a 6-image grid collage in 9:16 aspect ratio.
+ * Uses the registry's image-edit route (lib/agent/media-models.ts) to generate a
+ * 6-image grid collage in 9:16 aspect ratio.
  * Falls back to Sharp canvas grid stitching if API call fails or times out.
  * 
  * @param imageUrls Input product image URLs
@@ -54,12 +56,12 @@ export async function createCollageImages(imageUrls: string[], userId: string = 
 
         let generatedCollageUrl: string | null = null;
 
-        // 1. Try GPT Image 2.5 Flare (gpt-image-2-5-flare-image-to-image) via Kie.ai first
+        // 1. Try the registry's image-edit route (a collage is always image-to-image) via Kie.ai first
         try {
             const collagePrompt = `Reference images locked. Create an ultra-clean, high-converting 9:16 grid collage featuring these ${chunk.length} product images arranged neatly in a modern commercial 6-image grid layout. Professional studio lighting, seamless alignment, clean borders, 9:16 vertical orientation, no text overlays, commercial ad asset.`;
             
             const payload = {
-                model: "gpt-image-2-5-flare-image-to-image",
+                model: MEDIA_MODELS.imageEdit.id,
                 input: {
                     prompt: collagePrompt,
                     aspect_ratio: "9:16",

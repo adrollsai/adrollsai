@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
+import { MEDIA_MODELS } from '../lib/agent/media-models';
 
 /**
  * Read the Kie key lazily, per call.
@@ -316,11 +317,12 @@ export async function queryKieTask(taskId: string): Promise<{ state: string; res
 }
 
 /**
- * Helper to generate voiceover audio using google/gemini-3-1-flash-tts via Kie.ai
+ * Helper to generate voiceover audio with the registry's voice route via Kie.ai.
  *
- * Kie's catalogue lists this model as "Gemini 3.1 Flash TTS Preview"; there is
- * no 3.8 TTS entry. Callers may override `model` (KIE_TTS_MODEL) so a newer
- * release can be adopted without a code change.
+ * The model id lives in lib/agent/media-models.ts (MEDIA_MODELS.voice) and must
+ * not be re-typed here. Callers that need the retry-then-fallback behaviour
+ * should wrap this in `withMediaFallback('voice', ...)` and pass the model it
+ * hands back; `KIE_TTS_MODEL` still overrides for one-off testing.
  */
 export async function createGeminiTTS({
     dialogueText,
@@ -329,7 +331,7 @@ export async function createGeminiTTS({
     scene = "A confident, polished Indian voiceover artist speaking fluent Indian English in a professional recording studio. Warm, clear, enthusiastic, natural Indian vocal cadence, and convincing tone for a high-converting commercial.",
     sampleContext = "High converting luxury marketing video commercial with natural Indian English delivery",
     callBackUrl,
-    model = process.env.KIE_TTS_MODEL || "google/gemini-3-1-flash-tts"
+    model = process.env.KIE_TTS_MODEL || MEDIA_MODELS.voice.id
 }: {
     dialogueText: string;
     speakerName?: string;
@@ -368,7 +370,7 @@ export async function createGeminiTTS({
 }
 
 /**
- * Helper to create video task using Grok Imagine Video 1.5 Preview via Kie.ai
+ * Helper to create a video task with the registry's video route via Kie.ai.
  * Supports up to 7 input images simultaneously (image_urls array)
  */
 export async function createGrokVideoTask({
@@ -379,7 +381,7 @@ export async function createGrokVideoTask({
     resolution = "480p",
     duration = 15,
     callBackUrl,
-    model = process.env.KIE_GROK_VIDEO_MODEL || "grok-imagine-video-1-5-preview"
+    model = process.env.KIE_GROK_VIDEO_MODEL || MEDIA_MODELS.video.id
 }: {
     prompt: string;
     collageImageUrl?: string;
@@ -1245,17 +1247,22 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
 
 /**
  * 10. Kie.ai Image Generator (For Auto-Optimizer)
+ *
+ * `model` defaults to the registry's text-to-image id; pass the id you actually
+ * want (see `imageModelFor()` when a reference image is involved).
  */
 export async function createKieImageTask(
     prompt: string, 
-    model: string = "gpt-image-2-5-flare-text-to-image", 
+    model: string = MEDIA_MODELS.image.id, 
     aspectRatio: string = "1:1",
     inputUrls?: string[]
 ): Promise<string> {
     if (!kieApiKey()) throw new Error("KIE_API_KEY is not configured.");
 
     let effectiveRatio = aspectRatio;
-    if (model.startsWith("gpt-image-2-5-flare") && effectiveRatio === "4:5") {
+    // Only the Flare image models lack a 4:5 enum; everything else is left alone.
+    const flareModels: readonly string[] = [MEDIA_MODELS.image.id, MEDIA_MODELS.imageEdit.id];
+    if (flareModels.includes(model) && effectiveRatio === "4:5") {
         effectiveRatio = "3:4";
     }
 

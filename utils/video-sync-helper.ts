@@ -284,6 +284,19 @@ export async function syncVideoTasksForUser(
                             "/dashboard/assets", 
                             "asset_ready"
                         ).catch(() => {});
+
+                        // Recovery path: a video rescued by the watchdog still has to
+                        // reach the owner on WhatsApp and email, not just in-app.
+                        try {
+                            const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+                            await deliverVideoToAdmin(supabaseAdmin, {
+                                userId: task.user_id,
+                                assetId: task.asset_id,
+                                videoUrl: finalUrl
+                            });
+                        } catch (deliverErr: any) {
+                            console.warn('[Video Sync Helper] Delivery failed:', deliverErr?.message);
+                        }
                         
                         syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
                         continue;
@@ -376,10 +389,17 @@ export async function syncVideoTasksForUser(
 
                         if (muxSuccess) {
                             if (task.asset_id) {
+                                const { data: existingMeta } = await supabaseAdmin
+                                    .from('assets')
+                                    .select('metadata')
+                                    .eq('id', task.asset_id)
+                                    .maybeSingle();
+
                                 await supabaseAdmin.from('assets').update({
                                     url: finalUrl,
                                     status: 'Ready',
-                                    metadata: { audioUrl: finalAudioUrl }
+                                    // merge, not replace — preserves thumbnailUrl/videoModel
+                                    metadata: { ...(existingMeta?.metadata || {}), audioUrl: finalAudioUrl }
                                 }).eq('id', task.asset_id);
                             }
                             await supabaseAdmin.from('video_tasks').delete().eq('asset_id', task.asset_id);
@@ -390,6 +410,18 @@ export async function syncVideoTasksForUser(
                                 "/dashboard/assets", 
                                 "asset_ready"
                             ).catch(() => {});
+
+                            try {
+                                const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+                                await deliverVideoToAdmin(supabaseAdmin, {
+                                    userId: task.user_id,
+                                    assetId: task.asset_id,
+                                    videoUrl: finalUrl
+                                });
+                            } catch (deliverErr: any) {
+                                console.warn('[Video Sync Helper] Delivery failed:', deliverErr?.message);
+                            }
+
                             syncedResults.push({ taskId, assetId: task.asset_id, status: 'succeeded' });
                             continue;
                         }

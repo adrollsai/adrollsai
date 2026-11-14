@@ -48,7 +48,8 @@ import {
   Bell,
   Workflow,
   Check,
-  X
+  X,
+  AudioLines
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import WhatsAppSettings from '@/components/WhatsAppSettings'
@@ -4102,6 +4103,38 @@ export default function ProfilePage() {
                   </div>
                   <div className="flex items-center gap-2 text-purple-600 font-bold text-xs">
                     <span>Open Studio</span>
+                    <ExternalLink size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </a>
+              </div>
+            )}
+
+            {/* GEMINI TTS-FLASH PIPELINE DEMO - Super Admin Exclusive */}
+            {authRole === 'super_admin' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-cyan-200/80 overflow-hidden transition-all hover:shadow-md hover:border-cyan-300">
+                <a
+                  href={`/dashboard/gemini-tts-flash-demo${impersonateId ? `?impersonate=${impersonateId}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-cyan-50/30 transition-all group block"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-gradient-to-tr from-violet-600 via-purple-600 to-cyan-500 text-white p-3.5 rounded-2xl group-hover:scale-105 transition-transform shadow-md shadow-cyan-500/20">
+                      <AudioLines size={22} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                        Gemini 3.8 Flash TTS Pipeline
+                        <span className="bg-cyan-50 text-cyan-700 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">No Live API</span>
+                        <span className="bg-emerald-50 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Polyglot</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 font-medium mt-1">
+                        STT → LLM → streaming TTS over Vobiz with a designed voice that speaks any Indian language, tuned for near-one-second first audio
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-cyan-700 font-bold text-xs">
+                    <span>Open Pipeline</span>
                     <ExternalLink size={16} className="group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </a>

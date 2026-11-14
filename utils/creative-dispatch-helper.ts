@@ -1,3 +1,4 @@
+import { outboundEmail } from '@/lib/automation/test-mode';
 import { getTransporter, resolveNotificationRecipients } from '@/utils/email-helper';
 import { sendNobogentCreativeWithButtons } from '@/utils/creative-approval-handler';
 
@@ -168,7 +169,7 @@ export async function dispatchCreativeToAdmin(params: DispatchCreativeParams) {
 
       const info = await transporter.sendMail({
         from: `"${businessName || 'Nobogent AI Studio'}" <no-reply@mail.nobogent.com>`,
-        to: recipientEmail,
+        to: outboundEmail(recipientEmail),
         subject,
         html: emailHtml
       });

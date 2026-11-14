@@ -8,6 +8,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { getRandomReferenceTemplate } from '@/utils/reference-templates-data';
 import { dispatchCreativeToAdmin } from '@/utils/creative-dispatch-helper';
+import { MEDIA_MODELS, imageModelFor } from '@/lib/agent/media-models';
 
 // Force dynamic execution to bypass Vercel static build cache
 export const dynamic = 'force-dynamic';
@@ -108,7 +109,11 @@ export async function POST(request: Request) {
     }
 
     // Daily creatives are strictly generated in 3:4 aspect ratio based on selected templates
-    const effectiveAspectRatio = '3:4';
+    // The Flare image model does not expose 4:5 (or most ratios) as an explicit enum, so
+      // we ask the provider to auto-size and describe the desired framing in the prompt.
+      // That yields any canvas we want (4:5 here) instead of fighting a fixed list.
+      const targetCanvas = '4:5';
+      const effectiveAspectRatio = 'auto';
 
     // Pick a random reference design template from user's selected templates (or all templates)
     const userSelectedTemplates = Array.isArray(profile.selected_templates) && profile.selected_templates.length > 0
@@ -137,7 +142,7 @@ INDUSTRY/VERTICAL: "${industry || 'general'}"
 REFERENCE DESIGN BLUEPRINT: "${chosenTemplate.name}" - ${chosenTemplate.description} (Category: ${chosenTemplate.category})
 PRODUCT SPECIFIC CREATIVE INSTRUCTIONS: "${productCustomPrompt || 'None'}"
 GLOBAL USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
-TARGET ASPECT RATIO: "${effectiveAspectRatio}"
+OUTPUT FRAMING: a vertical ${targetCanvas} portrait frame (4 units wide by 5 units tall). Compose every element to that exact frame — the provider chooses pixel dimensions automatically, so the composition itself must establish the ratio.
 
 ### VISUAL DESIGN SYSTEM RULES (MANDATORY)
 The image prompt you generate must instruct the image model to follow these guidelines:
@@ -171,7 +176,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       ].filter(Boolean).join("\n");
     }
 
-    const selectedModel = allInputImages.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
+    const selectedModel = imageModelFor(allInputImages);
 
     const payload: any = {
       "model": selectedModel,
@@ -191,22 +196,31 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
     let kieResult;
     
     try {
+      // Facts + language + factual guard come from lib/automation/video-script.ts,
+      // the SAME source the video commercial uses. Previously this prompt fed the
+      // model only title/description/mission and asked for English funnel copy,
+      // while the video asked for Hinglish — two voices for one brand.
+      const { buildScriptFacts, brandStyleGuard } = await import('@/lib/automation/video-script')
+      const scriptFacts = buildScriptFacts(profile, prop)
+
       const copyPrompt = `
         You are an elite direct-response copywriter trained in Alex Hormozi's "$100M Offers" framework.
-        Write a high-converting caption for:
-        TITLE: ${prop.title}
-        DETAILS: ${prop.description || ''}
-        COMPANY: ${businessName}
-        MISSION: ${profile.mission_statement || ''}
+        Write a high-converting caption for this listing.
+
+        FACTS
+        ${scriptFacts}
         CONTACT: ${contactNumber || 'DM for details!'}
+
         FRAMEWORK:
         1. HOOK: Call out the buyer.
         2. OFFER: The no-brainer deal.
         3. VALUE STACK: Benefit bullets.
         4. SCARCITY/URGENCY: Why now.
         5. CTA: Direct instruction.
-        
+
         IMPORTANT: Keep the caption length under 400 characters so that it fits within social posting limits, including Instagram.
+
+        ${brandStyleGuard((profile as any).industry, { allowContact: true })}
       `;
       const [taskRes, chatRes] = await Promise.all([
         createKieTask(payload),
@@ -222,7 +236,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       console.warn("[Auto-Generate Worker] Primary task or caption failed, falling back to text-to-image:", err);
       // Fallback: If image-to-image failed (e.g. input_urls inaccessible or bad), fall back to text-to-image
       const fallbackPayload = {
-        model: "gpt-image-2-5-flare-text-to-image",
+        model: MEDIA_MODELS.image.id,
         input: {
           prompt: finalImagePrompt,
           aspect_ratio: effectiveAspectRatio,
@@ -308,7 +322,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         kie_task_id: taskId,
         metadata: {
           auto_generated: true,
-          dimensions: effectiveAspectRatio,
+          dimensions: targetCanvas,
           time_of_day: autoGenSettings.time_of_day || '09:00',
           custom_prompt: productCustomPrompt || undefined
         },
@@ -338,6 +352,17 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
             })
             if (chargeErr) console.warn('[Auto-Generate Worker] charge failed:', chargeErr.message)
             else if (!charge?.charged) console.log('[Auto-Generate Worker] not charged:', JSON.stringify(charge))
+
+            // Ledger for the daily caps. Recorded whether or not billing is on,
+            // otherwise can_spend() always sees zero usage and never trips.
+            const { recordSpend } = await import('@/lib/automation/ceo')
+            await recordSpend(
+              supabaseAdmin,
+              prop.user_id,
+              'creative',
+              autoPolicy?.bill_automation !== false ? CREDIT_COSTS.AI_IMAGE_GENERATION : 0,
+              1
+            )
           }
         } catch (creditErr: any) {
           // Never fail a delivered creative over accounting.

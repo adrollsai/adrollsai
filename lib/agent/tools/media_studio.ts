@@ -10,17 +10,16 @@ import {
 import { ensureMp3AudioBuffer } from '@/utils/audio-converter';
 import { uploadBufferToR2 } from '../sandbox';
 import { canAfford, estimateMediaCredits } from '../usage';
+import { imageModelFor } from '../media-models';
 
 /**
  * Media generation tools: the same models the Nobogent app itself uses, exposed
  * to the agent so it can actually produce voiceover, AI video and AI imagery
  * instead of only talking about them.
  *
- * Model IDs come from the app's own integrations and are overridable by env:
- *  - Kie `google/gemini-3-1-flash-tts` â€” Gemini 3.1 Flash TTS (the catalogue has
- *    no 3.8 TTS entry; `KIE_TTS_MODEL` adopts a future one without a code change)
- *  - Kie `grok-imagine-video-1-5-preview` â€” Grok Imagine 1.5, and it accepts
- *    `image_urls` (up to 7), which is what makes image-to-video possible
+ * Model IDs come from lib/agent/media-models.ts and nowhere else — the registry
+ * is the only place a kie model id is written down. `KIE_TTS_MODEL` and
+ * `KIE_GROK_VIDEO_MODEL` still override for one-off testing.
  *
  * Every finished artifact is mirrored into our own R2 bucket, because Kie's
  * result URLs are short-lived and the user's library must not rot.
@@ -450,11 +449,15 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
         if (!affordableImage.ok) return { success: false, error: affordableImage.reason };
 
         try {
+          // A supplied reference means edit/restyle: the registry decides which
+          // image model that is (imageModelFor), so references are never
+          // silently dropped by a hard-coded text-to-image id.
+          const referenceUrls = cleanUrls(referenceImageUrls);
           const taskId = await createKieImageTask(
             text,
-            'gpt-image-2-5-flare-text-to-image',
+            imageModelFor(referenceUrls),
             aspectRatio,
-            cleanUrls(referenceImageUrls)
+            referenceUrls
           );
 
           let rawUrl: string | null = null;

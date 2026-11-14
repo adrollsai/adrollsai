@@ -5,6 +5,7 @@ import { sendPushNotification } from '@/utils/notification-helper';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { refundLimit } from '@/utils/subscription-server';
+import { workerSecretHeaders } from '@/lib/worker-auth';
 import sharp from 'sharp';
 
 // IMPORTANT: Prevents Vercel from timing out the request before generation finishes
@@ -90,7 +91,7 @@ export async function POST(req: Request) {
         try {
             fetch(cloudRunWorkerUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...workerSecretHeaders() },
                 body: JSON.stringify({
                     userId,
                     propId,

@@ -4,6 +4,16 @@ import { GoogleAuth } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
 import { resolveAppUrl } from '@/utils/app-url';
+import { outboundEmail, outboundRecipient, isOutboundTestMode } from '@/lib/automation/test-mode';
+import {
+  buildRecordingUrl,
+  deliverCallReceipt,
+  normalizeAppUrl,
+  resolveRecordingLinkSecret,
+  type CallOutcome,
+  type CallReceiptResult,
+  type CallReceiptStore
+} from '@/lib/automation/call-receipt';
 
 let isVapidInitialized = false;
 
@@ -257,6 +267,217 @@ export async function sendPushNotification(
   return { success: true, count: subscriptions.length };
 }
 
+/* ------------------------------------------------------------------ */
+/* Call recording receipt                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Supabase-backed store for lib/automation/call-receipt.ts.
+ *
+ * The dedupe marker lives in `leads.custom_fields.voice_call_receipts`, keyed on
+ * "<leadId>:<callId>": one receipt per finished call, whichever alert path gets
+ * there first. It is a read-then-write claim, so two genuinely concurrent
+ * retries of the same webhook could still both fire - which is the safe
+ * direction (a duplicate alert beats a lost recording), and webhook retries in
+ * practice arrive after the first attempt has finished or timed out.
+ */
+export function createCallReceiptStore(supabase: any): CallReceiptStore {
+  const readCustomFields = async (leadId: string) => {
+    const { data } = await supabase.from('leads').select('custom_fields').eq('id', leadId).maybeSingle()
+    let cf: any = data?.custom_fields
+    if (typeof cf === 'string') {
+      try { cf = JSON.parse(cf) } catch { cf = {} }
+    }
+    return cf && typeof cf === 'object' ? cf : {}
+  }
+
+  const writeReceipts = async (leadId: string, cf: any, receipts: Record<string, string>) => {
+    const { error } = await supabase
+      .from('leads')
+      .update({ custom_fields: { ...cf, voice_call_receipts: receipts } })
+      .eq('id', leadId)
+    if (error) throw new Error(error.message || 'custom_fields update failed')
+  }
+
+  return {
+    async loadLead(leadId: string) {
+      const { data } = await supabase
+        .from('leads')
+        .select('id, name, phone, email, voice_recording_url, voice_call_id, voice_call_summary, custom_fields, source, ad_name')
+        .eq('id', leadId)
+        .maybeSingle()
+      return data || null
+    },
+
+    async loadCallLogRecording(leadId: string) {
+      const { data } = await supabase
+        .from('call_logs')
+        .select('recording_url, summary')
+        .eq('lead_id', leadId)
+        .not('recording_url', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      return data || null
+    },
+
+    async loadHistoryRecording(leadId: string) {
+      const { data } = await supabase
+        .from('lead_history')
+        .select('description')
+        .eq('lead_id', leadId)
+        .like('description', '🎙️ CALL_JSON:%')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const description = String(data?.description || '')
+      if (!description.startsWith('🎙️ CALL_JSON:')) return null
+      try {
+        const parsed = JSON.parse(description.replace('🎙️ CALL_JSON:', '').trim())
+        return parsed?.recording_url || null
+      } catch {
+        return null
+      }
+    },
+
+    async claimReceipt(leadId: string, key: string) {
+      const cf = await readCustomFields(leadId)
+      const existing: Record<string, string> =
+        cf.voice_call_receipts && typeof cf.voice_call_receipts === 'object' ? cf.voice_call_receipts : {}
+      if (existing[key]) return false
+
+      const next: Record<string, string> = { ...existing, [key]: new Date().toISOString() }
+      // Keep the map from growing without bound: newest 25 calls only.
+      const trimmed: Record<string, string> = {}
+      Object.keys(next)
+        .sort((a, b) => String(next[b]).localeCompare(String(next[a])))
+        .slice(0, 25)
+        .forEach((k) => { trimmed[k] = next[k] })
+
+      await writeReceipts(leadId, cf, trimmed)
+      return true
+    },
+
+    async releaseReceipt(leadId: string, key: string) {
+      const cf = await readCustomFields(leadId)
+      const existing: Record<string, string> =
+        cf.voice_call_receipts && typeof cf.voice_call_receipts === 'object' ? cf.voice_call_receipts : {}
+      if (!existing[key]) return
+      const next = { ...existing }
+      delete next[key]
+      await writeReceipts(leadId, cf, next)
+    }
+  }
+}
+
+/**
+ * Deliver the recording of one finished AI call to the owner on both channels.
+ *
+ * Call this for the four outcomes that are worth the owner's attention
+ * (interested / appointment booked / callback / human handoff). It is safe to
+ * call more than once for the same call: the receipt is deduped on the call id,
+ * and nothing in here can throw into the caller's alert path.
+ */
+export async function deliverVoiceCallReceipt(params: {
+  leadId: string
+  ownerUserId: string
+  outcome: CallOutcome | string
+  callId?: string | null
+  summary?: string | null
+  leadName?: string | null
+  leadPhone?: string | null
+  crmUrl?: string | null
+  recordingUrl?: string | null
+  occurredAt?: Date | string | null
+}): Promise<CallReceiptResult> {
+  const skipped: CallReceiptResult = { email: 'skipped', whatsapp: 'skipped', errors: [] }
+  try {
+    if (!params.leadId || !params.ownerUserId) return { ...skipped, skipped: 'missing_ids' }
+
+    const supabase = getSupabaseAdmin()
+    const { data: ownerProfile } = await supabase
+      .from('profiles')
+      .select('id, email, notification_email, business_name, business_info, role, contact_number, whatsapp_personal_number, whatsapp_phone_number, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, notification_preferences')
+      .eq('id', params.ownerUserId)
+      .maybeSingle()
+
+    if (!ownerProfile) return { ...skipped, skipped: 'owner_profile_not_found' }
+
+    const { isUserAdminRole, normalizeUserPreferences, mapEventTypeToKey } = await import('@/utils/notification-preferences')
+    const isAdmin = isUserAdminRole(ownerProfile.role)
+    const preferences = normalizeUserPreferences(ownerProfile.notification_preferences, isAdmin)
+    // The receipt is an escalation artefact, so it follows the two categories
+    // that exist for "this lead did something, act on it". Deriving the category
+    // from the outcome rather than from the alert's own type matters for the
+    // callback case: `crm_reminder` defaults to push-only, which would silently
+    // drop the recording for every tenant that never edited preferences.
+    const categoryKey = mapEventTypeToKey(params.outcome === 'appointment_booked' ? 'meeting_booked' : 'expert_escalation', '')
+    const category = preferences[categoryKey]
+    const emailEnabled = category ? category.email === true : false
+    // Same rule the alert itself obeys: WhatsApp is admin-only and opt-in.
+    const whatsappEnabled = isAdmin && (category ? category.whatsapp === true : false)
+
+    if (!emailEnabled && !whatsappEnabled) {
+      console.log(`[CALL RECEIPT] Both channels disabled for ${params.ownerUserId} under "${categoryKey}" - skipping recording delivery`)
+      return { ...skipped, skipped: 'channels_disabled' }
+    }
+
+    const { resolveNotificationRecipients } = await import('@/utils/email-helper')
+    const { toEmail } = resolveNotificationRecipients(ownerProfile as any)
+
+    const crmUrl = params.crmUrl || `${normalizeAppUrl(undefined)}/dashboard/crm/${params.leadId}`
+    const whatsappToken = ownerProfile.whatsapp_access_token || ownerProfile.facebook_token || process.env.WHATSAPP_ACCESS_TOKEN
+    const whatsappPhoneId = ownerProfile.whatsapp_phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID
+
+    return await deliverCallReceipt(
+      {
+        store: createCallReceiptStore(supabase),
+        post: async ({ url, token, payload }) => {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          })
+          const data: any = await res.json().catch(() => ({}))
+          return {
+            ok: res.ok && !data?.error,
+            error: data?.error?.message || (res.ok ? undefined : `HTTP ${res.status}`)
+          }
+        },
+        sendEmail: async ({ to, subject, html, text }) => {
+          const { sendGenericEmail } = await import('@/utils/email-helper')
+          const res: any = await sendGenericEmail(to, subject, html, undefined, text)
+          return { success: !!res?.success, error: res?.error }
+        },
+        env: process.env,
+        log: (message: string) => console.log(message)
+      },
+      {
+        leadId: params.leadId,
+        outcome: params.outcome,
+        callId: params.callId || null,
+        summary: params.summary || null,
+        leadName: params.leadName || null,
+        leadPhone: params.leadPhone || null,
+        recordingUrl: params.recordingUrl || null,
+        crmUrl,
+        businessName: ownerProfile.business_name || null,
+        occurredAt: params.occurredAt || new Date(),
+        emailTo: emailEnabled ? toEmail : null,
+        whatsappTo: whatsappEnabled ? (ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number) : null,
+        whatsappToken: whatsappEnabled ? whatsappToken : null,
+        whatsappPhoneId: whatsappEnabled ? whatsappPhoneId : null,
+        email: emailEnabled,
+        whatsapp: whatsappEnabled
+      }
+    )
+  } catch (err: any) {
+    // An audio problem must never take the alert down with it.
+    console.error('[CALL RECEIPT] Failed to deliver recording receipt:', err?.message || err)
+    return { ...skipped, skipped: 'exception', errors: [String(err?.message || err)] }
+  }
+}
+
 export async function sendAdminMultiChannelNotification({
   ownerUserId,
   title,
@@ -312,11 +533,14 @@ export async function sendAdminMultiChannelNotification({
       targetLeadPhone = 'N/A';
     }
 
-    // Resolve lead source if not explicitly provided
+    // Resolve the lead row (source, recording, summary) whenever a lead is known.
+    // The recording lookup used to sit behind `!resolvedLeadSource`, which meant
+    // the appointment-booking alert - the one path that always passes a
+    // leadSource - never looked for the audio at all.
     let resolvedLeadSource = (leadSource || '').trim();
     let resolvedRecordingUrl: string | null = null;
     let resolvedCallSummary: string | null = null;
-    if (!resolvedLeadSource && leadId) {
+    if (leadId) {
       try {
         const { data: dbLead } = await getSupabaseAdmin()
           .from('leads')
@@ -324,11 +548,13 @@ export async function sendAdminMultiChannelNotification({
           .eq('id', leadId)
           .maybeSingle();
         if (dbLead) {
-          const parts = [
-            dbLead.source,
-            dbLead.ad_name ? `(${dbLead.ad_name})` : (dbLead.form_name ? `(${dbLead.form_name})` : '')
-          ].filter(Boolean);
-          resolvedLeadSource = parts.join(' ').trim();
+          if (!resolvedLeadSource) {
+            const parts = [
+              dbLead.source,
+              dbLead.ad_name ? `(${dbLead.ad_name})` : (dbLead.form_name ? `(${dbLead.form_name})` : '')
+            ].filter(Boolean);
+            resolvedLeadSource = parts.join(' ').trim();
+          }
 
           // Resolve AI caller recording URL
           resolvedRecordingUrl = dbLead.voice_recording_url || null;
@@ -357,13 +583,31 @@ export async function sendAdminMultiChannelNotification({
       }
     }
 
+    // A stored provider URL (media.vobiz.ai, api.twilio.com...) needs auth
+    // headers, so it is dead text in an alert. Anything that is not already a
+    // public https URL is turned into a signed, expiring link into our own
+    // stream route before it reaches a human.
+    let resolvedRecordingLink: string | null = resolvedRecordingUrl;
+    if (resolvedRecordingUrl && leadId) {
+      try {
+        resolvedRecordingLink = buildRecordingUrl({
+          leadId,
+          rawUrl: resolvedRecordingUrl,
+          appUrl: baseUrl,
+          secret: resolveRecordingLinkSecret()
+        });
+      } catch (recErr: any) {
+        console.warn('[MULTI-CHANNEL] Could not build recording link:', recErr?.message || recErr);
+      }
+    }
+
     // Ensure notification body contains lead source and AI call recording if available
     let enrichedBody = body;
     if (resolvedLeadSource && !/source:/i.test(enrichedBody)) {
       enrichedBody = `${enrichedBody}\n\n📢 Lead Source: ${resolvedLeadSource}`;
     }
-    if (resolvedRecordingUrl && !/recording/i.test(enrichedBody)) {
-      enrichedBody = `${enrichedBody}\n\n🎙️ AI Call Recording Link:\n${resolvedRecordingUrl}`;
+    if (resolvedRecordingLink && !/recording/i.test(enrichedBody)) {
+      enrichedBody = `${enrichedBody}\n\n🎙️ AI Call Recording:\n${resolvedRecordingLink}`;
       if (resolvedCallSummary && !/summary/i.test(enrichedBody)) {
         enrichedBody = `${enrichedBody}\n📝 Call Summary: ${resolvedCallSummary}`;
       }
@@ -428,7 +672,9 @@ export async function sendAdminMultiChannelNotification({
       try {
         const rawPhone = ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number;
         if (rawPhone) {
-          let cleanPhone = rawPhone.replace(/\D/g, '');
+          // Outbound test mode: the owner's real number never receives anything
+          // while OUTBOUND_TEST_MODE is on.
+          let cleanPhone = outboundRecipient(rawPhone).replace(/\D/g, '');
           if (cleanPhone.length === 10) {
             cleanPhone = '91' + cleanPhone;
           }
@@ -551,9 +797,13 @@ export async function sendAdminMultiChannelNotification({
       console.log(`[MULTI-CHANNEL EMAIL SKIP] Email notification disabled for user ${ownerUserId} under category "${categoryKey}".`);
     } else {
       const { sendGenericEmail, sendConnectExpertNotificationEmail, sendLeadNotificationEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
-      const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile);
+      const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile as any);
+      // Outbound test mode: the recipient is swapped for the test inbox, and a
+      // real customer's address must never ride along as a BCC.
+      const emailTo = outboundEmail(toEmail);
+      const emailBcc = isOutboundTestMode() ? undefined : bccEmail;
 
-      if (toEmail) {
+      if (emailTo) {
         try {
           const subject = emailSubject || title;
           const isExpertAlert = type === 'connect_expert' || /expert|callback|connect/i.test(type || '') || /expert|callback|connect/i.test(title || '');
@@ -561,17 +811,19 @@ export async function sendAdminMultiChannelNotification({
 
           if (isExpertAlert && !emailHtml) {
             await sendConnectExpertNotificationEmail(
-              toEmail,
+              emailTo,
               ownerProfile.business_name || 'Nobogent CRM',
               leadName || 'Prospect',
               targetLeadPhone,
-              bccEmail,
-              resolvedLeadSource
+              emailBcc,
+              resolvedLeadSource,
+              resolvedRecordingLink || undefined,
+              resolvedCallSummary || undefined
             );
-            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Expert callback alert email sent to: ${toEmail}`);
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Expert callback alert email sent to: ${emailTo}`);
           } else if (isInterestedAlert && !emailHtml) {
             await sendLeadNotificationEmail({
-              to: toEmail,
+              to: emailTo,
               subject,
               leadName: leadName || 'Prospect',
               leadPhone: targetLeadPhone,
@@ -579,11 +831,11 @@ export async function sendAdminMultiChannelNotification({
               buttonClicked: 'Interested',
               crmUrl: leadPageUrl,
               chatUrl: leadPageUrl,
-              recordingUrl: resolvedRecordingUrl || undefined,
+              recordingUrl: resolvedRecordingLink || undefined,
               callSummary: resolvedCallSummary || undefined,
-              bcc: bccEmail
+              bcc: emailBcc
             });
-            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Interested lead notification email sent to: ${toEmail}`);
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Interested lead notification email sent to: ${emailTo}`);
           } else {
             const defaultHtml = `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
@@ -593,6 +845,12 @@ export async function sendAdminMultiChannelNotification({
                 <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                   <p style="font-size: 14px; color: #334155; line-height: 1.7; margin: 0; white-space: pre-wrap;">${enrichedBody}</p>
                 </div>
+                ${resolvedRecordingLink ? `
+                <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 16px; margin-bottom: 20px; text-align: center;">
+                  <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.04em;">🎙️ AI Call Recording</p>
+                  <a href="${resolvedRecordingLink}" target="_blank" style="display: inline-block; padding: 11px 22px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">▶ Play the call recording</a>
+                  <p style="margin: 10px 0 0 0; font-size: 11px; color: #15803d; word-break: break-all;">${resolvedRecordingLink}</p>
+                </div>` : ''}
                 <div style="margin-top: 24px; text-align: center;">
                   <a href="${leadPageUrl}" style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block; box-shadow: 0 2px 4px rgba(37,99,235,0.2);">View Full Remarks & History in CRM</a>
                 </div>
@@ -603,8 +861,8 @@ export async function sendAdminMultiChannelNotification({
                 <p style="font-size: 11px; color: #94a3b8; text-align: center; text-transform: uppercase; letter-spacing: 0.05em;">Nobogent Priority Lead Alert</p>
               </div>
             `;
-            await sendGenericEmail(toEmail, subject, emailHtml || defaultHtml, bccEmail);
-            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Priority notification email sent to: ${toEmail} (BCC: ${bccEmail || 'none'})`);
+            await sendGenericEmail(emailTo, subject, emailHtml || defaultHtml, emailBcc);
+            console.log(`[MULTI-CHANNEL EMAIL SUCCESS] Priority notification email sent to: ${emailTo} (BCC: ${emailBcc || 'none'})`);
           }
         } catch (emailErr: any) {
           console.error(`[MULTI-CHANNEL EMAIL ERROR]`, emailErr.message);
@@ -669,7 +927,16 @@ export async function sendExpertEscalationNotification({
     const leadName = lead.name || 'Lead';
     const leadPhone = lead.phone || 'N/A';
     const leadEmail = lead.email || 'N/A';
-    const recUrl = publicRecordingUrl || null;
+    // Provider-hosted audio needs auth headers, so the escalation email links the
+    // signed stream route instead of the raw recording URL.
+    const recUrl = publicRecordingUrl
+      ? (buildRecordingUrl({
+          leadId,
+          rawUrl: publicRecordingUrl,
+          appUrl: resolveAppUrl(),
+          secret: resolveRecordingLinkSecret()
+        }) || publicRecordingUrl)
+      : null;
 
     let assignedInfoStr = 'Unassigned (Handled by Admin)';
     if (assignedProfile) {
@@ -793,6 +1060,24 @@ export async function sendExpertEscalationNotification({
         emailSubject: `${reasonTitle}: ${leadName}`,
         emailHtml: teamEmailHtml
       });
+    }
+
+    // The recording is delivered on its own so it reaches both channels even
+    // though the alert templates above are text-only. Deduped on the call id, so
+    // a call that was already receipted as "interested" is not sent twice.
+    try {
+      await deliverVoiceCallReceipt({
+        leadId,
+        ownerUserId: userId,
+        outcome: 'handoff',
+        summary,
+        leadName,
+        leadPhone,
+        crmUrl: `${resolveAppUrl()}/dashboard/crm/${leadId}`,
+        recordingUrl: publicRecordingUrl || undefined
+      });
+    } catch (receiptErr: any) {
+      console.error('[EXPERT ESCALATION NOTIFICATION] Recording receipt failed:', receiptErr?.message || receiptErr);
     }
 
   } catch (err: any) {

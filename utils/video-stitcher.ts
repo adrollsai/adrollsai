@@ -7,6 +7,7 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { getFfmpegPath, getFfprobePath } from '@/utils/ffmpeg-helper';
 import { generateAndUploadVideoThumbnail } from '@/utils/video-thumbnail-helper';
 import { sendPushNotification } from '@/utils/notification-helper';
+import { workerSecretHeaders } from '@/lib/worker-auth';
 
 const CLOUD_RUN_WORKER_URL = process.env.CLOUD_RUN_WORKER_URL || 'https://adrolls-stitcher-worker-805895515412.us-central1.run.app';
 
@@ -36,7 +37,7 @@ export async function dispatchCloudRunStitch(
         console.log(`[Video Stitcher] Dispatching stitch for Asset ${videoTask.asset_id} to Cloud Run: ${CLOUD_RUN_WORKER_URL}/stitch`);
         const res = await fetch(`${CLOUD_RUN_WORKER_URL}/stitch`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...workerSecretHeaders() },
             body: JSON.stringify({
                 siblings,
                 videoTask: {
@@ -519,6 +520,22 @@ export async function stitchClipsLocally(
             "/dashboard/assets",
             "asset_ready"
         ).catch(() => {});
+
+        // 9. Multi-channel delivery (WhatsApp template + email).
+        //    This is the shared choke point for the local FFmpeg stitch, so every
+        //    caller that lands here notifies the owner. deliverVideoToAdmin() is
+        //    idempotent per asset, so calling it from several completion paths is
+        //    safe and cannot double-send.
+        try {
+            const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+            await deliverVideoToAdmin(supabaseAdmin, {
+                userId: videoTask.user_id,
+                assetId: videoTask.asset_id,
+                videoUrl: finalR2Url
+            });
+        } catch (deliverErr: any) {
+            console.warn('[Video Stitcher] Delivery failed (video still saved):', deliverErr?.message);
+        }
 
         return { finalR2Url, thumbnailUrl };
 

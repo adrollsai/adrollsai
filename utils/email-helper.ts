@@ -731,7 +731,9 @@ export async function sendConnectExpertNotificationEmail(
   leadName: string,
   leadPhone: string,
   bcc?: string | string[],
-  leadSource?: string
+  leadSource?: string,
+  recordingUrl?: string,
+  callSummary?: string
 ) {
   try {
     if (!to) {
@@ -773,6 +775,17 @@ export async function sendConnectExpertNotificationEmail(
             </table>
           </div>
 
+          ${recordingUrl ? `
+          <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: center;">
+            <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.04em;">🎙️ AI Call Recording</p>
+            <a href="${recordingUrl}" target="_blank" style="display: inline-block; padding: 11px 22px; background: #16a34a; color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 800; font-size: 13px;">▶ Play the call recording</a>
+            <p style="margin: 10px 0 0 0; font-size: 11px; color: #15803d; word-break: break-all;">${recordingUrl}</p>
+            ${callSummary ? `
+            <div style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #86efac; font-size: 12px; color: #166534; line-height: 1.4; text-align: left;">
+              <strong>Call summary:</strong> ${callSummary}
+            </div>` : ''}
+          </div>` : ''}
+
           <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: center; margin-top: 24px;">
             <p style="margin: 0; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.05em; text-transform: uppercase;">
               Nobogent AI Notification Alerts
@@ -790,7 +803,7 @@ export async function sendConnectExpertNotificationEmail(
   }
 }
 
-export async function sendGenericEmail(to: string, subject: string, html: string, bcc?: string | string[]) {
+export async function sendGenericEmail(to: string, subject: string, html: string, bcc?: string | string[], text?: string) {
   try {
     if (!to) return { success: false, error: 'No recipient email provided' };
     const mailOptions: any = {
@@ -799,6 +812,9 @@ export async function sendGenericEmail(to: string, subject: string, html: string
       subject,
       html
     };
+    // Plain-text alternative: a mail client that strips HTML still gets the
+    // recording link in full.
+    if (text) mailOptions.text = text;
     if (bcc) mailOptions.bcc = bcc;
     const info = await transporter.sendMail(mailOptions);
     return { success: true, messageId: info.messageId };

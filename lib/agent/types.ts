@@ -24,7 +24,13 @@ export interface ActionConfirmationArtifact {
   description: string;
   impactSummary?: string;
   estimatedCost?: string;
-  actionType: 'whatsapp_broadcast' | 'bulk_call' | 'delete_data' | 'ad_spend' | 'custom';
+  actionType: 'whatsapp_broadcast' | 'bulk_call' | 'delete_data' | 'ad_spend' | 'create_asset' | 'custom';
+  /** Resolved parameters the user is approving (script, voice, dimensions, template…). */
+  spec?: Array<{ label: string; value: string }>;
+  /** Things already produced, so the review is concrete rather than a promise. */
+  previews?: Array<{ kind: 'audio' | 'image' | 'video'; url: string; caption?: string }>;
+  /** Sent back to the agent when the user approves, so the job continues instead of dead-ending. */
+  resumePrompt?: string;
   payload: Record<string, any>;
   status: 'pending' | 'approved' | 'rejected';
 }

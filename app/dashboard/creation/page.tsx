@@ -14,6 +14,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 import { ALL_REFERENCE_TEMPLATES, getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data'
+import { estimateGrokVideoCredits } from '@/lib/agent/pricing'
+import { MEDIA_MODELS } from '@/lib/agent/media-models'
 
 // --- TYPES ---
 type Message = {
@@ -330,7 +332,9 @@ export default function CreationPage() {
       toast.success(`Selected template: ${tmpl?.name || templateId} 💎`);
     }
   };
-  const [selectedModel, setSelectedModel] = useState<'google/nano-banana-2' | 'gpt/gpt-image-2-5-flare-text-to-image'>('gpt/gpt-image-2-5-flare-text-to-image')
+  // The picker only ever sends registry ids; /api/chat resolves them from there.
+  type CreationImageModel = typeof MEDIA_MODELS.image.id | (typeof MEDIA_MODELS.image.fallbacks)[number]
+  const [selectedModel, setSelectedModel] = useState<CreationImageModel>(MEDIA_MODELS.image.id)
   const [creativeCategory, setCreativeCategory] = useState('')
   
   // Custom Reference State
@@ -2501,6 +2505,58 @@ export default function CreationPage() {
                           </span>
                         </div>
                         <audio controls src={msg.audioUrl} className="w-full h-10 accent-purple-600 rounded-xl outline-none" />
+                      </div>
+                    )}
+
+                    {/* PRE-FLIGHT REVIEW — everything that is about to be paid for, in one place.
+                        Appears at the last gate (script approved, voiceover already rendered) and
+                        again before the final launch, so "Approve" is an informed click. */}
+                    {(msg.grokStep === 'tts_review' || (msg.prompts && msg.grokStep !== 'completed')) && msg.script && (
+                      <div className="mt-1 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3.5">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-600" /> Ready to generate — review
+                          </span>
+                          <span className="text-[9px] font-bold bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-full">
+                            Grok Imagine 1.5
+                          </span>
+                        </div>
+                        <dl className="space-y-1.5">
+                          <div className="flex gap-2">
+                            <dt className="w-24 shrink-0 text-[9px] font-black uppercase tracking-wider text-emerald-700/80 pt-0.5">Script</dt>
+                            <dd className="flex-1 text-[11px] text-slate-800 leading-relaxed line-clamp-4">
+                              {msg.script.dialogue || msg.script.concept?.description || '—'}
+                            </dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="w-24 shrink-0 text-[9px] font-black uppercase tracking-wider text-emerald-700/80 pt-0.5">Voice</dt>
+                            <dd className="flex-1 text-[11px] text-slate-800">
+                              {grokVoice} · {grokAccent === 'indian' ? 'Indian accent' : 'American accent'} · {videoLanguage}
+                              {presenterMode === 'avatar' ? ' · avatar speaks it' : ' · voiceover'}
+                            </dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="w-24 shrink-0 text-[9px] font-black uppercase tracking-wider text-emerald-700/80 pt-0.5">Dimensions</dt>
+                            <dd className="flex-1 text-[11px] text-slate-800">
+                              9:16 vertical · {selectedDuration}s · 720p
+                            </dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="w-24 shrink-0 text-[9px] font-black uppercase tracking-wider text-emerald-700/80 pt-0.5">Reference</dt>
+                            <dd className="flex-1 text-[11px] text-slate-800">
+                              {(msg.refImages || []).length > 0
+                                ? `${(msg.refImages || []).length} image${(msg.refImages || []).length > 1 ? 's' : ''}${selectedPropId ? ' · property selected' : ''}`
+                                : 'none — generated from the script'}
+                            </dd>
+                          </div>
+                          <div className="flex gap-2">
+                            <dt className="w-24 shrink-0 text-[9px] font-black uppercase tracking-wider text-emerald-700/80 pt-0.5">Cost</dt>
+                            <dd className="flex-1 text-[11px] font-bold text-slate-900">
+                              ≈ {estimateGrokVideoCredits(selectedDuration, '720p')} credits
+                              <span className="ml-1 font-normal text-slate-500">(charged on delivery)</span>
+                            </dd>
+                          </div>
+                        </dl>
                       </div>
                     )}
 

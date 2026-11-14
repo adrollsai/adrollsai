@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { campaignLaunchRefusal } from '../preflight';
 
 /**
  * Direct Meta Marketing API (Graph) tools.
@@ -228,7 +229,7 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
 
     meta_graph_create: tool({
       description:
-        'Meta Ads: creates a campaign, adset, ad or adcreative. Provide the Graph fields for that entity (e.g. campaign: name, objective, status, special_ad_categories, daily_budget; adset: campaign_id, optimization_goal, billing_event, targeting, daily_budget; ad: adset_id, creative). Money values must be in minor units (50000 = 500.00). New spend is created PAUSED unless you explicitly set status ACTIVE.',
+        'Meta Ads: creates a campaign, adset, ad or adcreative. Provide the Graph fields for that entity (e.g. campaign: name, objective, status, special_ad_categories, daily_budget; adset: campaign_id, optimization_goal, billing_event, targeting, daily_budget; ad: adset_id, creative). Money values must be in minor units (50000 = 500.00). New spend is created PAUSED unless you explicitly set status ACTIVE. PRE-FLIGHT GUARDED: a campaign with no objective or no budget, or an ad set with no targeting, creates NOTHING and returns status "missing_inputs" with the questions to ask through request_user_input first.',
       inputSchema: z.object({
         entity: z.enum(['campaign', 'adset', 'ad', 'creative']).describe('What to create'),
         fields: z
@@ -240,6 +241,42 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
           .describe('Parent id when creating under a specific object, e.g. create an ad under an adset'),
       }),
       execute: async ({ entity, fields, parentId }) => {
+        // PRE-FLIGHT GUARD. A campaign and an ad set are where real money and a
+        // real audience first exist, so the inputs only the owner can supply are
+        // checked before the POST. Creatives and ads are guarded by the campaign
+        // that carries them and by the approval gate.
+        if (entity === 'campaign' || entity === 'adset') {
+          const f: Record<string, any> = fields || {};
+          const toMajor = (minor: any) => {
+            const n = Number(minor);
+            return Number.isFinite(n) && n > 0 ? n / 100 : undefined;
+          };
+          const refusal = await campaignLaunchRefusal(
+            entity === 'campaign'
+              ? {
+                  objective: f.objective,
+                  budget: toMajor(f.daily_budget) ?? toMajor(f.lifetime_budget),
+                  // A bare campaign draft carries no audience or creative yet:
+                  // those are set on the ad set and the ad.
+                  notRequired: ['locations', 'creative', 'qualifying_questions'],
+                }
+              : {
+                  // The ad set is where the audience lives; it inherits the
+                  // campaign's objective and, under CBO, its budget too.
+                  locations: f.targeting,
+                  budget: toMajor(f.daily_budget),
+                  notRequired: ['objective', 'budget', 'creative', 'qualifying_questions'],
+                },
+            {
+              tool: 'meta_graph_create',
+              action: entity === 'campaign' ? 'create a campaign' : 'create an ad set',
+              supabase,
+              userId,
+            }
+          );
+          if (refusal) return refusal;
+        }
+
         try {
           const { token, adAccountId, pageId } = await creds();
           const body: Record<string, any> = { ...(fields || {}) };

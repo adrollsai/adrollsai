@@ -10,6 +10,7 @@ import {
     ALL_REFERENCE_TEMPLATES,
     ReferenceTemplate
 } from '@/utils/reference-templates-data';
+import { MEDIA_MODELS } from '@/lib/agent/media-models';
 import {
     createKieTask,
     createGrokVideoTask,
@@ -378,7 +379,7 @@ CRITICAL BRANDING & URL RESTRICTIONS:
         if (isCustomUpload) {
             console.log(`[Demo AI Creative] Dispatching img2img task for "${projectTitle}"...`);
             const { taskId, error } = await createKieTask({
-                model: 'gpt-image-2-5-flare-image-to-image',
+                model: MEDIA_MODELS.imageEdit.id,
                 input: {
                     prompt: masterPrompt,
                     aspect_ratio: '3:4',
@@ -392,7 +393,7 @@ CRITICAL BRANDING & URL RESTRICTIONS:
 
         console.log(`[Demo AI Creative] Dispatching fast text-to-image task for "${projectTitle}"...`);
         const { taskId, error } = await createKieTask({
-            model: 'gpt-image-2-5-flare-text-to-image',
+            model: MEDIA_MODELS.image.id,
             input: {
                 prompt: masterPrompt,
                 aspect_ratio: '3:4',

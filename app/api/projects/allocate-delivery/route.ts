@@ -8,6 +8,7 @@ import { createKieImageTask, createKieTask } from '@/utils/external-apis';
 import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
 import { ensureJpegImage } from '@/utils/image-converter';
 import { getReferenceTemplate } from '@/utils/reference-templates-data';
+import { imageModelFor } from '@/lib/agent/media-models';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -151,7 +152,7 @@ Requirements:
                     if (profile?.logo_url) inputUrls.push(profile.logo_url);
                     if (refTmpl?.url) inputUrls.push(refTmpl.url);
 
-                    const selectedImageModel = inputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
+                    const selectedImageModel = imageModelFor(inputUrls);
                     const taskId = await createKieImageTask(object.imagePrompt, selectedImageModel, "3:4", inputUrls);
 
                     if (taskId) {

@@ -36,7 +36,76 @@ async function getPrimaryUserId(supabaseAdmin: any, userId: string): Promise<str
 }
 
 /**
+ * Postgres raises 42883 for a missing function; PostgREST uses PGRST202.
+ * Kept local (not imported from lib/automation/billing.ts) so that module can
+ * keep importing CREDIT_COSTS from here without a circular import.
+ */
+function isMissingFunction(error: any): boolean {
+  if (!error) return false
+  const code = String(error.code || '')
+  return code === 'PGRST202' || code === '42883' || /could not find the function|schema cache/i.test(String(error.message || ''))
+}
+
+/**
+ * Spendable credits: balance minus whatever open holds have reserved.
+ *
+ * Falls back to the raw balance when the RPC is not deployed, because "no holds
+ * exist" and "we cannot read holds" are the same answer in practice.
+ */
+export async function availableCredits(supabaseAdmin: any, userId: string): Promise<number | null> {
+  try {
+    const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
+    const { data, error } = await supabaseAdmin.rpc('available_credits', { p_user_id: primaryUserId })
+    if (error) {
+      if (!isMissingFunction(error)) {
+        console.warn('[CREDITS HELPER] available_credits failed:', error.message)
+      }
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('credits')
+        .eq('id', primaryUserId)
+        .maybeSingle()
+      return profile ? Number(profile.credits || 0) : null
+    }
+    if (data === null || data === undefined) return null
+    return Number(data)
+  } catch (e) {
+    console.error('[CREDITS HELPER] availableCredits exception:', e)
+    return null
+  }
+}
+
+/**
+ * Does this account have money at all — ignoring subscription state?
+ *
+ * The old predicate conflated two different questions and answered the funding
+ * one with the subscription one, which blocked ~75 of 92 tenants who had a
+ * positive balance but no active plan.
+ */
+export function hasBalance(credits: number | null | undefined, requiredAmount: number): boolean {
+  return Number(credits || 0) >= requiredAmount
+}
+
+/** True when the 5,000-credit welcome grant funded this account. */
+export function welcomeGrantActive(profile: any): boolean {
+  return Boolean(profile?.client_features?.welcome_credits_granted)
+}
+
+/**
  * Checks if a profile has enough credits for a required amount.
+ *
+ * FUNDING IS THE QUESTION. It used to require an active `subscription_status` as
+ * well, so an account holding 5,000 welcome credits was refused any paid tool
+ * because onboarding had written `subscription_status = 'free'`. Two separate
+ * facts were collapsed into one boolean:
+ *
+ *   subscription  — is a plan running?            (billing relationship)
+ *   balance       — can this specific work be paid for? (funding)
+ *
+ * Only the second authorises work. A plan grants credits; the credits are what
+ * pays. So: hasBalance && (subscriptionActive || welcomeGrantActive) — and in
+ * practice, a positive balance is sufficient, since credits can only come from a
+ * plan, a top-up, or the welcome grant.
  */
 export async function hasEnoughCredits(
   supabaseAdmin: any,
@@ -47,7 +116,7 @@ export async function hasEnoughCredits(
     const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
-      .select('credits, business_name, role, subscription_status, email')
+      .select('credits, business_name, role, subscription_status, email, client_features')
       .eq('id', primaryUserId)
       .single()
 
@@ -57,7 +126,6 @@ export async function hasEnoughCredits(
     const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(profile.email || '')
     if (isUnlimited) return true
 
-    // Check if base subscription plan is active
     const subscriptionStatus = profile.subscription_status?.toLowerCase() || ''
     const whitelistedClients = [
       'rchopra489@gmail.com',
@@ -71,12 +139,28 @@ export async function hasEnoughCredits(
     ]
     const isClientWhitelisted = whitelistedClients.includes(profile.email || '')
     const isSubscriptionActive = ['active', 'trialing', 'pro', 'growth', 'enterprise'].includes(subscriptionStatus) || isClientWhitelisted
-    if (!isSubscriptionActive) {
-      console.warn(`[CREDITS HELPER] Action blocked. User ${primaryUserId} has credits but no active base subscription plan. Status: ${subscriptionStatus}`)
+
+    // Funding, not billing: held credits do not count, because they are already
+    // promised to a job that is running.
+    const spendable = (await availableCredits(supabaseAdmin, primaryUserId)) ?? Number(profile.credits || 0)
+    const funded = hasBalance(spendable, requiredAmount)
+
+    if (!funded) {
+      console.warn(
+        `[CREDITS HELPER] Not funded. User ${primaryUserId} has ${spendable} spendable credits; needs ${requiredAmount}.`
+      )
       return false
     }
 
-    return (profile.credits || 0) >= requiredAmount
+    if (!isSubscriptionActive && !welcomeGrantActive(profile)) {
+      // Logged, not blocked: the balance is real money and can only have arrived
+      // as a grant, a top-up or a plan.
+      console.warn(
+        `[CREDITS HELPER] User ${primaryUserId} is funded (${spendable} credits) with subscription_status="${subscriptionStatus}". Allowing: funding authorises work.`
+      )
+    }
+
+    return true
   } catch (e) {
     console.error('[CREDITS HELPER] hasEnoughCredits error:', e)
     return false
@@ -85,6 +169,11 @@ export async function hasEnoughCredits(
 
 /**
  * Deducts credits from a user's balance and records the transaction in the ledger.
+ *
+ * The balance move and the check are ONE statement now. The previous version read
+ * `credits`, compared it, then wrote `credits - amount`; two concurrent 60-credit
+ * jobs against a 100-credit wallet both passed the comparison and both wrote, so
+ * the balance went to -20 and the ledger no longer described reality.
  */
 export async function deductCredits(
   supabaseAdmin: any,
@@ -94,11 +183,10 @@ export async function deductCredits(
   description: string
 ): Promise<boolean> {
   if (amount <= 0) return false
-  
+
   try {
     const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
-    
-    // 1. Fetch current credits
+
     const { data: profile, error: fetchErr } = await supabaseAdmin
       .from('profiles')
       .select('credits, business_name, role, email')
@@ -110,42 +198,38 @@ export async function deductCredits(
       return false
     }
 
-    const currentCredits = profile.credits || 0
     const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(profile.email || '')
 
-    if (!isUnlimited && currentCredits < amount) {
-      console.warn(`[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} has ${currentCredits} credits; trying to deduct ${amount}.`)
-      return false
+    // 1. Atomic guarded decrement. NULL = the wallet could not cover it.
+    let newCredits = await atomicSpend(supabaseAdmin, primaryUserId, amount)
+
+    if (newCredits === null) {
+      if (!isUnlimited) {
+        console.warn(
+          `[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} cannot cover ${amount} credits.`
+        )
+        return false
+      }
+      // Unlimited accounts are allowed to go past zero: record the usage without
+      // driving the balance negative.
+      newCredits = Number(profile.credits || 0)
     }
 
-    const newCredits = currentCredits - amount
-
-    // 2. Perform updates
-    const [updateRes, insertRes] = await Promise.all([
-      supabaseAdmin
-        .from('profiles')
-        .update({ credits: newCredits })
-        .eq('id', primaryUserId),
-      supabaseAdmin
-        .from('credit_transactions')
-        .insert({
-          user_id: primaryUserId,
-          amount: -amount,
-          category,
-          description
-        })
-    ])
-
-    if (updateRes.error) {
-      console.error('[CREDITS HELPER] Failed to update user credits:', updateRes.error)
-      return false
+    // 2. Ledger row. A missing ledger row is worth shouting about but must not
+    //    undo a charge that already happened.
+    const { error: insertErr } = await supabaseAdmin.from('credit_transactions').insert({
+      user_id: primaryUserId,
+      amount: -amount,
+      category,
+      description
+    })
+    if (insertErr) {
+      console.error('[CREDITS HELPER] Failed to insert credit transaction:', insertErr)
     }
 
-    if (insertRes.error) {
-      console.error('[CREDITS HELPER] Failed to insert credit transaction:', insertRes.error)
-    }
-
-    console.log(`[CREDITS HELPER] Deducted ${amount} credits from user ${primaryUserId} for ${category}. New balance: ${newCredits}`)
+    console.log(
+      `[CREDITS HELPER] Deducted ${amount} credits from user ${primaryUserId} for ${category}. New balance: ${newCredits}`
+    )
     return true
   } catch (e) {
     console.error('[CREDITS HELPER] deductCredits Exception:', e)
@@ -153,8 +237,53 @@ export async function deductCredits(
   }
 }
 
+/** Atomic decrement via RPC, with a compare-and-swap fallback. NULL = refused. */
+async function atomicSpend(supabaseAdmin: any, userId: string, amount: number): Promise<number | null> {
+  const { data, error } = await supabaseAdmin.rpc('spend_credits', {
+    p_user_id: userId,
+    p_amount: amount
+  })
+
+  if (!error) return data === null || data === undefined ? null : Number(data)
+
+  if (!isMissingFunction(error)) {
+    console.warn('[CREDITS HELPER] spend_credits failed:', error.message)
+    return null
+  }
+
+  // Fallback for a database without the RPC: optimistic concurrency on the exact
+  // value we read, so a concurrent writer makes us retry instead of losing its
+  // change.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('credits')
+      .eq('id', userId)
+      .maybeSingle()
+    if (!profile) return null
+
+    const current = Number(profile.credits ?? 0)
+    if (current < amount) return null
+
+    const { data: updated, error: updateErr } = await supabaseAdmin
+      .from('profiles')
+      .update({ credits: current - amount })
+      .eq('id', userId)
+      .eq('credits', profile.credits)
+      .select('credits')
+
+    if (!updateErr && Array.isArray(updated) && updated.length > 0) return current - amount
+  }
+
+  console.warn('[CREDITS HELPER] compare-and-swap spend gave up')
+  return null
+}
+
 /**
  * Adds credits to a user's balance (used for top-ups, recharges, and subscriptions).
+ *
+ * Increment, not read-then-write: two payments landing together used to read the
+ * same starting balance and one of them was lost.
  */
 export async function addCredits(
   supabaseAdmin: any,
@@ -167,46 +296,53 @@ export async function addCredits(
 
   try {
     const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
-    
-    const { data: profile, error: fetchErr } = await supabaseAdmin
-      .from('profiles')
-      .select('credits')
-      .eq('id', primaryUserId)
-      .single()
 
-    if (fetchErr || !profile) {
-      console.error('[CREDITS HELPER] Failed to fetch profile credits for increment:', fetchErr)
-      return false
-    }
+    const { data, error } = await supabaseAdmin.rpc('add_credits_atomic', {
+      p_user_id: primaryUserId,
+      p_amount: amount
+    })
 
-    const currentCredits = profile.credits || 0
-    const newCredits = currentCredits + amount
+    let newCredits: number | null = error ? null : data === null || data === undefined ? null : Number(data)
 
-    const [updateRes, insertRes] = await Promise.all([
-      supabaseAdmin
+    if (error) {
+      if (!isMissingFunction(error)) {
+        console.error('[CREDITS HELPER] add_credits_atomic failed:', error.message)
+        return false
+      }
+      // No RPC: fall back to a read-then-write, which is what this used to do.
+      const { data: profile, error: fetchErr } = await supabaseAdmin
+        .from('profiles')
+        .select('credits')
+        .eq('id', primaryUserId)
+        .single()
+      if (fetchErr || !profile) {
+        console.error('[CREDITS HELPER] Failed to fetch profile credits for increment:', fetchErr)
+        return false
+      }
+      newCredits = Number(profile.credits || 0) + amount
+      const { error: updateErr } = await supabaseAdmin
         .from('profiles')
         .update({ credits: newCredits })
-        .eq('id', primaryUserId),
-      supabaseAdmin
-        .from('credit_transactions')
-        .insert({
-          user_id: primaryUserId,
-          amount: amount,
-          category,
-          description
-        })
-    ])
-
-    if (updateRes.error) {
-      console.error('[CREDITS HELPER] Failed to update user credits:', updateRes.error)
-      return false
+        .eq('id', primaryUserId)
+      if (updateErr) {
+        console.error('[CREDITS HELPER] Failed to update user credits:', updateErr)
+        return false
+      }
     }
 
-    if (insertRes.error) {
-      console.error('[CREDITS HELPER] Failed to insert credit transaction:', insertRes.error)
+    const { error: insertErr } = await supabaseAdmin.from('credit_transactions').insert({
+      user_id: primaryUserId,
+      amount: amount,
+      category,
+      description
+    })
+    if (insertErr) {
+      console.error('[CREDITS HELPER] Failed to insert credit transaction:', insertErr)
     }
 
-    console.log(`[CREDITS HELPER] Added ${amount} credits to user ${primaryUserId} for ${category}. New balance: ${newCredits}`)
+    console.log(
+      `[CREDITS HELPER] Added ${amount} credits to user ${primaryUserId} for ${category}. New balance: ${newCredits}`
+    )
     return true
   } catch (e) {
     console.error('[CREDITS HELPER] addCredits Exception:', e)

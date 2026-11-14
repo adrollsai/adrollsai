@@ -10,6 +10,7 @@ import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import crypto from 'crypto'
+import { workerSecretHeaders } from '@/lib/worker-auth'
 
 async function processReferenceVideo(videoUrl: string, userId: string): Promise<{ trimmedVideoUrl: string; extractedAudioUrl: string }> {
   let hash = crypto.createHash('md5').update(videoUrl).digest('hex')
@@ -45,7 +46,7 @@ async function processReferenceVideo(videoUrl: string, userId: string): Promise<
       console.log(`[Process Video] Calling Cloud Run renderer microservice: ${rendererUrl}/process-avatar`)
       const trimRes = await fetch(`${rendererUrl.replace(/\/$/, '')}/process-avatar`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...workerSecretHeaders() },
         body: JSON.stringify({ avatarUrl: videoUrl, userId })
       })
       if (trimRes.ok) {

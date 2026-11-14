@@ -10,6 +10,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { getLocalCache, setLocalCache, mergeCacheData, getMaxCreatedAt } from '@/utils/client-cache'
 import LazyVideo from '@/components/LazyVideo'
 import { getPropertyTags, formatPropertyConfigWithTags, parsePropertyConfigurations } from '@/utils/property-tags'
+import { MEDIA_MODELS } from '@/lib/agent/media-models'
 
 const WhatsAppIcon = ({ size = 24, className = "" }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
@@ -536,7 +537,7 @@ export default function ProductsPage() {
           propImages: propImages,
           templateUrl: null,
           aspectRatio: '3:4',
-          model: 'google/nano-banana-2',
+          model: MEDIA_MODELS.image.id,
           creativeCategory: 'premium'
       }
 

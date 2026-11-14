@@ -6,6 +6,7 @@ import {
   createSession,
   listWorkspaces,
   createWorkspace,
+  ensureCeoSession,
 } from '@/lib/agent/harness/store';
 
 export const maxDuration = 30;
@@ -27,12 +28,20 @@ export async function GET(req: Request) {
     return NextResponse.json({ available: false, sessions: [], workspaces: [] });
   }
 
-  const [sessions, workspaces] = await Promise.all([
+  const [sessions, workspaces, ceoSessionId] = await Promise.all([
     listSessions(supabase, user.id, { workspaceId }),
     listWorkspaces(supabase, user.id),
+    // The permanent CEO conversation: created on first look and kept out of the
+    // ordinary list, so it can be pinned above the day's threads and never deleted.
+    ensureCeoSession(supabase, user.id),
   ]);
 
-  return NextResponse.json({ available: true, sessions, workspaces });
+  return NextResponse.json({
+    available: true,
+    sessions: sessions.filter((s) => s.workspaceId !== 'ceo'),
+    workspaces,
+    ceoSessionId,
+  });
 }
 
 /** POST /api/agent/v2/sessions — create a session or a workspace. */

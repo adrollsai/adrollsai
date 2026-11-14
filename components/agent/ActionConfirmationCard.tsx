@@ -2,16 +2,18 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { ShieldAlert, Check, X, Loader2, Coins } from 'lucide-react';
+import { ShieldAlert, Check, X, Loader2, Coins, Mic, ImageIcon } from 'lucide-react';
 import { ActionConfirmationArtifact } from '@/lib/agent/types';
 import { toast } from 'sonner';
 
 interface ActionConfirmationCardProps {
   artifact: ActionConfirmationArtifact;
   onDecision?: (actionId: string, decision: 'approved' | 'rejected') => void;
+  /** Called with the staged instruction when the user approves, so the job carries on. */
+  onResume?: (prompt: string) => void;
 }
 
-export default function ActionConfirmationCard({ artifact, onDecision }: ActionConfirmationCardProps) {
+export default function ActionConfirmationCard({ artifact, onDecision, onResume }: ActionConfirmationCardProps) {
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>(artifact.status || 'pending');
   const [loading, setLoading] = useState(false);
 
@@ -33,6 +35,12 @@ export default function ActionConfirmationCard({ artifact, onDecision }: ActionC
       setStatus(decision);
       if (decision === 'approved') {
         toast.success('Action approved! Executing now.');
+        // Approving used to just mark the row approved on the server, which left a
+        // creative job dead in the water. The staged instruction goes back into the
+        // conversation so the agent actually continues.
+        if (onResume && artifact.resumePrompt) {
+          onResume(artifact.resumePrompt);
+        }
       } else {
         toast.info('Action cancelled.');
       }
@@ -90,6 +98,63 @@ export default function ActionConfirmationCard({ artifact, onDecision }: ActionC
           <p className="dsh-t-s dsh-label-secondary mb-3" style={{ lineHeight: '22px' }}>
             {artifact.description}
           </p>
+
+          {artifact.spec && artifact.spec.length > 0 && (
+            <div
+              className="mb-3 overflow-hidden"
+              style={{ border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 'var(--dsh-radius-sm)' }}
+            >
+              {artifact.spec.map((row, i) => (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 px-3 py-1.5 dsh-t-xs"
+                  style={{
+                    background: i % 2 ? 'var(--dsw-alias-bg-layer-1)' : 'transparent',
+                    borderTop: i ? '1px solid var(--dsw-alias-border-l1)' : 'none',
+                  }}
+                >
+                  <span className="dsh-label-caption uppercase dsh-t-xxxs dsh-strong shrink-0 w-24 pt-0.5">
+                    {row.label}
+                  </span>
+                  <span className="dsh-label-primary dsh-mono whitespace-pre-wrap flex-1">{row.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {artifact.previews && artifact.previews.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {artifact.previews.map((p, i) => (
+                <div
+                  key={i}
+                  className="p-2.5"
+                  style={{
+                    background: 'var(--dsw-alias-bg-layer-1)',
+                    border: '1px solid var(--dsw-alias-border-l1)',
+                    borderRadius: 'var(--dsh-radius-sm)',
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 dsh-t-xxxs dsh-label-tertiary mb-1.5">
+                    {p.kind === 'audio' ? <Mic size={11} /> : <ImageIcon size={11} />}
+                    <span>{p.caption || (p.kind === 'audio' ? 'Voiceover preview' : 'Preview')}</span>
+                  </div>
+                  {p.kind === 'audio' && (
+                    <audio src={p.url} controls preload="metadata" className="w-full" />
+                  )}
+                  {p.kind === 'image' && (
+                    <img
+                      src={p.url}
+                      alt={p.caption || 'preview'}
+                      className="rounded-[6px] object-contain max-h-48 mx-auto"
+                    />
+                  )}
+                  {p.kind === 'video' && (
+                    <video src={p.url} controls playsInline className="rounded-[6px] max-h-56 mx-auto" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {status === 'pending' ? (
             <div className="flex items-center gap-2 pt-3 dsh-border-t">

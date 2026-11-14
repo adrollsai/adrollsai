@@ -1,3 +1,4 @@
+import { outboundRecipient } from '@/lib/automation/test-mode';
 import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
 import { sendCAPIEvent } from '@/utils/external-apis'
 import { sendBookingConfirmationEmail } from '@/utils/email-helper'
@@ -260,7 +261,7 @@ export async function triggerOutboundCall(
         }
 
         // Primary Telephony Routing: Vobiz for Indian calls & numbers (if a valid Vobiz number is owned)
-        let cleanPhone = (lead.phone || '').replace(/\D/g, '')
+        let cleanPhone = (outboundRecipient(lead.phone) || '').replace(/\D/g, '')
         const bi = typeof profile?.business_info === 'string' ? JSON.parse(profile.business_info) : (profile?.business_info || {})
         const isNobogentMaster = profile?.email === 'rchopra489@gmail.com' || profile?.role === 'super_admin'
         
@@ -948,6 +949,31 @@ export async function bookAppointment(
             }
         } catch (waErr: any) {
             console.error('[VOICE HELPER] WhatsApp double-send exception:', waErr.message || waErr)
+        }
+
+        // 6c. Deliver the call recording for an AI-booked appointment.
+        // The WhatsApp alert above is an approved text-only template and the
+        // email goes through the shared notification helper, so neither can
+        // carry the audio - this sends it as its own media message (falling
+        // back to a text alert with the link) plus a recording email, deduped
+        // on the call id so a retried webhook cannot send it twice.
+        if (source === 'voice_ai') {
+            try {
+                const { deliverVoiceCallReceipt } = await import('./notification-helper')
+                await deliverVoiceCallReceipt({
+                    leadId,
+                    ownerUserId: lead.user_id,
+                    outcome: 'appointment_booked',
+                    callId: lead.voice_call_id || null,
+                    summary: lead.voice_call_summary || null,
+                    leadName: lead.name || null,
+                    leadPhone: lead.phone || null,
+                    recordingUrl: lead.voice_recording_url || null,
+                    occurredAt: new Date()
+                })
+            } catch (receiptErr: any) {
+                console.error('[VOICE HELPER] Failed to deliver call recording receipt:', receiptErr?.message || receiptErr)
+            }
         }
 
         // 7. Trigger Conversions API (CAPI) Schedule Event

@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot, MapPin } from 'lucide-react'
+import { LayoutGrid, Sparkles, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -107,7 +107,12 @@ export default function BottomNav() {
     }
   }, [supabase])
 
-  if (!role || isKeyboardOpen || pathname.startsWith('/dashboard/flows')) return null;
+  // The agent is a full-screen surface with its own composer pinned to the bottom
+  // edge. The nav bar sits above it in z-order, so on a phone it covered the send
+  // button — the one control that must never be obscured.
+  const isFullScreenSurface = pathname.startsWith('/dashboard/flows') || pathname.startsWith('/dashboard/agent')
+
+  if (!role || isKeyboardOpen || isFullScreenSurface) return null;
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
@@ -118,8 +123,9 @@ export default function BottomNav() {
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
-    { name: 'GBP Suite', icon: MapPin, path: '/dashboard/gbp' },
-    { name: 'GBP Audit', icon: MapPin, path: '/dashboard/gbp-audit' },
+    // The GBP Suite / GBP Audit tabs were removed from the navigation: the feature
+    // is not in use. Their routes (/dashboard/gbp, /dashboard/gbp-audit) still
+    // exist and still work — they are simply not advertised in the bar.
     ...(showDistribute ? [{ name: 'Distribute', icon: Share2, path: '/dashboard/distribute' }] : []),
     { name: 'Assets', icon: Grid3X3, path: '/dashboard/assets' },
     { name: 'Profile', icon: User, path: '/dashboard/profile' },
@@ -144,11 +150,6 @@ export default function BottomNav() {
     // Hide Distribute from admin accounts
     if (item.name === 'Distribute') {
       return ['super_admin', 'agency'].includes(role)
-    }
-
-    // Restrict GBP Suite and GBP Audit strictly to Nobogent super admin account
-    if (item.name === 'GBP Suite' || item.name === 'GBP Audit') {
-      return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
     }
 
     // Team visibility

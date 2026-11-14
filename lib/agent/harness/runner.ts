@@ -298,7 +298,11 @@ export async function executeRunSlice(
         try {
           await appendEvents(supabase, run.session_id, [
             createEvent('assistant.text', {
-              id: `${run.id.slice(0, 8)}_p${sliceNumber}_${partialCounter}`,
+              // STABLE per slice. This used to include the flush counter, so every ~250 ms
+              // the growing answer was appended as a NEW transcript item instead of
+              // replacing the previous one — which is why a single reply appeared two or
+              // three times and why it looked like it was typing at one word per second.
+              id: `a_${run.id.slice(0, 8)}_p${sliceNumber}`,
               text: streamedText,
             }),
           ]);

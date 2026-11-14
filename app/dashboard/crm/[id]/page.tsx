@@ -137,6 +137,9 @@ function LeadProfilePageContent() {
     const [isEditingName, setIsEditingName] = useState(false)
     const [nameInput, setNameInput] = useState('')
     const [isSavingName, setIsSavingName] = useState(false)
+    // Notes are auto-saved while typing, so a note cannot be lost by navigating away.
+    const [notesDraft, setNotesDraft] = useState('')
+    const [notesSaveState, setNotesSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
     const [savingQuestionKey, setSavingQuestionKey] = useState<string | null>(null)
 
     const visibleLeadHistory = useMemo(() => {
@@ -788,18 +791,16 @@ function LeadProfilePageContent() {
     const handleUpdateQualificationAnswer = async (key: string, value: string) => {
         if (!lead) return
         setSavingQuestionKey(key)
+        const previousLead = lead
         try {
             const currentCf = parseCustomFields(lead.custom_fields)
             currentCf[key] = value
             if (key === 'property_type') currentCf.interested_property = value
-            if (key === 'budget') {
-                lead.budget = value
-                currentCf.budget = value
-            }
-            if (key === 'timeline') {
-                lead.timeline = value
-                currentCf.timeline = value
-            }
+            // Never mutate `lead` directly: assigning into the state object made the
+            // optimistic copy differ from what React rendered, so a failed write could
+            // not be rolled back and the next read looked like "my save reversed itself".
+            const optimisticBudget = key === 'budget' ? value : undefined
+            const optimisticTimeline = key === 'timeline' ? value : undefined
 
             // Check if all questions in flow are completed
             let allCompleted = true
@@ -823,23 +824,34 @@ function LeadProfilePageContent() {
             const nextLead = { 
                 ...lead, 
                 custom_fields: currentCf, 
-                budget: currentCf.budget || lead.budget,
-                timeline: currentCf.timeline || lead.timeline
+                budget: optimisticBudget ?? currentCf.budget ?? lead.budget,
+                timeline: optimisticTimeline ?? currentCf.timeline ?? lead.timeline
             }
             setLead(nextLead)
             updateLocalCRMCache(nextLead)
 
-            await supabase
+            const { error: answerErr } = await supabase
                 .from('leads')
                 .update({ 
                     custom_fields: currentCf, 
-                    budget: currentCf.budget || lead.budget,
-                    timeline: currentCf.timeline || lead.timeline
+                    budget: nextLead.budget,
+                    timeline: nextLead.timeline
                 })
                 .eq('id', lead.id)
 
-            // Recalculate lead score
-            await fetch('/api/crm/recalculate-score', {
+            // This result used to be discarded, so a blocked write still toasted "Saved!"
+            // and the very next read put the old value back on screen. That is the
+            // "it says saved but nothing saves, and it is gone after login" report.
+            if (answerErr) {
+                setLead(previousLead)
+                updateLocalCRMCache(previousLead)
+                toast.error(`Answer not saved: ${answerErr.message}`)
+                return
+            }
+
+            // Score recalculation is decoration, not part of the save: awaiting it kept
+            // the button spinning for as long as that route took.
+            fetch('/api/crm/recalculate-score', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ leadId: lead.id, qualifyingQuestions: flowQuestions })
@@ -848,7 +860,8 @@ function LeadProfilePageContent() {
             toast.success(allCompleted ? 'Saved! All questions answered (+40 pts awarded) 🎉' : 'Answer updated successfully')
             fetchLeadData()
         } catch (e: any) {
-            toast.error('Failed to update answer')
+            setLead(previousLead)
+            toast.error(e?.message ? `Failed to update answer: ${e.message}` : 'Failed to update answer')
         } finally {
             setSavingQuestionKey(null)
         }
@@ -993,6 +1006,7 @@ function LeadProfilePageContent() {
             [newFieldKey.trim()]: newFieldValue.trim()
         }
 
+        const previousLead = lead
         setLead({ ...lead, custom_fields: updatedFields })
 
         const { error } = await supabase
@@ -1001,7 +1015,11 @@ function LeadProfilePageContent() {
             .eq('id', id)
 
         if (error) {
-            toast.error("Failed to add custom field")
+            // Put the old field list back: the optimistic copy used to survive the failed
+            // write and then disappear on the next load, which reads as data loss.
+            setLead(previousLead)
+            updateLocalCRMCache(previousLead)
+            toast.error(`Field not added: ${error.message}`)
         } else {
             toast.success("Custom field added!")
             setIsAddingCustomField(false)
@@ -1017,6 +1035,7 @@ function LeadProfilePageContent() {
         const updatedFields = { ...currentFields }
         delete updatedFields[keyToDelete]
 
+        const previousLead = lead
         setLead({ ...lead, custom_fields: updatedFields })
 
         const { error } = await supabase
@@ -1025,7 +1044,9 @@ function LeadProfilePageContent() {
             .eq('id', id)
 
         if (error) {
-            toast.error("Failed to delete custom field")
+            setLead(previousLead)
+            updateLocalCRMCache(previousLead)
+            toast.error(`Field not deleted: ${error.message}`)
         } else {
             toast.success("Custom field deleted!")
         }
@@ -1270,6 +1291,7 @@ function LeadProfilePageContent() {
     }
 
     const handleNotesChange = async (newNotes: string) => {
+        const previousLead = lead
         const isRestrictedAgent = !!(lead?.custom_fields?.history_visible_from && (currentUserRole === 'agent' || isTeamMember))
         if (isRestrictedAgent) {
             // Restricted agents must never wipe historical notes if they unfocus an empty or untouched textarea
@@ -1278,7 +1300,12 @@ function LeadProfilePageContent() {
             const nextLead = { ...lead, notes: mergedNotes }
             setLead(nextLead)
             updateLocalCRMCache(nextLead)
-            await supabase.from('leads').update({ notes: mergedNotes }).eq('id', id)
+            const { error } = await supabase.from('leads').update({ notes: mergedNotes }).eq('id', id)
+            if (error) {
+                setLead(previousLead)
+                updateLocalCRMCache(previousLead)
+                toast.error(`Notes not saved: ${error.message}`)
+            }
             return
         }
 
@@ -1286,8 +1313,57 @@ function LeadProfilePageContent() {
         const nextLead = { ...lead, notes: newNotes }
         setLead(nextLead)
         updateLocalCRMCache(nextLead)
-        await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
+        setNotesSaveState('saving')
+        const { error } = await supabase.from('leads').update({ notes: newNotes }).eq('id', id)
+        // Unchecked, a rejected write left the note visible until the next load — the
+        // classic "I typed it, it vanished after I logged back in".
+        if (error) {
+            setLead(previousLead)
+            updateLocalCRMCache(previousLead)
+            setNotesSaveState('error')
+            toast.error(`Notes not saved: ${error.message}`)
+        } else {
+            setNotesSaveState('saved')
+            setTimeout(() => setNotesSaveState((s) => (s === 'saved' ? 'idle' : s)), 2000)
+        }
     }
+
+    // Keep the textarea in step with the record, and flush unsaved text when the tab
+    // is hidden (phone lock, app switch) - a blur is not guaranteed in those cases.
+    useEffect(() => {
+        if (!lead) return
+        setNotesDraft(lead.notes || '')
+    }, [lead?.id, lead?.notes])
+
+    useEffect(() => {
+        if (!lead) return
+        const draft = notesDraft
+        if (draft === (lead.notes || '')) return
+        const t = setTimeout(() => {
+            void handleNotesChange(draft)
+        }, 1200)
+        return () => clearTimeout(t)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notesDraft])
+
+    useEffect(() => {
+        const flush = () => {
+            if (!lead) return
+            if (notesDraft === (lead.notes || '')) return
+            // fire and forget: the page is going away
+            void handleNotesChange(notesDraft)
+        }
+        const onVisibility = () => {
+            if (document.visibilityState === 'hidden') flush()
+        }
+        document.addEventListener('visibilitychange', onVisibility)
+        window.addEventListener('pagehide', flush)
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility)
+            window.removeEventListener('pagehide', flush)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [notesDraft, lead?.id, lead?.notes])
 
     const handleTriggerCall = async () => {
         if (currentUserRole === 'agent' || isTeamMember) {
@@ -1349,10 +1425,16 @@ function LeadProfilePageContent() {
     }
 
     const handleFieldUpdate = async (field: string, value: any) => {
+        const previousLead = lead
         const nextLead = { ...lead, [field]: value }
         setLead(nextLead)
         updateLocalCRMCache(nextLead)
-        await supabase.from('leads').update({ [field]: value }).eq('id', id)
+        const { error } = await supabase.from('leads').update({ [field]: value }).eq('id', id)
+        if (error) {
+            setLead(previousLead)
+            updateLocalCRMCache(previousLead)
+            toast.error(`Could not save ${field.replace(/_/g, ' ')}: ${error.message}`)
+        }
     }
 
     const downloadVCard = () => {
@@ -1925,12 +2007,25 @@ END:VCARD`
                                 )}
 
                                 <div className="mt-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1">Static Notes</label>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5 ml-1 flex items-center justify-between">
+                                        <span>Static Notes</span>
+                                        {/* Free text used to save only on blur, so typing a note
+                                            and then switching away / locking the phone lost it with
+                                            no warning - which is what "I wrote no further contact
+                                            needed and it did not save" actually was. */}
+                                        <span className={`text-[9px] font-bold normal-case ${notesSaveState === 'error' ? 'text-rose-500' : notesSaveState === 'saving' ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                            {notesSaveState === 'saving' ? 'Saving…' : notesSaveState === 'error' ? 'Not saved' : notesSaveState === 'saved' ? 'Saved' : ''}
+                                        </span>
+                                    </label>
                                     <textarea
                                         className="w-full bg-slate-50 p-3 rounded-xl text-sm border border-slate-100 outline-none resize-none"
                                         rows={2}
-                                        defaultValue={(lead.custom_fields?.history_visible_from && (currentUserRole === 'agent' || isTeamMember)) ? '' : (lead.notes || '')}
-                                        onBlur={(e) => handleNotesChange(e.target.value)}
+                                        value={notesDraft}
+                                        onChange={(e) => {
+                                            setNotesDraft(e.target.value)
+                                            setNotesSaveState('saving')
+                                        }}
+                                        onBlur={(e) => void handleNotesChange(e.target.value)}
                                     />
                                 </div>
                             </div>

@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { bulkActionRefusal } from '../preflight';
 
 export function createWhatsAppTools(supabase: SupabaseClient, userId: string) {
   return {
@@ -117,14 +118,34 @@ export function createWhatsAppTools(supabase: SupabaseClient, userId: string) {
     }),
 
     prepare_whatsapp_broadcast: tool({
-      description: 'Prepares a WhatsApp broadcast campaign for multiple leads. Flags the operation for Human-in-the-Loop user approval with exact cost estimate.',
+      description: 'Prepares a WhatsApp broadcast campaign for multiple leads. Flags the operation for Human-in-the-Loop user approval with exact cost estimate. PRE-FLIGHT GUARDED: without a segment, a message intent and an explicit send time it prepares NOTHING and returns status "missing_inputs" with the questions to ask through request_user_input first.',
       inputSchema: z.object({
         leadIds: z.array(z.string()).describe('List of lead UUIDs to receive the message'),
         messageText: z.string().describe('The template or freeform message text'),
         mediaUrl: z.string().optional().describe('Optional image or video URL'),
         campaignName: z.string().default('Agent Broadcast').describe('Campaign name'),
+        when: z.string().optional().describe('When this should go out — "now", a date/time, or a schedule. Ask the owner; never assume.'),
       }),
-      execute: async ({ leadIds, messageText, mediaUrl, campaignName }) => {
+      execute: async ({ leadIds, messageText, mediaUrl, campaignName, when }) => {
+        // PRE-FLIGHT GUARD: a broadcast cannot be recalled, so a missing segment,
+        // message intent or timing is refused before anything is prepared.
+        const refusal = await bulkActionRefusal(
+          {
+            channel: 'whatsapp',
+            recipients: Array.isArray(leadIds) ? leadIds.length : 0,
+            segment: leadIds,
+            messageIntent: messageText,
+            when,
+          },
+          {
+            tool: 'prepare_whatsapp_broadcast',
+            action: `prepare a WhatsApp broadcast to ${Array.isArray(leadIds) ? leadIds.length : 0} leads`,
+            supabase,
+            userId,
+          }
+        );
+        if (refusal) return refusal;
+
         try {
           const { count, error } = await supabase
             .from('leads')

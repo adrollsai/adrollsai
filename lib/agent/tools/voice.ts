@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { bulkActionRefusal } from '../preflight';
 
 export function createVoiceTools(supabase: SupabaseClient, userId: string) {
   return {
@@ -80,15 +81,35 @@ export function createVoiceTools(supabase: SupabaseClient, userId: string) {
     }),
 
     launch_bulk_calling_campaign: tool({
-      description: 'Launches or prepares a separate, on-demand bulk outbound AI calling campaign to a filtered list of leads using a custom one-time campaign script and voice. Kept completely separate from the default ongoing follow-up bot.',
+      description: 'Launches or prepares a separate, on-demand bulk outbound AI calling campaign to a filtered list of leads using a custom one-time campaign script and voice. Kept completely separate from the default ongoing follow-up bot. PRE-FLIGHT GUARDED: without a segment, a script intent and an explicit calling window it launches NOTHING and returns status "missing_inputs" with the questions to ask through request_user_input first.',
       inputSchema: z.object({
         leadIds: z.array(z.string()).describe('Target lead UUIDs to call in this blast'),
-        campaignName: z.string().describe('Campaign name (e.g., "Diwali Luxury Villa Blast", "Weekend Open House")'),
+        campaignName: z.string().describe('Campaign name (e.g., "Festive Offer Blast", "Weekend Site Visit Push")'),
         customCampaignScript: z.string().describe('The dedicated one-time pitch/script for this bulk campaign'),
         voiceName: z.string().default('Aoede').describe('Voice character for this campaign'),
         concurrency: z.number().default(3).describe('Number of simultaneous calls (1-5)'),
+        when: z.string().optional().describe('When the calls should start — "now", a date/time, or a daily window. Ask the owner; never assume.'),
       }),
-      execute: async ({ leadIds, campaignName, customCampaignScript, voiceName, concurrency }) => {
+      execute: async ({ leadIds, campaignName, customCampaignScript, voiceName, concurrency, when }) => {
+        // PRE-FLIGHT GUARD: a call blast rings real phones, so a missing segment,
+        // script intent or calling window is refused before anything is queued.
+        const refusal = await bulkActionRefusal(
+          {
+            channel: 'call',
+            recipients: Array.isArray(leadIds) ? leadIds.length : 0,
+            segment: leadIds,
+            messageIntent: customCampaignScript,
+            when,
+          },
+          {
+            tool: 'launch_bulk_calling_campaign',
+            action: `launch a calling campaign to ${Array.isArray(leadIds) ? leadIds.length : 0} leads`,
+            supabase,
+            userId,
+          }
+        );
+        if (refusal) return refusal;
+
         try {
           const totalCalls = leadIds.length;
           const estimatedCostInr = (totalCalls * 2.5).toFixed(2); // Avg telephony cost

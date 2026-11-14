@@ -145,6 +145,20 @@ export function applyEvent(state: HarnessState, event: HarnessEvent): HarnessSta
       // the same text twice is still a no-op, which keeps replay idempotent.
       const at = state.items.findIndex((i) => i.kind === 'assistant' && i.id === d.id);
       if (at === -1) {
+        // A continuation slice re-emits the same answer with a new id, so the transcript
+        // showed the identical reply two or three times in a row. Collapse it here, in the
+        // projection, rather than in one of the two renderers that read it.
+        const last = state.items[state.items.length - 1];
+        if (last && last.kind === 'assistant' && last.text.trim() === String(d.text || '').trim()) {
+          const items = state.items.slice();
+          items[items.length - 1] = { kind: 'assistant', id: d.id, text: d.text };
+          return {
+            ...state,
+            items,
+            seenIds: { ...state.seenIds, [d.id]: true },
+            version: state.version + 1,
+          };
+        }
         return {
           ...state,
           items: [...state.items, { kind: 'assistant', id: d.id, text: d.text }],

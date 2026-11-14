@@ -1,0 +1,546 @@
+/* ============================================================================
+ * Nobogent agent skin.
+ *
+ * A visual layer over the harness tokens in dsh-tokens.css. Nothing here adds or
+ * removes behaviour: it changes colour, radius, spacing and depth only, so every
+ * existing control (streaming, tools, approvals, the Create panel, the dictation
+ * button) keeps working exactly as before.
+ *
+ * Imported by app/dashboard/agent/page.tsx AFTER dsh-tokens.css, scoped to
+ * `.dsh[data-theme='light']`, so it can never leak into the dashboard.
+ *
+ * The look: a very light lavender canvas, white cards with a soft violet-tinted
+ * shadow, generous rounding, and one violet accent (#7C3AED) that carries the
+ * brand. Dark text throughout — a tinted bubble with dark text stays readable and
+ * keeps markdown, tables and code blocks legible.
+ * ========================================================================== */
+
+.dsh[data-theme='light'] {
+  /* ---- canvas & surfaces ---- */
+  --nobo-canvas: #f7f5fd;
+  --nobo-canvas-tint-1: rgba(124, 58, 237, 0.06);
+  --nobo-canvas-tint-2: rgba(236, 72, 153, 0.035);
+  --nobo-card: #ffffff;
+  --nobo-card-soft: #fbfaff;
+  --nobo-bubble-user: #ece7fe;
+
+  /* ---- accent ---- */
+  --nobo-violet-50: #f5f1ff;
+  --nobo-violet-100: #ece5ff;
+  --nobo-violet-200: #d9ccff;
+  --nobo-violet-500: #7c3aed;
+  --nobo-violet-600: #6d28d9;
+  --nobo-pink-500: #ec4899;
+
+  --dsw-alias-bg-base: var(--nobo-canvas);
+  --dsw-alias-bg-layer-1: var(--nobo-card);
+  --dsw-alias-bg-layer-2: var(--nobo-card);
+  --dsw-alias-bg-layer-3: var(--nobo-violet-50);
+  --dsw-alias-bg-overlay: #f1edfd;
+
+  --dsw-alias-border-l1: rgba(109, 40, 217, 0.08);
+  --dsw-alias-border-l2: rgba(109, 40, 217, 0.14);
+  --dsw-alias-border-l3: rgba(109, 40, 217, 0.18);
+  --dsw-alias-border-l4: rgba(109, 40, 217, 0.24);
+
+  --dsw-alias-label-primary: #191634;
+  --dsw-alias-label-secondary: #4b4670;
+  --dsw-alias-label-tertiary: #6f6a91;
+  --dsw-alias-label-caption: #928cb3;
+  --dsw-alias-label-dimmed: #c3bedb;
+
+  --dsw-alias-brand-primary: var(--nobo-violet-600);
+  --dsw-alias-brand-text: var(--nobo-violet-600);
+
+  --dsw-alias-button-primary-fill: var(--nobo-violet-500);
+  --dsw-alias-button-primary-hover: var(--nobo-violet-600);
+  --dsw-alias-button-primary-text: #ffffff;
+  --dsw-alias-button-info-fill: var(--nobo-violet-500);
+  --dsw-alias-button-info-hover: var(--nobo-violet-600);
+
+  --dsw-alias-state-business-primary: var(--nobo-violet-500);
+  --dsw-alias-state-business-tertiary: var(--nobo-violet-100);
+
+  --dsw-alias-interactive-bg-hover: rgba(124, 58, 237, 0.07);
+  --dsw-alias-interactive-bg-active: rgba(124, 58, 237, 0.12);
+  --dsw-alias-interactive-bg-hover-accent: rgba(124, 58, 237, 0.14);
+
+  --dsw-alias-markdown-code-block: #f6f3ff;
+  --dsw-alias-markdown-code-block-banner: #efeaff;
+  --dsw-alias-markdown-inline-code: #efeaff;
+  --dsw-alias-markdown-citation: #f1ecff;
+  --dsw-alias-markdown-tag: #f1ecff;
+  --dsw-alias-markdown-placeholder: #ece7fe;
+
+  /* Rounder, softer depth than the harness default. */
+  --dsh-radius-xs: 8px;
+  --dsh-radius-sm: 10px;
+  --dsh-radius-md: 14px;
+  --dsh-radius-lg: 18px;
+  --dsh-radius-xl: 24px;
+
+  --dsw-shadow-lv1: 0 1px 2px rgba(25, 22, 52, 0.04);
+  --dsw-shadow-lv2: 0 2px 10px rgba(76, 29, 149, 0.06), 0 1px 2px rgba(76, 29, 149, 0.04);
+  --dsw-shadow-lv3: 0 18px 40px rgba(76, 29, 149, 0.12);
+
+  --dsw-alias-scrollbar-bg-l1: rgba(124, 58, 237, 0.12);
+  --dsw-alias-scrollbar-bg-l2: rgba(124, 58, 237, 0.16);
+  --dsw-alias-scrollbar-hover-l1: rgba(124, 58, 237, 0.28);
+  --dsw-alias-scrollbar-hover-l2: rgba(124, 58, 237, 0.32);
+}
+
+/* ---------------------------------------------------------------- canvas --- */
+
+/* Two very soft tint blooms, so the canvas reads as light falling on paper
+   rather than a flat grey fill. Fixed, so it does not shift while scrolling. */
+.dsh[data-theme='light'] > div,
+.dsh[data-theme='light'] {
+  background-image:
+    radial-gradient(60rem 40rem at 8% -10%, var(--nobo-canvas-tint-1), transparent 60%),
+    radial-gradient(50rem 34rem at 100% 0%, var(--nobo-canvas-tint-2), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* The sidebar must stay a clean white column, not inherit the tint. */
+.dsh[data-theme='light'] .nobo-sidebar {
+  background-image: none !important;
+  background-color: var(--nobo-card) !important;
+}
+
+/* ------------------------------------------------------------- typography --- */
+
+.dsh[data-theme='light'] .dsh-t-prose,
+.dsh[data-theme='light'] .agent-markdown {
+  line-height: 1.62;
+}
+
+.dsh[data-theme='light'] .dsh-strong {
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- controls --- */
+
+/* The send button and any other primary control get the brand gradient. */
+.dsh[data-theme='light'] .dsh-btn-primary {
+  background-image: linear-gradient(135deg, #8b5cf6 0%, #a855f7 45%, #ec4899 100%);
+  background-color: transparent;
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.34);
+  border: 0;
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.dsh[data-theme='light'] .dsh-btn-primary:hover:not(:disabled) {
+  background-image: linear-gradient(135deg, #7c3aed 0%, #9333ea 45%, #db2777 100%);
+  box-shadow: 0 8px 22px rgba(139, 92, 246, 0.42);
+  transform: translateY(-1px);
+}
+
+.dsh[data-theme='light'] .dsh-btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.96);
+}
+
+.dsh[data-theme='light'] .dsh-btn {
+  background: var(--nobo-card);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dsh[data-theme='light'] .dsh-chip {
+  background: var(--nobo-violet-50);
+  border: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ---------------------------------------------------------------- bubbles --- */
+
+/* User message bubble: a soft violet tint, dark text, one squared corner so the
+   side it came from is obvious without a tail. */
+.dsh[data-theme='light'] .nobo-bubble-user {
+  background: var(--nobo-bubble-user) !important;
+  border: 1px solid rgba(124, 58, 237, 0.12) !important;
+  border-radius: 20px 20px 6px 20px !important;
+  color: var(--dsw-alias-label-primary) !important;
+  box-shadow: 0 2px 10px rgba(76, 29, 149, 0.05);
+}
+
+/* Assistant reply sits on a white card with the matching squared corner. */
+.dsh[data-theme='light'] .nobo-bubble-agent {
+  background: var(--nobo-card) !important;
+  border: 1px solid var(--dsw-alias-border-l1) !important;
+  border-radius: 20px 20px 20px 6px !important;
+  padding: 14px 16px;
+  box-shadow: 0 4px 16px rgba(76, 29, 149, 0.06);
+}
+
+/* ------------------------------------------------------------- composer ----- */
+
+/* The dock: a floating white pill with a violet focus ring. */
+.dsh[data-theme='light'] .nobo-dock {
+  background: var(--nobo-card) !important;
+  border: 1px solid var(--dsw-alias-border-l2) !important;
+  border-radius: 26px !important;
+  box-shadow: 0 10px 30px rgba(76, 29, 149, 0.09), 0 2px 6px rgba(76, 29, 149, 0.05) !important;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.dsh[data-theme='light'] .nobo-dock:focus-within {
+  border-color: rgba(124, 58, 237, 0.45) !important;
+  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.16), 0 0 0 4px rgba(124, 58, 237, 0.08) !important;
+}
+
+/* The divider above the dock's control row is unnecessary inside a pill. */
+.dsh[data-theme='light'] .nobo-dock .dsh-border-t {
+  border-top-color: rgba(109, 40, 217, 0.07);
+}
+
+/* ------------------------------------------------------------- welcome ------ */
+
+.nobo-welcome {
+  animation: nobo-welcome-in 420ms ease-out both;
+}
+
+@keyframes nobo-welcome-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.nobo-suggestion {
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.nobo-suggestion:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124, 58, 237, 0.35) !important;
+  box-shadow: 0 12px 26px rgba(76, 29, 149, 0.12) !important;
+}
+
+.nobo-suggestion:active {
+  transform: translateY(0) scale(0.99);
+}
+
+/* --------------------------------------------------------- reduced motion --- */
+
+@media (prefers-reduced-motion: reduce) {
+  .nobo-welcome {
+    animation: none;
+  }
+  .nobo-suggestion,
+  .nobo-suggestion:hover {
+    transform: none;
+    transition: none;
+  }
+  .dsh[data-theme='light'] .dsh-btn-primary,
+  .dsh[data-theme='light'] .dsh-btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* ============================================================================
+ * Question panel — the agent asks, you answer.
+ * Sizes here are deliberate: 44px minimum touch targets, visible focus rings and
+ * a real selected state, per the accessibility rules this UI is held to.
+ * ========================================================================== */
+
+.nobo-question {
+  background: #ffffff;
+  border: 1px solid rgba(109, 40, 217, 0.16);
+  border-radius: 22px;
+  box-shadow: 0 18px 44px rgba(76, 29, 149, 0.16), 0 2px 8px rgba(76, 29, 149, 0.06);
+  animation: nobo-question-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes nobo-question-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.nobo-question:focus-visible {
+  outline: 2px solid var(--nobo-violet-500);
+  outline-offset: 2px;
+}
+
+.nobo-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  cursor: pointer;
+}
+
+.nobo-option:hover:not(:disabled) {
+  border-color: rgba(124, 58, 237, 0.4);
+  background: var(--nobo-violet-50);
+}
+
+.nobo-option:active:not(:disabled) {
+  transform: scale(0.995);
+}
+
+.nobo-option:focus-visible {
+  outline: 2px solid var(--nobo-violet-500);
+  outline-offset: 2px;
+}
+
+.nobo-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.nobo-option[data-selected='true'] {
+  border-color: var(--nobo-violet-500);
+  background: var(--nobo-violet-50);
+  box-shadow: inset 0 0 0 1px var(--nobo-violet-500);
+}
+
+.nobo-option-index {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 7px;
+  background: var(--nobo-violet-100);
+  color: var(--nobo-violet-600);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.nobo-option[data-selected='true'] .nobo-option-index {
+  background: var(--nobo-violet-500);
+  color: #ffffff;
+}
+
+.nobo-option-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  line-height: 1.35;
+}
+
+.nobo-option-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.nobo-option-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--nobo-violet-100);
+  color: var(--nobo-violet-600);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.nobo-option-check {
+  margin-left: auto;
+  align-self: center;
+  color: var(--nobo-violet-600);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.nobo-question-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  min-height: 44px;
+  background: var(--nobo-card-soft);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.nobo-question-input:focus-within {
+  border-color: rgba(124, 58, 237, 0.5);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.nobo-question-field {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-size: 13.5px;
+  color: var(--dsw-alias-label-primary);
+  padding: 10px 0;
+}
+
+.nobo-question-field::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+
+.nobo-question-skip {
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.nobo-question-skip:hover {
+  background: var(--nobo-violet-50);
+  color: var(--nobo-violet-600);
+}
+
+.nobo-question-skip:focus-visible,
+.nobo-icon-btn:focus-visible,
+.nobo-question-submit:focus-visible {
+  outline: 2px solid var(--nobo-violet-500);
+  outline-offset: 2px;
+}
+
+.nobo-question-submit {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 650;
+  color: #ffffff;
+  background-image: linear-gradient(135deg, #8b5cf6 0%, #a855f7 50%, #ec4899 100%);
+  box-shadow: 0 8px 20px rgba(139, 92, 246, 0.32);
+  transition: filter 140ms ease, transform 140ms ease, opacity 140ms ease;
+}
+
+.nobo-question-submit:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.nobo-question-submit:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.nobo-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.nobo-icon-btn:hover:not(:disabled) {
+  background: var(--nobo-violet-50);
+  color: var(--nobo-violet-600);
+}
+
+.nobo-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Small icon controls in the composer: keep the visual size, grow the hit area to
+   44px so a thumb can actually hit them. */
+.nobo-tap {
+  position: relative;
+}
+
+.nobo-tap::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 999px;
+}
+
+/* ------------------------------------------------------- thinking row ------ */
+
+.nobo-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 2px;
+  animation: nobo-thinking-in 200ms ease-out both;
+}
+
+@keyframes nobo-thinking-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.nobo-thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.nobo-thinking-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--nobo-violet-500);
+  opacity: 0.35;
+  animation: nobo-dot 1.1s ease-in-out infinite;
+}
+
+.nobo-thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.nobo-thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes nobo-dot {
+  0%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* ------------------------------------------------- assistant reply card ---- */
+
+/* The log-backed transcript is the path the app actually renders after a reload,
+   so it needs the same card treatment as a live message. */
+.dsh[data-theme='light'] .nobo-agent-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dsh[data-theme='light'] .nobo-agent-card {
+  min-width: 0;
+  flex: 1;
+  background: var(--nobo-card);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 20px 20px 20px 6px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 16px rgba(76, 29, 149, 0.06);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nobo-question,
+  .nobo-thinking,
+  .nobo-thinking-dots span {
+    animation: none;
+  }
+  .nobo-option,
+  .nobo-question-submit {
+    transition: none;
+  }
+}

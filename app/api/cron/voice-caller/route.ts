@@ -183,10 +183,30 @@ async function handleDispatcher(request: Request) {
     let failed = 0
 
     for (const row of claimed || []) {
+      // Guardrail: daily call cap, so autonomy cannot ring 200 people in a day.
+      try {
+        const { canSpend } = await import('@/lib/automation/ceo')
+        const cap = await canSpend(supabaseAdmin, row.user_id, 'call', 0, 1)
+        if (!cap.allowed) {
+          console.log(
+            '[Voice Caller] daily call cap reached for ' + row.user_id +
+            ' (' + (cap.reason || 'cap') + ' ' + cap.used + '/' + cap.cap + ')'
+          )
+          break
+        }
+      } catch (gErr: any) {
+        console.warn('[Voice Caller] guardrail check failed:', gErr?.message)
+      }
       const candidate: any = byLead.get(row.id)
       try {
         await triggerOutboundCall(supabaseAdmin, row.id, row.user_id, true)
         dispatched++
+
+        // Ledger for the call cap.
+        try {
+          const { recordSpend } = await import('@/lib/automation/ceo')
+          await recordSpend(supabaseAdmin, row.user_id, 'call', 0, 1)
+        } catch {}
 
         const attempts = (Number(candidate?.voice_call_retry_count) || 0) + 1
         await supabaseAdmin

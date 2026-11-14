@@ -529,6 +529,27 @@ export async function POST(request: Request) {
                         const isMessageToOfficialBot = !wabaPhoneId || wabaPhoneId === '1185499271314063' || (masterPhoneId && wabaPhoneId === masterPhoneId);
 
                         // =========================================================================
+                        // AGENT APPROVAL REPLIES (the CEO's approve / skip / change gate)
+                        // Runs before every legacy flow: if this sender is a business owner
+                        // with a pending approval, their reply resolves THAT and stops here,
+                        // so the old template flow and the agent can never both act on one
+                        // message. Resolves to 'none' for leads, so normal handling is
+                        // untouched.
+                        // =========================================================================
+                        if (messageText && !isMessageToOfficialBot) {
+                            try {
+                                const { resolveApprovalReply } = await import('@/lib/agent/approval-whatsapp');
+                                const resolved = await resolveApprovalReply(supabaseAdmin, cleanFrom, messageText);
+                                if (resolved.kind !== 'none') {
+                                    console.log(`[AgentApproval] ${resolved.kind} from ${cleanFromDigits}: ${resolved.approvalTitle || ''}`);
+                                    continue;
+                                }
+                            } catch (approvalErr: any) {
+                                console.warn('[AgentApproval] reply resolution failed:', approvalErr?.message || approvalErr);
+                            }
+                        }
+
+                        // =========================================================================
                         // TOP-LEVEL DAILY CREATIVE APPROVE / EDIT / REVISION FLOW
                         // (Takes precedence before CRM / Lead state machines)
                         // =========================================================================

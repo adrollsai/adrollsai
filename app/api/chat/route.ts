@@ -7,6 +7,7 @@ import { google } from '@ai-sdk/google';
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
 import { getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data';
+import { MEDIA_MODELS, imageModelFor, modelAlias } from '@/lib/agent/media-models';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -608,27 +609,34 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
       finalImagePrompt = designerPrompt ? `${disambiguationPreamble}${designerPrompt}` : `${disambiguationPreamble}${fallbackPrompt}`;
     }
 
-    let kieModel = isDirect ? 'nano-banana-2' : 'gpt-image-2-5-flare-text-to-image';
+    // Every model id below comes from lib/agent/media-models.ts — nothing is
+    // inlined here. Old clients still send the short, prefix-free alias of the
+    // image fallback id, which modelAlias() derives from the registry.
+    const nanoImageModel: string = MEDIA_MODELS.image.fallbacks[0];
+    const nanoAlias = modelAlias(nanoImageModel);
+
+    let kieModel: string = isDirect ? nanoImageModel : MEDIA_MODELS.image.id;
     let imageField = 'image_input'; // Default for text-to-image and nano
 
     // If we have ANY valid images (including logo), use Image-to-Image
     if (!isDirect && allInputImages.length > 0) {
-        kieModel = 'gpt-image-2-5-flare-image-to-image';
+        kieModel = MEDIA_MODELS.imageEdit.id;
         imageField = 'input_urls';
     }
     
     // Explicitly check for requested model names
-    if (model === 'image-2.0' || model === 'gpt/gpt-image-2-text-to-image' || model === 'gpt/gpt-image-2-5-flare-text-to-image') {
-        kieModel = allInputImages.length > 0 ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image';
+    if (model === 'image-2.0' || model === MEDIA_MODELS.image.id) {
+        kieModel = imageModelFor(allInputImages);
         if (allInputImages.length > 0) imageField = 'input_urls';
-    } else if (model === 'nano' || model === 'nano-banana-2') {
-        kieModel = 'nano-banana-2';
+    } else if (model === 'nano' || model === nanoAlias) {
+        kieModel = nanoImageModel;
         imageField = 'image_input';
     }
 
-    // Normalize aspect ratio: gpt-image-2-5-flare accepts 1:1, 3:4, 9:16, 16:9, auto (4:5 maps to 3:4 portrait)
+    // Normalize aspect ratio: the Flare image models accept 1:1, 3:4, 9:16, 16:9, auto (4:5 maps to 3:4 portrait)
+    const flareImageModels: readonly string[] = [MEDIA_MODELS.image.id, MEDIA_MODELS.imageEdit.id];
     let effectiveAspectRatio = aspectRatio || "3:4";
-    if (kieModel.startsWith('gpt-image-2-5-flare') && effectiveAspectRatio === "4:5") {
+    if (flareImageModels.includes(kieModel) && effectiveAspectRatio === "4:5") {
         effectiveAspectRatio = "3:4";
     }
 
@@ -647,7 +655,7 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
     }
     
     // Only text-to-image supports output_format usually
-    if (kieModel === 'gpt-image-2-5-flare-text-to-image') {
+    if (kieModel === MEDIA_MODELS.image.id) {
         payload.input.output_format = "png";
     }
 
@@ -662,11 +670,11 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
             throw new Error(errMsg);
         }
     } catch (primaryError: any) {
-        logToFile(`FAILOVER TRIGGERED: ${primaryError.message}. Switching to text-to-image / nano-banana-2...`);
+        logToFile(`FAILOVER TRIGGERED: ${primaryError.message}. Switching to the image text-to-image route (${MEDIA_MODELS.image.id})...`);
         
         // FAILOVER: Fall back to text-to-image if image fetch failed on primary model
         const failoverPayload = {
-            model: "gpt-image-2-5-flare-text-to-image",
+            model: MEDIA_MODELS.image.id,
             input: {
                 prompt: finalImagePrompt,
                 aspect_ratio: aspectRatio,

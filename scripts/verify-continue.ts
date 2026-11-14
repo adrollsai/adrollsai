@@ -1,11 +1,12 @@
-/**
+﻿/**
  * Unit checks for the auto-continue decision and the turn-stop tracker.
  * These rules decide whether a task gets picked back up or dropped, so getting
  * them wrong is expensive in both directions.
  *
  *   npm run verify:continue
  */
-import { shouldContinueAfterTurn, createTurnStopTracker, turnStopConditions } from '../lib/agent/turn-limits';
+import { shouldContinueAfterTurn, createTurnStopTracker,
+  TURN_BUDGET_MS, turnStopConditions } from '../lib/agent/turn-limits';
 
 const results: { name: string; ok: boolean; detail: string }[] = [];
 const check = (name: string, ok: boolean, detail = '') => {
@@ -53,7 +54,7 @@ check(
   check('tracker starts null', tracker.reason === null);
 
   // Simulate the time budget: a condition built with a start time in the past.
-  const past = Date.now() - 10 * 60 * 1000;
+  const past = Date.now() - (TURN_BUDGET_MS + 60_000);
   const conditions: any[] = turnStopConditions(past, 'verify', tracker);
   let stopped = false;
   for (const c of conditions) {
@@ -75,3 +76,4 @@ check(
   console.log(`\n=== ${results.length - failed.length}/${results.length} passed`);
   if (failed.length) process.exit(1);
 })();
+

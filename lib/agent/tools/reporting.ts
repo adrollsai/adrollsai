@@ -107,6 +107,12 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
     const root = me?.parent_id || me?.agency_id || me?.id || userId;
 
+    // NOTE: scope stays "the organisation this user administers" — the same set the
+    // Analytics page renders. An earlier attempt widened a super admin to every account on
+    // the platform, which over-counted (198 vs the 38 their dashboard showed). The mismatch
+    // was never the scope: it was that this tool read `call_logs` while Analytics reads
+    // `lead_history`. Fix the source, not the scope.
+
     const { data: members } = await supabase
       .from('profiles')
       .select('id, business_name, role, parent_id, agency_id')
@@ -301,7 +307,10 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
     org_call_report: tool({
       description:
-        'Counts AI phone calls for the WHOLE organisation (the account plus every sub-account that rolls up to it) over a period, in the user\'s own timezone. Use this for any "how many calls today / this week / this month" question — never estimate or query another source.',
+        'Counts call attempts for the WHOLE organisation (the account plus every sub-account that rolls up to it) ' +
+        'over a period, in the user\'s own timezone. These are the SAME numbers the Analytics → Action Report ' +
+        'shows, because both count lead_history call actions. Use this for any "how many calls / attempts / DNP ' +
+        'today, this week, this month" question — never estimate or query another source.',
       inputSchema: z.object({
         period: z
           .enum(['today', 'yesterday', 'last_7_days', 'last_30_days', 'this_month', 'all_time'])
@@ -354,55 +363,96 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
         }
 
         try {
+          // Count the SAME rows the Analytics → Action Report counts: `lead_history`
+          // actions. This tool used to read `call_logs`, which is a narrower table, so the
+          // agent told an owner "0 calls yesterday" on a day their dashboard showed 38
+          // attempts. Two different numbers for one question is worse than a slow answer.
           let q = supabase
-            .from('call_logs')
-            .select('user_id, status, duration, created_at, lead_id')
+            .from('lead_history')
+            .select('user_id, action_type, description, created_at, lead_id')
             .in('user_id', ids)
             .order('created_at', { ascending: false })
-            .limit(5000);
+            .limit(20000);
           if (since) q = q.gte('created_at', since.toISOString());
           if (until) q = q.lt('created_at', until.toISOString());
 
           const { data, error } = await q;
           if (error) throw new Error(error.message);
 
-          const rows = data || [];
+          const isAttempt = (row: any) => {
+            const type = String(row.action_type || '').toUpperCase();
+            const desc = String(row.description || '').toLowerCase();
+            if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false;
+            if (
+              desc.includes('facebook ad submission') ||
+              desc.includes('reopened from facebook') ||
+              desc.includes('bulk transferred') ||
+              desc.includes('transferred from')
+            ) {
+              return false;
+            }
+            if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true;
+            if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true;
+            if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true;
+            return false;
+          };
+
+          const rows = (data || []).filter(isAttempt);
           const total = rows.length;
 
           const byStatus: Record<string, number> = {};
           const byMember: Record<string, number> = {};
           const leads = new Set<string>();
-          let connectedSeconds = 0;
 
           for (const r of rows) {
-            const key = STATUS_LABELS[r.status] || String(r.status || 'unknown').toLowerCase();
+            const desc = String(r.description || '').toLowerCase();
+            const type = String(r.action_type || '').toUpperCase();
+            const isDnp =
+              type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick');
+            const key = desc.includes('whatsapp') ? 'whatsapp followup' : isDnp ? 'dnp (not picked)' : 'connected';
             byStatus[key] = (byStatus[key] || 0) + 1;
             byMember[r.user_id] = (byMember[r.user_id] || 0) + 1;
             if (r.lead_id) leads.add(r.lead_id);
-            if (key === 'connected') connectedSeconds += Number(r.duration || 0);
           }
 
           const connected = byStatus.connected || 0;
-          const mins = Math.round(connectedSeconds / 60);
-          // "Call attempts" is what the agent did; connected is how many landed.
+          // "Call attempts" is what the team did; connected is how many landed.
           const attempts = total;
 
-          // A zero answer is a real answer, but it is almost never about the
-          // period alone — give the last actual call so it is actionable.
+          // Talk time only exists on telephony rows; lead_history has no duration, so it
+          // is measured from call_logs when available and left at 0 rather than invented.
+          let connectedSeconds = 0;
+          try {
+            let dq = supabase
+              .from('call_logs')
+              .select('duration, status')
+              .in('user_id', ids)
+              .limit(5000);
+            dq = since ? dq.gte('created_at', since.toISOString()) : dq;
+            dq = until ? dq.lt('created_at', until.toISOString()) : dq;
+            const { data: durRows } = await dq;
+            for (const d of durRows || []) {
+              if (String(d.status || '').toLowerCase() === 'connected') connectedSeconds += Number(d.duration || 0);
+            }
+          } catch {}
+          const mins = Math.round(connectedSeconds / 60);
+
+          // A zero answer is a real answer, but it is almost never about the period
+          // alone — give the last actual attempt so it is actionable.
           let lastCallNote: string | undefined;
           if (total === 0) {
             const { data: lastAny } = await supabase
-              .from('call_logs')
-              .select('created_at')
+              .from('lead_history')
+              .select('created_at, action_type, description')
               .in('user_id', ids)
               .order('created_at', { ascending: false })
-              .limit(1);
-            const lastAt = lastAny?.[0]?.created_at;
+              .limit(200);
+            const lastAt = (lastAny || []).find(isAttempt)?.created_at;
             if (lastAt) {
               const days = Math.floor((Date.now() - new Date(lastAt).getTime()) / 86_400_000);
-              lastCallNote = `The most recent call in the organisation was on ${fmtDay(new Date(lastAt), tz)} (${days} day${days === 1 ? '' : 's'} ago).`;
+              lastCallNote = `The most recent call attempt in the organisation was on ${fmtDay(new Date(lastAt), tz)} (${days} day${days === 1 ? '' : 's'} ago).`;
             } else {
-              lastCallNote = 'No calls have ever been logged for the organisation.';
+              lastCallNote = 'No call attempts have ever been logged for the organisation.';
             }
           }
 

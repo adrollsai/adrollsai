@@ -27,6 +27,12 @@
 
 export const PUBLIC_APP_URL_FALLBACK = 'https://app.nobogent.com'
 export const VOICE_BRIDGE_URL_FALLBACK = 'wss://gemini-voice-bridge-805895515412.us-central1.run.app'
+/**
+ * Dedicated bridge service for the Gemini TTS-Flash pipeline. It runs the same
+ * server.js image, so deploy it separately and the live Gemini Live calling
+ * path is unaffected if this one is redeployed or rolled back.
+ */
+export const TTS_FLASH_BRIDGE_URL_FALLBACK = 'https://gemini-voice-bridge-tts-ikqeb7h3zq-uc.a.run.app'
 
 /** Invisible characters that sneak in through copy/paste. U+00A0 is a non-breaking space. */
 const INVISIBLE_CHARS = /[\uFEFF\u200B\u200C\u200D\u2060\u00A0]/g
@@ -97,6 +103,19 @@ export function resolveVoiceBridgeHttpUrl(): string {
     return resolveVoiceBridgeUrl()
         .replace(/^wss:\/\//i, 'https://')
         .replace(/^ws:\/\//i, 'http://')
+}
+
+/**
+ * Bridge used by the Gemini TTS-Flash demo only.
+ *
+ * Defaults to the dedicated TTS-Flash bridge service (never the bridge that
+ * production AI calling depends on), and honours TTS_FLASH_BRIDGE_URL so the
+ * demo can be pointed at a local bridge or a tunnel during development.
+ */
+export function resolveTtsFlashBridgeHttpUrl(): string {
+    const dedicated = sanitizeEnvUrl(process.env.TTS_FLASH_BRIDGE_URL, '')
+    if (dedicated && /^https?:\/\//i.test(dedicated)) return dedicated.replace(/\/+$/, '')
+    return TTS_FLASH_BRIDGE_URL_FALLBACK
 }
 
 /**

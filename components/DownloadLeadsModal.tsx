@@ -331,6 +331,8 @@ interface DownloadLeadsModalProps {
   campaigns: any[]
   customStages: any[]
   getLeadCampaignName: (lead: any) => string
+  /** The rows currently on screen, after every CRM filter. */
+  currentViewLeads?: any[]
   initialFilters?: {
     searchQuery?: string
     selectedSpecificStage?: string
@@ -356,8 +358,16 @@ export default function DownloadLeadsModal({
   campaigns,
   customStages,
   getLeadCampaignName,
+  currentViewLeads,
   initialFilters
 }: DownloadLeadsModalProps) {
+  // Scope: the CRM view the user is looking at, or the whole lead table.
+  const [scope, setScope] = useState<'view' | 'all'>('view')
+  const hasView = Array.isArray(currentViewLeads)
+  const baseLeads = useMemo(
+    () => (scope === 'view' && hasView ? currentViewLeads! : leads),
+    [scope, hasView, currentViewLeads, leads]
+  )
   // Multi-select Filter States inside Modal
   const [filterStages, setFilterStages] = useState<string[]>(['ALL'])
   const [filterAgents, setFilterAgents] = useState<string[]>(['ALL'])
@@ -387,6 +397,8 @@ export default function DownloadLeadsModal({
   // Populate or Reset to active page filters when opened
   useEffect(() => {
     if (isOpen) {
+      // Opening the exporter always starts on what the user is looking at.
+      setScope('view')
       if (initialFilters) {
         setFilterStages(initialFilters.selectedSpecificStage && initialFilters.selectedSpecificStage !== 'ALL' && initialFilters.selectedSpecificStage !== 'All Leads' ? [initialFilters.selectedSpecificStage] : ['ALL'])
         setFilterAgents(initialFilters.selectedAgentFilter && initialFilters.selectedAgentFilter !== 'ALL' ? [initialFilters.selectedAgentFilter] : ['ALL'])
@@ -418,27 +430,27 @@ export default function DownloadLeadsModal({
   // Extract unique campaigns and forms from leads
   const uniqueCampaigns = useMemo(() => {
     const list: string[] = []
-    leads.forEach(l => {
+    baseLeads.forEach(l => {
       const campName = getLeadCampaignName(l)
       if (campName && campName.trim()) list.push(campName.trim())
       if (l.ad_name && l.ad_name.trim()) list.push(l.ad_name.trim())
       if (l.campaign_name && l.campaign_name.trim()) list.push(l.campaign_name.trim())
     })
     return Array.from(new Set(list)).filter(c => c && c !== 'null' && c !== 'undefined').sort()
-  }, [leads, getLeadCampaignName])
+  }, [baseLeads, getLeadCampaignName])
 
   const uniqueForms = useMemo(() => {
     const list: string[] = []
-    leads.forEach(l => {
+    baseLeads.forEach(l => {
       if (l.form_name && l.form_name.trim()) list.push(l.form_name.trim())
       if (l.source && l.source.trim()) list.push(l.source.trim())
     })
     return Array.from(new Set(list)).sort()
-  }, [leads])
+  }, [baseLeads])
 
   const uniqueCsvAudiences = useMemo(() => {
-    return Array.from(new Set(leads.map(l => l.csv_audience).filter(Boolean))).sort()
-  }, [leads])
+    return Array.from(new Set(baseLeads.map(l => l.csv_audience).filter(Boolean))).sort()
+  }, [baseLeads])
 
   // Pipeline stages list
   const allStages = useMemo(() => {
@@ -469,7 +481,7 @@ export default function DownloadLeadsModal({
   const stageOptions = useMemo<SearchableOption[]>(() => {
     return allStages.map(st => {
       const sLower = st.toLowerCase()
-      const count = leads.filter(l => {
+      const count = baseLeads.filter(l => {
         const leadStatus = (l.status || '').toLowerCase().trim()
         const leadStage = (l.pipeline_stage || '').toLowerCase().trim()
         return leadStatus === sLower || leadStage === sLower || (
@@ -484,15 +496,15 @@ export default function DownloadLeadsModal({
       }).length
       return { id: st, label: st, count }
     })
-  }, [allStages, leads])
+  }, [allStages, baseLeads])
 
   const agentOptions = useMemo<SearchableOption[]>(() => {
-    const unassignedCount = leads.filter(l => !l.assigned_to).length
+    const unassignedCount = baseLeads.filter(l => !l.assigned_to).length
     const list: SearchableOption[] = [
       { id: 'UNASSIGNED', label: 'Unassigned Leads', count: unassignedCount }
     ]
     team.forEach(m => {
-      const count = leads.filter(l => l.assigned_to === m.id).length
+      const count = baseLeads.filter(l => l.assigned_to === m.id).length
       list.push({
         id: m.id,
         label: m.business_name || m.full_name || m.email || 'Team Member',
@@ -501,12 +513,12 @@ export default function DownloadLeadsModal({
       })
     })
     return list
-  }, [team, leads])
+  }, [team, baseLeads])
 
   const campaignOptions = useMemo<SearchableOption[]>(() => {
     return uniqueCampaigns.map(c => {
       const target = c.trim().toLowerCase()
-      const count = leads.filter(l => {
+      const count = baseLeads.filter(l => {
         const leadCamp = (getLeadCampaignName(l) || '').trim().toLowerCase()
         const adName = (l.ad_name || '').trim().toLowerCase()
         const campName = (l.campaign_name || '').trim().toLowerCase()
@@ -514,30 +526,30 @@ export default function DownloadLeadsModal({
       }).length
       return { id: c, label: c, count }
     })
-  }, [uniqueCampaigns, leads, getLeadCampaignName])
+  }, [uniqueCampaigns, baseLeads, getLeadCampaignName])
 
   const formOptions = useMemo<SearchableOption[]>(() => {
     return uniqueForms.map(f => {
       const target = f.trim().toLowerCase()
-      const count = leads.filter(l => {
+      const count = baseLeads.filter(l => {
         const fName = (l.form_name || '').trim().toLowerCase()
         const src = (l.source || '').trim().toLowerCase()
         return fName === target || src === target
       }).length
       return { id: f, label: f, count }
     })
-  }, [uniqueForms, leads])
+  }, [uniqueForms, baseLeads])
 
   // Filter matching leads computation (Optimized in-memory filtering)
   const matchingLeads = useMemo(() => {
-    if (!leads || leads.length === 0) return []
+    if (!baseLeads || baseLeads.length === 0) return []
 
     const isAllAgents = filterAgents.includes('ALL') || filterAgents.length === 0
     const isAllStages = filterStages.includes('ALL') || filterStages.length === 0
     const isAllCampaigns = filterCampaigns.includes('ALL') || filterCampaigns.length === 0
     const isAllForms = filterForms.includes('ALL') || filterForms.length === 0
 
-    return leads.filter(l => {
+    return baseLeads.filter(l => {
       // 1. Search Query
       if (filterSearch.trim()) {
         const q = filterSearch.toLowerCase().trim()
@@ -702,7 +714,7 @@ export default function DownloadLeadsModal({
       return true
     })
   }, [
-    leads,
+    baseLeads,
     filterSearch,
     filterAgents,
     filterStages,
@@ -1035,6 +1047,27 @@ export default function DownloadLeadsModal({
                 </span>
               </div>
 
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => setScope('view')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                    scope === 'view' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Current view ({hasView ? currentViewLeads!.length.toLocaleString() : 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScope('all')}
+                  className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition-all cursor-pointer ${
+                    scope === 'all' ? 'bg-white text-indigo-700 shadow-xs' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  All leads ({leads.length.toLocaleString()})
+                </button>
+              </div>
+
               {parsedLimit > 0 && parsedLimit < matchingLeads.length && (
                 <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 px-3.5 py-2 rounded-2xl text-xs font-black">
                   <Hash size={14} />
@@ -1046,7 +1079,10 @@ export default function DownloadLeadsModal({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={handleResetToCurrentCrmView}
+                onClick={() => {
+                  setScope('view')
+                  handleResetToCurrentCrmView()
+                }}
                 className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100/70 border border-indigo-200/70 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
                 title="Sync modal filters with what's currently active on your CRM screen"
               >
@@ -1055,7 +1091,10 @@ export default function DownloadLeadsModal({
               </button>
               <button
                 type="button"
-                onClick={handleClearAllFilters}
+                onClick={() => {
+                  setScope('all')
+                  handleClearAllFilters()
+                }}
                 className="text-[11px] font-bold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200/80 px-3 py-1.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer"
               >
                 <RotateCcw size={13} />

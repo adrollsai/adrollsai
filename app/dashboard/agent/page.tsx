@@ -6,6 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import AgentChat from '@/components/agent/AgentChat';
 import { Loader2 } from 'lucide-react';
 import '../../../lib/ui/dsh-tokens.css';
+// The Nobogent visual layer. Imported after the harness tokens so it can override
+// them; scoped to `.dsh[data-theme='light']`, so it cannot touch the dashboard.
+import '../../../lib/ui/agent-skin.css';
 
 function AgentPageContent() {
   const searchParams = useSearchParams();

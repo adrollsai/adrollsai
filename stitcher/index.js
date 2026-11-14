@@ -7,9 +7,30 @@ import fetch from 'node-fetch';
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import webpush from 'web-push';
+import crypto from 'crypto';
 
 const app = express();
 app.use(express.json());
+
+// ---- Worker authentication -------------------------------------------------
+// These endpoints spend money: they pull AI clips, run ffmpeg, publish to social and write
+// to R2. Until now they answered anyone who knew the URL. Requests must carry a matching
+// x-worker-secret (or ?secret=) header/param from now on.
+// This is deliberately open while WORKER_SECRET is unset, so the code can be deployed
+// before the app that sends the header is live; setting the env var is what closes the door.
+const WORKER_SECRET = process.env.WORKER_SECRET || '';
+if (!WORKER_SECRET) {
+    console.warn('[auth] WORKER_SECRET not set — worker endpoints are open to anyone with the URL');
+}
+app.use((req, res, next) => {
+    if (!WORKER_SECRET || req.path === '/health') return next();
+    const given = String(req.get('x-worker-secret') || req.query.secret || '');
+    const a = Buffer.from(given);
+    const b = Buffer.from(WORKER_SECRET);
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+    console.warn(`[auth] rejected ${req.method} ${req.path} from ${req.ip}`);
+    return res.status(401).json({ error: 'unauthorized' });
+});
 
 // Initialize Supabase Admin Client
 const supabaseAdmin = createClient(

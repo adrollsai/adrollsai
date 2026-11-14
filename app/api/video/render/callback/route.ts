@@ -222,6 +222,20 @@ export async function POST(request: Request) {
             console.error("[Lambda Callback] Push notification failed to send:", pushErr);
         }
 
+        // Multi-channel delivery for the Lambda render path (the last-resort
+        // stitcher). Idempotent per asset, so it cannot double-send alongside the
+        // local / Cloud Run / recovery paths.
+        try {
+            const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+            await deliverVideoToAdmin(supabaseAdmin, {
+                userId: asset.user_id,
+                assetId,
+                videoUrl: r2Url
+            });
+        } catch (deliverErr: any) {
+            console.warn('[Lambda Callback] Delivery failed (video still saved):', deliverErr?.message);
+        }
+
         return NextResponse.json({ success: true, message: "Asset successfully updated to R2 and database finalized." });
 
     } catch (error: any) {

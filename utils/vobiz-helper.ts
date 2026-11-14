@@ -18,6 +18,16 @@ export interface VobizCallParams {
     voiceName?: string
     customAuthId?: string
     customAuthToken?: string
+    /**
+     * Relative answer-webhook path to use instead of the default Gemini Live
+     * XML route. Used by the Gemini TTS-Flash pipeline demo, which answers on
+     * /api/voice/vobiz/tts-flash-xml so the Live path stays untouched.
+     */
+    answerPath?: string
+    /** Extra query params appended to the answer webhook (voice id, language, ...). */
+    answerParams?: Record<string, string | undefined | null>
+    /** Skip the Gemini Live session pre-warm (wrong pipeline for TTS-Flash calls). */
+    skipBridgeWarmup?: boolean
 }
 
 export interface VobizCallResult {
@@ -250,7 +260,9 @@ export async function triggerVobizOutboundCall(
     }
 
     // Warm up voice bridge & pre-warm Gemini session
-    await warmupVoiceBridge(leadId, profileId, campaignId, params.voiceName)
+    if (!params.skipBridgeWarmup) {
+        await warmupVoiceBridge(leadId, profileId, campaignId, params.voiceName)
+    }
 
     // Update lead voice call status in DB
     try {
@@ -267,7 +279,19 @@ export async function triggerVobizOutboundCall(
         console.warn('[VOBIZ HELPER] Failed to update lead status:', dbErr)
     }
 
-    const answerUrl = `${appUrl}/api/voice/vobiz/xml?leadId=${encodeURIComponent(leadId)}&profileId=${encodeURIComponent(profileId)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+    const defaultAnswerPath = `/api/voice/vobiz/xml?leadId=${encodeURIComponent(leadId)}&profileId=${encodeURIComponent(profileId)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}${params.voiceName ? `&voiceName=${encodeURIComponent(params.voiceName)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
+    const extraParams = Object.entries(params.answerParams || {})
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => `&${k}=${encodeURIComponent(String(v))}`)
+        .join('')
+    // answerPath may be absolute (e.g. the voice bridge serving its own answer
+    // webhook) — in that case it is used verbatim instead of being appended to
+    // the app URL.
+    const answerUrl = params.answerPath
+        ? (/^https?:\/\//i.test(params.answerPath)
+            ? `${params.answerPath}${params.answerPath.includes('?') ? '&' : '?'}leadId=${encodeURIComponent(leadId)}&profileId=${encodeURIComponent(profileId)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}${extraParams}`
+            : `${appUrl}${params.answerPath}?leadId=${encodeURIComponent(leadId)}&profileId=${encodeURIComponent(profileId)}${campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : ''}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}${extraParams}`)
+        : `${appUrl}${defaultAnswerPath}`
     const hangupUrl = `${appUrl}/api/voice/vobiz/status-callback?leadId=${encodeURIComponent(leadId)}&vobizAuthId=${encodeURIComponent(authId)}&vobizAuthToken=${encodeURIComponent(authToken)}`
 
     // Fail loudly here rather than letting Vobiz answer with its deliberately

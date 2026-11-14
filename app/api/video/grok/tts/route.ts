@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createGeminiTTS, queryKieTask } from '@/utils/external-apis';
+import { withMediaFallback } from '@/lib/agent/media-models';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -60,21 +61,29 @@ export async function POST(request: Request) {
             ? "High converting luxury marketing video commercial with natural Indian English delivery"
             : "High converting commercial marketing video");
 
-        console.log(`[Grok TTS API] Creating Gemini 3.1 Flash TTS task (Speaker: ${speakerName}, Accent: ${isIndianAccent ? 'Indian' : 'American'}, Text length: ${dialogueText.length})...`);
+        console.log(`[Grok TTS API] Creating voiceover task (Speaker: ${speakerName}, Accent: ${isIndianAccent ? 'Indian' : 'American'}, Text length: ${dialogueText.length})...`);
 
-        const { taskId, error: createError } = await createGeminiTTS({
-            dialogueText: dialogueText.trim(),
-            speakerName,
-            style,
-            scene: effectiveScene,
-            sampleContext: effectiveContext
-        });
+        // Primary model, one retry on a 524 / 'generate task timeout', then the
+        // registry's fallback — all decided in lib/agent/media-models.ts.
+        const ttsRoute = await withMediaFallback(
+            'voice',
+            (model) => createGeminiTTS({
+                dialogueText: dialogueText.trim(),
+                speakerName,
+                style,
+                scene: effectiveScene,
+                sampleContext: effectiveContext,
+                model
+            }),
+            { label: 'tts' }
+        );
 
-        if (createError || !taskId) {
-            return NextResponse.json({ error: createError || 'Failed to create TTS voiceover task.' }, { status: 500 });
+        const taskId = ttsRoute.value?.taskId || null;
+        if (!ttsRoute.ok || !taskId) {
+            return NextResponse.json({ error: ttsRoute.reason || 'Failed to create TTS voiceover task.' }, { status: 500 });
         }
 
-        console.log(`[Grok TTS API] Task created successfully with ID ${taskId}. Polling for completion...`);
+        console.log(`[Grok TTS API] Task created with ${ttsRoute.model}${ttsRoute.fellBack ? ' (fallback)' : ''} — ID ${taskId}. Polling for completion...`);
 
         // Poll task status (up to 45 seconds: 15 attempts x 3s)
         let attempts = 0;

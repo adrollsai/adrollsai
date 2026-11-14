@@ -13,8 +13,29 @@ const ffmpeg = require('fluent-ffmpeg');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 
 const { fork } = require('child_process');
+const crypto = require('crypto');
 const app = express();
 app.use(express.json());
+
+// ---- Worker authentication -------------------------------------------------
+// A render is the most expensive thing we run. Until now anyone with the URL could start
+// one on our bill. Requests must carry a matching x-worker-secret (or ?secret=) from now on.
+// Deliberately open while WORKER_SECRET is unset, so this ships safely before the app that
+// sends the header is live; setting the env var is what closes the door. /health stays open
+// so Cloud Run and our own checks can still probe the service.
+const WORKER_SECRET = process.env.WORKER_SECRET || '';
+if (!WORKER_SECRET) {
+    console.warn('[auth] WORKER_SECRET not set — render endpoints are open to anyone with the URL');
+}
+app.use((req, res, next) => {
+    if (!WORKER_SECRET || req.path === '/health') return next();
+    const given = String(req.get('x-worker-secret') || req.query.secret || '');
+    const a = Buffer.from(given);
+    const b = Buffer.from(WORKER_SECRET);
+    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return next();
+    console.warn(`[auth] rejected ${req.method} ${req.path} from ${req.ip}`);
+    return res.status(401).json({ error: 'unauthorized' });
+});
 
 const renderTempDir = path.join(os.tmpdir(), 'adrolls_temp_renders');
 if (!fs.existsSync(renderTempDir)) {

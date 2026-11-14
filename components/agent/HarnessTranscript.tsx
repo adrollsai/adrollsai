@@ -11,6 +11,7 @@
 import * as React from 'react';
 import { Check, Copy } from 'lucide-react';
 import AgentMarkdown from './AgentMarkdown';
+import { NoboOrb } from './NoboMascot';
 import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
 import type { HarnessItem } from '@/lib/agent/harness/projection';
 
@@ -44,16 +45,15 @@ const UserItem = React.memo(function UserItem({ item }: { item: Extract<HarnessI
     <div className="my-3 flex justify-end">
       <div className="flex flex-col items-end max-w-[80%]">
         <div
-          className="px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
+          className="nobo-bubble-user px-4 py-2.5 dsh-t-prose break-words space-y-1.5"
           style={{
             // Tinted, right-aligned and clearly bounded: the user's turn should
             // read as a card sitting above the agent's working surface, not as
             // another block of the same page.
-            background: 'var(--dsw-alias-bg-layer-3)',
-            border: '1px solid var(--dsw-alias-border-l2)',
-            borderRadius: 'var(--dsh-radius-lg)',
+            background: 'var(--nobo-bubble-user)',
+            border: '1px solid rgba(124, 58, 237, 0.12)',
+            borderRadius: '20px 20px 6px 20px',
             color: 'var(--dsw-alias-label-primary)',
-            boxShadow: 'var(--dsw-shadow-lv1)',
           }}
         >
           {item.attachments?.map((a, i) => (
@@ -93,12 +93,26 @@ const UserItem = React.memo(function UserItem({ item }: { item: Extract<HarnessI
 
 const AssistantItem = React.memo(function AssistantItem({ item }: { item: Extract<HarnessItem, { kind: 'assistant' }> }) {
   return (
-    <div className="my-3">
-      <div className="dsh-t-prose dsh-label-primary">
+    <div className="nobo-agent-row mt-2 mb-4">
+      {/* The mascot is the assistant's avatar here too, so a reply is visibly
+          Nobo's in the replay view and not an unlabelled block of text among the
+          tool rows. */}
+      <div className="pt-0.5">
+        <NoboOrb size="sm" state="idle" />
+      </div>
+      <div className="nobo-agent-card">
+      {/* Answer typography: a readable measure, generous but not wasteful line height,
+          and no hero-sized gaps between paragraphs. The old spacing made a two-line
+          answer look like it was floating in an empty page. */}
+        <div
+          className="dsh-t-prose dsh-label-primary"
+          style={{ maxWidth: '68ch', fontSize: '14.5px', lineHeight: 1.62 }}
+        >
         <AgentMarkdown content={item.text} />
       </div>
-      <div className="pt-2">
-        <CopyButton text={item.text} />
+        <div className="pt-1.5">
+          <CopyButton text={item.text} />
+        </div>
       </div>
     </div>
   );
@@ -163,9 +177,29 @@ export default function HarnessTranscript({ items, onOptionSelect }: HarnessTran
 
   if (!items.length) return null;
 
+  // The projection can legitimately contain the same turn twice: the live stream
+  // records it, and so does the queued run created from it. Rendering both is what
+  // made the sender's own message — and, with a continuation run, the agent's reply
+  // — appear twice in a row, which reads as a bug in the app rather than a
+  // duplicate event. Collapse consecutive identical text for both roles.
+  //
+  // Whitespace is normalised before comparing: the two writers do not always agree
+  // on trailing newlines, and a difference of one "\n" is not a different message.
+  const norm = (t?: string) => (t || '').replace(/\s+/g, ' ').trim();
+  const visible = items.filter((item, i) => {
+    if (item.kind !== 'user' && item.kind !== 'assistant') return true;
+    const prev = items[i - 1];
+    if (!prev || prev.kind !== item.kind) return true;
+    const prevText = norm((prev as { text?: string }).text);
+    const ownText = norm((item as { text?: string }).text);
+    // An empty repeat is never meaningful; a different text always is.
+    if (!ownText) return false;
+    return prevText !== ownText;
+  });
+
   return (
     <>
-      {items.map((item, idx) => {
+      {visible.map((item, idx) => {
         switch (item.kind) {
           case 'user':
             return <UserItem key={item.id} item={item} />;

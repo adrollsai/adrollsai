@@ -101,6 +101,23 @@ export async function POST(req: Request) {
         concurrency: concurrency || 2,
         message: `Queued ${leadIds?.length || 0} leads for autonomous voice followup.`,
       };
+    } else if (actionType === 'create_asset') {
+      // A creative job is not executed here: the approval sends the staged instruction
+      // back into the conversation (the card's resumePrompt), and the agent generates
+      // there. Claiming "executed" here would be a lie the user can check.
+      await supabase
+        .from('agent_events')
+        .update({ status: 'approved', updated_at: new Date().toISOString() })
+        .eq('id', event.id);
+
+      return NextResponse.json({
+        success: true,
+        status: 'approved',
+        result: {
+          resumed: true,
+          message: 'Approved — the agent continues with the staged plan in the chat.',
+        },
+      });
     } else {
       executionResult = {
         executed: true,

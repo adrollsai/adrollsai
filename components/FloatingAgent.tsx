@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/utils/supabase/client'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport } from 'ai'
+import { MEDIA_MODELS, modelAlias } from '@/lib/agent/media-models'
 
 const TOOL_PROGRESS_MESSAGES: Record<string, string> = {
   'draft_ad_campaign': 'Drafting Meta Ad...',
@@ -77,7 +78,7 @@ function ImageGenerationCard({ propertyTitle, instructions, propertyDescription,
             logoUrl: profile?.logo_url,
             contactNumber: profile?.phone,
             userInstructions: instructions,
-            model: 'nano-banana-2',
+            model: modelAlias(MEDIA_MODELS.image.fallbacks[0]),
             aspectRatio: '1:1'
           })
         });

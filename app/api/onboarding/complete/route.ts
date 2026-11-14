@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { generateObject } from 'ai';
 import { google } from '@ai-sdk/google';
@@ -8,6 +7,11 @@ import { createKieImageTask, createKieTask } from '@/utils/external-apis';
 import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-master';
 import { ensureJpegImage } from '@/utils/image-converter';
 import { getReferenceTemplate, ALL_REFERENCE_TEMPLATES } from '@/utils/reference-templates-data';
+import { resolveRequestUser } from '@/utils/api-auth';
+import { reserveCredits, chargeHold, closeHold } from '@/lib/automation/billing';
+import { planOnboarding, onboardingJobId, imageCredits, videoCredits } from '@/lib/automation/onboarding-plan';
+import { imageModelFor } from '@/lib/agent/media-models';
+import { outboundRecipient, testBanner } from '@/lib/automation/test-mode';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,6 +21,17 @@ const supabaseAdmin = createAdminClient(
 const DEFAULT_CHARACTER_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/character-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780563818432-trimmed.mp4";
 const DEFAULT_CHARACTER_AUDIO_URL = "https://hpssqssdewmkmafxlfud.supabase.co/storage/v1/object/public/logos/voice-sample-9bbf6e51-283e-48d1-bbb4-8dc546cc74b2-1780556476936.mp3";
 const DEFAULT_CHARACTER_DESCRIPTION = "A young Indian female with straight shoulder-length black hair and a calm expression. She wears a striped button-down shirt and brown trousers, standing in a modern white interior with a feather-shaped wall light.";
+
+/**
+ * Ceiling on what one onboarding run may spend.
+ *
+ * This is NOT a volume cap on the business (those were removed deliberately in
+ * 20261111230000_uncap_volume_use_approval.sql and must not come back). It is the
+ * funding limit for a single first-run job: a human onboards once, an agent can
+ * loop the same call, and an unbounded first run is the difference between a free
+ * taster and a drained wallet. Above this the plan is trimmed, not refused.
+ */
+const MAX_ONBOARDING_CREDITS = 4000;
 
 export interface InputVideoConfig {
     id?: string;
@@ -38,8 +53,7 @@ export interface InputProjectConfig {
 export async function POST(request: Request) {
     try {
         console.log("[Onboarding API] Complete onboarding request received");
-        const supabase = await createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const { user } = await resolveRequestUser(request);
 
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -120,6 +134,50 @@ export async function POST(request: Request) {
             throw new Error(`Failed to update business profile: ${profileError.message}`);
         }
 
+        // 2a. Welcome credits: every business starts with 5,000 so it can try the
+        //     product before paying. Idempotent per account via a flag on the profile,
+        //     because onboarding can be re-submitted (back button, retry) and a second
+        //     grant would be free money. 1 credit = ₹1; every vendor cost is charged at
+        //     a 2x margin, so 5,000 credits ≈ ₹2,500 of our actual spend.
+        //
+        //     These credits are the FIRST RUN'S FUNDING. `hasEnoughCredits` used to
+        //     refuse them because it also demanded an active subscription, so the
+        //     grant was unspendable for anyone who skipped the paywall — that is fixed
+        //     in utils/credits.ts (funding is the question, not billing status).
+        try {
+            const alreadyGranted = Boolean(existingProfile?.client_features?.welcome_credits_granted);
+            if (!alreadyGranted) {
+                const { grantCreditsOnce } = await import('@/lib/automation/billing');
+                const grant = await grantCreditsOnce(supabaseAdmin, {
+                    userId: user.id,
+                    amount: 5000,
+                    category: 'topup',
+                    description: 'Welcome credits — 5,000 to start',
+                    ref: `welcome:${user.id}`,
+                });
+                if (grant.granted || grant.duplicate) {
+                    await supabaseAdmin
+                        .from('profiles')
+                        .update({
+                            client_features: {
+                                ...(existingProfile?.client_features || {}),
+                                ...(profileUpdates.client_features || {}),
+                                welcome_credits_granted: true,
+                                welcome_credits_granted_at: new Date().toISOString(),
+                            },
+                        })
+                        .eq('id', user.id);
+                    console.log('[Onboarding API] Welcome credits granted (5000) to', user.id);
+                } else {
+                    console.warn('[Onboarding API] Welcome credits were NOT granted (grant returned false)');
+                }
+            }
+        } catch (creditErr: any) {
+            // Never fail onboarding because the welcome grant hiccuped: the account is
+            // usable either way, and support can re-grant.
+            console.warn('[Onboarding API] Welcome credit grant error:', creditErr?.message || creditErr);
+        }
+
         // 2b. Provision the automation policy (default ON) and the calling
         //     policy. Previously neither table had a writer, so every
         //     automation was opt-in-by-accident and nothing ran for a new
@@ -175,10 +233,6 @@ export async function POST(request: Request) {
 
         const visualProductionRules = buildImageSystemPrompt(detectedIndustry, false);
 
-        // Calculate and enforce 5-minute (300s) maximum global video budget
-        const MAX_GLOBAL_VIDEO_SECONDS = 300;
-        let cumulativeVideoSeconds = 0;
-
         const host = request.headers.get('host') || 'localhost:3000';
         const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
         const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
@@ -187,14 +241,12 @@ export async function POST(request: Request) {
             ? selectedTemplates
             : ['pinterest_pin_0', 'pinterest_pin_1', 'pinterest_pin_2', 'pinterest_pin_3', 'pinterest_pin_4'];
 
-        const generationSummary: Array<{ projectTitle: string; imageTasksQueued: number; videoTasksQueued: number }> = [];
-
-        // 5. Process each project
-        for (let pIdx = 0; pIdx < resolvedProjects.length; pIdx++) {
-            const proj = resolvedProjects[pIdx];
-            console.log(`[Onboarding API] Processing project ${pIdx + 1}/${resolvedProjects.length}: "${proj.title}"`);
-
-            // Insert property into database
+        // 4a. Persist the catalogue FIRST. Intake is free and must not be behind a
+        //     paywall: the property rows are what the agent will work on once the
+        //     account is funded, so losing them on a paywalled run would lose the
+        //     customer's own input.
+        const savedProjects: Array<{ property: any; config: InputProjectConfig }> = [];
+        for (const proj of resolvedProjects) {
             const { data: property, error: propertyError } = await supabaseAdmin
                 .from('properties')
                 .insert({
@@ -219,27 +271,91 @@ export async function POST(request: Request) {
                 console.error(`[Onboarding API] Property insertion failed for ${proj.title}:`, propertyError);
                 continue;
             }
+            savedProjects.push({ property, config: proj });
+        }
 
-            const creativesToGenerate = Math.max(1, Math.min(10, proj.creativesCount || 3));
-            let imageTasksCount = 0;
-            let videoTasksCount = 0;
+        // 4b. Price the run, then fund it. Nothing billable happens without a hold.
+        //
+        // The plan is built from the projects that were ACTUALLY saved, not from the
+        // requested list: a property insert can fail, and if plan indices referred to
+        // the requested array, every artefact after the failure would be generated
+        // for the wrong project.
+        const plan = planOnboarding(
+            savedProjects.map(s => ({ creativesCount: s.config.creativesCount, videos: s.config.videos })),
+            { maxCredits: MAX_ONBOARDING_CREDITS, maxVideoSeconds: 300 }
+        );
 
-            // --- A. Generate Image Prompts & Submit Tasks ---
-            console.log(`[Onboarding API] Generating ${creativesToGenerate} static creatives for "${proj.title}"...`);
+        const quote = {
+            jobId: onboardingJobId(user.id, plan),
+            costInCredits: plan.costInCredits,
+            imageCount: plan.imageCount,
+            videoCount: plan.videoCount,
+            trimmed: plan.trimmed,
+            lines: plan.items.map(i => ({
+                kind: i.kind,
+                project: savedProjects[i.projectIndex]?.config.title || `project ${i.projectIndex + 1}`,
+                credits: i.credits,
+                seconds: i.kind === 'video' ? i.vendorDuration : undefined,
+            })),
+        };
 
-            for (let cIdx = 0; cIdx < creativesToGenerate; cIdx++) {
-                // Randomly select one template from the user's selected templates
-                const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
-                const refTmpl = getReferenceTemplate(randomTmplId);
-                const templateStyleName = refTmpl?.name || 'Modern Minimalist Luxury';
-                const templateBadge = refTmpl?.badge || 'PREMIUM EXCLUSIVE';
+        const funding = await reserveCredits(supabaseAdmin, {
+            userId: user.id,
+            jobId: quote.jobId,
+            amount: plan.costInCredits,
+            ttlMinutes: 240,
+            reason: `onboarding: ${plan.imageCount} creatives, ${plan.videoCount} videos`,
+        });
 
-                const promptSchema = z.object({
-                    imagePrompt: z.string(),
-                    adCaption: z.string()
-                });
+        if (!funding.ok) {
+            // Not funded. The intake above is saved, the catalogue exists, and the
+            // quote is returned so the UI can say exactly what the money buys.
+            console.log(`[Onboarding API] Generation not funded for ${user.id}: needs ${plan.costInCredits}, has ${funding.available}`);
+            return NextResponse.json({
+                success: true,
+                message: 'Your business is set up. Choose a plan to generate the first creatives and video.',
+                intakeSaved: true,
+                needsFunding: true,
+                quote,
+                availableCredits: funding.available,
+                shortfall: funding.available === null ? null : Math.max(0, plan.costInCredits - Number(funding.available)),
+            });
+        }
 
-                const creativeGenPrompt = `You are a world-class Ad Creative Director.
+        const holdId = funding.holdId;
+        let creditsCharged = 0;
+        let budgetExhausted = false;
+        const generationSummary: Array<{ projectTitle: string; imageTasksQueued: number; videoTasksQueued: number }> = [];
+
+        try {
+            // 5. Generate exactly what the plan says, charging each artefact as the
+            //    vendor accepts it. A charge that cannot be covered caps the run
+            //    instead of overdrawing the wallet.
+            for (let pIdx = 0; pIdx < savedProjects.length; pIdx++) {
+                const { property, config: proj } = savedProjects[pIdx];
+                const projectItems = plan.items.filter(i => i.projectIndex === pIdx);
+                if (projectItems.length === 0) continue;
+
+                let imageTasksCount = 0;
+                let videoTasksCount = 0;
+                console.log(`[Onboarding API] Project ${pIdx + 1}/${savedProjects.length} "${property.title}": ${projectItems.length} artefact(s) planned`);
+
+                for (const item of projectItems) {
+                    if (budgetExhausted) break;
+
+                    // ---------------- image ----------------
+                    if (item.kind === 'image') {
+                        const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
+                        const refTmpl = getReferenceTemplate(randomTmplId);
+                        const templateStyleName = refTmpl?.name || 'Modern Minimalist Luxury';
+                        const templateBadge = refTmpl?.badge || 'PREMIUM EXCLUSIVE';
+
+                        const promptSchema = z.object({
+                            imagePrompt: z.string(),
+                            adCaption: z.string()
+                        });
+
+                        const creativeGenPrompt = `You are a world-class Ad Creative Director.
 Company: "${resolvedCompanyName}"
 Project Title: "${proj.title}"
 Project Description: "${proj.description}"
@@ -260,62 +376,73 @@ Requirements:
 - If custom instructions are provided, honor them explicitly.
 `;
 
-                try {
-                    const { object } = await generateObject({
-                        model: google('gemini-3.5-flash'),
-                        schema: promptSchema,
-                        prompt: creativeGenPrompt
+                        try {
+                            const { object } = await generateObject({
+                                model: google('gemini-3.5-flash'),
+                                schema: promptSchema,
+                                prompt: creativeGenPrompt
+                            });
+
+                            const imageInputUrls: string[] = [];
+                            if (proj.imageUrl) imageInputUrls.push(proj.imageUrl);
+                            if (logoUrl) imageInputUrls.push(logoUrl);
+                            if (refTmpl?.url) imageInputUrls.push(refTmpl.url);
+
+                            const selectedImageModel = imageModelFor(imageInputUrls);
+
+                            const taskId = await createKieImageTask(object.imagePrompt, selectedImageModel, "3:4", imageInputUrls);
+
+                            if (!taskId) {
+                                console.warn(`[Onboarding API] Creative ${item.itemIndex + 1} was not accepted by the provider; not charging for it.`);
+                                continue;
+                            }
+
+                            imageTasksCount++;
+
+                            // Charge only once the vendor has accepted the work: a
+                            // charge for a submission that never happened is the
+                            // fastest way to lose a customer's trust. The plan is
+                            // derived from the hold, so the total cannot exceed it.
+                            const charge = await chargeHold(supabaseAdmin, {
+                                holdId,
+                                credits: imageCredits(),
+                                description: `Onboarding creative — ${property.title}`,
+                                ref: `${quote.jobId}:img:${pIdx}:${item.itemIndex}`,
+                            });
+                            if (charge.ok && !charge.capped) {
+                                creditsCharged += charge.charged;
+                            } else if (!charge.duplicate) {
+                                budgetExhausted = true;
+                                console.warn(`[Onboarding API] Stopping after this creative: ${charge.error || 'the reservation is used up'}`);
+                            }
+
+                            fetch(`${baseUrl}/api/background-worker`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    userId: user.id,
+                                    propId: property.id,
+                                    propertyTitle: property.title,
+                                    existingTaskId: taskId,
+                                    existingCaption: `${object.adCaption}\n\nPrice: ${property.price}`
+                                })
+                            }).catch(err => console.error("[Onboarding API] Background worker call failed:", err));
+                        } catch (imgErr: any) {
+                            console.error(`[Onboarding API] Failed to generate creative ${item.itemIndex + 1} for ${property.title}:`, imgErr.message);
+                        }
+                        continue;
+                    }
+
+                    // ---------------- video ----------------
+                    const requestedDuration = Number(item.duration) || 15;
+                    const vid: InputVideoConfig = (proj.videos && proj.videos[item.itemIndex]) || { duration: requestedDuration, customInstructions: '' };
+
+                    const videoSchema = z.object({
+                        videoPrompt: z.string(),
+                        finalCaption: z.string()
                     });
 
-                    const imageInputUrls: string[] = [];
-                    if (proj.imageUrl) imageInputUrls.push(proj.imageUrl);
-                    if (logoUrl) imageInputUrls.push(logoUrl);
-                    if (refTmpl?.url) imageInputUrls.push(refTmpl.url);
-
-                    const selectedImageModel = imageInputUrls.length > 0 ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
-                    const taskId = await createKieImageTask(object.imagePrompt, selectedImageModel, "3:4", imageInputUrls);
-
-                    if (taskId) {
-                        imageTasksCount++;
-                        fetch(`${baseUrl}/api/background-worker`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                userId: user.id,
-                                propId: property.id,
-                                propertyTitle: property.title,
-                                existingTaskId: taskId,
-                                existingCaption: `${object.adCaption}\n\nPrice: ${property.price}`
-                            })
-                        }).catch(err => console.error("[Onboarding API] Background worker call failed:", err));
-                    }
-                } catch (imgErr: any) {
-                    console.error(`[Onboarding API] Failed to generate creative ${cIdx + 1} for ${property.title}:`, imgErr.message);
-                }
-            }
-
-            // --- B. Generate Videos with Specified Durations (5-Min Total Budget) ---
-            const projectVideos = Array.isArray(proj.videos) ? proj.videos : [{ duration: 15, customInstructions: '' }];
-
-            for (let vIdx = 0; vIdx < projectVideos.length; vIdx++) {
-                const vid = projectVideos[vIdx];
-                const requestedDuration = Number(vid.duration) || 15;
-
-                // Enforce global 5-minute pool
-                if (cumulativeVideoSeconds + requestedDuration > MAX_GLOBAL_VIDEO_SECONDS) {
-                    console.warn(`[Onboarding API] Video pool cap reached (300s). Skipping additional video.`);
-                    break;
-                }
-                cumulativeVideoSeconds += requestedDuration;
-
-                console.log(`[Onboarding API] Generating ${requestedDuration}s video for "${proj.title}"...`);
-
-                const videoSchema = z.object({
-                    videoPrompt: z.string(),
-                    finalCaption: z.string()
-                });
-
-                const videoGenPrompt = `You are an elite video ad director creating a ${requestedDuration}-second 9:16 mobile commercial reel.
+                    const videoGenPrompt = `You are an elite video ad director creating a ${requestedDuration}-second 9:16 mobile commercial reel.
 Company: "${resolvedCompanyName}"
 Project Title: "${proj.title}"
 Description: "${proj.description}"
@@ -337,76 +464,98 @@ STYLE
 AVOID
 `;
 
-                try {
-                    const { object: vidObj } = await generateObject({
-                        model: google('gemini-3.5-flash'),
-                        schema: videoSchema,
-                        prompt: videoGenPrompt
-                    });
+                    try {
+                        const { object: vidObj } = await generateObject({
+                            model: google('gemini-3.5-flash'),
+                            schema: videoSchema,
+                            prompt: videoGenPrompt
+                        });
 
-                    const videoPayload: any = {
-                        model: "bytedance/seedance-2-mini",
-                        callBackUrl: `${baseUrl}/api/video/callback`,
-                        input: {
-                            prompt: vidObj.videoPrompt,
-                            aspect_ratio: "9:16",
-                            duration: requestedDuration <= 15 ? 15 : 30, // Seedance mini accepts 15 or 30
-                            generate_audio: true,
-                            resolution: "480p",
-                            nsfw_checker: true,
-                            web_search: false
+                        const videoPayload: any = {
+                            model: "bytedance/seedance-2-mini",
+                            callBackUrl: `${baseUrl}/api/video/callback`,
+                            input: {
+                                prompt: vidObj.videoPrompt,
+                                aspect_ratio: "9:16",
+                                duration: item.vendorDuration || (requestedDuration <= 15 ? 15 : 30), // Seedance mini accepts 15 or 30
+                                generate_audio: true,
+                                resolution: "480p",
+                                nsfw_checker: true,
+                                web_search: false
+                            }
+                        };
+
+                        if (property.image_url) {
+                            const convertedImg = await ensureJpegImage(property.image_url, user.id);
+                            videoPayload.input.reference_image_urls = [convertedImg];
                         }
-                    };
 
-                    if (property.image_url) {
-                        const convertedImg = await ensureJpegImage(property.image_url, user.id);
-                        videoPayload.input.reference_image_urls = [convertedImg];
-                    }
+                        const taskResult = await createKieTask(videoPayload);
+                        if (taskResult.taskId) {
+                            // Charge once the provider has accepted the render, never
+                            // before — see the image path above for why.
+                            const charge = await chargeHold(supabaseAdmin, {
+                                holdId,
+                                credits: videoCredits(requestedDuration),
+                                description: `Onboarding video (${requestedDuration}s) — ${property.title}`,
+                                ref: `${quote.jobId}:vid:${pIdx}:${item.itemIndex}`,
+                            });
+                            if (charge.ok && !charge.capped) {
+                                creditsCharged += charge.charged;
+                            } else if (!charge.duplicate) {
+                                budgetExhausted = true;
+                                console.warn(`[Onboarding API] Stopping after this video: ${charge.error || 'the reservation is used up'}`);
+                            }
 
-                    const taskResult = await createKieTask(videoPayload);
-                    if (taskResult.taskId) {
-                        videoTasksCount++;
-                        const { data: newAsset } = await supabaseAdmin
-                            .from('assets')
-                            .insert({
-                                user_id: user.id,
-                                property_id: property.id,
-                                type: 'video',
-                                status: 'Processing',
-                                url: 'https://designs.adrolls.in/processing',
-                                caption: vidObj.finalCaption,
-                                metadata: { duration: requestedDuration, instructions: vid.customInstructions || proj.customInstructions }
-                            })
-                            .select()
-                            .single();
-
-                        if (newAsset) {
-                            await supabaseAdmin
-                                .from('video_tasks')
-                                .insert([{
+                            videoTasksCount++;
+                            const { data: newAsset } = await supabaseAdmin
+                                .from('assets')
+                                .insert({
                                     user_id: user.id,
                                     property_id: property.id,
-                                    asset_id: newAsset.id,
-                                    prompts: [vidObj.videoPrompt],
-                                    current_index: 0,
-                                    last_task_id: taskResult.taskId,
-                                    last_successful_task_id: "",
-                                    aspect_ratio: "9:16",
+                                    type: 'video',
                                     status: 'Processing',
-                                    final_caption: vidObj.finalCaption
-                                }]);
-                        }
-                    }
-                } catch (vErr: any) {
-                    console.error(`[Onboarding API] Video generation failed for ${property.title}:`, vErr.message);
-                }
-            }
+                                    url: 'https://designs.adrolls.in/processing',
+                                    caption: vidObj.finalCaption,
+                                    metadata: { duration: requestedDuration, instructions: vid.customInstructions || proj.customInstructions }
+                                })
+                                .select()
+                                .single();
 
-            generationSummary.push({
-                projectTitle: property.title,
-                imageTasksQueued: imageTasksCount,
-                videoTasksQueued: videoTasksCount
-            });
+                            if (newAsset) {
+                                await supabaseAdmin
+                                    .from('video_tasks')
+                                    .insert([{
+                                        user_id: user.id,
+                                        property_id: property.id,
+                                        asset_id: newAsset.id,
+                                        prompts: [vidObj.videoPrompt],
+                                        current_index: 0,
+                                        last_task_id: taskResult.taskId,
+                                        last_successful_task_id: "",
+                                        aspect_ratio: "9:16",
+                                        status: 'Processing',
+                                        final_caption: vidObj.finalCaption
+                                    }]);
+                            }
+                        }
+                    } catch (vErr: any) {
+                        console.error(`[Onboarding API] Video generation failed for ${property.title}:`, vErr.message);
+                    }
+                }
+
+                generationSummary.push({
+                    projectTitle: property.title,
+                    imageTasksQueued: imageTasksCount,
+                    videoTasksQueued: videoTasksCount
+                });
+            }
+        } finally {
+            // Whatever happened, the unspent part of the reservation goes back.
+            const closed = await closeHold(supabaseAdmin, holdId, 'onboarding run finished');
+            console.log(
+                `[Onboarding API] Run closed: charged ${creditsCharged}, released ${closed.released}, state ${closed.state}`
+            );
         }
 
         // 6. Send WhatsApp notification to Admin & deliver live website link
@@ -417,7 +566,11 @@ AVOID
             ? `https://${existingProfile.custom_domain}`
             : `${baseUrl}/website/${user.id}`;
 
-        if (targetWaPhone && waPhoneId && waToken) {
+        // Every outbound channel goes through test mode, so a first run during the
+        // pilot lands on the founder's phone and never on a customer's.
+        const waRecipient = outboundRecipient(targetWaPhone);
+
+        if (waRecipient && waPhoneId && waToken) {
             try {
                 const summaryText = generationSummary
                     .map(s => `• *${s.projectTitle}*: ${s.imageTasksQueued} Creatives + ${s.videoTasksQueued} Video(s)`)
@@ -428,14 +581,14 @@ AVOID
 Welcome *${resolvedCompanyName}*! We have commenced generation across your projects:
 ${summaryText}
 
-🌐 *Your Live Luxury Website*:
+🌐 *Your Live Website*:
 ${liveWebsiteUrl}
-(Live now, with your inventory synced automatically. You can generate a fully branded version any time from Dashboard → Pages.)
+(Live now, with your catalogue synced automatically. You can generate a fully branded version any time from Dashboard → Pages.)
 
 📲 *How Approvals & Revisions Work*:
 As each creative is synthesized, it will be delivered here with product copy in WhatsApp template format.
 • Reply *'Approve'* to instantly schedule it to your socials at peak 7:30 PM.
-• Reply with changes (e.g. _"Change price to ₹2.1 Cr"_ or _"Regenerate style"_) to trigger automatic revisions!`;
+• Reply with changes (e.g. _"Change the price to ₹2.1 Cr"_ or _"Regenerate style"_) to trigger automatic revisions!${testBanner()}`;
 
                 fetch(`https://graph.facebook.com/v20.0/${waPhoneId}/messages`, {
                     method: 'POST',
@@ -443,20 +596,25 @@ As each creative is synthesized, it will be delivered here with product copy in 
                     body: JSON.stringify({
                         messaging_product: 'whatsapp',
                         recipient_type: 'individual',
-                        to: targetWaPhone.replace(/\D/g, ''),
+                        to: waRecipient.replace(/\D/g, ''),
                         type: 'text',
                         text: { body: introMsg }
                     })
                 }).catch(err => console.error("[Onboarding API] WhatsApp alert error:", err));
             } catch { }
+        } else if (targetWaPhone && !waRecipient) {
+            console.warn('[Onboarding API] Refusing to send: outbound test mode is on with no test number configured.');
         }
 
         console.log("[Onboarding API] Multi-project onboarding completed successfully!");
         return NextResponse.json({
             success: true,
-            message: `Onboarding completed for ${resolvedProjects.length} project(s).`,
+            message: `Onboarding completed for ${savedProjects.length} project(s).`,
             liveWebsiteUrl,
-            summary: generationSummary
+            summary: generationSummary,
+            quote,
+            creditsCharged,
+            budgetExhausted,
         });
 
     } catch (error: any) {

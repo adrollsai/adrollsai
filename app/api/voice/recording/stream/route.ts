@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
+import { resolveRecordingLinkSecret, verifyRecordingToken } from '@/lib/automation/call-receipt'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,31 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url)
         let rawUrl = searchParams.get('url')
         const leadId = searchParams.get('leadId')
+
+        // Signed links (the ones we email / WhatsApp to the owner) carry `exp`
+        // and `sig`. When present they must verify, which keeps a mailed link a
+        // bearer capability for one lead with a deadline instead of an open
+        // handle on the storage bucket. Unsigned requests keep working: the
+        // authenticated dashboard still links `?url=...&leadId=...` directly.
+        const signature = searchParams.get('sig')
+        const expiresAt = searchParams.get('exp')
+        if (signature || expiresAt) {
+            const valid = verifyRecordingToken({
+                leadId,
+                expiresAt: expiresAt ? Number(expiresAt) : null,
+                signature,
+                secret: resolveRecordingLinkSecret()
+            })
+            if (!valid) {
+                return new NextResponse('Recording link is invalid or has expired', { status: 403 })
+            }
+            if (!leadId) {
+                return new NextResponse('Recording link is missing the lead', { status: 400 })
+            }
+            // A signed link never lets the caller choose an arbitrary upstream
+            // URL - it resolves through the lead only.
+            rawUrl = null
+        }
 
         // If no direct URL passed, look up from lead
         if (!rawUrl && leadId) {

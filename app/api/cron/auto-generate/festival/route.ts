@@ -7,6 +7,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { getFestivalForToday, buildFestivalCreativePrompt, FESTIVALS_2026, FestivalInfo } from '@/utils/festival-helper';
 import { dispatchCreativeToAdmin } from '@/utils/creative-dispatch-helper';
+import { MEDIA_MODELS, imageModelFor } from '@/lib/agent/media-models';
 
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
@@ -141,7 +142,7 @@ Keep it elegant, uplifting, and clean. Do not include markdown codeblocks or quo
       if (logoUrl) inputImages.push(logoUrl);
 
       const payload: any = {
-        model: inputImages.length > 0 ? 'gpt-image-2-5-flare-image-to-image' : 'gpt-image-2-5-flare-text-to-image',
+        model: imageModelFor(inputImages),
         input: {
           prompt: festivalPrompt,
           aspect_ratio: '3:4',
@@ -156,7 +157,7 @@ Keep it elegant, uplifting, and clean. Do not include markdown codeblocks or quo
       if (!kieResult || kieResult.error || !kieResult.taskId) {
         // Fallback to text-to-image
         kieResult = await createKieTask({
-          model: 'gpt-image-2-5-flare-text-to-image',
+          model: MEDIA_MODELS.image.id,
           input: {
             prompt: festivalPrompt,
             aspect_ratio: '3:4',

@@ -2,6 +2,25 @@
 
 A standalone WebSocket bridge server that connects Twilio Media Streams (G.711 mu-law, 8kHz) to the Gemini Multimodal Live API WebSocket (16-bit PCM, 16kHz/24kHz) for real-time low-latency voice calls.
 
+It also hosts a second, independent pipeline that uses **no Live API at all** —
+`/tts-flash-stream` runs STT → LLM → streaming TTS over plain REST for the
+`/dashboard/gemini-tts-flash-demo` page. See
+[`docs/GEMINI-TTS-FLASH-PIPELINE.md`](../docs/GEMINI-TTS-FLASH-PIPELINE.md).
+
+## Endpoints
+
+| Path | Purpose |
+| --- | --- |
+| `WS /gemini-live-stream` | Gemini Live pipeline (this README) |
+| `WS /agent-bridge` | Human agent softphone |
+| `WS /tts-flash-stream` | Gemini 3.8 Flash TTS pipeline (STT → LLM → TTS, no Live API) |
+| `POST /tts-flash-prewarm` | Render the opening line to PCM before the call is answered |
+| `GET /tts-flash-prewarm/status?leadId=` | Check whether a greeting is ready |
+| `POST /tts-flash-voice` | Design a persistent `voice_...` persona |
+| `GET /tts-flash-health` | Pipeline config + API-key presence |
+| `GET /health` | Liveness |
+
+
 ## How it works
 1. **Twilio Connection**: Twilio calls connect and trigger a `<Stream>` instruction pointing to this bridge server's `/gemini-live-stream` WebSocket endpoint.
 2. **Gemini Connection**: The bridge server receives the connection, queries Supabase for caller and profile context, and initiates a stateful WebSocket connection to the Gemini Live API (`wss://generativelanguage.googleapis.com/...`).

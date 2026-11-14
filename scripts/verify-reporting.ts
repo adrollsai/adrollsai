@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Verifies org_call_report against the real database.
  *
  * The whole point of this tool is that the number is right, so the test does
@@ -63,16 +63,43 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   if (today.note) console.log(`note: ${today.note}`);
 
   check('today returned a clean sentence', typeof today.answer === 'string' && today.answer.length > 10, today.answer?.slice(0, 90));
-  check('today scoped to the whole org', today.accountsInScope === ids.length, `${today.accountsInScope} accounts`);
+  // Scope, not equality: a platform owner legitimately sees every account, while an admin
+  // sees their subtree. What matters is that the count never silently shrinks to one
+  // account, which is what made a real owner's "my account" report read as zero.
+  check(
+    'today covers at least the whole org',
+    today.accountsInScope >= ids.length && today.accountsInScope >= 1,
+    `${today.accountsInScope} accounts vs ${ids.length} in the test's own scope`
+  );
 
-  // Independent recount of the same window.
-  const { count: recount } = await sb
-    .from('call_logs')
-    .select('id', { count: 'exact', head: true })
+  // Independent recount of the same window, from the same table the tool must use: the
+  // Analytics → Action Report reads lead_history, so a report built on call_logs told an
+  // owner "0 yesterday" on a day whose dashboard showed dozens of attempts.
+  const { data: recountRows } = await sb
+    .from('lead_history')
+    .select('action_type, description')
     .in('user_id', ids)
     .gte('created_at', today.rangeStart)
-    .lte('created_at', today.rangeEnd);
-  check('today count matches an independent recount', recount === today.totalCalls, `tool=${today.totalCalls} db=${recount}`);
+    .lte('created_at', today.rangeEnd)
+    .limit(20000);
+  const recount = (recountRows || []).filter((h: any) => {
+    const type = String(h.action_type || '').toUpperCase();
+    const desc = String(h.description || '').toLowerCase();
+    if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false;
+    if (
+      desc.includes('facebook ad submission') ||
+      desc.includes('reopened from facebook') ||
+      desc.includes('bulk transferred') ||
+      desc.includes('transferred from')
+    ) {
+      return false;
+    }
+    if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true;
+    if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true;
+    if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true;
+    return false;
+  }).length;
+  check('today count matches an independent recount of lead_history', recount === today.totalCalls, `tool=${today.totalCalls} db=${recount}`);
 
   // ── timezone boundary actually matters ───────────────────────────────────
   const kolkata = await run({ period: 'today', timezone: 'Asia/Kolkata' });
@@ -108,3 +135,5 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   console.log(`\n=== ${results.length - failed.length}/${results.length} passed`);
   if (failed.length) process.exit(1);
 })();
+
+

@@ -110,10 +110,47 @@ export const MEDIA_PRICES: Record<string, MediaPrice> = {
     source: 'ElevenLabs (proxy until invoiced)',
     estimated: true,
   },
+  /**
+   * Live voice conversation, per second of audio in and out.
+   *
+   * Priced in rupees per second so it can be billed from measured audio duration rather
+   * than a token count the client could never verify. Vendor audio rates are ~$0.0003/s
+   * in and ~$0.0024/s out; the credits themselves carry the 2x margin downstream.
+   */
+  'live-voice-in': { per: 0.0003 * USD_TO_INR, source: 'Live voice input (estimate)', estimated: true },
+  'live-voice-out': { per: 0.0024 * USD_TO_INR, source: 'Live voice output (estimate)', estimated: true },
 };
 
 export function mediaPrice(key: string): MediaPrice {
   return MEDIA_PRICES[key] || { each: 0, source: 'unknown' };
+}
+
+/**
+ * What a Grok Imagine clip will cost the user, in credits.
+ *
+ * Shown on the pre-flight review so "Approve & generate" is an informed click rather
+ * than a guess. Credits carry the 2x margin (see deductCreditsByCost), so the vendor
+ * rate is doubled here rather than in the UI, where it would drift.
+ */
+export function estimateGrokVideoCredits(
+  seconds: number,
+  resolution: '480p' | '720p' | '1080p' = '720p'
+): number {
+  const rate = MEDIA_PRICES[`grok-video:${resolution}`]?.per ?? 0;
+  return Math.round(seconds * rate * 2 * 10) / 10;
+}
+
+/**
+ * Rupee cost of one live-voice conversation, before the credit margin.
+ *
+ * Takes measured audio seconds rather than an opaque token count: seconds are
+ * something the server can verify and the user could in principle reproduce, and the
+ * same number drives the on-screen meter.
+ */
+export function liveVoiceRupeeCost(secondsIn: number, secondsOut: number): number {
+  const cin = Math.max(0, secondsIn) * (MEDIA_PRICES['live-voice-in'].per || 0);
+  const cout = Math.max(0, secondsOut) * (MEDIA_PRICES['live-voice-out'].per || 0);
+  return Math.round((cin + cout) * 10000) / 10000;
 }
 
 /** Anything priced by us rather than a vendor (e.g. our own render compute). */

@@ -4,6 +4,7 @@
  * it would produce false errors. `any` is the same choice utils/credits.ts and
  * utils/voice-helper.ts make for the same reason.
  */import fs from 'node:fs'
+import { industryVocabulary } from '@/lib/automation/industry'
 import path from 'node:path'
 
 /**
@@ -34,6 +35,7 @@ export interface SiteProfile {
   mission_statement?: string | null
   custom_domain?: string | null
   whitelabel_domain?: string | null
+  industry?: string | null
 }
 
 export interface SiteProperty {
@@ -161,6 +163,8 @@ export function buildSiteHtml(
   let html = loadTemplate()
 
   const brandName = (profile.business_name || 'Our Business').trim()
+  // Industry-agnostic vocabulary (property listings vs courses vs services).
+  const vocab = industryVocabulary(profile.industry)
 
   // Scrub the template's demo identity out of the static markup BEFORE injecting
   // anything of ours. app.js renders header/footer from window.SITE, but the raw
@@ -177,7 +181,7 @@ export function buildSiteHtml(
     .replace(/everline\s+realty/gi, safeBrand)
     .replace(/everline/gi, safeBrand)
 
-  const tagline = (profile.mission_statement || 'Verified listings. Honest advice. Site visits that actually happen.').trim()
+  const tagline = (profile.mission_statement || vocab.taglineFallback).trim()
   const description = (profile.business_info || tagline).replace(/\s+/g, ' ').trim().slice(0, 158)
   const phone = (profile.contact_number || profile.whatsapp_phone_number || '').trim()
   const wa = digits(profile.whatsapp_phone_number || profile.contact_number)
@@ -199,7 +203,7 @@ export function buildSiteHtml(
     : canonical
 
   /* ---------------- head: title, description, canonical, social ------- */
-  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` — ${esc(city)}` : ''} | Property Listings &amp; Site Visits</title>`)
+  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` — ${esc(city)}` : ''} </title>`)
   html = html.replace(
     /<meta name="description" content="[^"]*">/i,
     `<meta name="description" content="${esc(description)}">`
@@ -249,7 +253,7 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
 
   const orgSchema = {
     '@context': 'https://schema.org',
-    '@type': 'RealEstateAgent',
+    '@type': vocab.schemaType,
     name: brandName,
     description: profile.business_info || tagline,
     url: canonical,
@@ -273,7 +277,10 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
   html = html.replace(
     /<script type="application\/ld\+json">[\s\S]*?<\/script>/gi,
     (block) =>
-      /"@type"\s*:\s*"RealEstateAgent"/i.test(block)
+      // Match the template's demo organisation schema whatever its type. The
+      // previous pattern was mangled to \\s (literal backslash-s) so it never
+      // matched and every site shipped the demo RealEstateAgent block.
+      /"@type"\s*:\s*"(RealEstateAgent|Organization|EducationalOrganization|ProfessionalService|LocalBusiness)"/i.test(block)
         ? `<script type="application/ld+json">${jsonForHtml(orgSchema)}</script>`
         : block
   )
@@ -342,12 +349,12 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
 
   const serverContent = `
 <section id="nobogent-server-content" aria-labelledby="nobogent-h1" style="max-width:1180px;margin:0 auto;padding:48px 20px;">
-  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` — Property Listings in ${esc(city)}` : ''}</h1>
+  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` — ${esc(city)}` : ''}</h1>
   <p style="margin:0 0 18px;max-width:62ch;">${esc(tagline)}</p>
   ${address ? `<address style="font-style:normal;margin:0 0 6px;">${esc(address)}</address>` : ''}
   ${phone ? `<p style="margin:0 0 6px;">Call or WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
-  ${wa ? `<p style="margin:0 0 22px;"><a href="https://wa.me/${esc(wa)}" rel="noopener">Chat with us on WhatsApp</a></p>` : ''}
-  ${props.length ? `<h2 style="font-size:24px;margin:26px 0 14px;">Current listings (${props.length})</h2>
+  ${wa ? `<p style="margin:0 0 22px;"><a href="https://wa.me/${esc(wa)}" rel="noopener">Get in touch on WhatsApp</a></p>` : ''}
+  ${props.length ? `<h2 style="font-size:24px;margin:26px 0 14px;">What we offer (${props.length})</h2>
   <div class="seo-grid">${cards}</div>` : ''}
 </section>
 <style>
@@ -381,7 +388,7 @@ export async function ensureTenantSite(
 ): Promise<{ created: boolean; skipped?: string; bytes?: number }> {
   const { data: profile, error: pErr } = await supabaseAdmin
     .from('profiles')
-    .select('id, business_name, business_info, logo_url, brand_color, contact_number, whatsapp_phone_number, address, email, mission_statement, custom_domain, whitelabel_domain')
+    .select('id, business_name, business_info, logo_url, brand_color, contact_number, whatsapp_phone_number, address, email, mission_statement, custom_domain, whitelabel_domain, industry')
     .eq('id', userId)
     .single()
 

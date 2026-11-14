@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { campaignLaunchRefusal } from '../preflight';
 
 const META_GRAPH_VERSION = 'v21.0';
 
@@ -239,11 +240,13 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
     }),
 
     meta_mcp_launch_leadgen_campaign: tool({
-      description: 'Meta Ads MCP: Launches a complete, end-to-end Lead Generation campaign with High Intent Instant Lead Form, custom questions, target locations, ad creatives, and ad set.',
+      description: 'Meta Ads MCP: Launches a complete, end-to-end Lead Generation campaign with High Intent Instant Lead Form, custom questions, target locations, ad creatives, and ad set. PRE-FLIGHT GUARDED: if the objective, the daily budget, the target locations, the creative image or the lead-form questions are missing, it launches NOTHING and returns status "missing_inputs" with exactly what to ask through request_user_input — ask those in one batch, then call it again with the answers.',
       inputSchema: z.object({
         campaignName: z.string().describe('Campaign name'),
-        dailyBudgetInr: z.number().default(500).describe('Daily budget in the ad account\'s OWN currency (read it from meta_graph_account first: 500 means 500 AED on an AED account, 500 INR on an INR account)'),
-        imageUrl: z.string().describe('Public image URL for the ad creative'),
+        // No default: a budget the user never gave must reach the pre-flight
+        // guard, not silently become 500/day of real spend.
+        dailyBudgetInr: z.number().optional().describe('Daily budget in the ad account\'s OWN currency (read it from meta_graph_account first: 500 means 500 AED on an AED account, 500 INR on an INR account). Required — never guess it.'),
+        imageUrl: z.string().optional().describe('Public image URL for the ad creative the user chose or approved (from the asset library, or one you generated). Required — never invent one.'),
         adCopy: z.object({
           headline: z.string().describe('Ad headline (max 40 chars)'),
           primaryText: z.string().describe('Ad primary text copy'),
@@ -252,7 +255,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
         formQuestions: z.array(z.object({
           label: z.string().describe('Question label text'),
           options: z.array(z.string()).describe('List of multiple choice options'),
-        })).describe('Custom MCQ questions for the lead form'),
+        })).optional().describe('Custom MCQ qualifying questions for the lead form — ask the user which questions they want if they have not said.'),
         highIntent: z.boolean().default(true).describe('Whether to enable Higher Intent review screen on the form'),
         whatsappRedirectUrl: z.string().describe('WhatsApp redirection URL on completion button (e.g. https://wa.me/919517831205)'),
         targetLocations: z.object({
@@ -286,6 +289,35 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
         ageMax,
         status,
       }) => {
+        // PRE-FLIGHT GUARD. Creating a campaign, a form, an ad set and an ad is
+        // irreversible spend and public reach, so the things only the owner can
+        // supply are checked BEFORE the first Graph call. Nothing is created on
+        // a refusal: the response names the questions to ask instead.
+        const refusal = await campaignLaunchRefusal(
+          {
+            objective: 'OUTCOME_LEADS',
+            budget: dailyBudgetInr,
+            locations: targetLocations,
+            creativeAssets: [imageUrl],
+            qualifyingQuestions: formQuestions,
+            leadGen: true,
+          },
+          {
+            tool: 'meta_mcp_launch_leadgen_campaign',
+            action: 'launch a lead-generation campaign',
+            supabase,
+            userId,
+          }
+        );
+        if (refusal) return refusal;
+
+        // The guard above proved these are present, so this is only for the
+        // compiler's benefit — a future edit to the guard cannot silently turn
+        // them back into `undefined` mid-launch.
+        const budgetInr = Number(dailyBudgetInr);
+        const creativeImageUrl = String(imageUrl);
+        const leadFormQuestions = formQuestions || [];
+
         try {
           const { token, adAccountId, profile } = await getUserMetaCredentials();
           const pageId = profile.selected_page_id;
@@ -317,9 +349,9 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const tokenForPage = pageAccessToken || token;
 
           // 1. Upload Creative Image to Ad Account
-          const imgFetch = await fetch(imageUrl);
+          const imgFetch = await fetch(creativeImageUrl);
           if (!imgFetch.ok) {
-            throw new Error(`Failed to fetch image from URL: ${imageUrl} (status ${imgFetch.status})`);
+            throw new Error(`Failed to fetch image from URL: ${creativeImageUrl} (status ${imgFetch.status})`);
           }
           const imgBlob = await imgFetch.blob();
           const formData = new FormData();
@@ -337,7 +369,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const imageHash = imgData.images[Object.keys(imgData.images)[0]].hash;
 
           // 2. Create High Intent Instant Lead Form
-          const metaCustomQuestions = formQuestions.map(q => ({
+          const metaCustomQuestions = leadFormQuestions.map(q => ({
             type: 'CUSTOM',
             label: q.label.trim(),
             options: q.options.map(opt => ({
@@ -380,7 +412,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const leadFormId = formDataResp.id;
 
           // 3. Create Campaign (CBO with daily budget)
-          const dailyBudgetSubunits = Math.round(dailyBudgetInr * 100);
+          const dailyBudgetSubunits = Math.round(budgetInr * 100);
           const campaignPayload = {
             name: campaignName,
             objective: 'OUTCOME_LEADS',
@@ -502,7 +534,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
             imageHash,
             campaignName,
             status,
-            dailyBudget: `${fmtMoney(dailyBudgetInr)}/day`,
+            dailyBudget: `${fmtMoney(budgetInr)}/day`,
             currency,
             whatsappRedirectUrl,
             message: `Campaign "${campaignName}" successfully launched on Meta Ads!`,

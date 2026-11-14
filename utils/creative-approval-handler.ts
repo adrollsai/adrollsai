@@ -2,8 +2,10 @@ import { createClient } from '@supabase/supabase-js';
 import { postToFacebook, postToInstagram, postToLinkedin, createKieTask, queryKieTask } from '@/utils/external-apis';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { outboundRecipient } from '@/lib/automation/test-mode';
 import sharp from 'sharp';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { imageModelFor } from '@/lib/agent/media-models';
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -61,7 +63,7 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
     festivalName
   } = params;
 
-  let cleanPhone = (to || '').replace(/\D/g, '');
+  let cleanPhone = (outboundRecipient(to) || to || '').replace(/\D/g, '');
   if (cleanPhone.length === 10) {
     cleanPhone = `91${cleanPhone}`;
   }
@@ -294,7 +296,7 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
  * Sends a plain text message strictly from Nobogent WABA
  */
 export async function sendNobogentTextMessage(to: string, text: string): Promise<boolean> {
-  let cleanPhone = (to || '').replace(/\D/g, '');
+  let cleanPhone = (outboundRecipient(to) || to || '').replace(/\D/g, '');
   if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
 
   if (!cleanPhone || !NOBOGENT_WABA_PHONE_ID || !NOBOGENT_WABA_TOKEN) return false;
@@ -737,7 +739,7 @@ Return ONLY a JSON object:
   if (analysis.hasImageChanges && analysis.imageChangePrompt) {
     console.log(`[Creative Revision] Generating updated image with prompt: "${analysis.imageChangePrompt.slice(0, 100)}..."`);
     try {
-      const selectedModel = currentImageUrl ? "gpt-image-2-5-flare-image-to-image" : "gpt-image-2-5-flare-text-to-image";
+      const selectedModel = imageModelFor(currentImageUrl ? [currentImageUrl] : []);
       const kiePayload: any = {
         model: selectedModel,
         input: {

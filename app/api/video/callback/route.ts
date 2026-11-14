@@ -483,10 +483,22 @@ export async function POST(request: Request) {
             }
             
             if (videoTask.asset_id) {
+                // Merge metadata rather than replacing it — the previous version
+                // wiped any existing metadata (audioUrl, videoModel) whenever a
+                // thumbnail was present.
+                const { data: existingMeta } = await supabaseAdmin
+                    .from('assets')
+                    .select('metadata')
+                    .eq('id', videoTask.asset_id)
+                    .maybeSingle();
+
                 await supabaseAdmin.from('assets').update({
                     url: finalUrl,
                     status: 'Draft',
-                    metadata: thumbnailUrl ? { thumbnailUrl } : {}
+                    metadata: {
+                        ...(existingMeta?.metadata || {}),
+                        ...(thumbnailUrl ? { thumbnailUrl } : {})
+                    }
                 }).eq('id', videoTask.asset_id);
             }
             
@@ -501,6 +513,19 @@ export async function POST(request: Request) {
                 "/dashboard/assets", 
                 "asset_ready"
             );
+
+            // Multi-channel delivery. Single-clip videos never reach the stitcher,
+            // so without this a 15s configuration would notify in-app only.
+            try {
+                const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+                await deliverVideoToAdmin(supabaseAdmin, {
+                    userId: videoTask.user_id,
+                    assetId: videoTask.asset_id,
+                    videoUrl: finalUrl
+                });
+            } catch (deliverErr: any) {
+                console.warn('[Video Callback] Delivery failed (video still saved):', deliverErr?.message);
+            }
             
             return NextResponse.json({ success: true, message: "Single scene video finalized successfully." });
         }
@@ -599,11 +624,18 @@ export async function POST(request: Request) {
 
             if (muxSuccess) {
                 if (videoTask.asset_id) {
+                    const { data: existingMeta } = await supabaseAdmin
+                        .from('assets')
+                        .select('metadata')
+                        .eq('id', videoTask.asset_id)
+                        .maybeSingle();
+
                     await supabaseAdmin.from('assets').update({
                         url: finalUrl,
                         status: 'Draft',
                         created_at: new Date().toISOString(),
                         metadata: {
+                            ...(existingMeta?.metadata || {}),
                             ...(thumbnailUrl ? { thumbnailUrl } : {}),
                             audioUrl: finalAudioUrl
                         }
@@ -617,6 +649,20 @@ export async function POST(request: Request) {
                     "/dashboard/assets", 
                     "asset_ready"
                 );
+
+                // Multi-channel delivery for the voiceover-mux path, which also
+                // never reaches the stitcher.
+                try {
+                    const { deliverVideoToAdmin } = await import('@/lib/automation/video-delivery');
+                    await deliverVideoToAdmin(supabaseAdmin, {
+                        userId: videoTask.user_id,
+                        assetId: videoTask.asset_id,
+                        videoUrl: finalUrl
+                    });
+                } catch (deliverErr: any) {
+                    console.warn('[Video Callback] Delivery failed (video still saved):', deliverErr?.message);
+                }
+
                 return NextResponse.json({ success: true, message: "Single scene video with voiceover finalized successfully." });
             }
         }
