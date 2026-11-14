@@ -600,11 +600,31 @@ ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 
         let dynamicFirstMessage = effectiveGreeting;
 
+        // ---- P7: WHICH SCRIPT DOES THIS CALL SPEAK? --------------------------
+        // Precedence (lib/automation/calling-script.ts owns it, and ships an
+        // industry-neutral default so no tenant is ever assumed to be a
+        // brokerage): campaign script -> tenant playbook script -> this route's
+        // contextual default. A tenant that has never authored one therefore
+        // hears exactly what it heard before this change.
         let finalPrompt = customPrompt
-        if (campaign?.custom_prompt) {
-            finalPrompt = `
-${campaign.custom_prompt}
+        let scriptSource: string = 'fallback'
+        try {
+            const { resolveCallingScript } = await import('@/lib/automation/calling-script')
+            const { getActivePlaybook } = await import('@/lib/automation/ceo')
+            const callingPlaybook = await getActivePlaybook(supabaseAdmin, effectiveProfileId).catch(() => null)
+            const resolved = resolveCallingScript({
+                campaignScript: campaign?.custom_prompt || null,
+                playbook: callingPlaybook,
+                industry: (profile as any)?.industry || null,
+                leadName,
+                businessName: companyName,
+                fallbackScript: customPrompt
+            })
+            scriptSource = resolved.source
+            console.log(`[TWIML BRIDGE] calling script source: ${resolved.source}`)
 
+            if (resolved.source === 'campaign' || resolved.source === 'playbook') {
+                const contextBlock = `
 --- LEAD & BUSINESS CONTEXT ---
 Lead Name: ${leadName}
 Email: ${lead.email || 'None'}
@@ -620,14 +640,26 @@ ${previousCallsHistory ? `Previous Call History:\n${previousCallsHistory}\n` : '
 ${whatsappHistory ? `Previous WhatsApp History:\n${whatsappHistory}` : ''}
 `.trim()
 
-            const promptLower = campaign.custom_prompt.toLowerCase()
-            const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india')
-            if (isHinglish) {
-                dynamicFirstMessage = `Hi ${leadName}! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`
-            } else {
-                dynamicFirstMessage = `Hi ${leadName}! I'm calling to follow up on your recent request. How are you doing today?`
+                finalPrompt = `${resolved.script}
+
+${contextBlock}`
+
+                if (resolved.source === 'playbook') {
+                    dynamicFirstMessage = resolved.firstMessage
+                } else {
+                    const promptLower = String(campaign?.custom_prompt || '').toLowerCase()
+                    const isHinglish = promptLower.includes('hinglish') || promptLower.includes('hindi') || promptLower.includes('india')
+                    if (isHinglish) {
+                        dynamicFirstMessage = `Hi ${leadName}! Main assistant baat kar raha hoon aapki query ke regarding. Kaise hain aap?`
+                    } else {
+                        dynamicFirstMessage = `Hi ${leadName}! I'm calling to follow up on your recent request. How are you doing today?`
+                    }
+                }
             }
+        } catch (scriptErr: any) {
+            console.warn('[TWIML BRIDGE] calling script resolution failed, keeping the contextual default:', scriptErr?.message || scriptErr)
         }
+        void scriptSource
 
 
 

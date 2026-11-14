@@ -15,6 +15,10 @@ import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
+// P7 lead journey: ONE classifier for "opt-out" / "wants a human", and the
+// cancellation that stops pending journey steps the moment an opt-out is read.
+import { classifyLeadReply } from '@/lib/automation/journey'
+import { cancelJourneyForLead } from '@/lib/automation/journey-store'
 import {
   handleCreativeApproval,
   handleCreativeEditRequest,
@@ -1953,6 +1957,39 @@ export async function POST(request: Request) {
                                          return;
                                      }
 
+                                      // =================================================================
+                                      // P7 PER-CAMPAIGN LEAD JOURNEY (opt-in through the playbook)
+                                      // Reads an opt-out or a human-handoff request out of THIS message and
+                                      // starts the journey for a lead that does not have one. It returns
+                                      // ownsMessaging=true only when it has already replied, in which case the
+                                      // legacy flows below stand down so one inbound message gets one reply.
+                                      // When the journey is off (the default) this is two reads and no writes.
+                                      // =================================================================
+                                      if (latestLead?.id && ownerUserId) {
+                                          try {
+                                              const { onInboundLeadEvent } = await import('@/lib/automation/journey-store');
+                                              const journeyHook = await onInboundLeadEvent(supabaseAdmin, {
+                                                  leadId: latestLead.id,
+                                                  userId: ownerUserId,
+                                                  campaignId: campaignId || (latestLead as any).campaign_id || null,
+                                                  text: messageText,
+                                                  buttonId: buttonReplyId || null,
+                                                  leadName: chat.recipient_name || latestLead.name || null,
+                                                  phone: cleanFrom,
+                                                  now: new Date()
+                                              });
+                                              if (journeyHook.enabled && journeyHook.kind !== 'neutral') {
+                                                  console.log(`[Journey] ${journeyHook.kind} from ${cleanFrom}: ${journeyHook.cancelled} pending step(s) cancelled.`);
+                                              }
+                                              if (journeyHook.ownsMessaging) {
+                                                  console.log(`[Journey] journey answered ${cleanFrom} — legacy flows stand down for this message.`);
+                                                  return;
+                                              }
+                                          } catch (journeyErr: any) {
+                                              console.warn('[Journey] inbound hook failed:', journeyErr?.message || journeyErr);
+                                          }
+                                      }
+
                                       // 1. Dynamic User-Configured Automation Flows (ChatbotX Engine)
                                       try {
                                           const flowResult = await executeFlowRunner({
@@ -3189,10 +3226,26 @@ RULES:
                                         }
                                     };
 
-                                    // 2. Check for Opt-Out / Stop / Not Interested
-                                    const isOptOut = buttonReplyId === 'not_interested' || /^(stop|unsubscribe|not interested|no thanks|cancel)$/i.test(messageText.trim());
+                                    // 2. Check for Opt-Out / Stop / Not Interested / Nahi
+                                    // THE SAME classifier the journey engine and the cron use
+                                    // (lib/automation/journey.ts), so "stop", "unsubscribe",
+                                    // "not interested", "nahi" and the not_interested button cannot
+                                    // drift into two different opinions. Cancelling the pending
+                                    // journey steps happens HERE, immediately — not on the next tick.
+                                    const optOutIntent = classifyLeadReply({ text: messageText, buttonId: buttonReplyId });
+                                    const isOptOut = optOutIntent.kind === 'opt_out';
                                     if (isOptOut) {
-                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} requested opt-out.`);
+                                        console.log(`[WhatsApp Bot] Lead ${cleanFrom} requested opt-out ("${optOutIntent.matched}").`);
+                                        if (latestLead?.id) {
+                                            try {
+                                                const cancelled = await cancelJourneyForLead(supabaseAdmin, latestLead.id, `opt_out:${optOutIntent.matched}`);
+                                                if (cancelled > 0) {
+                                                    console.log(`[Journey] opt-out cancelled ${cancelled} pending step(s) for lead ${latestLead.id}.`);
+                                                }
+                                            } catch (journeyCancelErr: any) {
+                                                console.warn('[Journey] opt-out cancellation failed:', journeyCancelErr?.message || journeyCancelErr);
+                                            }
+                                        }
                                         await syncFieldsAndScore({ opt_out: true, unsubscribed_at: new Date().toISOString() });
                                         if (latestLead?.id) {
                                             await supabaseAdmin.from('leads').update({ pipeline_stage: 'Lost/NI' }).eq('id', latestLead.id);

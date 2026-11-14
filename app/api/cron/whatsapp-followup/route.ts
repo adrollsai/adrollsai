@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { outboundRecipient } from '@/lib/automation/test-mode';
 import { calculateLeadScore, parseCustomFields } from '@/utils/lead-scoring'
+import type { ProcessResult } from '@/lib/automation/journey'
 
 // Force dynamic execution to bypass Next.js static build cache
 export const dynamic = 'force-dynamic'
@@ -39,6 +40,39 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
+        // ------------------------------------------------------------------
+        // P7 LEAD JOURNEY PASS — every day, before the weekly drip below.
+        //
+        // The journey's own steps (first reply / T+1h / T+1d) are due once each
+        // and are claimed inside the engine, so this cron firing twice in a
+        // minute still sends once. Opt-out and handoff are re-read before every
+        // send, so a lead who said "stop" is never messaged again — and a step
+        // that policy refuses is recorded as blocked with its reason rather than
+        // disappearing.
+        //
+        // Deliberately the SAME cron and the same table as nothing else: there is
+        // no second queue to keep in sync.
+        // ------------------------------------------------------------------
+        let journeyResult: ProcessResult | null = null
+        try {
+            const { sendDueJourneySteps } = await import('@/lib/automation/journey-store')
+            journeyResult = await sendDueJourneySteps(supabaseAdmin, { limit: 50 })
+            if (journeyResult.checked > 0) {
+                console.log(
+                    `[Lead Journey] due=${journeyResult.checked} sent=${journeyResult.sent} ` +
+                    `blocked=${journeyResult.blocked} cancelled=${journeyResult.cancelled}`
+                )
+                for (const action of journeyResult.actions || []) {
+                    if (action.action !== 'sent') {
+                        console.log(`[Lead Journey] ${action.action} lead=${action.leadId} step=${action.stepId} — ${action.reason || ''}`)
+                    }
+                }
+            }
+        } catch (journeyErr) {
+            const message = journeyErr instanceof Error ? journeyErr.message : String(journeyErr)
+            console.warn('[Lead Journey] due-step pass failed:', message)
+        }
+
         const isForce = url.searchParams.get('force') === 'true'
         const istDay = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).format(new Date())
         const isSaturday = istDay === 'Sat'
@@ -48,7 +82,8 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
             return NextResponse.json({
                 success: true,
                 message: `Today is ${istDay}. Weekly followups are scheduled strictly for Saturdays.`,
-                isSaturday: false
+                isSaturday: false,
+                journey: journeyResult
             })
         }
 
@@ -68,7 +103,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
         if (leadsErr) throw leadsErr
 
         if (!leads || leads.length === 0) {
-            return NextResponse.json({ success: true, message: 'No leads found to scan.' })
+            return NextResponse.json({ success: true, message: 'No leads found to scan.', journey: journeyResult })
         }
 
         let sentCount = 0
@@ -91,6 +126,14 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     lead.pipeline_stage === 'Not Interested'
 
                 if (isLostOrNotInterested) {
+                    skippedCount++
+                    continue
+                }
+
+                // P7: a lead that is on its own journey is messaged by the journey
+                // (first reply / T+1h / T+1d), not by this weekly drip. Without
+                // this guard one lead would have two automated schedules.
+                if (cf.journey_started_at) {
                     skippedCount++
                     continue
                 }
@@ -302,6 +345,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
             scannedCount: leads.length,
             sentCount,
             skippedCount,
+            journey: journeyResult,
             diagnostics
         })
     } catch (err: any) {
