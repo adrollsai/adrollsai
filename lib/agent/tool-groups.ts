@@ -75,7 +75,7 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
   },
   research: {
     signals:
-      /\b(search|research|find out|look up|latest|news|price of|competitor|market|who is|what is|compare|trend)\b/i,
+      /\b(search|research|find out|look up|latest|news|price of|competitor|market|who is|what is|compare|trend|scrap(?:e|er|ing)?|harvest|crawl)\b/i,
   },
   vision: {
     signals:
