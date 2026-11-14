@@ -332,9 +332,12 @@ export default function CreationPage() {
       toast.success(`Selected template: ${tmpl?.name || templateId} 💎`);
     }
   };
-  // The picker only ever sends registry ids; /api/chat resolves them from there.
-  type CreationImageModel = typeof MEDIA_MODELS.image.id | (typeof MEDIA_MODELS.image.fallbacks)[number]
-  const [selectedModel, setSelectedModel] = useState<CreationImageModel>(MEDIA_MODELS.image.id)
+  // The image model for every request this page makes comes from the registry —
+  // this page sends a registry id and needs no alias mapping of its own, because
+  // /api/chat resolves ids (and still accepts the legacy 'image-2.0' alias that
+  // older cached bundles send). The fallback id is never a user choice: it is
+  // only ever reached by the failover inside the chat route.
+  const [selectedModel, setSelectedModel] = useState<typeof MEDIA_MODELS.image.id>(MEDIA_MODELS.image.id)
   const [creativeCategory, setCreativeCategory] = useState('')
   
   // Custom Reference State
@@ -822,7 +825,7 @@ export default function CreationPage() {
                 propImages: filteredPropImages,
                 isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
                 aspectRatio: "3:4",
-                model: 'image-2.0',
+                model: MEDIA_MODELS.image.id,
                 contactNumber: profile?.contact_number,
                 logoUrl: isLogoExcluded ? null : profile?.logo_url,
                 excludedImages: creativeFlow.batchExcludedImages,

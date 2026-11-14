@@ -139,6 +139,23 @@ const rel = (full: string) => path.relative(ROOT, full).split(path.sep).join('/'
 
     check('application files were found to scan', scanned.length > 100, `${scanned.length} files`);
 
+    // The dashboards were where the last inline ids hid, so prove they are inside
+    // the scan rather than quietly waived. Nothing under app/ is ever exempted.
+    const REQUIRED_IN_SCAN = [
+      'app/dashboard/page.tsx',
+      'app/dashboard/creation/page.tsx',
+      'app/api/chat/route.ts',
+      'app/api/video/grok/tts/route.ts',
+      'utils/external-apis.ts',
+    ];
+    const scannedRel = new Set(scanned.map(rel));
+    const missing = REQUIRED_IN_SCAN.filter((f) => !scannedRel.has(f));
+    check(
+      'app/dashboard/** and every migrated call site are inside the scan',
+      missing.length === 0,
+      missing.length ? `not scanned: ${missing.join(', ')}` : `${REQUIRED_IN_SCAN.length} known call sites scanned`,
+    );
+
     for (const pattern of PATTERNS) {
       const hits: string[] = [];
       for (const file of scanned) {

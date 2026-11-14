@@ -610,8 +610,11 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
     }
 
     // Every model id below comes from lib/agent/media-models.ts — nothing is
-    // inlined here. Old clients still send the short, prefix-free alias of the
-    // image fallback id, which modelAlias() derives from the registry.
+    // inlined here. Two accept-only shims remain for already-cached bundles:
+    //   'image-2.0'              an old name for "use the registry's image route"
+    //   modelAlias(<fallback id>) the prefix-free form of the image fallback id
+    // Neither one names a model that is not in the registry, and no client we
+    // ship today sends either — they exist so an old tab keeps working.
     const nanoImageModel: string = MEDIA_MODELS.image.fallbacks[0];
     const nanoAlias = modelAlias(nanoImageModel);
 
