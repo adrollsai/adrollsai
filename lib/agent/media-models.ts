@@ -66,6 +66,16 @@ export const MEDIA_MODELS = {
     timeoutMs: 45_000,
     credits: 2,
     notes:
+      // VERIFIED LIVE against kie.ai (2026-11-14), not inferred:
+      //   createTask -> code 200, task SUCCESS in ~5 s, real .wav URL returned.
+      // The comment this replaced claimed "Kie's catalogue lists 3.1 Flash TTS
+      // Preview; there is no 3.8 TTS entry". That was wrong — do not restore it.
+      // Payload shape that works (utils/external-apis.ts createGeminiTTS):
+      //   input.speakers[] (speaker_id, voice_name, audio_profile, style, pace,
+      //   accent) + input.dialogue_turns[] + temperature + scene + sample_context.
+      // Two traps: speakers is REQUIRED ("speakers is a required parameter"),
+      // and a non-empty per-speaker style is rejected with HTTP 422 — keep it
+      // '' and put the sound-design direction in scene.
       '3.8 Flash supports voice sound design via the scene/style fields. Pro is the safety net for 524s.',
   },
 
