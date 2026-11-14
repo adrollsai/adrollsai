@@ -59,6 +59,23 @@ export const RENDER_CREDITS = 4;
 
 export type VideoStepName = 'voiceover' | 'clips' | 'render';
 
+/**
+ * Default file names per step. Kept as data next to the keys they back, so a
+ * caller overriding one without the other is an obvious mistake rather than a
+ * silent mismatch between what a step writes and what the run claims it wrote.
+ */
+const ARTEFACT_NAMES: Record<VideoStepName, string> = {
+  voiceover: 'voiceover.mp3',
+  clips: 'clip.mp4',
+  render: 'final.mp4',
+};
+
+const SANDBOX_NAMES: Record<VideoStepName, string> = {
+  voiceover: 'voiceover.mp3',
+  clips: 'clip.mp4',
+  render: 'final.mp4',
+};
+
 export interface VideoJobSpec {
   /** Names the sandbox work dir and the R2 key prefix. Must be unique per job. */
   jobId: string;
@@ -71,6 +88,17 @@ export interface VideoJobSpec {
   workDir?: string;
   /** Override the render price (defaults to RENDER_CREDITS). */
   renderCredits?: number;
+  /**
+   * Override a step's R2 artefact key.
+   *
+   * The default (`agent_render/<jobId>/<name>`) is right for the smoke job, but a
+   * caller that produces something else — the `video` skill writes a measured
+   * `voiceover.json`, a project manifest and a real `final.mp4` — has to name its
+   * own keys, or the run row would claim an mp3 it never made.
+   */
+  artefacts?: Partial<Record<VideoStepName, string>>;
+  /** Override a step's sandbox path (the file the step must leave behind). */
+  sandboxPaths?: Partial<Record<VideoStepName, string>>;
   /** Replace a step's shell command. This is where real vendor calls go. */
   commands?: Partial<Record<VideoStepName, string>>;
   /** Replace a step's body entirely, with the live sandbox in hand. */
@@ -146,29 +174,33 @@ export function videoPipelineSteps(job: VideoJobSpec = DEFAULT_VIDEO_JOB): Video
   };
 
   const mkdir = `mkdir -p ${q(dir)}`;
+  const artefact = (name: VideoStepName): string =>
+    job.artefacts?.[name] ?? `${keyBase}/${ARTEFACT_NAMES[name]}`;
+  const sandboxPath = (name: VideoStepName): string =>
+    job.sandboxPaths?.[name] ?? `${dir}/${SANDBOX_NAMES[name]}`;
 
   return [
     {
       name: 'voiceover',
       credits: MEDIA_MODELS.voice.credits,
-      artefact: `${keyBase}/voiceover.mp3`,
-      sandboxPath: `${dir}/voiceover.mp3`,
+      artefact: artefact('voiceover'),
+      sandboxPath: sandboxPath('voiceover'),
       command: `${mkdir} && ${fill(job.commands?.voiceover ?? voiceover, { ...vars, out: q(vars.vo) })}`,
       timeoutMs: MEDIA_MODELS.voice.timeoutMs,
     },
     {
       name: 'clips',
       credits: videoCredits(job.clipSeconds),
-      artefact: `${keyBase}/clip.mp4`,
-      sandboxPath: `${dir}/clip.mp4`,
+      artefact: artefact('clips'),
+      sandboxPath: sandboxPath('clips'),
       command: `${mkdir} && ${fill(job.commands?.clips ?? clips, { ...vars, out: q(vars.clip) })}`,
       timeoutMs: MEDIA_MODELS.video.timeoutMs,
     },
     {
       name: 'render',
       credits: job.renderCredits ?? RENDER_CREDITS,
-      artefact: `${keyBase}/final.mp4`,
-      sandboxPath: `${dir}/final.mp4`,
+      artefact: artefact('render'),
+      sandboxPath: sandboxPath('render'),
       command: `${mkdir} && ${fill(job.commands?.render ?? render, { ...vars, out: q(`${dir}/final.mp4`) })}`,
       timeoutMs: 10 * MINUTE,
     },
