@@ -85,7 +85,31 @@ Hinglish by default; on-screen text English only.
   Fixed two real bugs: `estimateCredits('video', n)` returned **0** (so the
   pre-spend reservation reserved nothing), and `media_studio` sent reference-image
   edits to a text-to-image model.
-- **P3 in flight** at handover: `lib/agent/tools/skills/video/` + `scripts/verify-video-skill.ts`.
+- **P3 in flight, UNCOMMITTED and RED at handover.** Do not commit it as-is.
+  Present and untracked: `lib/agent/tools/skills/video/{beats,emit,index,timing}.ts`,
+  plus edits to `lib/agent/sandbox/pipeline.ts`. `D:\nobo-renders` now exists
+  (the render attempt started).
+
+  Migration `20261216000000_agent_run_artefact.sql` **was applied and verified**
+  (agent_runs gains `artefact_key` / `artefact_url` / `artefact_meta` +
+  `agent_runs_artefact_idx`) — that part is safe and already live.
+
+  Outstanding, in order of cheapness:
+  1. **5 import errors**, all the same mistake — `lib/agent/tools/skills/video/index.ts`
+     is four levels below `lib/agent/`, so `'../../media-models'` lands on
+     `lib/agent/tools/`. Needs `'../../../media-models'` / `'../../../sandbox/{pipeline,e2b,log,runner}'`,
+     or better, the `@/lib/agent/...` alias the sibling skills use (index.ts:35,50,51,52,53,54 and 1060).
+  2. `index.ts(122,8)` TS2872 always-truthy expression.
+  3. `index.ts(795,60)` TS2322 — the `hyperframes check --json` result typed
+     `| null` being coerced into a non-null shape. Per trap 8 a missing check
+     must FAIL the step, not be coerced into a pass.
+  4. `index.ts(1193,32)` TS2339 `Property 'total' does not exist on type 'never'`.
+  5. No `scripts/verify-video-skill.ts` and no `verify:video-skill` npm script.
+  6. No render evidence yet (no frames pulled from an MP4).
+
+  A previous feedback message with these same diagnostics was sent to the P3
+  worker; it had not yet applied them when the session ended.
+- **P4–P10 not started.**
 - **P4–P10 not started.**
 
 ## Tooling gotchas that cost real time
