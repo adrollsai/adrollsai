@@ -133,3 +133,37 @@ export async function fulfillPendingDeliveriesIfAny(leadId: string): Promise<{ f
         return { fulfilled: false, count: 0 };
     }
 }
+
+/* ------------------------------------------------------------------ */
+/* The per-message policy, re-exported                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Everything a LEAD-facing message must satisfy before it is sent lives in
+ * `lib/automation/lead-message-policy.ts`, because a rule you cannot exercise
+ * without a database is a rule nobody checks. It is re-exported here so this
+ * file stays the one place a reviewer looks for send policy:
+ *
+ *   - exactly three reply buttons, ids view_properties | talk_expert |
+ *     book_appointment (a send without them is a bug)
+ *   - a dialable recipient and something to say
+ *   - a named approved template when the 24h window is shut
+ *   - no real-estate vocabulary for a tenant that is not a brokerage
+ *
+ * The journey engine (`lib/automation/journey.ts`) calls it before every send and
+ * records the verdict on the step: a violation is BLOCKED and LOGGED with its
+ * reason, never silently dropped.
+ */
+export {
+    LEAD_BUTTON_IDS,
+    REAL_ESTATE_VOCABULARY,
+    checkLeadMessagePolicy,
+    isRealEstateIndustry,
+    realEstateWordsIn,
+} from '@/lib/automation/lead-message-policy';
+export type {
+    LeadMessageDraft,
+    LeadMessageButton,
+    LeadPolicyCode,
+    PolicyVerdict,
+} from '@/lib/automation/lead-message-policy';

@@ -32,7 +32,7 @@ export function createPlaybookTools(supabase: SupabaseClient, userId: string) {
   return {
     get_playbook: tool({
       description:
-        'Read the active playbook for this business: positioning, industry, website spec, call script, WhatsApp reply copy, the three mandatory reply buttons, cadence, the daily routine, and the first-draft recipes for creative/video/copy. Read this BEFORE answering any question about how the business is marketed or how the agent behaves. Read-only.',
+        'Read the active playbook for this business: positioning, industry, website spec, call script, WhatsApp reply copy, the three mandatory reply buttons, cadence (including the lead journey: first reply, T+1h, T+1d, opt-out and handoff rules), the daily routine, and the first-draft recipes for creative/video/copy. Read this BEFORE answering any question about how the business is marketed or how the agent behaves. Read-only.',
       inputSchema: z.object({}),
       execute: async () => {
         try {
@@ -57,7 +57,7 @@ export function createPlaybookTools(supabase: SupabaseClient, userId: string) {
 
     update_playbook: tool({
       description:
-        'Change how this business is marketed or how the agent behaves, from a natural-language request. Translate what the user asked into ONE structured patch: pick the section and supply only the keys that change (they are deep-merged, so unrelated settings survive). Sections: positioning, industry, website_spec, call_script, whatsapp_replies, buttons, cadence, daily_routine, recipes. The three reply buttons always survive a patch and their ids cannot be changed — you may only relabel them. Returns the new version number and the resulting buttons. Show the user what you changed after calling this.',
+        'Change how this business is marketed or how the agent behaves, from a natural-language request. Translate what the user asked into ONE structured patch: pick the section and supply only the keys that change (they are deep-merged, so unrelated settings survive). Sections: positioning, industry, website_spec, call_script, whatsapp_replies, buttons, cadence, daily_routine, recipes. The lead journey lives inside `cadence` as `{ journey: { enabled, firstReply, followups, optOut, handoff } }` — so "follow up after two hours instead", "stop after one nudge", "add \'bas\' as an opt-out word" or "my rep is called Priya, script says so" are a cadence patch and/or a call_script patch, never a new message branch. The three reply buttons always survive a patch and their ids cannot be changed — you may only relabel them. Returns the new version number and the resulting buttons. Show the user what you changed after calling this.',
       inputSchema: z.object({
         section: sectionEnum,
         value: z
