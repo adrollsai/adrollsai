@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
         // Fetch properties for the workspace
         const { data: properties, error: propErr } = await supabaseAdmin
             .from('properties')
-            .select('id, title, price, address, configurations, youtube_url, image_url, images, tags')
+            .select('id, title, price, address, configurations, youtube_url, image_url, images')
             .in('user_id', ownerIds)
             .order('created_at', { ascending: false })
 
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
         // Fetch the specific property/product using admin client
         const { data: prop, error: propErr } = await supabaseAdmin
             .from('properties')
-            .select('id, title, price, address, description, configurations, image_url, images, brochure_url, youtube_url, tags')
+            .select('id, title, price, address, description, configurations, image_url, images, brochure_url, youtube_url')
             .eq('id', propertyId)
             .single()
 
@@ -144,15 +144,15 @@ export async function POST(req: Request) {
 
         // Build a formatted product details message (omitting address & config as per user request)
         const lines: string[] = []
-        if (prop.title) lines.push(`🏷️ *${prop.title}*`)
-        if (prop.price) lines.push(`💰 Price: ${prop.price}`)
+        if (prop.title) lines.push(`ðŸ·ï¸ *${prop.title}*`)
+        if (prop.price) lines.push(`ðŸ’° Price: ${prop.price}`)
         if (prop.description) {
             const shortDesc = prop.description.length > 300 ? prop.description.substring(0, 300) + '...' : prop.description
             lines.push(`\n${shortDesc}`)
         }
-        if (prop.youtube_url) lines.push(`\n🎥 Video Tour: ${prop.youtube_url}`)
-        lines.push(`\n🌐 View Details & Photos: ${productUrl}`)
-        if (prop.brochure_url) lines.push(`📄 Brochure: ${prop.brochure_url}`)
+        if (prop.youtube_url) lines.push(`\nðŸŽ¥ Video Tour: ${prop.youtube_url}`)
+        lines.push(`\nðŸŒ View Details & Photos: ${productUrl}`)
+        if (prop.brochure_url) lines.push(`ðŸ“„ Brochure: ${prop.brochure_url}`)
 
         const productText = lines.join('\n')
 
@@ -211,7 +211,7 @@ export async function POST(req: Request) {
                 errorCount = 0
             }
         } else {
-            // No image or image is a placeholder — send as text
+            // No image or image is a placeholder â€” send as text
             const textPayload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',
@@ -243,7 +243,7 @@ export async function POST(req: Request) {
         }
 
         // Log to whatsapp_messages
-        const logText = `📦 Product: ${prop.title || 'Untitled'}\n${productText}`
+        const logText = `ðŸ“¦ Product: ${prop.title || 'Untitled'}\n${productText}`
         const { data: msgRecord } = await supabase
             .from('whatsapp_messages')
             .insert({
@@ -261,7 +261,7 @@ export async function POST(req: Request) {
         await supabase
             .from('whatsapp_chats')
             .update({
-                last_message_text: `📦 Sent product: ${prop.title || 'Untitled'}`,
+                last_message_text: `ðŸ“¦ Sent product: ${prop.title || 'Untitled'}`,
                 unread_count: 0,
                 updated_at: new Date().toISOString()
             })
