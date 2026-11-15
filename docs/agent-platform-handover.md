@@ -5,24 +5,42 @@ here was verified by a gate or a live call, not inferred.
 
 ## Committed and green
 
-| Commit | What |
-|---|---|
-| `717302d1` | **P1** durable sandbox runner wired to E2B + Supabase + credits + R2 |
-| `1c936ba2` | **P2** every media-model id from the registry, retry-then-fallback |
-| `d526f4c6` | P2 follow-up: 3.8 TTS model verified against kie live |
-| `fb627419` | Session baseline (payments, agent UI, STT, CRM live updates, pre-flight, call receipts) |
+| Commit | Branch | What |
+|---|---|---|
+| `717302d1` | `p1-runner-integration` | **P1** durable sandbox runner wired to E2B + Supabase + credits + R2 |
+| `1c936ba2` | `p2-model-router` | **P2** every media-model id from the registry, retry-then-fallback |
+| `d526f4c6` | `p2b-tts-verified` | P2 follow-up: 3.8 TTS model verified against kie live |
+| `1558a075` +3 | `p3-video-skill` | **P3** the video skill, the film, and the mastering pass |
+| `7f0ec158` +1 | `p5-images` | **P5** full-image only, 10 live images, 4 ratios |
+| `2ea8d230` | `p7-journey` | **P7** the per-campaign lead journey |
+| `3769dbda` | `p8-scraping` | **P8** polite scraper: robots, rate limits, SSRF, R2 cache |
+| `3ddf8fb1` | `p4-reverse-mp4` | **P4** the reverse skill: measure an MP4, rebuild it as a video-skill film |
+| `32984620` | `p9-credits` | **P9** plan table, one grant path, reconciliation, read-only admin ledger |
+| `6520daf0` | `p10-onboarding-spine` | **P10** the onboarding spine, and a flag that is no longer trusted |
+| `fb627419` | — | Session baseline (payments, agent UI, STT, CRM live updates) |
 
-Branches `p1-runner-integration`, `p2-model-router`, `p2b-tts-verified` exist so
-each package reverts alone. Nothing has been pushed.
+Each package has its own commit on its own branch so it can be reverted alone.
+Nothing has been pushed to `adrollsai`.
 
-Gate commands:
+Every gate, at `6520daf0`:
 
 ```bash
-node scripts/agent-selftest.mjs          # 78 assertions  (P1)
-npm run verify:media-models              # 35 assertions  (P2)
+node scripts/agent-selftest.mjs          # 78 assertions   P1
+npm run verify:media-models              # 35 assertions   P2
+npm run verify:video-skill               # 93 assertions   P3
+npm run verify:reverse-skill             # 85 assertions   P4
+npm run verify:image-skill               # 115 assertions  P5
+npm run verify:journey                   # 93 assertions   P7
+npm run verify:scraping                  # 111 assertions  P8
+npm run verify:credits                   # 67 assertions   P9
+npm run verify:onboarding                # 45 assertions   P10
 npx tsc --noEmit                         # filter TS6053 while a dev server runs
-NODE_OPTIONS=--max-old-space-size=8192 npm run build
+NODE_OPTIONS=--max-old-space-size=8192 npm run build   # EXIT 0
 ```
+
+All of them are pure: no vendor, no browser, no render, no database. That is the
+point — they pin contracts, not integrations. The live proofs are listed under each
+package below.
 
 ## Facts established by live calls (do not re-derive)
 
@@ -85,44 +103,92 @@ Hinglish by default; on-screen text English only.
   Fixed two real bugs: `estimateCredits('video', n)` returned **0** (so the
   pre-spend reservation reserved nothing), and `media_studio` sent reference-image
   edits to a text-to-image model.
-- **P3 code-complete and gate-green, but the film is visually WRONG — do not
-  commit it as done.** Untracked: `lib/agent/tools/skills/video/{beats,emit,index,timing}.ts`
-  + `README.md`, `scripts/verify-video-skill.ts`, `scripts/video-skill-render-proof.ts`,
-  plus edits to `lib/agent/sandbox/pipeline.ts` and `package.json`.
+- **P3 done.** `lib/agent/tools/skills/video/{beats,timing,emit,index}.ts` + README.
+  The three bugs that mattered were all invisible to the linter: a sub-composition
+  brand bug painting a cream slab over a third of the frame, type clipped past the
+  safe box, and colour-bar plates. Fixed, and the zero-size-bbox finding is now a
+  **fatal** error rather than a warning. Loudness: the render measured −31.6 LUFS
+  while the `audio` section reported 0 errors, so the project now emits its own
+  `master.sh` (linear `loudnorm` to −16 LUFS / TP −1.5, `-c:v copy`, re-measures
+  the file on disk and exits 3/4). Live: `D:\nobo-renders\proof\proof-toolchain-9x16-06f40b79\proof.mp4`
+  — 31.97 s, 1080×1920, 30 fps, `check` 0 errors **0 warnings**, 16/16 distinct
+  frames, `final.mp4` −16.0 LUFS / −10.6 dB peak with the video md5 unchanged.
+- **P4 done.** `lib/agent/tools/skills/reverse/{analyse,spec,rebuild,compare,index}.ts`
+  + README. Measures a reference film (cuts, shots, palettes, where type sits, and
+  the voice up a `silencedetect` noise-floor ladder), writes a SPEC the audit
+  cannot let invent a figure, and rebuilds the film as a `beats.json` the **video
+  skill's own `parseBeats` validates** — it never renders and never calls a vendor,
+  so a reverse costs only the render (`estimateReverseCredits().media === 0`).
+  Copy is a marked blank (`WORD WORD`), because there is no OCR and no transcript
+  in this pipeline; the words are an open question for a human. Two bugs found and
+  fixed: `emit.ts` carried unescaped backticks inside the `master.sh` template
+  literal so the module did not compile at all, and a reference with no measurable
+  voice crashed inside `parseBeats` — it now throws `ReverseRebuildError` naming
+  the measurement's own reason. `verify-video-skill` also gained two imports it had
+  been missing, so an assertion that never compiled now runs (92 → 93).
+  **Not proven:** no render and no live ffmpeg run through the skill;
+  `scripts/reverse-live-proof.ts` is the harness that does it.
+- **P5 done.** Full-image only (background+HTML-overlay paths deleted, banned by
+  section 0). Live: 10 images, 4 ratios, 5 with a reference image, 80 credits,
+  written to `D:\nobo-images\`. Inspected `3x4-6340c0c4.png` — type painted into the
+  artwork and the price ₹1.45 Cr matches the facts, so the model is not inventing.
+- **P7 done.** `lib/automation/{journey,journey-store,lead-message-policy,calling-script}.ts`.
+  First reply, T+1h, T+1d, opt-out and handoff, with a refused send recorded as
+  blocked with the channel error rather than silently dropped.
+- **P8 done.** `lib/agent/scraping/{robots,rate-limit,fetch,extract,cache,index}.ts`
+  + the `scrape` skill. Live: 3 sources (14 rows), a real 429 with delays stepping
+  749 → 1384 ms, `httpbin.org/deny` refused with **0 requests**, and a real R2 cache
+  exercising 1 PUT / 1 hit. `agent_scrape_definitions` is applied to production.
+- **P9 done.** `lib/automation/{credit-tiers,credit-grants,credit-reconcile}.ts` and
+  `app/api/admin/ledger/route.ts`. The plan table is in paise and encodes the final
+  decision (**₹9,999 = 5,000 credits**, ₹2.00/credit; Starter ₹4,999 = 1,500 at
+  ₹3.33; Scale ₹24,999 = 15,000 at ₹1.67, so a bigger plan is always a better rate).
+  `tierCapacity()` reads `CREDIT_COSTS` rather than copying it, so "5,000 credits"
+  is also 500 images / 1,500 s of video / 1,000 call minutes and cannot drift from
+  the price list. `tierTableProblems()` refuses a table with a misplaced zero
+  (credits per ₹100 must stay inside [5, 200]) — my first draft of the table failed
+  its own rate rule, which is how the guard earned its place.
+  One grant path: `paymentRef`/`topUpRef`/`trialRef` build the idempotency key from
+  the event's identity and never from the clock; `grantTierOnce` refuses an unknown
+  plan and a payment that does not match the plan, then delegates to
+  `billing.grantCreditsOnce`, so the atomic path is unchanged.
+  Reconciliation compares the two independent records of the same event — the
+  hold's own `spent` counter and the ledger rows that name the run — and the
+  property it guards is that **a failed run nets exactly 0** (verdict
+  `no-movement`, nothing still reserved). Disagreement is a `mismatch` with the gap
+  in credits named, because that is the bug class that makes a balance drift away
+  from a customer's receipts. **Not proven:** no live database read or write and no
+  Razorpay call; the grant path is driven against a fake wallet that reproduces
+  `grant_credits_once`'s NULL-means-duplicate contract.
+- **P10 done.** `lib/automation/onboarding-spine.ts` and
+  `app/api/onboarding/status/route.ts`. One ordered spine of nine steps (five
+  blocking), each with the reason the agent needs it and the route that completes
+  it, and `evaluateSpine()` recomputes readiness **from the data**. Read the next
+  bullet before you trust any flag.
+  Two rules it enforces: an unknown industry gets neutral wording and **never**
+  property wording, and `credits: null` is "could not be read", not zero.
+  `nextQuestion()` asks about the first blocker only, so the agent asks instead of
+  failing inside a vendor call.
+  **Not proven:** no live read against production; the offering/run counts are the
+  only new queries and they are exact-count HEAD requests.
+  Deliberately untouched: `app/dashboard/onboarding/page.tsx` (114 KB) and
+  `app/api/onboarding/complete/route.ts` (32 KB) still work as before — wiring the
+  page to read `GET /api/onboarding/status` is a UI change and belongs to its own
+  package.
 
-  Green now: `tsc` clean · `npm run verify:video-skill` **77/77** ·
-  `verify:media-models` **35/35** · `agent-selftest` **78/78** · `npm run build`
-  exit 0. Migration `20261216000000_agent_run_artefact.sql` applied and verified
-  live (`agent_runs.artefact_key/url/meta` + index).
+## `profiles.onboarding_completed` is a claim, not a fact
 
-  A real film DID render: `D:\nobo-renders\proof\proof-toolchain-9x16-8e489094-r1\proof.mp4`
-  — 1080x1920, 30 fps, 7.02 s, H.264 + AAC. Its `check.json` reports `ok:true` with
-  **errorCount 0** in lint/runtime/layout/contrast(4/4)/craft/audio.
+A wizard sets it, and then the data can be edited underneath it. P10 reads the flag
+only to cross-check it, and reports both directions as a discrepancy:
 
-  **And yet the frames are broken.** Four frames inspected (1.2 / 3.0 / 4.8 / 6.4 s):
-  1. a tall opaque **white slab covers the left third** of every frame, above the type.
-     The linter even pointed at it: warning on `#brand-bug` with
-     `bbox {x:0,y:0,width:0,height:0}` — a zero-size box painting a huge white area.
-  2. **type is clipped off the left edge**: "…UNJAB", "…ME OR", "…OPERTY?", "…NK TO
-     4BHK" — outside the 9:16 safe area, while `layout` reported totalIssueCount 0.
-  3. the composited plate is **SMPTE colour bars** (the `probe/t.sh` test pattern),
-     not footage. The plate DOES animate (streaks shift 4.8->6.4 s) but the **type does
-     not change between 1.2 s and 3.0 s**, so the bug is in the type layer, not a
-     frozen render.
+- flag `true` while blocking steps are still missing → not ready, discrepancy logged;
+- flag `false` while every step is satisfied → ready, discrepancy logged (do not make
+  the owner redo the wizard to set a flag).
 
-  This is trap 8 in one sentence: a film can pass every automated check and still have
-  a white slab over the words. Always pull frames from the MP4 and look.
-
-  Still to do: fix the plate so it cannot occlude; make the zero-size `#brand-bug`
-  bbox a hard failure rather than a warning; keep every text block inside the safe area
-  and assert it; re-render one film with real (non-colour-bar) plates and type that
-  visibly changes between beats.
-- **P5 (images) and P8 (scraping) are running in parallel** — both independent of the
-  video toolchain. P5 must delete every background+HTML-overlay path (banned by
-  section 0) and prove 10 live images on `D:\nobo-images\`. P8 must refuse login
-  walls, honour robots.txt + per-host rate limits, guard SSRF, and cache to R2.
-- **P4–P10 not started.**
-- **P4–P10 not started.**
+There is no `profiles.owner_id` column. A team member's workspace owner comes from
+`resolveBillingOwner` (`parent_id` → `agency_id` → `id`), which is also what the
+wallet uses, so the spine and the balance cannot disagree about whose workspace it
+is.
 
 ## Tooling gotchas that cost real time
 
