@@ -219,6 +219,51 @@ There is no `profiles.owner_id` column. A team member's workspace owner comes fr
 wallet uses, so the spine and the balance cannot disagree about whose workspace it
 is.
 
+## What a read-only pass over production found
+
+`npm run verify:live-data` drives the P10, P9 and P6 functions against the real
+database. It is READ ONLY — no insert, no update, no money RPC, no vendor call — and
+it prints counts, never a tenant's name or content. Figures below are from a sample of
+96 profiles, 24 landing pages and 400 ledger rows.
+
+**The biggest gap in the programme: no agent run has ever completed in production.**
+185 offering rows, **0** `agent_runs` with `status = 'completed'`. The runner (P1) is
+wired and gated, but it has not finished a run against the real database.
+
+**The ledger has never carried an idempotency key.** All 400 recent
+`credit_transactions` rows have `ref = NULL` and none names an `agent_run`. The
+exactly-once charge path (P1) and the idempotent grant path (P9) are both implemented
+and neither has ever written a ref in production. They are not wrong — they are
+unused, and nothing may bill off those records until a run actually charges.
+
+**Readiness.** 17 of 96 workspaces are ready on the data. The blockers, in order:
+`budget=78`, `offerings=69`, `contact=32`, `business=1`. The dominant reason a
+business cannot start is not missing setup — it is no credits (78 of 96 wallets are
+exactly zero), which is the correct thing for the platform to say out loud.
+
+**`profiles.onboarding_completed` is right about half the time.** It is true on 32
+profiles; 15 really are ready and **17 are not**. So it is not worthless — it is
+*unreliable*, which is worse: you cannot tell which case you are in without
+recomputing. That is the whole argument for `evaluateSpine`, and all 17 disagreements
+are reported rather than silently believed.
+
+**Industry is mostly unset, and must never block.** 74 of 96 profiles have no usable
+industry: 73 null plus one literal `'general'`, which is what the landing-page
+generator defaults to and therefore means nothing. `industry` was blocking and is now
+non-blocking, because the vocabulary already guarantees the thing that matters — an
+unknown industry gets neutral wording and **never** property wording — so blocking
+stopped most of the book working in order to obtain a nicer noun. `'general'` now
+sits with `'generic'`, `'other'`, `'none'` and `'unknown'` as "not answered".
+
+**Page editing works on real pages.** 24 real generated pages adopt into named
+sections deterministically (median 21, up to 24) losing no section body, and an
+81,747-byte real page was edited surgically — the text occurred once, one section
+changed, 23 other sections came back byte-identical, and the page still parsed to the
+same section list.
+
+**No tenant is given property vocabulary by accident**, across all five industry
+values that actually exist in production.
+
 ## Tooling gotchas that cost real time
 
 - Windows PowerShell 5.1 treats a native command's **stderr** as a failure, so

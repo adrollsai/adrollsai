@@ -86,8 +86,13 @@ export const SPINE_STEPS: readonly SpineStep[] = [
     id: 'industry',
     order: 3,
     title: 'What kind of business you run',
-    why: 'It decides the words, the website layout and what we must never invent. Without it we describe you as a general business — never as a property dealer.',
-    blocking: true,
+    why: 'It decides the words and what we must never invent. Without it we describe you as a general business — never as a property dealer — so this is worth answering but does not stop us working.',
+    // NOT blocking, and that is a measured decision, not a soft one: a live read of
+    // 96 production profiles found 74 with no usable industry. The vocabulary already
+    // guarantees the thing that actually matters — an unknown industry gets neutral
+    // wording and NEVER property wording — so blocking on the answer would stop three
+    // quarters of the book from working in order to obtain a nicer noun.
+    blocking: false,
     href: '/dashboard/profile',
   },
   {
@@ -282,13 +287,17 @@ export function evaluateSpine(
   const minCredits = Math.max(1, Number(options.minCredits ?? 1) || 1);
   const vocabulary = industryVocabulary(snapshot.industry);
   // Two different questions, deliberately kept apart:
-  //   hasIndustry       — did somebody actually TELL us what they do? ('generic'
-  //                       and 'other' are the absence of an answer, not an answer.)
+  //   hasIndustry       — did somebody actually TELL us what they do? 'generic',
+  //                       'other' and 'general' are the absence of an answer, not an
+  //                       answer. 'general' is in that list because it is what the
+  //                       landing-page generator defaults to, so production is full of
+  //                       it and it means nothing.
   //   specificVocabulary — does that answer have its own words and guard rules?
   // A clinic says "healthcare", which has no specific vocabulary yet: that is an
   // ANSWERED step with neutral wording, not a missing one.
   const industryText = filled(snapshot.industry, 1) ? String(snapshot.industry).trim().toLowerCase() : '';
-  const hasIndustry = industryText !== '' && industryText !== 'generic' && industryText !== 'other';
+  const PLACEHOLDER_INDUSTRIES = ['generic', 'other', 'general', 'none', 'unknown'];
+  const hasIndustry = industryText !== '' && !PLACEHOLDER_INDUSTRIES.includes(industryText);
   const specificVocabulary = vocabulary.key !== 'generic';
   const industryKnown = hasIndustry;
   const discrepancies: string[] = [];

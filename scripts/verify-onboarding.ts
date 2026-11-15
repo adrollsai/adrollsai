@@ -139,8 +139,8 @@ function checkReadiness() {
     'a brand new workspace is not ready, and the blocker list is in spine order',
     !fresh.ready &&
       fresh.readiness === 'incomplete' &&
-      fresh.blockers.length === 4 &&
-      fresh.blockers.join(',') === 'business,industry,offerings,contact',
+      fresh.blockers.length === 3 &&
+      fresh.blockers.join(',') === 'business,offerings,contact',
     fresh.blockers.join(', '),
   );
   check(
@@ -155,7 +155,7 @@ function checkReadiness() {
   );
   check(
     'the headline names the first blocker in the owner\'s words',
-    /4 things to do/.test(fresh.headline) && /what your business is called/.test(fresh.headline),
+    /3 things to do/.test(fresh.headline) && /what your business is called/.test(fresh.headline),
     fresh.headline,
   );
   check(
@@ -218,20 +218,30 @@ function checkIndustry() {
 
   const noIndustry = evaluateSpine({ ...readyWorkspace(), industry: null });
   check(
-    'a workspace with no industry is NOT ready, and says why in neutral terms',
-    !noIndustry.ready &&
-      noIndustry.blockers.includes('industry') &&
+    'no industry does NOT block the agent — neutral wording is a safe default',
+    // Measured: a live read of 96 production profiles found 74 with no usable
+    // industry. Blocking on the answer would stop most of the book from working in
+    // order to obtain a nicer noun, while the thing that actually matters (never
+    // property wording) is already guaranteed.
+    noIndustry.ready &&
+      !noIndustry.blockers.includes('industry') &&
       noIndustry.steps.some(
-        (entry) => entry.step.id === 'industry' && /neutral wording — never property wording/.test(entry.detail),
+        (entry) => entry.step.id === 'industry' && entry.done === false && /neutral wording — never property wording/.test(entry.detail),
       ),
     noIndustry.steps.find((entry) => entry.step.id === 'industry')?.detail ?? 'no detail',
   );
   check(
-    'a workspace whose industry is a placeholder ("generic"/"other") is not ready either',
-    !evaluateSpine({ ...readyWorkspace(), industry: 'generic' }).ready &&
-      !evaluateSpine({ ...readyWorkspace(), industry: 'other' }).ready &&
-      !evaluateSpine({ ...readyWorkspace(), industry: '   ' }).ready,
-    'generic / other / blank are all "not answered"',
+    'a placeholder industry ("generic"/"other"/"general") is recorded as not answered',
+    (() => {
+      const placeholders = ['generic', 'other', 'general', 'none', 'unknown', '   '];
+      return placeholders.every((value) => {
+        const status = evaluateSpine({ ...readyWorkspace(), industry: value });
+        const step = status.steps.find((entry) => entry.step.id === 'industry');
+        // Not answered, but still not a blocker and still never property wording.
+        return step?.done === false && status.ready && /neutral wording/.test(step.detail);
+      });
+    })(),
+    'generic / other / general / none / unknown / blank are all "not answered"',
   );
   check(
     'an industry with no specific vocabulary is still an ANSWERED step',
