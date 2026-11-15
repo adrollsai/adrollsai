@@ -12,7 +12,9 @@ here was verified by a gate or a live call, not inferred.
 | `d526f4c6` | `p2b-tts-verified` | P2 follow-up: 3.8 TTS model verified against kie live |
 | `1558a075` +3 | `p3-video-skill` | **P3** the video skill, the film, and the mastering pass |
 | `7f0ec158` +1 | `p5-images` | **P5** full-image only, 10 live images, 4 ratios |
+| `ed4fad89` | `p6-pages-edit` | **P6** a page edit changes one section, and proves it |
 | `2ea8d230` | `p7-journey` | **P7** the per-campaign lead journey |
+| `fbdc7c1e` | `p7b-journey-handoff` | P7 follow-up: a blocked step hands the lead to a human |
 | `3769dbda` | `p8-scraping` | **P8** polite scraper: robots, rate limits, SSRF, R2 cache |
 | `3ddf8fb1` | `p4-reverse-mp4` | **P4** the reverse skill: measure an MP4, rebuild it as a video-skill film |
 | `32984620` | `p9-credits` | **P9** plan table, one grant path, reconciliation, read-only admin ledger |
@@ -30,6 +32,7 @@ npm run verify:media-models              # 35 assertions   P2
 npm run verify:video-skill               # 93 assertions   P3
 npm run verify:reverse-skill             # 85 assertions   P4
 npm run verify:image-skill               # 115 assertions  P5
+npm run verify:pages                     # 47 assertions   P6
 npm run verify:journey                   # 93 assertions   P7
 npm run verify:scraping                  # 111 assertions  P8
 npm run verify:credits                   # 67 assertions   P9
@@ -132,9 +135,35 @@ Hinglish by default; on-screen text English only.
   section 0). Live: 10 images, 4 ratios, 5 with a reference image, 80 credits,
   written to `D:\nobo-images\`. Inspected `3x4-6340c0c4.png` — type painted into the
   artwork and the price ₹1.45 Cr matches the facts, so the model is not inventing.
+- **P6 done.** `lib/site/page-sections.ts`. The old edit path sent the whole page to
+  a model with an instruction and took the whole page back, so "change the phone
+  number" could re-pick the hero image and re-word the headline, for a credit, with
+  no way to show what else moved. Now a page is split into named sections (HTML
+  comment markers, which survive a template or a model round trip), a legacy page is
+  ADOPTED at its landmarks rather than regenerated, and an edit replaces one section
+  while `verifyEdit` **fails** if any other section, the head, the scripts or a
+  section's existence changed. `replaceTextOnce` refuses zero matches and refuses
+  several ("Call Now" appears three times on the fixture page and five on a real
+  one) instead of guessing which one you meant.
+  The industry bug is fixed here too: real-estate-only sections (floor plans,
+  specifications) are dropped for every other industry **including an unknown one**,
+  and the offerings heading comes from `industryVocabulary` — that is the bug that
+  gave a film academy a property-listing site. `stripDisallowedSections` runs on
+  whatever produced the page, so it catches a template or a model too.
+  Four bugs in my own module were found by writing the gate: inter-section
+  whitespace folded into the preamble so pages did not round-trip, `<main>` treated
+  as content, the first edit on an adopted page looking like a change to the last
+  section, and stripping the trailing sections leaving their separator behind.
+  **Not proven:** no live page read from `landing_pages` and no browser render.
+  **Not wired:** `POST /api/landing-page/generate` still does its whole-page edit.
+  Switching that route to the surgical path changes what the editor does and that it
+  costs no model and no credit, so it needs its own change and its own UI decision.
 - **P7 done.** `lib/automation/{journey,journey-store,lead-message-policy,calling-script}.ts`.
   First reply, T+1h, T+1d, opt-out and handoff, with a refused send recorded as
-  blocked with the channel error rather than silently dropped.
+  blocked with the channel error rather than silently dropped. The follow-up
+  (`fbdc7c1e`) made a blocked step a HANDOFF rather than a dead end: the lead is
+  flagged, the owner is told exactly once, the remaining steps are cancelled, and the
+  reason is logged.
 - **P8 done.** `lib/agent/scraping/{robots,rate-limit,fetch,extract,cache,index}.ts`
   + the `scrape` skill. Live: 3 sources (14 rows), a real 429 with delays stepping
   749 → 1384 ms, `httpbin.org/deny` refused with **0 requests**, and a real R2 cache
