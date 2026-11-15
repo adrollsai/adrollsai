@@ -2,6 +2,8 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { houseSkill, houseSkillCatalogue } from '../house-skills';
+import { vendoredSkill, vendoredSkillCatalogue } from '../skills-vendor';
+import { describeRoute, rankSkills, type RoutableSkill } from '../skill-router';
 
 /**
  * Skills the business uploaded themselves.
@@ -18,14 +20,13 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
   return {
     list_skills: tool({
       description:
-        'List the skills you can load, with a one-line description of each. These are BOTH the ' +
-        'platform rules for making videos, creatives and pages, and this business\'s own written ' +
-        'procedures (how they write listings, qualify a lead, their brand voice). Call this BEFORE ' +
-        'improvising an approach in their domain, then get_skill to read the one that applies. ' +
-        'Skills whose name starts with "nobogent-" are platform rules and always apply.',
+        'List every skill you can load, with a one-line description of each: the platform rules (names ' +
+        'starting "nobogent-"), the vendored craft skills (design, meta ads), and this business\'s own ' +
+        'written procedures. Prefer pick_skill(requirement) over reading this list when you already know ' +
+        'what the task is — it ranks them for you. Then get_skill with the ONE that applies.',
       inputSchema: z.object({}),
       execute: async () => {
-        const platform = houseSkillCatalogue();
+        const platform = [...houseSkillCatalogue(), ...vendoredSkillCatalogue()];
         try {
           const { data, error } = await supabase
             .from('agent_skills')
@@ -91,6 +92,23 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
           };
         }
 
+        // Vendored, MIT-licensed craft skills. Same progressive disclosure: the body is
+        // only read when the agent asks for it by name.
+        const vendored = vendoredSkill(name);
+        if (vendored) {
+          return {
+            success: true,
+            name: vendored.name,
+            description: vendored.description,
+            source: 'vendor',
+            attribution: vendored.attribution,
+            content: vendored.content,
+            message:
+              `Vendored from ${vendored.attribution.repo} (${vendored.attribution.licence}). ` +
+              'Follow it where it applies; our own platform rules win where they disagree.',
+          };
+        }
+
         try {
           const { data, error } = await supabase
             .from('agent_skills')
@@ -124,6 +142,58 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
         } catch (err: any) {
           return { success: false, error: err?.message || 'Could not load that skill.' };
         }
+      },
+    }),
+
+    /**
+     * The router. Instead of the agent guessing which of ~11 skills applies, or loading
+     * several "to be safe", this ranks them against the requirement and returns the best
+     * few with the words that matched. Costs nothing: no model call, no tokens beyond the
+     * result.
+     */
+    pick_skill: tool({
+      description:
+        'Rank which skill applies to a task, before reading any of them. Returns the best one or two ' +
+        'with the words that matched, so the choice can be checked. Prefer this to list_skills when you ' +
+        'already know the requirement: it is deterministic and costs nothing. Then call get_skill with ' +
+        'the winner — do NOT load several skills "to be safe", because each one costs prompt space.',
+      inputSchema: z.object({
+        requirement: z
+          .string()
+          .min(3)
+          .describe('What you are about to do, in the user\'s own words (e.g. "landing page for a webinar")'),
+        limit: z.number().optional().describe('How many matches to return; default 3'),
+      }),
+      execute: async ({ requirement, limit }: { requirement: string; limit?: number }) => {
+        const routable: RoutableSkill[] = [
+          ...houseSkillCatalogue().map((skill) => ({ ...skill, source: 'platform' as const })),
+          ...vendoredSkillCatalogue().map((skill) => ({ ...skill, source: 'vendor' as const })),
+        ];
+        // Tenant skills are routable too, when the database is reachable.
+        try {
+          const { data } = await supabase
+            .from('agent_skills')
+            .select('name, description')
+            .eq('user_id', userId)
+            .eq('enabled', true);
+          for (const row of data ?? []) {
+            routable.push({
+              name: String((row as any).name),
+              description: String((row as any).description ?? ''),
+              source: 'tenant',
+            });
+          }
+        } catch {
+          /* routing works without the tenant's own skills */
+        }
+
+        const matches = rankSkills(requirement, routable, { ...(limit ? { limit } : {}) });
+        return {
+          success: true,
+          requirement,
+          picks: matches,
+          message: describeRoute(requirement, matches),
+        };
       },
     }),
   };

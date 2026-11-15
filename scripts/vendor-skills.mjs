@@ -1,0 +1,208 @@
+/**
+ * Vendor the open-source skills the owner approved, straight from upstream.
+ *
+ * WHY A SCRIPT AND NOT PASTED FILES
+ * These are ~60 KB of somebody else's writing. Copying them by hand invites silent
+ * drift: a typo in one word, a section quietly dropped, no way to tell which upstream
+ * commit you are running. This script downloads each file, records the commit and the
+ * licence beside it, and writes a typed module. Re-running it REFRESHES the vendored
+ * copies, and the gate fails if any of them has lost its attribution.
+ *
+ * LICENCES, VERIFIED NOT ASSUMED
+ *   nateherkai/scroll-craft              MIT
+ *   nextlevelbuilder/ui-ux-pro-max-skill MIT
+ *   cdeistopened/content-os              MIT
+ * All three permit commercial use with attribution, which is what `attribution` below is
+ * for. If a licence ever stops being MIT, the gate has to be told — not quietly ignored.
+ *
+ *   node scripts/vendor-skills.mjs            # refresh every vendored skill
+ *   node scripts/vendor-skills.mjs --check    # report drift against upstream, write nothing
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+
+const OUT_DIR = path.join('lib', 'agent', 'skills-vendor');
+
+/** Everything we vendor, and the exact upstream file it came from. */
+const SOURCES = [
+  {
+    slug: 'meta-ads-creative',
+    name: 'meta-ads-creative',
+    repo: 'cdeistopened/content-os',
+    filePath: 'skills/social/meta-ads-creative/SKILL.md',
+    licence: 'MIT',
+    why: 'Meta ad creative specs and structure — pair it with plan_image, which knows our flare model.',
+  },
+  {
+    slug: 'scroll-craft',
+    name: 'scroll-craft',
+    repo: 'nateherkai/scroll-craft',
+    filePath: 'plugins/nateherk-design/skills/scroll-craft/SKILL.md',
+    licence: 'MIT',
+    why: 'Landing-page layout that survives a thumb-scroll — feeds create_landing_page.',
+  },
+  {
+    slug: 'ui-ux-pro-max',
+    name: 'ui-ux-pro-max',
+    repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
+    filePath: '.claude/skills/ui-ux-pro-max/SKILL.md',
+    licence: 'MIT',
+    why: 'UI/UX review rules — the design judgement a generated page is missing.',
+  },
+  {
+    slug: 'banner-design',
+    name: 'banner-design',
+    repo: 'nextlevelbuilder/ui-ux-pro-max-skill',
+    filePath: '.claude/skills/banner-design/SKILL.md',
+    licence: 'MIT',
+    why: 'Banner and ad-unit composition, for creatives that are not square or vertical.',
+  },
+];
+
+const raw = (repo, filePath) =>
+  `https://raw.githubusercontent.com/${repo}/HEAD/${filePath}`;
+
+async function fetchText(url) {
+  const response = await fetch(url, { headers: { 'User-Agent': 'nobogent-vendor-skills' } });
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
+  return response.text();
+}
+
+/**
+ * A one-line description for the prompt catalogue.
+ *
+ * Upstream frontmatter is inconsistent: some skills carry a good `description`, some carry
+ * an empty string, some have none. An empty one must not be used, because it produces a
+ * skill the agent can never choose — it costs a catalogue slot and says nothing. So the
+ * fallback reads the body: the first real paragraph after the title, trimmed to a line.
+ */
+function describeSkill(meta, body, fallbackName, repo, filePath) {
+  const declared = typeof meta.description === 'string' ? meta.description.trim() : '';
+  if (declared.length > 20) return declared.replace(/\s+/g, ' ');
+
+  const lines = body.split(/\r?\n/);
+  const paragraph = [];
+  for (const line of lines) {
+    const text = line.trim();
+    if (!text) {
+      if (paragraph.length) break;
+      continue;
+    }
+    if (/^#{1,6}\s/.test(text)) {
+      if (paragraph.length) break;
+      continue;
+    }
+    if (/^[-*|>]/.test(text)) continue;
+    paragraph.push(text);
+    if (paragraph.join(' ').length > 240) break;
+  }
+
+  const derived = paragraph.join(' ').replace(/\s+/g, ' ').trim();
+  if (derived.length > 20) return derived.slice(0, 320);
+  return `${fallbackName} — vendored from ${repo} (${filePath}).`;
+}
+function splitFrontmatter(text) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
+  if (!match) return { meta: {}, body: text };
+  const meta = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    const at = line.indexOf(':');
+    if (at === -1) continue;
+    const key = line.slice(0, at).trim();
+    const value = line.slice(at + 1).trim().replace(/^["']|["']$/g, '');
+    // An EMPTY value is the same as a missing one: upstream writes `description: ""` and
+    // treating that as a real description produced a skill nobody could ever pick.
+    if (key && value.length > 0) meta[key] = value;
+  }
+  return { meta, body: text.slice(match[0].length) };
+}
+
+/** The commit this content came from, so a refresh is traceable. */
+async function headSha(repo, cache) {
+  if (cache.has(repo)) return cache.get(repo);
+  const response = await fetch(`https://api.github.com/repos/${repo}/commits/HEAD`, {
+    headers: { 'User-Agent': 'nobogent-vendor-skills', Accept: 'application/vnd.github.sha' },
+  });
+  const sha = response.ok ? String(await response.text()).trim().slice(0, 40) : 'unknown';
+  cache.set(repo, sha);
+  return sha;
+}
+
+const checkOnly = process.argv.includes('--check');
+const shas = new Map();
+const written = [];
+const drifted = [];
+
+for (const source of SOURCES) {
+  const url = raw(source.repo, source.filePath);
+  let text;
+  try {
+    text = await fetchText(url);
+  } catch (error) {
+    console.error(`  FAIL ${source.slug}: ${String(error.message ?? error)}`);
+    process.exitCode = 1;
+    continue;
+  }
+
+  const { meta, body } = splitFrontmatter(text);
+  const sha = await headSha(source.repo, shas);
+  const description = describeSkill(meta, body, source.name, source.repo, source.filePath);
+
+  const module = `/**
+ * VENDORED SKILL — do not hand-edit. Refresh with \`node scripts/vendor-skills.mjs\`.
+ *
+ *   upstream : ${source.repo}
+ *   path     : ${source.filePath}
+ *   commit   : ${sha}
+ *   licence  : ${source.licence}
+ *
+ * ${source.why}
+ *
+ * The licence permits commercial use with attribution, which is what \`attribution\`
+ * carries and what the gate checks. If upstream changes its licence, refresh this file
+ * and update the constant — do not strip the attribution to make a test pass.
+ */
+export const skill = {
+  name: ${JSON.stringify(source.name)},
+  description: ${JSON.stringify(String(description).replace(/\s+/g, ' ').slice(0, 400))},
+  content: ${JSON.stringify(body.trimStart())},
+  /**
+   * What WE use it for. The router can only see text, and upstream descriptions are written
+   * for a human browsing a repo — scroll-craft's never says "landing page", so it was
+   * invisible to routing for exactly the task it is best at. This line is ours, it is
+   * honest about our purpose, and it is what makes the skill findable.
+   */
+  useFor: ${JSON.stringify(source.why)},
+  attribution: {
+    repo: ${JSON.stringify(source.repo)},
+    path: ${JSON.stringify(source.filePath)},
+    commit: ${JSON.stringify(sha)},
+    licence: ${JSON.stringify(source.licence)},
+    url: ${JSON.stringify(`https://github.com/${source.repo}/blob/${sha === 'unknown' ? 'HEAD' : sha}/${source.filePath}`)},
+  },
+} as const;
+`;
+
+  const target = path.join(OUT_DIR, `${source.slug}.ts`);
+  const previous = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '';
+  const changed = previous !== module;
+
+  if (checkOnly) {
+    if (!previous) drifted.push(`${source.slug} (missing locally)`);
+    else if (changed) drifted.push(`${source.slug} (differs from upstream)`);
+    console.log(`  ${changed ? 'DRIFT' : 'same '} ${source.slug}  ${sha.slice(0, 8)}  ${(body.length / 1024).toFixed(1)} KB`);
+    continue;
+  }
+
+  fs.mkdirSync(OUT_DIR, { recursive: true });
+  fs.writeFileSync(target, module, 'utf8');
+  written.push(source.slug);
+  console.log(`  ok    ${source.slug}  ${sha.slice(0, 8)}  ${(body.length / 1024).toFixed(1)} KB`);
+}
+
+if (checkOnly) {
+  console.log(drifted.length ? `\n${drifted.length} skill(s) drifted: ${drifted.join(', ')}` : '\nall vendored skills match upstream');
+  if (drifted.length) process.exitCode = 1;
+} else {
+  console.log(`\nwrote ${written.length} skill(s) to ${OUT_DIR}`);
+}
