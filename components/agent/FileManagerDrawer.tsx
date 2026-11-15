@@ -19,6 +19,8 @@ import {
   Play,
   Upload,
   MoveRight,
+  Search,
+  MoreHorizontal,
   Edit2,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
@@ -57,6 +59,15 @@ export default function FileManagerDrawer({
   // Moving asset
   const [movingAssetId, setMovingAssetId] = useState<string | null>(null);
   const [targetFolder, setTargetFolder] = useState<string>('Videos');
+  /**
+   * Clutter control.
+   *
+   * A grid you cannot search is a grid you cannot use once it holds more than a screenful,
+   * and five controls on every card shout over each other. So: filter by NAME as well as by
+   * type and folder, and only one card's menu is open at a time.
+   */
+  const [search, setSearch] = useState('');
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const fetchAssets = async () => {
     setLoading(true);
@@ -105,6 +116,11 @@ export default function FileManagerDrawer({
     if (selectedFolder !== 'All') {
       const itemFolder = item.metadata?.folder || 'Unsorted';
       if (itemFolder !== selectedFolder) return false;
+    }
+    const needle = search.trim().toLowerCase();
+    if (needle) {
+      const haystack = `${item.caption || ''} ${item.title || ''} ${item.metadata?.folder || ''}`.toLowerCase();
+      if (!haystack.includes(needle)) return false;
     }
     return true;
   });
@@ -229,14 +245,12 @@ export default function FileManagerDrawer({
             </div>
             <div>
               <h3 className="dsh-t-s dsh-strong dsh-label-primary flex items-center gap-2">
-                File & Asset Manager
+                Files
                 <span className="dsh-t-xxxs dsh-mono px-2 py-0.5 rounded-full dsh-surface-3 dsh-label-secondary">
-                  {assets.length} items
+                  {filteredAssets.length}
+                  {filteredAssets.length !== assets.length ? ` of ${assets.length}` : ''}
                 </span>
               </h3>
-              <p className="dsh-t-xs dsh-label-tertiary">
-                Create folders, upload videos and assets, or let Nobo organize them automatically.
-              </p>
             </div>
           </div>
 
@@ -286,54 +300,52 @@ export default function FileManagerDrawer({
           </div>
         </div>
 
-        {/* Filter and Folder Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 border-b dsh-border dsh-surface-1 dsh-t-xs">
-          {/* Media Types */}
-          <div className="flex items-center gap-1 dsh-surface-3 p-1 rounded-xl">
-            {(['all', 'video', 'image'] as const).map((t) => (
+        {/* Find + filter, on one line. Search first because it is what people reach for;
+            the type and folder filters are the narrower tools. */}
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-b dsh-border dsh-surface-1 dsh-t-xs">
+          <div className="relative flex-1 min-w-[140px]">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 dsh-label-caption" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search files…"
+              aria-label="Search files"
+              className="w-full pl-8 pr-3 py-1.5 rounded-xl border dsh-border dsh-surface-1 dsh-label-primary outline-none focus-visible:ring-2"
+            />
+          </div>
+
+          <div className="flex items-center gap-0.5 dsh-surface-3 p-1 rounded-xl" role="group" aria-label="Filter by type">
+            {(['all', 'video', 'image', 'document'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setFilterType(t)}
-                className={`px-3 py-1 rounded-lg font-semibold capitalize transition ${
-                  filterType === t
-                    ? 'dsh-surface-1 dsh-label-primary'
-                    : 'dsh-label-tertiary dsh-interactive'
+                aria-pressed={filterType === t}
+                className={`px-2.5 py-1 rounded-lg font-semibold capitalize transition ${
+                  filterType === t ? 'dsh-surface-1 dsh-label-primary' : 'dsh-label-tertiary dsh-interactive'
                 }`}
               >
-                {t === 'all' ? 'All Files' : `${t}s`}
+                {t === 'all' ? 'All' : t === 'document' ? 'Docs' : `${t}s`}
               </button>
             ))}
           </div>
 
-          {/* Folder Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-lg py-1">
-            <span className="dsh-t-xs dsh-label-tertiary flex items-center gap-1 mr-1 shrink-0">
-              <Folder size={12} /> Folder:
-            </span>
-            <button
-              onClick={() => setSelectedFolder('All')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 ${
-                selectedFolder === 'All'
-                  ? 'dsh-btn-primary'
-                  : 'dsh-surface-3 dsh-label-secondary dsh-interactive'
-              }`}
-            >
-              All
-            </button>
-            {customFolders.map((f) => (
-              <button
-                key={f}
-                onClick={() => setSelectedFolder(f)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition shrink-0 ${
-                  selectedFolder === f
-                    ? 'dsh-btn-primary'
-                    : 'dsh-surface-3 dsh-label-secondary dsh-interactive'
-                }`}
-              >
-                {f}
-              </button>
+          <label className="sr-only" htmlFor="folder-filter">
+            Filter by folder
+          </label>
+          <select
+            id="folder-filter"
+            value={selectedFolder}
+            onChange={(event) => setSelectedFolder(event.target.value)}
+            className="px-2.5 py-1.5 rounded-xl border dsh-border dsh-surface-1 dsh-label-primary outline-none"
+          >
+            <option value="All">All folders</option>
+            {customFolders.map((folder) => (
+              <option key={folder} value={folder}>
+                {folder}
+              </option>
             ))}
-          </div>
+          </select>
         </div>
 
         {/* Media Grid */}
@@ -344,10 +356,30 @@ export default function FileManagerDrawer({
               <p className="text-xs">Loading media assets...</p>
             </div>
           ) : filteredAssets.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center dsh-label-tertiary gap-2">
+            <div className="h-full flex flex-col items-center justify-center text-center dsh-label-tertiary gap-2 px-6">
               <FolderOpen size={40} className="dsh-label-caption" />
-              <p className="text-xs font-semibold">No assets found in "{selectedFolder}".</p>
-              <p className="dsh-t-xs dsh-label-tertiary">Upload assets using the button above or tell Nobo to generate one.</p>
+              {search.trim() || filterType !== 'all' || selectedFolder !== 'All' ? (
+                <>
+                  <p className="text-xs font-semibold">Nothing matches those filters.</p>
+                  <button
+                    onClick={() => {
+                      setSearch('');
+                      setFilterType('all');
+                      setSelectedFolder('All');
+                    }}
+                    className="dsh-t-xxxs dsh-strong px-3 py-1.5 rounded-lg dsh-surface-3 dsh-interactive"
+                  >
+                    Clear filters
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold">No files yet.</p>
+                  <p className="dsh-t-xs dsh-label-tertiary">
+                    Upload one above, or just tell Nobo what you need and it will make and file it here.
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
@@ -390,72 +422,111 @@ export default function FileManagerDrawer({
                       )}
                     </div>
 
-                    {/* Meta info */}
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <div>
-                        <p className="dsh-t-xs dsh-strong dsh-label-primary truncate" title={asset.caption || 'Untitled'}>
-                          {asset.caption || asset.title || 'Untitled Asset'}
-                        </p>
-                        <p className="dsh-t-xxxs dsh-label-tertiary mt-0.5">
-                          {new Date(asset.created_at).toLocaleDateString()}
-                          {asset.metadata?.duration && ` • ${asset.metadata.duration}s`}
-                        </p>
-                      </div>
+                    {/* Meta: name, then a single quiet line. The folder moved here from a
+                        badge on the thumbnail — two badges on one small image was noise. */}
+                    <div className="p-2.5">
+                      <p className="dsh-t-xs dsh-strong dsh-label-primary truncate" title={asset.caption || 'Untitled'}>
+                        {asset.caption || asset.title || 'Untitled'}
+                      </p>
+                      <p className="dsh-t-xxxs dsh-label-tertiary mt-0.5 truncate">
+                        {asset.metadata?.folder && <>{asset.metadata.folder} · </>}
+                        {new Date(asset.created_at).toLocaleDateString()}
+                        {asset.metadata?.duration && ` · ${asset.metadata.duration}s`}
+                      </p>
 
-                      {/* Action Bar */}
-                      <div className="flex items-center justify-between pt-2.5 mt-2.5 border-t dsh-border">
-                        <button
-                          onClick={() => handleCopy(asset.id, asset.url)}
-                          className="dsh-t-xs dsh-strong dsh-label-tertiary dsh-interactive flex items-center gap-1"
-                          title="Copy Public Link"
-                        >
-                          {copiedId === asset.id ? <Check size={12} className="dsh-success" /> : <Copy size={12} />}
-                          <span>{copiedId === asset.id ? 'Copied' : 'Link'}</span>
-                        </button>
+                      {/* ONE primary action. Everything else lives in the overflow menu, so a
+                          card is a thing you look at rather than a row of tiny targets. */}
+                      <div className="flex items-center gap-1.5 mt-2">
+                        {onSelectAsset ? (
+                          <button
+                            onClick={() => {
+                              onSelectAsset(asset.url, asset.caption || 'Asset');
+                              onClose();
+                            }}
+                            className="flex-1 px-2 py-1.5 rounded-lg dsh-t-xxxs dsh-strong dsh-btn-primary transition"
+                          >
+                            Use this
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleCopy(asset.id, asset.url)}
+                            className="flex-1 px-2 py-1.5 rounded-lg dsh-t-xxxs dsh-strong dsh-surface-3 dsh-label-secondary dsh-interactive transition"
+                          >
+                            {copiedId === asset.id ? 'Copied' : 'Copy link'}
+                          </button>
+                        )}
 
-                        <div className="flex items-center gap-1.5">
-                          {onSelectAsset && (
-                            <button
-                              onClick={() => {
-                                onSelectAsset(asset.url, asset.caption || 'Asset');
-                                onClose();
-                              }}
-                              className="px-2 py-0.5 rounded dsh-t-xxxs dsh-strong dsh-btn-primary transition"
-                            >
-                              Use
-                            </button>
+                        <div className="relative">
+                          <button
+                            onClick={() => setOpenMenuId(openMenuId === asset.id ? null : asset.id)}
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuId === asset.id}
+                            aria-label={`More actions for ${asset.caption || 'this file'}`}
+                            className="p-1.5 rounded-lg dsh-label-tertiary dsh-interactive transition"
+                          >
+                            <MoreHorizontal size={14} />
+                          </button>
+
+                          {openMenuId === asset.id && (
+                            <>
+                              {/* Click anywhere else to dismiss, without stealing the click. */}
+                              <button
+                                className="fixed inset-0 z-10 cursor-default"
+                                aria-label="Close menu"
+                                onClick={() => setOpenMenuId(null)}
+                              />
+                              <div
+                                role="menu"
+                                className="absolute right-0 bottom-full mb-1 z-20 w-40 py-1 rounded-xl dsh-surface-1 border dsh-border shadow-lg overflow-hidden"
+                              >
+                                {onSelectAsset && (
+                                  <button
+                                    role="menuitem"
+                                    onClick={() => {
+                                      handleCopy(asset.id, asset.url);
+                                      setOpenMenuId(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 dsh-t-xxxs dsh-label-secondary dsh-interactive text-left"
+                                  >
+                                    <Copy size={12} /> Copy link
+                                  </button>
+                                )}
+                                <button
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setMovingAssetId(asset.id);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 dsh-t-xxxs dsh-label-secondary dsh-interactive text-left"
+                                >
+                                  <MoveRight size={12} /> Move to…
+                                </button>
+                                <a
+                                  role="menuitem"
+                                  href={asset.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="w-full flex items-center gap-2 px-3 py-2 dsh-t-xxxs dsh-label-secondary dsh-interactive text-left"
+                                >
+                                  <ExternalLink size={12} /> Open
+                                </a>
+                                <button
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    handleDelete(asset.id);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 dsh-t-xxxs dsh-interactive-danger text-left"
+                                >
+                                  <Trash2 size={12} /> Delete
+                                </button>
+                              </div>
+                            </>
                           )}
-
-                          {/* Move to Folder Button */}
-                          <button
-                            onClick={() => setMovingAssetId(movingAssetId === asset.id ? null : asset.id)}
-                            className="p-1 dsh-label-tertiary dsh-interactive transition"
-                            title="Move to Folder"
-                          >
-                            <MoveRight size={12} />
-                          </button>
-
-                          <a
-                            href={asset.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 dsh-label-tertiary dsh-interactive"
-                            title="Open URL"
-                          >
-                            <ExternalLink size={12} />
-                          </a>
-
-                          <button
-                            onClick={() => handleDelete(asset.id)}
-                            className="p-1 dsh-label-tertiary dsh-interactive-danger transition"
-                            title="Delete Asset"
-                          >
-                            <Trash2 size={12} />
-                          </button>
                         </div>
                       </div>
 
-                      {/* Inline Move Picker */}
+                      {/* Inline move picker — only for the card it belongs to. */}
                       {movingAssetId === asset.id && (
                         <div className="mt-2 p-2 rounded-xl dsh-surface-3 space-y-1.5 animate-in fade-in-50">
                           <span className="dsh-t-xxxs dsh-strong dsh-label-tertiary block">Move to:</span>
@@ -463,7 +534,7 @@ export default function FileManagerDrawer({
                             <select
                               value={targetFolder}
                               onChange={(e) => setTargetFolder(e.target.value)}
-                              className="flex-1 dsh-t-xxxs dsh-surface-1 border dsh-border-l2 rounded p-1 dsh-label-primary"
+                              className="flex-1 min-w-0 dsh-t-xxxs dsh-surface-1 border dsh-border-l2 rounded p-1 dsh-label-primary"
                             >
                               {customFolders.map((f) => (
                                 <option key={f} value={f}>
