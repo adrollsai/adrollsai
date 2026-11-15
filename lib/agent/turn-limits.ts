@@ -145,11 +145,16 @@ export function turnStopConditions(
 /**
  * How many continuation runs one session may chain before we stop trying.
  *
- * A task that keeps hitting the turn budget forever is a bug or an impossible
- * request, and silently re-queueing would burn credits without limit.
+ * A task that keeps hitting the turn budget forever is a bug or an impossible request, and
+ * silently re-queueing would burn credits without limit — so there is still a ceiling.
+ *
+ * It was 6, which is a wall-clock ceiling, not a judgement: six slices of ~28 minutes is under
+ * three hours, and a long render or a deep research task can legitimately need more. 40 slices
+ * gives roughly eighteen hours of chained work while still bounding a runaway loop, and
+ * AGENT_MAX_CONTINUATIONS raises or lowers it per deployment.
  */
 export const MAX_CONTINUATIONS_PER_SESSION = Number(
-  (process.env.AGENT_MAX_CONTINUATIONS || '').replace(/^["']|["']$/g, '').trim() || 6
+  (process.env.AGENT_MAX_CONTINUATIONS || '').replace(/^["']|["']$/g, '').trim() || 40
 );
 
 /**

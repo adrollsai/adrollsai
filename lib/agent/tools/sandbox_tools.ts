@@ -477,39 +477,60 @@ python3 render_card.py
             startSeconds,
             endSeconds,
           });
-          const budgetSeconds = renderSliceBudgetSeconds(remainingTurnBudgetMs());
 
-          const runScript = buildHyperFramesRenderScript({
-            projectDir: safeName,
-            durationSeconds: dur,
-            fps,
-            quality,
-            startSeconds,
-            endSeconds,
-            audioUrl,
-            chunkSeconds,
-            budgetSeconds,
-          });
+          // ── keep going by ourselves ────────────────────────────────────────────────
+          // One tool call used to render one slice and hand the rest back to the agent, which
+          // meant a long film only finished if the model remembered to call again. It now loops
+          // inside the call for as long as the request has time left, so progress does not depend
+          // on the model's memory. When the request really is spent it returns `partial` with the
+          // span count, and the durable runner continues from the spans already on disk — so a
+          // film of any length eventually lands without anyone being asked to retry.
+          let videoUrl = '';
+          let lastRes: Awaited<ReturnType<typeof executeInE2BSandbox>> | undefined;
+          let spansDone = 0;
+          let spansTotal = spans.length;
 
-          const res = await executeInE2BSandbox({
-            command: runScript,
-            files,
-            readFiles: [`${safeName}/out.mp4`],
-            userId,
-            // The film's length decides this, not a constant. A slice renders as much as the
-            // remaining request allows and returns "not finished"; the next call resumes from the
-            // spans already on disk. Replaced a flat 300s that made anything past ~20s impossible.
-            timeoutMs: renderTimeoutMs(budgetSeconds, spans.length),
-          });
+          for (let slice = 0; slice < 40; slice++) {
+            const budgetSeconds = renderSliceBudgetSeconds(remainingTurnBudgetMs());
+            // No usable time left in this request: stop cleanly and let the next slice continue.
+            if (slice > 0 && budgetSeconds < 45) break;
 
-          let videoUrl = res.uploadedFiles?.[`${safeName}/out.mp4`] || '';
+            const runScript = buildHyperFramesRenderScript({
+              projectDir: safeName,
+              durationSeconds: dur,
+              fps,
+              quality,
+              startSeconds,
+              endSeconds,
+              audioUrl,
+              chunkSeconds,
+              budgetSeconds,
+            });
+
+            lastRes = await executeInE2BSandbox({
+              command: runScript,
+              files: slice === 0 ? files : [], // the composition is already on disk after slice 0
+              readFiles: [`${safeName}/out.mp4`],
+              userId,
+              timeoutMs: renderTimeoutMs(budgetSeconds, spans.length),
+            });
+
+            videoUrl = lastRes.uploadedFiles?.[`${safeName}/out.mp4`] || '';
+            if (videoUrl) break;
+
+            const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(lastRes.stdout || '');
+            spansDone = partsMatch ? Number(partsMatch[1]) : spansDone;
+            spansTotal = partsMatch ? Number(partsMatch[2]) : spansTotal;
+            // Nothing progressed and nothing is pending: a real failure, let the caller see it.
+            if (!partsMatch || spansDone >= spansTotal) break;
+            console.log(`[HyperFrames] slice ${slice + 1}: ${spansDone}/${spansTotal} spans, continuing`);
+          }
+
+          const res = lastRes as Awaited<ReturnType<typeof executeInE2BSandbox>>;
+
           if (!videoUrl) {
-            // A span-rendered film that ran out of slice time is NOT a failure: the finished spans
-            // are on disk and the next call continues from there. Reporting it as an error is what
-            // made long films impossible — the agent would give up on work that was mostly done.
-            const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(res.stdout || '');
-            const spansDone = partsMatch ? Number(partsMatch[1]) : 0;
-            const spansTotal = partsMatch ? Number(partsMatch[2]) : spans.length;
+            // The loop already rendered as much as this request allows. An unfinished film is NOT
+            // a failure: the finished spans are on disk and the next slice continues from there.
             if (spansTotal > 1 && spansDone > 0 && spansDone < spansTotal) {
               return {
                 success: true,
@@ -518,10 +539,11 @@ python3 render_card.py
                 spansTotal,
                 projectName: safeName,
                 message:
-                  `Rendered ${spansDone} of ${spansTotal} spans of "${safeName}" before this slice ran out of time. ` +
-                  'The finished spans are kept on disk. Call sandbox_render_hyperframes again with the SAME ' +
-                  'projectName and durationSeconds and WITHOUT htmlContent — it resumes at the next span and ' +
-                  'stitches the film as soon as the last one lands. Do not start over and do not change the composition.',
+                  `Rendered ${spansDone} of ${spansTotal} spans of "${safeName}" and this request is out of time. ` +
+                  'The finished spans are kept on disk and the run continues automatically on the next slice. ' +
+                  'If you are driving it yourself, call sandbox_render_hyperframes again with the SAME projectName ' +
+                  'and durationSeconds and WITHOUT htmlContent — it resumes at the next span and stitches the film as ' +
+                  'soon as the last one lands. Never tell the user this failed, and never start over.',
               };
             }
 

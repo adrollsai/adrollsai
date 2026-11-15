@@ -122,5 +122,44 @@ check(
   'the agent continues instead of restarting',
 );
 
+head('5. Nothing gives up while there is work left to do');
+
+const toolsSrc = readFileSync(join(process.cwd(), 'lib/agent/tools/sandbox_tools.ts'), 'utf8');
+check(
+  'the tool loops inside one call instead of returning after a single slice',
+  /for \(let slice = 0; slice < 40; slice\+\+\)/.test(toolsSrc),
+  'progress does not depend on the model remembering',
+);
+check(
+  'it stops only when the request is genuinely spent',
+  /budgetSeconds < 45\) break/.test(toolsSrc),
+  '45s floor to record the result',
+);
+check(
+  'a resumed slice reuses the composition already on disk',
+  /files: slice === 0 \? files : \[\]/.test(toolsSrc),
+  'no rewrite, no lost work',
+);
+check(
+  'an unfinished film explicitly forbids restarting',
+  /Never tell the user this failed, and never start over/.test(toolsSrc),
+  'the model is told what to do',
+);
+
+const turnLimits = readFileSync(join(process.cwd(), 'lib/agent/turn-limits.ts'), 'utf8');
+check(
+  'continuation is no longer capped at six slices',
+  /AGENT_MAX_CONTINUATIONS \|\| ''\)\.replace\(\/\^\["'\］\|\["'\]\$\/g, ''\)\.trim\(\) \|\| 40/.test(turnLimits) ||
+    /\|\| 40\s*\n?\);/.test(turnLimits),
+  '40 chained slices by default',
+);
+
+const orchestrator = readFileSync(join(process.cwd(), 'lib/agent/orchestrator.ts'), 'utf8');
+check(
+  'the prompt tells the agent long renders are normal',
+  /LONG FILMS ARE EXPECTED/.test(orchestrator) && /Never report a film as failed because it is taking a while/.test(orchestrator),
+  'no giving up',
+);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
