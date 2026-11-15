@@ -302,7 +302,7 @@ export default function DictateButton({
       onPointerDown={prewarm}
       onPointerEnter={prewarm}
       disabled={disabled || state === 'transcribing'}
-      className="nobo-tap relative p-1.5 rounded-full dsh-interactive disabled:opacity-40"
+      className="nobo-tap relative min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:p-1.5 rounded-full dsh-interactive disabled:opacity-40 flex items-center justify-center"
       style={{
         color:
           state === 'listening'

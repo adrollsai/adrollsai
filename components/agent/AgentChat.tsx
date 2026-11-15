@@ -2003,7 +2003,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     type="button"
                     onClick={handleStartRun}
                     disabled={(!input.trim() && !attachedFile) || isUploading || harness.runInProgress}
-                    className="nobo-tap w-8 h-8 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
+                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
                     title="Run in the background (survives closing this tab)"
                   >
                     <Rocket size={12} />
@@ -2020,7 +2020,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                         if (harness.runInProgress) void harness.cancelRun();
                         else stop();
                       }}
-                      className="nobo-tap w-8 h-8 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn-primary flex items-center justify-center"
                       title="Stop"
                     >
                       <Square size={12} className="fill-current" />
@@ -2030,7 +2030,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       type="button"
                       onClick={() => handleSend()}
                       disabled={(!input.trim() && !attachedFile) || isUploading}
-                      className="nobo-tap w-8 h-8 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn-primary flex items-center justify-center"
                       title={isLoading ? 'Queue message (sends when the current turn finishes)' : 'Send'}
                     >
                       <Send size={12} />
