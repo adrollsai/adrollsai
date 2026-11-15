@@ -33,6 +33,7 @@ import { createVideoSkillTools } from './tools/video-skill';
 import { createReverseSkillTools } from './tools/reverse-skill';
 import { selectToolGroups, type ToolGroup } from './tool-groups';
 import { preflightPromptSection } from './preflight';
+import { applyReviewGate, supabaseApprovalStore } from './review-gate';
 
 export interface AgentContextOptions {
   operatorUserId?: string;
@@ -390,7 +391,10 @@ OPERATING BUSINESS:
 
   return {
     systemPrompt,
-    tools,
+    // Nothing that spends money, reaches a customer or deletes data leaves this function
+    // ungated. The wrapper is applied LAST so no suite can register a dangerous tool after
+    // it — see lib/agent/review-gate.ts for why a prompt instruction was not enough.
+    tools: applyReviewGate(tools, supabaseApprovalStore(supabase, userId)),
     targetProfile: profile,
     toolGroups: [...active],
     groupReasons: selection.reasons,

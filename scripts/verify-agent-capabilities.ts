@@ -560,6 +560,48 @@ async function main() {
     );
   }
 
+  // ── the review gate, on the REAL registry
+  head('8. Nothing dangerous leaves the real registry ungated');
+  {
+    const { reviewPolicyFor } = await import('../lib/agent/review-gate');
+    const dangerous = [
+      'generate_ai_image',
+      'meta_mcp_launch_leadgen_campaign',
+      'nobogent_voice_dispatch_call',
+      'publish_social_post',
+    ].filter((tool) => registryNames.includes(tool));
+
+    check(
+      'the dangerous tools that exist are all in the review policy',
+      dangerous.length > 0 && dangerous.every((tool) => reviewPolicyFor(tool) !== null),
+      dangerous.join(', '),
+    );
+
+    // Call one for real. It must refuse: nobody has approved anything in this test run.
+    const target = dangerous.includes('generate_ai_image') ? 'generate_ai_image' : dangerous[0];
+    let outcome: any = null;
+    try {
+      outcome = await registry[target]?.execute?.({ brief: 'a test image', aspectRatio: '1:1' }, {} as any);
+    } catch (error: any) {
+      outcome = { thrown: String(error?.message ?? error) };
+    }
+    check(
+      `calling ${target} without an approval is refused by the gate`,
+      outcome?.needs_review === true && outcome?.success === false,
+      outcome?.needs_review ? String(outcome.why).slice(0, 80) : outcome?.thrown ?? 'IT RAN — the gate is not applied',
+    );
+    check(
+      'and the refusal names request_human_approval as the way forward',
+      outcome?.call?.tool === 'request_human_approval',
+      outcome?.call?.tool ?? 'no call signposted',
+    );
+    check(
+      'a free tool is not gated, so ordinary work is not slowed down',
+      reviewPolicyFor('plan_image') === null && reviewPolicyFor('reverse_plan') === null,
+      'planning runs freely',
+    );
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exitCode = 1;
 }
