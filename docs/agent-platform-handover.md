@@ -309,6 +309,67 @@ same section list.
 **No tenant is given property vocabulary by accident**, across all five industry
 values that actually exist in production.
 
+## The agent could not do three of the things it was asked to do
+
+Found by `npm run verify:agent-capabilities`, which builds the REAL agent context for a
+real tenant and asks, per customer request, whether the group is selected, the tool is
+registered, and the schema accepts a real payload. Fixed here:
+
+- **"Make a video" loaded no video tool.** `media`'s signals had "video clips" but not
+  plain "video", which was only a `sandbox` signal. So the agent got the rendering
+  toolkit and nothing to compose with.
+- **Flows could be listed, never created.** `tools/automation.ts` had
+  `list_automation_flows` and no create. Added `lib/agent/tools/flows.ts` with
+  `create_flow`, validated against the vocabulary `utils/whatsapp/flow-runner.ts`
+  executes. It REFUSES a wait over 10 s, because the runner clamps a delay node there —
+  a "wait 2 hours, then call" would fire almost immediately.
+- **Landing pages could be published, never made.** Added
+  `lib/agent/tools/pages.ts` with `create_landing_page`, which composes the page from
+  facts the owner supplied (so it cannot invent a price) using the industry vocabulary,
+  and emits the P6 section markers so the page is editable section by section.
+
+**Still wired to nothing:** `lib/agent/tools/{crm,whatsapp,voice,inventory,hyperframes-render}.ts`
+are imported by NOBODY. The core operations they cover are reachable through
+`mcp/nobogent_app_mcp`, which is why nothing broke; the fuller suites are dead code, and
+`hyperframes-render.ts` is a render tool that never renders.
+
+## The reverse can now rebuild a real fast-cut promo
+
+The reverse worked on a slow film and failed on the owner's actual reference
+(`sonu sharma.mp4`, 61 s, 720x720, 25 fps): 17 shots, 44 onsets, and 21 lines on screen
+for 0.6–0.7 s against a floor of 0.8 s. The emitter was right to refuse. Four fixes:
+
+1. **Group the voice into beats a person can read.** Onsets that cannot each carry a word
+   share one beat whose voice spans them. 44 onsets → 19 readable beats, and
+   `compareBeats` reports the difference rather than hiding it.
+2. **Size each line against its VOICE, not the gap too.** The gap is what
+   `fitTimingToRuntime` tightens, so counting on it produced lines one word too long for
+   the clock they landed on.
+3. **A beat still too short borrows the silence after it** — the reference's own quiet
+   audio, so nothing is invented and the words stay up long enough to read.
+4. **The emitter is the oracle.** `rebuildFromAnalysis` builds, lays out the clock, and
+   ASKS the emitter; when refused it reads the number the refusal states ("needs 1.7s"),
+   raises the beat floor and retries — bounded at 4, then throws with the reason. It
+   cannot drift from the real rule because the real rule IS the check.
+
+Result on the owner's reference: 19 beats, 17 scenes, runtime 61.353 s → 61.35 s (3 ms),
+and a complete 12-file project. `voiceSlices` also had to stop assuming beats map 1:1 to
+onsets — a merged beat lost its voice and the film failed with "no measured onset".
+
+**Still open, measured:** a 720×720 SQUARE reference is forced to 9:16 (the skill's
+`AspectRatio` is only '9:16' | '16:9'), so it crops rather than letterboxes.
+
+## Why the end-card defect is still not fixed
+
+Attempted again with the fast-cut machinery in place, and reverted again, now with
+numbers: a card scene of 2.5 s fails because the card's own blocks need more hold
+("ADDRESS UNKNOWN is on screen 1.081s but needs 1.1s"), and 4 s fails because it squeezes
+a film beat under its floor (0.737 s against 0.8 s). This reference has no spare time to
+give the card. So on a reference whose last shot carries voice, THAT ONE LINE is timed and
+never drawn; the rest of the film rebuilds correctly. The real fix is to derive the card's
+duration from the measured tail of the reference rather than from a constant, and to let
+the runtime drift a little when there is no tail — a decision, not a patch.
+
 ## Tooling gotchas that cost real time
 
 - Windows PowerShell 5.1 treats a native command's **stderr** as a failure, so
