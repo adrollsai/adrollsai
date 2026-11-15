@@ -41,6 +41,7 @@ import {
   verifyEdit,
 } from '../lib/site/page-sections';
 import { industryVocabulary } from '../lib/automation/industry';
+import { describeEditPlan, parseEditRequest } from '../lib/site/page-edit-request';
 
 let pass = 0;
 let fail = 0;
@@ -556,6 +557,118 @@ function checkIndustry() {
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 7. The request layer: one shape, decided before anything is touched
+// ════════════════════════════════════════════════════════════════════════════
+
+function checkRequestLayer() {
+  head('7. An edit request is one thing, or it is refused');
+
+  const sectionPlan = parseEditRequest({ section: 'hero', html: '<section><h1>New</h1></section>' });
+  check(
+    'a section request is read as a section replacement',
+    sectionPlan.ok && sectionPlan.plan.kind === 'section' && sectionPlan.plan.section === 'hero',
+    sectionPlan.ok ? sectionPlan.detail : 'refused',
+  );
+  const textPlan = parseEditRequest({ find: '+91 98200 12345', replace: '+91 98200 99999' });
+  check(
+    'a find/replace request is read as a text replacement',
+    textPlan.ok && textPlan.plan.kind === 'text' && textPlan.plan.find === '+91 98200 12345',
+    textPlan.ok ? textPlan.detail : 'refused',
+  );
+  const scopedPlan = parseEditRequest({ find: 'Call Now', replace: 'Enquire', section: 'footer' });
+  check(
+    'a text request may be scoped to one section',
+    scopedPlan.ok && scopedPlan.plan.kind === 'text' && scopedPlan.plan.section === 'footer',
+    scopedPlan.ok ? scopedPlan.detail : 'refused',
+  );
+  check(
+    'naming BOTH shapes is refused rather than half-applied',
+    (() => {
+      const bad = parseEditRequest({ section: 'hero', html: '<p>x</p>', find: 'a', replace: 'b' });
+      return !bad.ok && bad.rejection.reason === 'both_shapes' && bad.rejection.status === 400;
+    })(),
+    'both_shapes',
+  );
+  check(
+    'an empty request is refused, and says what the two shapes are',
+    (() => {
+      const bad = parseEditRequest({});
+      return !bad.ok && bad.rejection.reason === 'nothing_to_do' && /section, html/.test(bad.rejection.error);
+    })(),
+    'nothing_to_do',
+  );
+  check(
+    'html without a section name is refused',
+    (() => {
+      const bad = parseEditRequest({ html: '<p>x</p>' });
+      return !bad.ok && bad.rejection.reason === 'missing_section';
+    })(),
+    'missing_section',
+  );
+  check(
+    'find without replace is refused, so a phrase cannot be deleted by omission',
+    (() => {
+      const bad = parseEditRequest({ find: 'Call Now' });
+      return !bad.ok && bad.rejection.reason === 'missing_replace' && /Pass ""/.test(bad.rejection.error);
+    })(),
+    'missing_replace',
+  );
+  check(
+    'replace: "" IS accepted, because deleting a phrase deliberately is a real edit',
+    (() => {
+      const ok = parseEditRequest({ find: 'Call Now to reserve a seat. ', replace: '' });
+      return ok.ok && ok.plan.kind === 'text' && ok.plan.replace === '';
+    })(),
+    'explicit deletion allowed',
+  );
+  check(
+    'a non-object body is refused',
+    !parseEditRequest('hero').ok && !parseEditRequest(null).ok && !parseEditRequest(['hero']).ok,
+    'not_an_object',
+  );
+  check(
+    'an empty html string is not a section replacement',
+    (() => {
+      const bad = parseEditRequest({ section: 'hero', html: '   ' });
+      return !bad.ok;
+    })(),
+    'whitespace is not content',
+  );
+  check(
+    'the plan has a one-line description for the log',
+    /section edit: hero/.test(describeEditPlan({ kind: 'section', section: 'hero', html: '<p>x</p>' })) &&
+      /text edit/.test(describeEditPlan({ kind: 'text', find: 'a', replace: 'b' })),
+    describeEditPlan({ kind: 'text', find: 'Call Now', replace: 'Enquire', section: 'footer' }),
+  );
+
+  // The request layer and the edit layer agree: a parsed plan applied to a real page
+  // changes exactly the section it named, and the proof says so.
+  const page = markedPage();
+  const plan = parseEditRequest({ find: '+91 98200 12345', replace: '+91 98200 99999', section: 'footer' });
+  check(
+    'a parsed text plan applies cleanly and proves it changed one section',
+    (() => {
+      if (!plan.ok || plan.plan.kind !== 'text') return false;
+      const applied = replaceTextOnce(page, plan.plan.find, plan.plan.replace, { section: 'footer' });
+      const proof = verifyEdit(applied.before, applied.after, 'footer');
+      return proof.ok && proof.changed.join(',') === 'footer' && proof.unchanged.length === 3;
+    })(),
+    'parse -> apply -> prove',
+  );
+  check(
+    'a parsed section plan applies cleanly too',
+    (() => {
+      const parsed = parseEditRequest({ section: 'hero', html: '<section id="hero"><h1>Fresh</h1></section>' });
+      if (!parsed.ok || parsed.plan.kind !== 'section') return false;
+      const applied = editSection(page, parsed.plan.section, parsed.plan.html);
+      const proof = verifyEdit(applied.before, applied.after, 'hero');
+      return proof.ok && proof.changed.join(',') === 'hero' && applied.html.includes('Fresh');
+    })(),
+    'parse -> apply -> prove',
+  );
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Run
 // ────────────────────────────────────────────────────────────────────────────
@@ -566,6 +679,7 @@ checkSectionEdit();
 checkTextEdit();
 checkProof();
 checkIndustry();
+checkRequestLayer();
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exit(1);
