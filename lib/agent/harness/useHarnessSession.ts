@@ -125,18 +125,41 @@ export function useHarnessSession(): UseHarnessSession {
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
 
-  const refresh = useCallback(async () => {
-    try {
-      const body = await jsonFetch('/api/agent/v2/sessions');
-      setAvailable(Boolean(body.available));
-      setSessions(Array.isArray(body.sessions) ? body.sessions : []);
-      setWorkspaces(Array.isArray(body.workspaces) ? body.workspaces : []);
-      setError(null);
-    } catch (err: any) {
-      // A failure here must not break the harness: the caller can fall back.
-      setAvailable(false);
-      setError(err?.message || 'Could not load sessions');
-    }
+  /**
+   * The sidebar's session tree.
+   *
+   * Deduped, because several effects legitimately want fresh sidebar data at about the same
+   * moment (mount, availability probe, session change, run completion) and each used to fire
+   * its own request — four identical GETs on every open of the agent tab, each carrying a
+   * Supabase auth round trip, all in front of a skeleton. Concurrent callers now share one
+   * request, and a result under a second old is reused rather than refetched.
+   */
+  const refreshInFlight = useRef<Promise<void> | null>(null);
+  const lastRefreshAt = useRef(0);
+
+  const refresh = useCallback(async (options: { force?: boolean } = {}) => {
+    if (refreshInFlight.current) return refreshInFlight.current;
+    if (!options.force && Date.now() - lastRefreshAt.current < 1000) return;
+
+    const run = (async () => {
+      try {
+        const body = await jsonFetch('/api/agent/v2/sessions');
+        setAvailable(Boolean(body.available));
+        setSessions(Array.isArray(body.sessions) ? body.sessions : []);
+        setWorkspaces(Array.isArray(body.workspaces) ? body.workspaces : []);
+        setError(null);
+        lastRefreshAt.current = Date.now();
+      } catch (err: any) {
+        // A failure here must not break the harness: the caller can fall back.
+        setAvailable(false);
+        setError(err?.message || 'Could not load sessions');
+      } finally {
+        refreshInFlight.current = null;
+      }
+    })();
+
+    refreshInFlight.current = run;
+    return run;
   }, []);
 
   useEffect(() => {
