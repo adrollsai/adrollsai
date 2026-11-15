@@ -138,6 +138,9 @@ async function main(): Promise<void> {
   const result = await reverseSkill(
     {
       file: reference,
+      // `--end-card-scene`: the owner's choice to let the film run ~4 s longer so the card
+      // gets a scene of its own and every drawn line is actually drawn.
+      ...(process.argv.includes('--end-card-scene') ? { rebuild: { endCardScene: true } } : {}),
       extraBans: [
         'No copy that the reference frame does not carry: this rebuild places type where it was measured and ' +
           'leaves the words blank.',
@@ -220,8 +223,10 @@ async function main(): Promise<void> {
   }
   console.log(`\nplates: ${analysis.shots.length} shots cut from the reference into assets/src`);
 
-  // ── 4. the voice: the reference's own audio, sliced at the measured onsets
-  const slices = voiceSlices(analysis, rebuild.raw);
+  // ── 4. the voice: the reference's own audio, sliced at the measured onsets.
+  // The grouping floor comes FROM the rebuild: guessing it here would slice a different
+  // window than the one the beats were timed from.
+  const slices = voiceSlices(analysis, rebuild.raw, rebuild.minHoldSeconds);
   for (const slice of slices) {
     const out = path.join(dir, 'assets', 'voice', `${slice.id}.wav`);
     const cut = tool(

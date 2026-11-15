@@ -1087,6 +1087,37 @@ async function checkFastCut() {
     })(),
     'a number from the analysis',
   );
+
+  // THE OWNER'S CHOICE: let the film run longer so the card gets a scene of its own and
+  // every line is drawn. This is the fix for the defect above, and it is opt-in because
+  // it trades the rebuild's headline promise (same runtime) for the words.
+  const withCard = rebuildFromAnalysis(shortAnalysis, { endCardScene: true });
+  const cardScene = withCard.beats.scenes.find((scene) => scene.kind === 'endcard');
+  const beatsInCard = cardScene ? cardScene.beats.length : -1;
+  check(
+    'asked for a card scene, the card gets one and carries NO lines',
+    Boolean(cardScene) && beatsInCard === 0,
+    cardScene ? `${cardScene.id} with ${beatsInCard} beat(s)` : 'no card scene',
+  );
+  check(
+    'and every beat then sits in a content scene, so every line is drawn',
+    withCard.beats.scenes
+      .filter((scene) => scene.kind !== 'endcard')
+      .reduce((sum, scene) => sum + scene.beats.length, 0) === withCard.beats.beats.length,
+    `${withCard.beats.beats.length} beat(s), all in content scenes`,
+  );
+  check(
+    'the film is that much longer, and the note says so rather than hiding it',
+    withCard.timing.total > rebuilt.timing.total + 1 &&
+      withCard.notes.some((note) => /runs \d+(\.\d+)?s longer than the reference/i.test(note)),
+    `${withCard.timing.total}s vs ${rebuilt.timing.total}s — ${roundTo(withCard.timing.total - rebuilt.timing.total, 3)}s longer`,
+  );
+  check(
+    'the default is unchanged: no card scene unless it was asked for',
+    rebuilt.beats.scenes.filter((scene) => scene.kind === 'endcard').length === 1 &&
+      rebuilt.timing.total < withCard.timing.total,
+    'opt-in, not the default',
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────

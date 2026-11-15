@@ -362,6 +362,20 @@ export interface RebuildOverrides {
   plateKey?: (shot: ShotFacts) => string;
   /** Override the calibrated timing knobs. */
   timing?: TimingOverride;
+  /**
+   * Give the end card a scene of its own, at the cost of running longer than the
+   * reference.
+   *
+   * `true` uses END_CARD_SECONDS; a number sets the length. OFF by default, deliberately:
+   * a rebuild's headline promise is that it matches the reference's runtime, and almost
+   * every reference has no picture after its last spoken line to pay for a card with. On
+   * the owner's 61.353 s reference the measured tail is 0.000 s.
+   *
+   * With it set, the film runs that much longer than the reference and EVERY line is
+   * drawn. Without it, the runtime matches and any line falling in the card scene is named
+   * in the notes as not drawn. That is the trade, and it is the owner's to make.
+   */
+  endCardScene?: boolean | number;
 }
 
 export interface RebuildPlan {
@@ -375,6 +389,8 @@ export interface RebuildPlan {
   heldSeconds: number;
   /** Which onsets the rebuild used, and which of them were off-grid. */
   onsets: { total: number; aligned: number; unaligned: number[]; dropped: number[] };
+  /** The grouping floor this rebuild settled on. Pass it to voiceSlices to re-read the voice. */
+  minHoldSeconds: number;
   notes: string[];
 }
 
@@ -485,6 +501,20 @@ export function groupShotOnsets(entries: readonly ShotOnset[], minHold: number, 
     if (target > group.end) group.end = roundTo(target, 3);
   });
 
+  // STILL short — the shot ended before the line could reach the floor, or the next line
+  // starts immediately. Merge it BACKWARDS into the group before it, which is how a fast
+  // talker's run-on sentence is really one line. Without this pass, the last line of a
+  // short shot kept a voice shorter than a word needs and the emitter refused the film
+  // with "on screen 0.737s but needs 0.8s".
+  for (let index = groups.length - 1; index > 0; index--) {
+    const group = groups[index];
+    if (roundTo(group.end - group.start, 3) >= minHold) continue;
+    const previous = groups[index - 1];
+    previous.entries.push(...group.entries);
+    previous.end = Math.max(previous.end, group.end);
+    groups.splice(index, 1);
+  }
+
   return groups;
 }
 
@@ -499,7 +529,11 @@ function buildBeats(
 ): { raw: Record<string, unknown>; notes: string[] } {
   const aspect = analysis.facts.aspect;
   const fps = nearestSupportedFps(analysis.facts.fps);
-  const targetSeconds = Math.max(MIN_TARGET_SECONDS, roundTo(analysis.facts.durationSeconds, 2));
+  const targetSecondsBase = Math.max(MIN_TARGET_SECONDS, roundTo(analysis.facts.durationSeconds, 2));
+  // When the owner has chosen a card scene, the film is ALLOWED to run that much longer.
+  // The card then costs runtime and nothing else: no beat has to pay for it.
+  const cardSceneSeconds = endCardSceneSeconds(overrides);
+  const targetSeconds = roundTo(targetSecondsBase + cardSceneSeconds, 3);
   const byShot = onsetsByShot(analysis);
   const firstVoicedShot = byShot.length ? byShot[0].shot.index : -1;
   const calibration = calibrateTiming(analysis);
@@ -648,7 +682,19 @@ function buildBeats(
     // being silent. Giving the card real time means letting the film run longer than the
     // reference — a decision about what a rebuild is for, not something to assume for the
     // owner.
-    if (kind === 'endcard' && beatIds.length > 0) {
+    if (kind === 'endcard' && beatIds.length > 0 && cardSceneSeconds > 0) {
+      // The owner chose a card of its own. The lines keep a scene, the card follows in one
+      // of its own with no beats, and `targetSeconds` was raised by exactly this much so no
+      // beat had to pay for it — the film simply runs longer than the reference.
+      const contentKind: SceneKind = shot.index === firstVoicedShot ? 'hook' : 'beat';
+      scenes.push({ id: sceneId, kind: contentKind, beats: beatIds, plate });
+      scenes.push({ id: `s${++sceneSeq}`, kind: 'endcard', beats: [], plate, dur: cardSceneSeconds });
+      notes.push(
+        `the end card has its own ${cardSceneSeconds}s scene, as asked, so ${beatIds.length} line(s) ` +
+          `(${beatIds.join(', ')}) are all drawn — and the film therefore runs ${cardSceneSeconds}s longer than ` +
+          `the reference. That trade was chosen, not assumed`,
+      );
+    } else if (kind === 'endcard' && beatIds.length > 0) {
       const tail = roundTo(Math.max(0, analysis.facts.durationSeconds - lastVoiceEnd(analysis)), 3);
       notes.push(
         `the end card draws its own blocks instead of a scene's lines, so ${beatIds.length} line(s) ` +
@@ -657,8 +703,10 @@ function buildBeats(
           `${END_CARD_SECONDS}s). If the words matter more than matching the runtime, ask for an end card that ` +
           'lengthens the film.',
       );
+      scenes.push({ id: sceneId, kind, beats: beatIds, plate });
+    } else {
+      scenes.push({ id: sceneId, kind, beats: beatIds, plate });
     }
-    scenes.push({ id: sceneId, kind, beats: beatIds, plate });
   }
 
   const card = overrides.endCard ?? {};
@@ -719,17 +767,30 @@ export const MIN_SILENT_SCENE_SECONDS = 0.5;
 export const MAX_SILENT_SCENE_SECONDS = 12;
 
 /**
- * Roughly how long an end card needs on screen for its four blocks to be read.
+ * How long an end card needs on screen for its blocks to be read.
  *
- * Not used to place one — see the note where the card scene is built. It is the figure
- * the notes compare a reference's measured tail against, so an owner can see WHY their
- * reference cannot carry a card of its own.
+ * MEASURED, not guessed: the emitter staggers a card's blocks (brand, tagline, two
+ * numbers, an address) and gives the last one roughly `sceneDur - 1.42s`. At 2.5 s that
+ * left "ADDRESS UNKNOWN" at 1.081 s against the 1.1 s two words need, so the card was
+ * refused; 4 s leaves it comfortable. It is also the figure the notes compare a
+ * reference's measured tail against, so an owner can see why their reference cannot carry
+ * a card of its own.
  */
-export const END_CARD_SECONDS = 2.5;
+export const END_CARD_SECONDS = 4;
 
 /** Where the reference's last spoken line ends. The picture after it is the only spare. */
 export function lastVoiceEnd(analysis: ReverseAnalysis): number {
   return analysis.vo.spans.reduce((latest, span) => Math.max(latest, span.start + span.dur), 0);
+}
+
+/** How many extra seconds the owner asked for as a card scene of its own. 0 = not asked. */
+export function endCardSceneSeconds(overrides: { endCardScene?: boolean | number } = {}): number {
+  const asked = overrides.endCardScene;
+  if (asked === undefined || asked === false) return 0;
+  if (asked === true) return END_CARD_SECONDS;
+  return Number.isFinite(asked) && Number(asked) > 0
+    ? roundTo(Math.min(Number(asked), MAX_SILENT_SCENE_SECONDS), 3)
+    : 0;
 }
 
 export interface PlateGroup {
@@ -821,16 +882,20 @@ export function plateLayout(analysis: ReverseAnalysis): PlateLayout {
 export function voiceSlices(
   analysis: ReverseAnalysis,
   raw: Record<string, unknown>,
+  minHoldSecondsUsed?: number,
 ): { id: string; start: number; dur: number }[] {
   const beats = Array.isArray(raw.beats) ? (raw.beats as { id: string }[]) : [];
-  // The beats are one per GROUP of onsets, and how hard the voice was grouped depends
-  // on how fast-cut the reference is — the rebuild raises the floor and tries again
-  // when the emitter refuses its lines as too short. So the mapping is recovered FROM
-  // THE BEATS FILE by finding the floor that produces exactly this many groups, rather
-  // than assumed to be 1:1 or assumed to be the one-word minimum. Assuming either is
-  // how a merged beat silently lost its voice and the film failed with "no measured
-  // onset" on a beat that plainly has one.
-  const groups = beatGroups(analysis, beats.length);
+  // The beats are one per GROUP of onsets, and how hard the voice was grouped depends on
+  // how fast-cut the reference is — the rebuild raises the floor and tries again when the
+  // emitter refuses its lines as too short.
+  //
+  // THE FLOOR MUST BE PASSED IN, NOT GUESSED. This used to recover the grouping by
+  // COUNT: walk a ladder of floors and take the first that produces as many groups as
+  // there are beats. Two floors can produce the same count with DIFFERENT groupings, so a
+  // beat could be handed a voice window that was never the one it was built from — which
+  // is how a beat ended up refused at 0.737 s when the builder had given it more.
+  // `rebuildFromAnalysis` knows the floor and passes it.
+  const groups = groupsAtFloor(analysis, minHoldSecondsUsed ?? minHoldSeconds(1));
   if (beats.length !== groups.length) return [];
   return groups.map((group, index) => ({
     id: beats[index].id,
@@ -839,12 +904,15 @@ export function voiceSlices(
   }));
 }
 
-/** The floors tried when recovering the grouping from a beats file. Monotonic. */
-const GROUP_FLOOR_LADDER: readonly number[] = [0.8, 1.1, 1.4, 1.7, 2.0, 2.4, 2.8, 3.2, 3.6, 4.0, 4.6, 5.2, 6.0];
-
 /** Every shot's onset groups at one floor, flattened in scene order. */
 function groupsAtFloor(analysis: ReverseAnalysis, floor: number): OnsetGroup[] {
-  const byShot = onsetsByShot(analysis);
+  // SKIP THE ABSORBED LEAD-IN SHOTS, exactly as `buildBeats` does. A shot no longer than
+  // the 0.5 s lead-in is played by `s0` and gets no beats of its own; if its onsets are
+  // still grouped here, every beat after it is timed against the NEXT shot's voice and a
+  // line lands with the wrong duration. That is what made a beat sit at 0.737 s in every
+  // configuration — its hold was a different onset's voice plus the gap.
+  const absorbed = new Set(plateLayout(analysis).absorbed);
+  const byShot = onsetsByShot(analysis).filter((entry) => !absorbed.has(entry.shot.index));
   const perShot = new Map<number, ShotOnset[]>();
   for (const entry of byShot) {
     const list = perShot.get(entry.shot.index) ?? [];
@@ -858,27 +926,18 @@ function groupsAtFloor(analysis: ReverseAnalysis, floor: number): OnsetGroup[] {
   return ordered;
 }
 
-/**
- * The grouping that produces `expectedCount` beats, or the one-word grouping when no
- * floor on the ladder matches.
- *
- * Grouping is monotonic in the floor (a higher floor never yields more groups), so the
- * smallest matching rung is the one the builder used.
- */
-export function beatGroups(analysis: ReverseAnalysis, expectedCount?: number): OnsetGroup[] {
-  const first = groupsAtFloor(analysis, GROUP_FLOOR_LADDER[0]);
-  if (expectedCount === undefined || first.length === expectedCount) return first;
-
-  for (const floor of GROUP_FLOOR_LADDER.slice(1)) {
-    const groups = groupsAtFloor(analysis, floor);
-    if (groups.length === expectedCount) return groups;
-  }
-  return first;
+/** Every onset group at one floor, in beat order. */
+export function beatGroups(analysis: ReverseAnalysis, floor?: number): OnsetGroup[] {
+  return groupsAtFloor(analysis, floor ?? minHoldSeconds(1));
 }
 
 /** The onsets the clock is laid out from: one per spoken beat, in beat order. */
-export function onsetsFromAnalysis(analysis: ReverseAnalysis, raw: Record<string, unknown>): VoOnset[] {
-  return voiceSlices(analysis, raw).map((slice) => ({ id: slice.id, start: 0, dur: slice.dur }));
+export function onsetsFromAnalysis(
+  analysis: ReverseAnalysis,
+  raw: Record<string, unknown>,
+  minHoldSecondsUsed?: number,
+): VoOnset[] {
+  return voiceSlices(analysis, raw, minHoldSecondsUsed).map((slice) => ({ id: slice.id, start: 0, dur: slice.dur }));
 }
 
 /**
@@ -937,8 +996,19 @@ export function rebuildFromAnalysis(
     }
 
     beats = parseBeats(raw);
-    const onsets = onsetsFromAnalysis(analysis, raw);
-    fitted = fitTimingToRuntime(onsets, scenePlanFor(beats), calibration, overrides.timing ?? {});
+    const onsets = onsetsFromAnalysis(analysis, raw, minHold);
+    // The fit targets `minTotal`, and by default that is the reference's runtime — so a
+    // card scene added on top of it makes the fit TIGHTEN every gap to get back to the
+    // reference, which is exactly how a beat ended up at 0.737 s. When the owner has
+    // chosen a card scene, the target has to move with it or the extra time is taken back.
+    const fitTarget = roundTo(
+      Math.max(beats.targetSeconds, analysis.facts.durationSeconds + endCardSceneSeconds(overrides)),
+      3,
+    );
+    fitted = fitTimingToRuntime(onsets, scenePlanFor(beats), calibration, {
+      ...(overrides.timing ?? {}),
+      ...(endCardSceneSeconds(overrides) > 0 ? { minTotal: fitTarget } : {}),
+    });
     timing = fitted.timing;
 
     try {
@@ -1024,6 +1094,9 @@ export function rebuildFromAnalysis(
     project,
     timing_options: fitted.options,
     heldSeconds: fitted.heldSeconds,
+    // The floor this rebuild settled on. A caller that wants the voice windows back must
+    // pass THIS to `voiceSlices`, not let it guess — see the note there.
+    minHoldSeconds: minHold,
     onsets: {
       total: analysis.vo.spans.length,
       aligned: analysis.alignment.aligned.length,
