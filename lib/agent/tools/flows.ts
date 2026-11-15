@@ -250,8 +250,42 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
             trigger: input.trigger as FlowTrigger,
             ...(input.templateName ? { templateName: input.templateName } : {}),
             steps: (input.steps ?? []) as FlowStep[],
-            ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
+            // Flows start PAUSED. Writing one is authoring; making it live is a decision that reaches
+            // customers, and it belongs to the owner in the UI — not to a model mid-conversation.
+            isActive: input.isActive === true,
           });
+
+          // Two flows firing on the same trigger is worse than no flow: every matching lead gets
+          // both messages. Refuse a duplicate outright and point at the one that exists.
+          try {
+            const { data: existing } = await supabase
+              .from('automations')
+              .select('id, title, is_active, description')
+              .eq('user_id', userId);
+            const wanted = String(built.title || '').toLowerCase();
+            const clash = (existing ?? []).find((row: any) => {
+              const sameTitle = String(row.title || '').toLowerCase() === wanted;
+              const sameTrigger =
+                String(row.description || '').includes(String(input.trigger)) &&
+                String(built.description || '').includes(String(input.trigger));
+              return sameTitle || sameTrigger;
+            });
+            if (clash) {
+              return {
+                success: false,
+                reason: 'duplicate_flow',
+                existingFlowId: clash.id,
+                active: clash.is_active === true,
+                error:
+                  `a flow for this already exists ("${clash.title}", id ${clash.id}, ` +
+                  `${clash.is_active ? 'active' : 'paused'}). Two flows firing on the same trigger ` +
+                  'would message every matching lead twice. Edit the existing one in dashboard/flows ' +
+                  'instead of adding a second.',
+              };
+            }
+          } catch {
+            // A failed duplicate check must not block authoring; the flow is paused regardless.
+          }
 
           const { data, error } = await supabase
             .from('automations')
@@ -282,7 +316,9 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
             notes: built.notes,
             message:
               `Created "${built.title}" with ${built.nodeCount} node(s)` +
-              (built.isActive ? ', active now.' : ', currently paused.'),
+              (built.isActive
+                ? ', active now.'
+                : ', currently PAUSED — the owner turns it on in dashboard/flows when they are ready.'),
           };
         } catch (error: any) {
           if (error instanceof FlowError) {
