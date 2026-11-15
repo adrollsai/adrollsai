@@ -1,6 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { approvalOutcome, rejectionOutcome } from '@/lib/agent/approval-outcome';
 
+/**
+ * A human decided on a staged action.
+ *
+ * This route NEVER performs the action and never says that it did. Approving marks the event
+ * `approved`, which unlocks the review gate; the client then hands the staged instruction back
+ * to the agent, which performs the work with its real tools. The gate matches those tool
+ * arguments against the payload the owner was shown, so what runs is what was approved — and
+ * the only honest thing this route can report is "approved, continuing".
+ *
+ * It used to answer "Successfully launched WhatsApp broadcast to 400 leads" without sending
+ * anything. See lib/agent/approval-outcome.ts for why that mattered.
+ */
 export async function POST(req: Request) {
   try {
     const supabase = await createClient();
@@ -53,91 +66,29 @@ export async function POST(req: Request) {
         })
         .eq('id', event.id);
 
-      return NextResponse.json({
-        success: true,
-        status: 'rejected',
-        message: 'Action was cancelled by user.',
-      });
+      const outcome = rejectionOutcome();
+      return NextResponse.json({ success: true, status: outcome.status, message: outcome.message });
     }
 
-    // If approved, trigger execution based on actionType
-    const payload = event.payload || {};
-    const { actionType, actionPayload } = payload;
-    let executionResult = null;
+    // Approved: unlock the gate and hand the staged instruction back to the conversation.
+    // Deliberately identical for every action type — including ad spend and deletion, which
+    // previously fell through to a fabricated "Custom action executed successfully."
+    const actionType = String(event.payload?.actionType ?? 'custom');
+    const outcome = approvalOutcome(actionType);
 
-    if (actionType === 'whatsapp_broadcast') {
-      const { leadIds, messageText, campaignName } = actionPayload || {};
-      
-      // Update event status
-      await supabase
-        .from('agent_events')
-        .update({
-          status: 'in_progress',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', event.id);
-
-      executionResult = {
-        dispatched: true,
-        recipientsCount: leadIds?.length || 0,
-        campaign: campaignName || 'Agent Broadcast',
-        message: `Successfully launched WhatsApp broadcast to ${leadIds?.length || 0} leads.`,
-      };
-    } else if (actionType === 'bulk_call') {
-      const { leadIds, objective, concurrency } = actionPayload || {};
-
-      await supabase
-        .from('agent_events')
-        .update({
-          status: 'in_progress',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', event.id);
-
-      executionResult = {
-        queued: true,
-        leadsCount: leadIds?.length || 0,
-        objective: objective || 'book_appointment',
-        concurrency: concurrency || 2,
-        message: `Queued ${leadIds?.length || 0} leads for autonomous voice followup.`,
-      };
-    } else if (actionType === 'create_asset') {
-      // A creative job is not executed here: the approval sends the staged instruction
-      // back into the conversation (the card's resumePrompt), and the agent generates
-      // there. Claiming "executed" here would be a lie the user can check.
-      await supabase
-        .from('agent_events')
-        .update({ status: 'approved', updated_at: new Date().toISOString() })
-        .eq('id', event.id);
-
-      return NextResponse.json({
-        success: true,
-        status: 'approved',
-        result: {
-          resumed: true,
-          message: 'Approved — the agent continues with the staged plan in the chat.',
-        },
-      });
-    } else {
-      executionResult = {
-        executed: true,
-        message: 'Custom action executed successfully.',
-      };
-    }
-
-    // Mark completed
     await supabase
       .from('agent_events')
-      .update({
-        status: 'completed',
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: outcome.status, updated_at: new Date().toISOString() })
       .eq('id', event.id);
 
     return NextResponse.json({
       success: true,
-      status: 'completed',
-      result: executionResult,
+      status: outcome.status,
+      result: {
+        resumed: outcome.resumed,
+        executed: outcome.executed,
+        message: outcome.message,
+      },
     });
   } catch (err: any) {
     console.error('[Action Approval API] Error:', err);
