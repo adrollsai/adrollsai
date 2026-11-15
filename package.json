@@ -82,7 +82,8 @@
     "verify:vendor-skills": "esbuild scripts/verify-vendor-skills.ts --bundle --platform=node --format=esm --outfile=.tmp-vendor.mjs --log-level=warning && node .tmp-vendor.mjs",
     "verify:review-gate": "esbuild scripts/verify-review-gate.ts --bundle --platform=node --format=esm --outfile=.tmp-gate.mjs --log-level=warning && node .tmp-gate.mjs",
     "verify:product-media": "esbuild scripts/verify-product-media.ts --bundle --platform=node --format=esm --outfile=.tmp-pmedia.mjs --log-level=warning --alias:@/lib/catalog/product-media=./lib/catalog/product-media && node .tmp-pmedia.mjs",
-    "verify:ceo-findings": "esbuild scripts/verify-ceo-findings.ts --bundle --platform=node --format=esm --outfile=.tmp-ceof.mjs --log-level=warning && node .tmp-ceof.mjs"
+    "verify:ceo-findings": "esbuild scripts/verify-ceo-findings.ts --bundle --platform=node --format=esm --outfile=.tmp-ceof.mjs --log-level=warning && node .tmp-ceof.mjs",
+    "verify:ceo-metrics": "esbuild scripts/verify-ceo-metrics.ts --bundle --platform=node --format=esm --outfile=.tmp-ceom.mjs --log-level=warning && node .tmp-ceom.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

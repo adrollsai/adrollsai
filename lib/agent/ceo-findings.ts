@@ -275,7 +275,12 @@ export function summariseFindings(findings: readonly Finding[]): string {
  */
 export function renderReport(metrics: DayMetrics, findings: readonly Finding[], options: { limit?: number } = {}): string {
   const limit = Math.max(1, Math.min(20, options.limit ?? 6));
-  const lines: string[] = [`CEO report — ${metrics.window.from} to ${metrics.window.to}`, summariseFindings(findings), ''];
+  // A one-day report should not read "10 Feb to 10 Feb".
+  const span =
+    metrics.window.from === metrics.window.to
+      ? metrics.window.from
+      : `${metrics.window.from} to ${metrics.window.to}`;
+  const lines: string[] = [`CEO report — ${span}`, summariseFindings(findings), ''];
   for (const finding of findings.slice(0, limit)) {
     lines.push(`[${finding.severity.toUpperCase()}] ${finding.title}`);
     lines.push(`  evidence: ${finding.evidence}`);
