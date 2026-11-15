@@ -74,9 +74,10 @@ const result = await render.execute({
   projectName: 'launch_reel_test',
   title: 'Launch reel test',
   htmlContent: COMPOSITION,
-  durationSeconds: 8,
+  durationSeconds: Number(process.env.HF_DURATION ?? 8),
   resolution: '1080x1920_vertical',
   quality: 'draft',
+  chunkSeconds: Number(process.env.HF_CHUNK ?? 20),
 });
 
 console.log(`\nfinished in ${((Date.now() - started) / 1000).toFixed(1)}s`);

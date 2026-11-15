@@ -13,8 +13,25 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildHyperFramesRenderScript,
   normaliseCompositionHtml,
+  planRenderSpans,
+  renderSliceBudgetSeconds,
   renderLogTail,
 } from './hyperframes-render';
+import { remainingTurnBudgetMs } from '../turn-limits';
+
+/**
+ * How long to let one render slice run.
+ *
+ * Derived from the request we are inside, never a constant: the runner clamps the actual
+ * command timeout to the remaining turn budget, so asking for more than that is free and
+ * asking for less is what used to silently truncate long films.
+ */
+function renderTimeoutMs(budgetSeconds: number, spanCount: number): number {
+  const slice = (budgetSeconds + 60) * 1000;
+  const floor = 120_000;
+  const ceiling = Math.max(floor, spanCount * 5 * 60_000);
+  return Math.min(Math.max(floor, slice), ceiling);
+}
 
 /**
  * Reject obvious placeholder writes.
@@ -49,11 +66,17 @@ export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
       inputSchema: z.object({
         command: z.string().describe('The bash command to run in the sandbox (e.g. "ffmpeg -i ...", "python3 script.py", "npm install ...")'),
         readFiles: z.array(z.string()).optional().describe('Optional list of sandbox output file paths to extract and upload to cloud storage (e.g. ["output.mp4", "banner.png"])'),
-        timeoutSeconds: z.number().default(120).describe('Max execution time in seconds (up to 300s)'),
+        timeoutSeconds: z
+          .number()
+          .default(120)
+          .describe(
+            'Max execution time in seconds. There is no fixed ceiling — the runner clamps to the remaining ' +
+              'request budget, so ask for the time the job actually needs.',
+          ),
       }),
       execute: async ({ command, readFiles, timeoutSeconds }) => {
         try {
-          const safeTimeoutMs = Math.min(Math.max(timeoutSeconds || 120, 10), 300) * 1000;
+          const safeTimeoutMs = Math.min(Math.max(timeoutSeconds || 120, 10), 3600) * 1000;
           const res = await executeInE2BSandbox({
             command,
             readFiles: readFiles || [],
@@ -395,17 +418,30 @@ python3 render_card.py
           .describe(
             'Full HTML markup for the composition. OMIT THIS if you already wrote index.html into the sandbox with sandbox_write_file — the renderer will use the file on disk. Never pass a placeholder like "PLACEHOLDER": it overwrites your real file.'
           ),
-        durationSeconds: z.number().default(15).describe('Composition duration in seconds (must match root data-duration)'),
+        durationSeconds: z
+          .number()
+          .default(15)
+          .describe(
+            'Composition duration in seconds, up to 3600 (one hour). Long films are rendered in spans and ' +
+              'stitched, so length is not capped by a single request.',
+          ),
         resolution: z.enum(['1080x1920_vertical', '1920x1080_landscape']).default('1080x1920_vertical'),
         quality: z.enum(['draft', 'looks', 'delivery']).default('looks').describe('Encode quality. "draft" is far cheaper and faster and is the right choice while iterating; "looks" is the default CRF 16; "delivery" is the highest quality and slowest.'),        fps: z.number().optional().describe('Frame rate. Omit to keep the composition\'s own data-fps (usually 30). Render time scales linearly with frames = duration x fps, so 24 is ~20% cheaper than 30 and plenty for most motion graphics.'),
         startSeconds: z.number().optional().describe('Render only the span starting at this second — the cheap way to re-check one section while iterating.'),
         endSeconds: z.number().optional().describe('Render only up to this second. Use with startSeconds to re-render just one span.'),
         audioUrl: z.string().optional().describe('Optional URL to real celebratory audio or background music track to mix into the MP4'),
+        chunkSeconds: z
+          .number()
+          .optional()
+          .describe(
+            'Seconds of film per render span (default 20, max 120). Long films are rendered span by span and ' +
+              'stitched; smaller spans resume more finely if a slice runs out of time, larger spans start fewer browsers.',
+          ),
       }),
-      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl }) => {
+      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds }) => {
         try {
           const isVertical = resolution === '1080x1920_vertical';
-          const dur = Math.min(Math.max(durationSeconds || 15, 5), 60);
+          const dur = Math.min(Math.max(durationSeconds || 15, 5), 3600);
           const safeName = projectName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'comp';
 
           // Only write index.html when htmlContent is genuinely a document.
@@ -433,6 +469,16 @@ python3 render_card.py
               ]
             : [];
 
+          // A film is rendered in spans, and the slice budget comes from the request we are
+          // inside rather than a hard-coded number. Whatever does not fit is resumed next call.
+          const spans = planRenderSpans({
+            durationSeconds: dur,
+            chunkSeconds,
+            startSeconds,
+            endSeconds,
+          });
+          const budgetSeconds = renderSliceBudgetSeconds(remainingTurnBudgetMs());
+
           const runScript = buildHyperFramesRenderScript({
             projectDir: safeName,
             durationSeconds: dur,
@@ -441,6 +487,8 @@ python3 render_card.py
             startSeconds,
             endSeconds,
             audioUrl,
+            chunkSeconds,
+            budgetSeconds,
           });
 
           const res = await executeInE2BSandbox({
@@ -448,11 +496,35 @@ python3 render_card.py
             files,
             readFiles: [`${safeName}/out.mp4`],
             userId,
-            timeoutMs: 300_000,
+            // The film's length decides this, not a constant. A slice renders as much as the
+            // remaining request allows and returns "not finished"; the next call resumes from the
+            // spans already on disk. Replaced a flat 300s that made anything past ~20s impossible.
+            timeoutMs: renderTimeoutMs(budgetSeconds, spans.length),
           });
 
           let videoUrl = res.uploadedFiles?.[`${safeName}/out.mp4`] || '';
           if (!videoUrl) {
+            // A span-rendered film that ran out of slice time is NOT a failure: the finished spans
+            // are on disk and the next call continues from there. Reporting it as an error is what
+            // made long films impossible — the agent would give up on work that was mostly done.
+            const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(res.stdout || '');
+            const spansDone = partsMatch ? Number(partsMatch[1]) : 0;
+            const spansTotal = partsMatch ? Number(partsMatch[2]) : spans.length;
+            if (spansTotal > 1 && spansDone > 0 && spansDone < spansTotal) {
+              return {
+                success: true,
+                partial: true,
+                spansDone,
+                spansTotal,
+                projectName: safeName,
+                message:
+                  `Rendered ${spansDone} of ${spansTotal} spans of "${safeName}" before this slice ran out of time. ` +
+                  'The finished spans are kept on disk. Call sandbox_render_hyperframes again with the SAME ' +
+                  'projectName and durationSeconds and WITHOUT htmlContent — it resumes at the next span and ' +
+                  'stitches the film as soon as the last one lands. Do not start over and do not change the composition.',
+              };
+            }
+
             const caps = getSandboxCapabilities(userId);
             const missing = caps
               ? [
@@ -546,7 +618,7 @@ python3 render_card.py
           if (bad) return { success: false, error: bad };
         }
         try {
-          const safeTimeoutMs = Math.min(Math.max(timeoutSeconds || 120, 10), 300) * 1000;
+          const safeTimeoutMs = Math.min(Math.max(timeoutSeconds || 120, 10), 3600) * 1000;
           const res = await executeInE2BSandbox({
             files,
             command: runCommand,

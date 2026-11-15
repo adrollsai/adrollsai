@@ -8,6 +8,58 @@
  * the measurement lie about what production actually runs.
  */
 
+export interface RenderSpan {
+  index: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Split a film into renderable spans.
+ *
+ * A span is the unit that one `hyperframes render` process produces, and it is also the unit
+ * that survives across agent turns: finished spans stay on the sandbox disk, so a long film is
+ * rendered a slice at a time and stitched once, instead of being one command that must finish
+ * inside a single request.
+ */
+export function planRenderSpans(options: {
+  durationSeconds: number;
+  chunkSeconds?: number;
+  startSeconds?: number;
+  endSeconds?: number;
+}): RenderSpan[] {
+  const total = Math.max(1, Math.round(Number(options.durationSeconds) || 15));
+
+  // An explicit span request stays a single span: the caller asked for exactly that range.
+  if (typeof options.startSeconds === 'number') {
+    const start = Math.max(0, Math.round(options.startSeconds));
+    const end = typeof options.endSeconds === 'number' ? Math.round(options.endSeconds) : total;
+    return [{ index: 0, start, end: Math.max(start + 1, Math.min(end, total)) }];
+  }
+
+  const requested = Math.round(Number(options.chunkSeconds) || 20);
+  const chunk = Math.max(2, Math.min(requested, 120));
+  const spans: RenderSpan[] = [];
+  for (let start = 0, index = 0; start < total; start += chunk, index++) {
+    spans.push({ index, start, end: Math.min(start + chunk, total) });
+  }
+  return spans;
+}
+
+/**
+ * How long a slice should spend rendering before it stops and lets the next call continue.
+ *
+ * There is no fixed ceiling on the film; the only real limit is the request the work runs
+ * inside. So the slice asks the turn how much time is left and leaves headroom to record the
+ * result and stop cleanly.
+ */
+export function renderSliceBudgetSeconds(remainingMs: number): number {
+  const headroomMs = 25_000; // capture the log, upload parts, return a result
+  if (!Number.isFinite(remainingMs)) return 600;
+  const usable = Math.max(0, remainingMs - headroomMs);
+  return Math.max(0, Math.floor(usable / 1000));
+}
+
 export type RenderQuality = 'draft' | 'looks' | 'delivery';
 
 /**
@@ -71,7 +123,15 @@ export function renderLogTail(stdout: string | undefined, stderr: string | undef
     // the whole line because it looked like a progress bar threw away the only useful sentence.
     .map((line) => line.replace(/^[█▉▊▋▌▍▎▏░\s]+\d+%\s*/, '').trim())
     .filter((line) => line && !/^@hf-/.test(line));
-  return lines.slice(-14).join(' | ').slice(0, 1200);
+
+  // The reason is rarely the last line printed — a stitch failure is followed by ffmpeg's muxer
+  // chatter, and routine telemetry ("Browser capability probe...") buries it. Error-shaped lines
+  // are promoted to the front so the model reads the cause, not the noise.
+  const isError = (line: string) => /error|failed|impossible|cannot|could not|no such file|✗|denied|missing/i.test(line);
+  const isNoise = (line: string) => /capability probe|Render:trace|chunkIndex/i.test(line);
+  const signal = lines.filter((line) => isError(line) && !isNoise(line)).slice(-8);
+  const rest = lines.filter((line) => !signal.includes(line) && !isNoise(line)).slice(-6);
+  return [...signal, ...rest].join(' | ').slice(0, 1200);
 }
 
 export interface HyperFramesRenderScriptOptions {
@@ -84,6 +144,10 @@ export interface HyperFramesRenderScriptOptions {
   startSeconds?: number;
   endSeconds?: number;
   audioUrl?: string;
+  /** Seconds per render span. Smaller spans resume more finely; larger spans start fewer browsers. */
+  chunkSeconds?: number;
+  /** Seconds this slice may spend rendering before it stops and lets the next call continue. */
+  budgetSeconds?: number;
 }
 
 export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions): string {
@@ -103,11 +167,21 @@ export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions):
       ? ` --start ${Math.max(o.startSeconds, 0)}` +
         (typeof o.endSeconds === 'number' ? ` --end ${Math.max(o.endSeconds, 0)}` : '')
       : '';
+  const chunks = planRenderSpans({
+    durationSeconds: o.durationSeconds,
+    chunkSeconds: o.chunkSeconds,
+    startSeconds: o.startSeconds,
+    endSeconds: o.endSeconds,
+  });
+  const sliceBudget = Math.max(0, Math.round(Number(o.budgetSeconds) || 0));
+  void fpsFlag;
+  void span;
 
   const script = `
 export PATH=/usr/local/bin:$PATH
 mkdir -p /home/user/tmp /home/user/.nobohf
 export TMPDIR=/home/user/tmp
+LOOP_START=$(date +%s)
 
 # ── make room for the render ────────────────────────────────────────────────
 # HyperFrames refuses to render when the filesystem it writes temp files to has less than a
@@ -175,17 +249,87 @@ if [ "$MEM_MB" -ge 3000 ]; then
   CAPTURE=auto
 fi
 echo "render-plan: mem=\${MEM_MB}MB cpu=\${CPUS} frames=$(( ${o.durationSeconds} * ${fps ?? 30} )) fps=${fps ?? 'authored'} quality=${quality} workers=\${WORKERS} capture=\${CAPTURE}"
-RENDER_START=$(date +%s)
-$HF render --output out.mp4${fpsFlag} --quality ${quality}${span} $HF_FLAGS
-RENDER_RC=$?
-RENDER_END=$(date +%s)
-echo "render-seconds: $(( RENDER_END - RENDER_START ))"
-echo "render-exit: \${RENDER_RC}"
-if [ -f out.mp4 ]; then
-  ls -l out.mp4
-  ffprobe -v error -show_entries format=duration,size -of default=nw=1 out.mp4 2>/dev/null || true
+
+# ── chunked, resumable rendering ──────────────────────────────────────────────
+# One command must never be the whole job. A single agent turn is bounded (one HTTP request,
+# so a few minutes), while a film can be an hour long. Rendering in independent spans and
+# stitching them afterwards means:
+#   - each render process is short, so nothing depends on one long call surviving;
+#   - finished spans are kept on the sandbox disk, so a later call RESUMES instead of restarting;
+#   - total length is limited by the pipeline, not by a request timeout.
+# This replaced a fixed 300s ceiling that made anything past ~20s of footage impossible.
+CHUNK_SECONDS=\${HF_CHUNK_SECONDS:-20}
+BUDGET_SECONDS=\${HF_BUDGET_SECONDS:-0}
+mkdir -p parts
+TOTAL_CHUNKS=${chunks.length}
+echo "render-chunks: \${TOTAL_CHUNKS} span(s) of \${CHUNK_SECONDS}s, slice budget \${BUDGET_SECONDS}s"
+echo "HF-SPANS: ${chunks.map((c) => `${c.index}:${c.start}-${c.end}`).join(',')}"
+
+render_chunk() {
+  local idx="$1" start="$2" end="$3"
+  local out="parts/part_$(printf '%04d' "$idx").mp4"
+  if [ -f "$out" ]; then echo "HF-PART: $idx cached"; return 0; fi
+  echo "HF-CHUNK: $idx $start-$end"
+  $HF render --output "$out" --fps ${fps ?? 30} --quality ${quality} --start "$start" --end "$end" $HF_FLAGS
+  local rc=$?
+  if [ "$rc" -ne 0 ] || [ ! -f "$out" ]; then
+    echo "HF-CHUNK-FAILED: $idx rc=$rc"
+    rm -f "$out"
+    return 1
+  fi
+  echo "HF-PART: $idx done $(stat -c%s "$out" 2>/dev/null || echo '?') bytes"
+  return 0
+}
+
+DONE=0
+FAILED=0
+for i in $(seq 0 $((TOTAL_CHUNKS - 1))); do
+  start=$(( i * CHUNK_SECONDS ))
+  end=$(( start + CHUNK_SECONDS ))
+  [ "$end" -gt ${o.durationSeconds} ] && end=${o.durationSeconds}
+  # Stop starting new chunks when the slice's time is nearly gone; the next call continues.
+  if [ "$BUDGET_SECONDS" -gt 0 ]; then
+    ELAPSED=$(( $(date +%s) - LOOP_START ))
+    if [ "$ELAPSED" -ge "$BUDGET_SECONDS" ]; then
+      echo "HF-BUDGET: out of slice time after $DONE chunk(s)"
+      break
+    fi
+  fi
+  render_chunk "$i" "$start" "$end" || FAILED=1
+  [ -f "parts/part_$(printf '%04d' "$i").mp4" ] && DONE=$((DONE + 1))
+done
+
+HAVE=$(ls parts/part_*.mp4 2>/dev/null | wc -l | tr -d ' ')
+echo "HF-PARTS: \${HAVE}/\${TOTAL_CHUNKS}"
+
+if [ "$HAVE" -eq "$TOTAL_CHUNKS" ] && [ "$TOTAL_CHUNKS" -gt 0 ]; then
+  echo "HF-STITCHING: \${HAVE} spans → out.mp4"
+  : > parts/list.txt
+  # Absolute paths on purpose: ffmpeg resolves concat entries relative to the LIST file, so
+  # relative entries became parts/parts/part_0000.mp4 and the stitch failed after every frame
+  # had already been rendered and paid for.
+  for f in $(ls parts/part_*.mp4 | sort); do printf "file '%s'\\n" "/home/user/${o.projectDir}/$f" >> parts/list.txt; done
+  ffmpeg -y -v error -f concat -safe 0 -i parts/list.txt -c copy out.mp4
+  STITCH_RC=$?
+  if [ "$STITCH_RC" -ne 0 ] || [ ! -f out.mp4 ]; then
+    # Stream-copy concat can fail when spans disagree on parameters — re-encode as a fallback
+    # rather than failing the whole film after all the frames have already been paid for.
+    echo "HF-STITCH-RETRY: re-encoding"
+    ffmpeg -y -v error -f concat -safe 0 -i parts/list.txt -c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p out.mp4
+    STITCH_RC=$?
+  fi
+  if [ "$STITCH_RC" -eq 0 ] && [ -f out.mp4 ]; then
+    echo "HF-STITCHED: yes"
+    ls -l out.mp4
+    ffprobe -v error -show_entries format=duration,size -of default=nw=1 out.mp4 2>/dev/null || true
+  else
+    echo "HF-STITCHED: failed rc=\${STITCH_RC}"
+    exit 1
+  fi
+else
+  echo "HF-STITCHED: no (film incomplete — call again to continue)"
+  exit 0
 fi
-[ "$RENDER_RC" -eq 0 ] || exit $RENDER_RC
   `.trim();
 
   if (!o.audioUrl) return script;

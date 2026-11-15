@@ -91,7 +91,8 @@
     "verify:approval-loop-live": "esbuild scripts/verify-approval-loop-live.ts --bundle --platform=node --format=esm --outfile=.tmp-approval-loop.mjs --log-level=warning --packages=external && node .tmp-approval-loop.mjs",
     "verify:outbound-live": "esbuild scripts/verify-outbound-live.ts --bundle --platform=node --format=esm --outfile=.tmp-outbound.mjs --log-level=warning --packages=external --alias:@/lib/agent/tools/outbound=./lib/agent/tools/outbound --alias:@/utils/voice-helper=./utils/voice-helper --alias:@/lib/automation/test-mode=./lib/automation/test-mode",
     "verify:hyperframes-live": "esbuild scripts/verify-hyperframes-live.ts --bundle --platform=node --format=esm --outfile=.tmp-hflive.mjs --log-level=warning --packages=external",
-    "verify:hyperframes": "esbuild scripts/verify-hyperframes.ts --bundle --platform=node --format=esm --outfile=.tmp-hfgate.mjs --log-level=warning && node .tmp-hfgate.mjs"
+    "verify:hyperframes": "esbuild scripts/verify-hyperframes.ts --bundle --platform=node --format=esm --outfile=.tmp-hfgate.mjs --log-level=warning && node .tmp-hfgate.mjs",
+    "verify:render-spans": "esbuild scripts/verify-render-spans.ts --bundle --platform=node --format=esm --outfile=.tmp-span.mjs --log-level=warning && node .tmp-span.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",
