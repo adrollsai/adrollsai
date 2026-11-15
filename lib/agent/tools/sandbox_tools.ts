@@ -10,7 +10,11 @@ import {
   pauseSandbox,
 } from '../sandbox';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { buildHyperFramesRenderScript } from './hyperframes-render';
+import {
+  buildHyperFramesRenderScript,
+  normaliseCompositionHtml,
+  renderLogTail,
+} from './hyperframes-render';
 
 /**
  * Reject obvious placeholder writes.
@@ -381,7 +385,7 @@ python3 render_card.py
     }),
 
     sandbox_render_hyperframes: tool({
-      description: 'Renders a broadcast-quality HyperFrames HTML/CSS/GSAP composition to MP4. Accepts custom HTML, modern CSS (Tailwind, Google Fonts, gradients, glassmorphism), and paused GSAP timelines (window.__timelines["main"] = tl). Frame-by-frame rendered with Headless Chrome into true studio-grade MP4 video.',
+      description: 'USE THIS FOR ANY DESIGNED VIDEO — reel, promo, ad, explainer, kinetic type, animated title card, anything with scenes/reveals/transitions. Pass the HTML/CSS/GSAP composition (Tailwind, Google Fonts, gradients, glassmorphism, paused GSAP timelines) and it renders frame by frame with headless Chrome into a studio-grade MP4, publishes it to storage and returns a playable artifact. It installs and runs the HyperFrames CLI itself (never hunt for the binary in bash) and repairs the data-composition-id / data-duration root attributes for you. Do NOT build a designed video with ffmpeg drawtext — that is for editing existing footage only.',
       inputSchema: z.object({
         projectName: z.string().default('hyperframes_comp').describe('Project folder name (alphanumeric, e.g. "diwali_reel")'),
         title: z.string().default('HyperFrames Video').describe('Title of the video for the player artifact'),
@@ -417,7 +421,17 @@ python3 render_card.py
             !/^placeholder$/i.test(rawHtml) &&
             !/^(todo|tbd|n\/a|\.\.\.)$/i.test(rawHtml);
 
-          const files = looksLikeHtml ? [{ path: `${safeName}/index.html`, content: rawHtml }] : [];
+          // Repair the composition contract before it is written: a hand-authored composition
+          // almost never carries data-composition-id / data-duration, and without them the
+          // renderer reports "Composition has zero duration" and produces nothing.
+          const files = looksLikeHtml
+            ? [
+                {
+                  path: `${safeName}/index.html`,
+                  content: normaliseCompositionHtml(rawHtml, { durationSeconds: dur, compositionId: safeName }),
+                },
+              ]
+            : [];
 
           const runScript = buildHyperFramesRenderScript({
             projectDir: safeName,
@@ -447,9 +461,13 @@ python3 render_card.py
                   !caps.browsers && 'hyperframes-browser',
                 ].filter(Boolean) as string[]
               : [];
+            // The render log is what names the problem ("Composition has zero duration", "Low disk
+            // space", a lint error). Returning a bare "exit status 1" left the agent guessing — it
+            // spent whole minutes probing paths — so the tail goes into the error the model reads.
+            const logTail = renderLogTail(res.stdout, res.stderr);
             const cause = missing.length
               ? `sandbox is missing ${missing.join(', ')} — the stock E2B image does not ship them; set E2B_TEMPLATE to a pre-built image`
-              : (res.error || res.stderr || res.stdout || 'no output produced').slice(0, 600);
+              : (logTail || res.error || 'no output produced').slice(0, 1200);
             throw new Error(`HyperFrames render did not produce ${safeName}/out.mp4: ${cause}`);
           }
 

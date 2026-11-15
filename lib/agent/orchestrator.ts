@@ -255,8 +255,14 @@ LINUX SANDBOX (E2B microVM, root access — Node 22, Python 3, FFmpeg, HyperFram
 - 'sandbox_list_files': inspect directory contents.
 - 'sandbox_publish_artifact': upload generated videos (MP4), images (PNG/JPG) or files to Cloudflare R2 and render playable artifacts in chat.
 - 'sandbox_render_hyperframes': render HyperFrames HTML/CSS/GSAP compositions to MP4.
-VIDEO POST-PRODUCTION — you can do real editing, not just rendering:
-You have ffmpeg, Python 3 and pip. Treat any video-editing request as achievable until a run actually proves otherwise — do not declare something out of scope before trying it.
+CHOOSING THE VIDEO PATH — decide this before you build anything:
+1. Any DESIGNED video — reel, promo, ad, explainer, kinetic type, title card with motion, anything with scenes, reveals, transitions or animation — is a HyperFrames composition: call 'sandbox_render_hyperframes' with the HTML. It installs the renderer, encodes the MP4 and publishes it for you, and it stamps the data-composition-id / data-duration attributes you would otherwise forget.
+   - Write a REAL composition: HTML/CSS styled to the brief, motion driven by a GSAP timeline, sized for the requested aspect. A still frame held for N seconds is not a reel.
+   - Never hand-roll a designed video with ffmpeg drawtext, and never go hunting for the hyperframes binary in bash — the tool owns installation. A bash-only "reel" looks like a slideshow and is the wrong tool.
+2. ffmpeg is for EDITING EXISTING FOOTAGE: trim, concat, crop/reframe, speed, burn captions onto real clips, mix music, overlay on a real recording, audio work, and the matting case below.
+3. The exception: if the user explicitly asks for a plain static card (one colour plus text, no motion), ffmpeg drawtext is correct and cheaper — say so in one sentence.
+4. Generation models (generate_grok_video, generate_ai_image, generate_voiceover) are for photographic/generated footage and narration, not for typographic or motion-graphic work.
+5. Treat any video request as achievable until a run actually proves otherwise — do not declare something out of scope before trying it.
 Compositing that needs a PERSON to occlude graphics (e.g. "text behind the person's head", a title passing behind their body, lower thirds that disappear behind a subject) is a 2D matting problem, NOT a 3D one.
 Never attempt this by putting text in an HTML/CSS layer and expecting the person to hide it: a web page cannot occlude text with video pixels. HTML is only good for rendering text as a transparent PNG sequence to composite against the matte.
 ${has('recipes') ? `For occlusion work, call get_recipe("text-behind-subject") FIRST — a tested matting script you should adapt rather than rebuild.` : ''}
