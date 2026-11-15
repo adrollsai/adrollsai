@@ -1,0 +1,135 @@
+/**
+ * Proves the approval card can actually continue the job.
+ *
+ * THE FAILURE THIS PINS
+ * Tapping Approve in production recorded the decision and then nothing happened. The card said
+ * "Approved & in progress", the row flipped to `approved`, and no run was ever created — the
+ * work never started. The cause was a single dropped prop: the durable transcript (the DEFAULT
+ * render path) accepted `onOptionSelect` but not `onResume`, so the card had no way to hand the
+ * staged instruction back to the conversation.
+ *
+ * Every approval on the default path was a dead end, and nothing caught it because each unit
+ * worked in isolation: the card resumed correctly when a handler was passed, and the handler was
+ * correct when it was called. The wire between them was missing.
+ *
+ * So this gate checks the WIRE, at every render site, not the units.
+ *
+ *   npm run verify-approval-resume
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+let pass = 0;
+let fail = 0;
+function check(name: string, ok: boolean, detail = '') {
+  if (ok) {
+    pass++;
+    console.log(`PASS  ${name}${detail ? `  — ${detail}` : ''}`);
+  } else {
+    fail++;
+    console.log(`FAIL  ${name}${detail ? `  — ${detail}` : ''}`);
+  }
+}
+const head = (title: string) => console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`);
+
+const read = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+// Comments quote the bug; only shipped code is judged.
+const code = (source: string) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+
+const transcript = code(read('components/agent/HarnessTranscript.tsx'));
+const chat = code(read('components/agent/AgentChat.tsx'));
+const feed = code(read('components/agent/FeedRows.tsx'));
+const card = code(read('components/agent/ActionConfirmationCard.tsx'));
+
+head('1. The card resumes the conversation when approved');
+
+check(
+  'approving calls onResume with the staged instruction',
+  /onResume\(artifact\.resumePrompt\)/.test(card),
+  'the card hands the job back',
+);
+check(
+  'it only resumes when there is a prompt to resume with',
+  /onResume\s*&&\s*artifact\.resumePrompt/.test(card),
+  'no empty send',
+);
+check(
+  'rejecting does not resume anything',
+  (() => {
+    // Look at the actual branch structure, not the whole file: 'rejected' also appears in the
+    // status type, and a loose proximity check would flag that instead of the real thing.
+    const approvedAt = card.indexOf("decision === 'approved'");
+    if (approvedAt < 0) return false;
+    const elseAt = card.indexOf('} else {', approvedAt);
+    if (elseAt < 0) return false;
+    const approvedBranch = card.slice(approvedAt, elseAt);
+    const rejectBranch = card.slice(elseAt, card.indexOf('} finally', elseAt));
+    return approvedBranch.includes('onResume(') && !rejectBranch.includes('onResume(');
+  })(),
+  'a cancellation stays cancelled',
+);
+
+head('2. Every tool row can reach that handler');
+
+check(
+  'the tool row forwards onResume into the confirmation card',
+  /<ActionConfirmationCard[^>]*onResume=\{onResume\}/.test(feed),
+  'FeedRows → card',
+);
+check(
+  'the tool row accepts the prop at all',
+  /onResume\?:\s*\(prompt:\s*string\)\s*=>\s*void/.test(feed),
+  'typed, not any',
+);
+
+head('3. The durable transcript — the default path — carries it');
+
+check(
+  'HarnessTranscript declares onResume',
+  /onResume\?:\s*\(prompt:\s*string\)\s*=>\s*void/.test(transcript),
+  'THE BUG: this prop did not exist',
+);
+check(
+  'HarnessTranscript forwards it to the tool row',
+  /<ToolFeedRow[\s\S]{0,400}?onResume=\{onResume\}/.test(transcript),
+  'ToolItem → ToolFeedRow',
+);
+check(
+  'ToolItem accepts and passes it through',
+  /function ToolItem\(\{[\s\S]{0,120}?onResume/.test(transcript) &&
+    /onResume=\{stableResume\}/.test(transcript),
+  'memoised without dropping the handler',
+);
+check(
+  'the stable wrapper keeps the latest handler without breaking memoisation',
+  /resumeRef\.current\s*=\s*onResume/.test(transcript) &&
+    /React\.useCallback\(\(prompt: string\)\s*=>\s*resumeRef\.current\?\.\(prompt\), \[\]\)/.test(transcript),
+  'same trick as onOptionSelect',
+);
+
+head('4. Every render site of the transcript passes a handler');
+
+const sites = [...chat.matchAll(/<HarnessTranscript[\s\S]{0,320}?\/>/g)].map((match) => match[0]);
+check('there is at least one render site', sites.length > 0, `${sites.length} site(s)`);
+check(
+  'every site passes onResume',
+  sites.every((site) => /onResume=\{handleSend\}/.test(site)),
+  sites.length === 1 ? 'the agent pane' : `${sites.length} sites`,
+);
+check(
+  'no site passes only onOptionSelect',
+  !sites.some((site) => /onOptionSelect=\{handleSend\}/.test(site) && !/onResume=/.test(site)),
+  'the dropped-prop shape cannot come back',
+);
+
+head('5. The live-streaming path still works too');
+
+check(
+  'the non-durable renderer passes onResume as well',
+  /<ToolFeedRow[\s\S]{0,400}?onResume=\{handleSend\}/.test(chat),
+  'both paths, or one of them is a dead end',
+);
+
+console.log(`\n${pass} passed, ${fail} failed`);
+if (fail > 0) process.exitCode = 1;

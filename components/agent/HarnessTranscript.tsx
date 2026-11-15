@@ -144,9 +144,11 @@ const ErrorItem = React.memo(function ErrorItem({ item }: { item: Extract<Harnes
 const ToolItem = React.memo(function ToolItem({
   item,
   onOptionSelect,
+  onResume,
 }: {
   item: Extract<HarnessItem, { kind: 'tool' }>;
   onOptionSelect?: (text: string) => void;
+  onResume?: (prompt: string) => void;
 }) {
   return (
     <ToolFeedRow
@@ -159,6 +161,7 @@ const ToolItem = React.memo(function ToolItem({
       }}
       isLoading={item.status === 'running'}
       onOptionSelect={onOptionSelect}
+      onResume={onResume}
     />
   );
 });
@@ -166,14 +169,28 @@ const ToolItem = React.memo(function ToolItem({
 export interface HarnessTranscriptProps {
   items: HarnessItem[];
   onOptionSelect?: (text: string) => void;
+  /**
+   * Sends the staged instruction back into the conversation when the owner approves.
+   *
+   * This has to be threaded through, and it was not. Approving recorded the decision and
+   * then nothing happened: the card had the resume sentence, the server marked the row
+   * `approved`, and the client had no handler to continue with because this component never
+   * accepted one. Every approval in the durable transcript — which is the DEFAULT path — was
+   * a dead end.
+   */
+  onResume?: (prompt: string) => void;
 }
 
-export default function HarnessTranscript({ items, onOptionSelect }: HarnessTranscriptProps) {
+export default function HarnessTranscript({ items, onOptionSelect, onResume }: HarnessTranscriptProps) {
   // Stable callback identity so memoised rows are not invalidated every render,
   // while still always calling the latest handler.
   const optionRef = React.useRef(onOptionSelect);
   optionRef.current = onOptionSelect;
   const stableOptionSelect = React.useCallback((text: string) => optionRef.current?.(text), []);
+
+  const resumeRef = React.useRef(onResume);
+  resumeRef.current = onResume;
+  const stableResume = React.useCallback((prompt: string) => resumeRef.current?.(prompt), []);
 
   if (!items.length) return null;
 
@@ -211,7 +228,14 @@ export default function HarnessTranscript({ items, onOptionSelect }: HarnessTran
             return <ThinkFeedRow key={item.id} text={item.text} />;
 
           case 'tool':
-            return <ToolItem key={item.id} item={item} onOptionSelect={stableOptionSelect} />;
+            return (
+              <ToolItem
+                key={item.id}
+                item={item}
+                onOptionSelect={stableOptionSelect}
+                onResume={stableResume}
+              />
+            );
 
           case 'error':
             return <ErrorItem key={item.id} item={item} />;

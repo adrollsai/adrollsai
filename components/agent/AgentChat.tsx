@@ -1638,7 +1638,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               // the event log, and only the in-flight turn comes from the live
               // stream. On finish the projection is reloaded and replaces it.
               <>
-                <HarnessTranscript items={projected?.items ?? []} onOptionSelect={handleSend} />
+                <HarnessTranscript
+                  items={projected?.items ?? []}
+                  onOptionSelect={handleSend}
+                  onResume={handleSend}
+                />
                 {/* Opening a session fetches the projection; without this the
                     pane sat blank for a beat and looked broken. */}
                 {(projected?.items?.length ?? 0) === 0 && harness.loading && (
