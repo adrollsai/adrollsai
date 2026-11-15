@@ -446,6 +446,118 @@ async function main() {
       registryNames.includes('plan_image'),
       registryNames.includes('plan_image') ? 'present in the registry' : 'NOT registered',
     );
+
+    // ── the reverse: the planning half is a tool, the measuring half is a sandbox adapter
+    const { planReverse, sandboxAnalysisTools, measureReference } = await import('../lib/agent/tools/reverse-skill');
+
+    // A fake runner that records the command it was given and answers like a sandbox.
+    const commands: string[] = [];
+    const fakeRunner = {
+      async run(command: string) {
+        commands.push(command);
+        if (command.startsWith('ffprobe')) {
+          return {
+            stdout: JSON.stringify({
+              streams: [
+                { codec_type: 'video', codec_name: 'h264', width: 720, height: 720, r_frame_rate: '25/1' },
+                { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2 },
+              ],
+              format: { duration: '10', size: '1000' },
+            }),
+          };
+        }
+        if (command.includes('silencedetect')) return { stdout: '', stderr: '[silencedetect] silence_start: 1\n[silencedetect] silence_end: 2 | silence_duration: 1' };
+        if (command.includes('base64')) {
+          // Answer with EXACTLY the bytes the analyser asked for: it rejects a short
+          // frame, and a fake that returns a fixed size would fail for the wrong reason.
+          const size = /scale=(\d+):(\d+)/.exec(command);
+          const width = size ? Number(size[1]) : 48;
+          const height = size ? Number(size[2]) : 64;
+          return { stdout: Buffer.alloc(width * height * 3, 40).toString('base64') };
+        }
+        return { stdout: '', stderr: 'pts_time:5\nlavfi.scene_score=0.5' };
+      },
+    };
+
+    const tools = sandboxAnalysisTools(fakeRunner);
+    const probed = await tools.probeJson('/work/ref.mp4');
+    check(
+      'the sandbox adapter runs ffprobe and hands back the JSON',
+      /"codec_type"/.test(probed),
+      JSON.parse(probed).streams.length + ' stream(s)',
+    );
+    check(
+      'the ffprobe command names the file and asks for the entries the parser reads',
+      commands.some((command) => command.startsWith('ffprobe') && command.includes('/work/ref.mp4') && command.includes('format=duration,size')),
+      commands[0]?.slice(0, 100),
+    );
+
+    await tools.log('/work/ref.mp4', 'silencedetect=noise=-35dB:d=0.10', 'audio');
+    await tools.log('/work/ref.mp4', 'select=gt(scene,0.2)', 'video');
+    check(
+      'the audio seam uses -af and the video seam uses -vf, and both merge stderr',
+      commands.some((command) => command.includes('-af') && command.includes('2>&1')) &&
+        commands.some((command) => command.includes('-vf') && command.includes('2>&1')),
+      `${commands.length} command(s) recorded`,
+    );
+
+    const frame = await tools.frameRgb('/work/ref.mp4', 1.5, 48, 64);
+    check(
+      'a frame comes back as raw rgb24 bytes, decoded from base64',
+      frame instanceof Uint8Array && frame.length === 48 * 64 * 3 && frame[0] === 40,
+      `${frame.length} bytes = 48x64x3`,
+    );
+    check(
+      'the frame command pipes rawvideo rgb24 through base64, so no binary file API is needed',
+      commands.some(
+        (command) => command.includes('-f rawvideo') && command.includes('-pix_fmt rgb24') && command.includes('base64'),
+      ),
+      'rawvideo | base64',
+    );
+
+    let measured: any = null;
+    try {
+      measured = await measureReference('/work/ref.mp4', fakeRunner);
+    } catch (error: any) {
+      measured = { error: String(error?.message ?? error) };
+    }
+    check(
+      'a full measurement runs end to end through the adapter',
+      Boolean(measured?.facts) && measured.facts.durationSeconds === 10,
+      measured?.error ?? `${measured?.facts?.durationSeconds}s, ${measured?.film?.shotCount} shot(s)`,
+    );
+
+    const reversePlanned = planReverse(measured);
+    check(
+      'a measurement becomes a rebuild plan with beats, credits and questions',
+      reversePlanned.success === true && (reversePlanned.questions ?? []).length > 0,
+      reversePlanned.success
+        ? `${reversePlanned.scenes} scene(s), ${reversePlanned.credits?.total} credits, ${reversePlanned.questions?.length} question(s)`
+        : reversePlanned.error,
+    );
+    check(
+      'the SPEC it produces states no figure the measurement cannot account for',
+      reversePlanned.success === true && reversePlanned.specAudit?.ok === true,
+      `${reversePlanned.specAudit?.figures} figure(s), ${reversePlanned.specAudit?.invented.length} invented`,
+    );
+    check(
+      'the copy comes back as WORD blanks, never as invented words',
+      reversePlanned.success === true && /"lines":\s*\[\s*"WORD/.test(String(reversePlanned.beatsJson)),
+      'marked blanks',
+    );
+    check(
+      'something that is not a measurement is refused with what to pass instead',
+      (() => {
+        const bad = planReverse({ nothing: true } as any);
+        return bad.success === false && /not a measurement/i.test(String(bad.error));
+      })(),
+      'refused',
+    );
+    check(
+      'reverse_plan is registered with the agent',
+      registryNames.includes('reverse_plan'),
+      registryNames.includes('reverse_plan') ? 'present in the registry' : 'NOT registered',
+    );
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -30,6 +30,7 @@ import { createAutomationTools } from './tools/automation';
 import { createFlowAuthoringTools } from './tools/flows';
 import { createPageAuthoringTools } from './tools/pages';
 import { createVideoSkillTools } from './tools/video-skill';
+import { createReverseSkillTools } from './tools/reverse-skill';
 import { selectToolGroups, type ToolGroup } from './tool-groups';
 import { preflightPromptSection } from './preflight';
 
@@ -109,6 +110,10 @@ export async function createAgentContext(
     // credit model) as something the agent must pass BEFORE promising a film. Purely a
     // validation and quote — it spends nothing and renders nothing.
     ...(has('media') ? createVideoSkillTools() : {}),
+    // reverse_plan: a MEASURED reference video -> an editable rebuild, the spec, and the
+    // questions a human must answer. Pure; the measurement half is a sandbox adapter and
+    // deliberately not reachable from a tool until it can be proven against a real sandbox.
+    ...(has('media') ? createReverseSkillTools() : {}),
     // create_landing_page, which `sites` alone could only publish.
     ...(has('sites') ? createPageAuthoringTools(supabase, userId) : {}),
     // Composition sits on top of the media primitives: it applies the business's
