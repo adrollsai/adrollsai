@@ -29,6 +29,7 @@ import { createReportingTools } from './tools/reporting';
 import { createAutomationTools } from './tools/automation';
 import { createFlowAuthoringTools } from './tools/flows';
 import { createPageAuthoringTools } from './tools/pages';
+import { createProductMediaTools } from './tools/product-media';
 import { createVideoSkillTools } from './tools/video-skill';
 import { createReverseSkillTools } from './tools/reverse-skill';
 import { selectToolGroups, type ToolGroup } from './tool-groups';
@@ -134,6 +135,9 @@ export async function createAgentContext(
     // Playbook is always available: it is how the CEO reads its own decisions and
     // how the user changes behaviour in plain language. Not feature-gated.
     ...createPlaybookTools(supabase, userId),
+    // A product's own photos, footage and documents. Always available: "make a creative for
+    // this product" should reach the real thing rather than inventing imagery.
+    ...createProductMediaTools(supabase, userId),
     ...(has('ops') ? createNotificationTools(supabase, userId) : {}),
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),

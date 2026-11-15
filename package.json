@@ -80,7 +80,8 @@
     "verify:agent-capabilities": "esbuild scripts/verify-agent-capabilities.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-agentcap.mjs --log-level=warning && node .tmp-agentcap.mjs",
     "verify:launch-course": "esbuild scripts/verify-launch-course.ts --bundle --platform=node --format=esm --outfile=.tmp-launch.mjs --log-level=warning --alias:@/lib/automation/industry=./lib/automation/industry && node .tmp-launch.mjs",
     "verify:vendor-skills": "esbuild scripts/verify-vendor-skills.ts --bundle --platform=node --format=esm --outfile=.tmp-vendor.mjs --log-level=warning && node .tmp-vendor.mjs",
-    "verify:review-gate": "esbuild scripts/verify-review-gate.ts --bundle --platform=node --format=esm --outfile=.tmp-gate.mjs --log-level=warning && node .tmp-gate.mjs"
+    "verify:review-gate": "esbuild scripts/verify-review-gate.ts --bundle --platform=node --format=esm --outfile=.tmp-gate.mjs --log-level=warning && node .tmp-gate.mjs",
+    "verify:product-media": "esbuild scripts/verify-product-media.ts --bundle --platform=node --format=esm --outfile=.tmp-pmedia.mjs --log-level=warning --alias:@/lib/catalog/product-media=./lib/catalog/product-media && node .tmp-pmedia.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",
