@@ -317,8 +317,51 @@ ${parts.join('\n')}
   return { html, slug, sections: used };
 }
 
+/**
+ * Build this business's whole website from its own catalogue.
+ *
+ * A landing page is one offer to one audience; a website is the business — home, offerings, contact.
+ * There was no tool for the latter, so "build me a website" produced a landing page instead.
+ */
+function buildWebsiteTool(supabase: any, userId: string) {
+  return tool({
+    description:
+      "Build or rebuild this business's FULL WEBSITE (home, offerings from the catalogue, proof, contact) and " +
+      'publish it at /shared/<owner>/index. Use it when the owner asks for a website, a site, or their whole ' +
+      'online presence — NOT for a single-offer page (that is create_landing_page). If you are unsure which ' +
+      'they want, ASK: one page for one offer, or a multi-section website for the whole business.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        const { ensureTenantSite } = await import('@/lib/automation/site-builder');
+        const built = await ensureTenantSite(supabase, userId);
+        const { data } = await supabase
+          .from('landing_pages')
+          .select('slug, title')
+          .eq('user_id', userId)
+          .eq('slug', 'index')
+          .maybeSingle();
+        return {
+          success: true,
+          slug: data?.slug ?? 'index',
+          title: data?.title ?? null,
+          url: `/shared/${userId}/index`,
+          created: (built as any)?.created ?? null,
+          skipped: (built as any)?.skipped ?? null,
+          message:
+            'The website is built from the profile and catalogue and live at ' +
+            `/shared/${userId}/index. Review it, then tell the owner what it contains and what it left out.`,
+        };
+      } catch (error: any) {
+        return { success: false, error: String(error?.message || error) };
+      }
+    },
+  });
+}
+
 export function createPageAuthoringTools(supabase: SupabaseClient, userId: string) {
   return {
+    build_website: buildWebsiteTool(supabase, userId),
     create_landing_page: tool({
       description:
         'Create a landing page for an offer and save it. BEFORE YOU DESIGN: call get_skill(\'scroll-craft\') for ' +

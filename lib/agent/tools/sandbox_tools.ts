@@ -501,14 +501,12 @@ python3 render_card.py
           // A film is rendered in spans, and the slice budget comes from the request we are
           // inside rather than a hard-coded number. Whatever does not fit is resumed next call.
           //
-          // Past the drawing cap we stop drawing every frame. At ~0.085s per frame an hour of
-          // film is two to three HOURS of compute, which is not something anyone waits for. So a
-          // long film is drawn for a representative stretch and repeated to length, and the
-          // result says plainly that it happened. A caller who truly needs every frame (a story, a
-          // countdown, changing prices) passes fullRenderSeconds and gets the honest estimate.
-          const drawingCap = maxDrawnSeconds();
-          const autoLooped = !loopSeconds && !fullRenderSeconds && dur > drawingCap;
-          const effectiveLoopSeconds = loopSeconds ?? (autoLooped ? drawingCap : undefined);
+          // NEVER loop unless it was asked for. An earlier version repeated a long film by default,
+          // which nobody wants: a 10-minute request came back as the same 3 minutes played over
+          // twice. Long films are drawn in full, and the result carries the honest estimate so the
+          // wait is never a surprise.
+          const autoLooped = false;
+          const effectiveLoopSeconds = loopSeconds;
           const renderSeconds = effectiveLoopSeconds && effectiveLoopSeconds > 0 ? Math.min(effectiveLoopSeconds, dur) : dur;
           const spans = planRenderSpans({
             durationSeconds: renderSeconds,
@@ -675,7 +673,7 @@ python3 render_card.py
             ...(renderSecondsTaken ? { renderSeconds: renderSecondsTaken } : {}),
             ...(sizeMB ? { sizeMB } : {}),
             ...(capVerdict ? { sizeCap: capVerdict } : {}),
-            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render (${autoLooped ? 'automatic — long film' : 'requested'})` : ''}${sizeMB ? `, ${sizeMB}MB` : ''}${capVerdict === 'trimmed-to-fit' ? ', trimmed to fit the size cap' : capVerdict === 'over-target' ? ', still over the size target — tell the user' : ''}).`,
+            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render` : ''}${sizeMB ? `, ${sizeMB}MB` : ''}${capVerdict === 'trimmed-to-fit' ? ', trimmed to fit the size cap' : capVerdict === 'over-target' ? ', still over the size target — tell the user' : ''}).`,
             artifact: {
               type: 'video_player',
               title,

@@ -72,6 +72,7 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   nobogent_voice_dispatch_call: { actionType: 'bulk_call', why: 'a real customer is phoned and each call is billed' },
   publish_social_post: { actionType: 'whatsapp_broadcast', why: 'it publishes publicly in the business name' },
   site_publish_landing_page: { actionType: 'custom', why: 'it makes a page public in the business name' },
+  build_website: { actionType: 'custom', why: 'it publishes a public website in the business name' },
 
   // ── irreversible
   delete_data: { actionType: 'delete_data', why: 'deleting cannot be undone' },
