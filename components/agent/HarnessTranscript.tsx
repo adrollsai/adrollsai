@@ -32,10 +32,14 @@ function CopyButton({ text }: { text: string }) {
     <button
       onClick={onCopy}
       title="Copy"
-      className="p-0.5 transition"
+      aria-label="Copy this message"
+      // A phone conversation stacks eight or more of these down the screen, so they have to be
+      // thumb-sized. Pixel values on purpose: this app's rem is ~14.5px, so a Tailwind step that
+      // looks like 44 measures 40.
+      className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center transition"
       style={{ color: 'var(--dsw-alias-label-caption)' }}
     >
-      {copied ? <Check size={13} style={{ color: 'var(--dsw-alias-state-success-primary)' }} /> : <Copy size={13} />}
+      {copied ? <Check size={14} style={{ color: 'var(--dsw-alias-state-success-primary)' }} /> : <Copy size={14} />}
     </button>
   );
 }
