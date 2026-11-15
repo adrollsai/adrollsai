@@ -321,7 +321,10 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
   return {
     create_landing_page: tool({
       description:
-        'Create a landing page for an offer and save it. Compose it from facts you were GIVEN: the business ' +
+        'Create a landing page for an offer and save it. BEFORE YOU DESIGN: call get_skill(\'scroll-craft\') for ' +
+  'landing-page structure that survives a thumb-scroll, and get_skill(\'ui-ux-pro-max\') for the layout, ' +
+  'typography and CTA system — or pick_skill with what the page must achieve if you are unsure which ' +
+  'applies. Compose it from facts you were GIVEN: the business ' +
         'name, what is being sold, who it is for, the offer as the owner stated it, and a phone number. Do not ' +
         'invent a price, a date, an address, a discount or a testimonial — leave it out and ask instead. The page ' +
         'is emitted with editable sections, so it can be adjusted one section at a time afterwards. ' +

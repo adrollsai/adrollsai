@@ -597,7 +597,7 @@ export async function GET(request: Request, { params }: RouteProps) {
                                 
                                 if (window.fbq) {
                                     window.fbq('track', 'Lead', {
-                                        content_name: '${page.product_name.replace(/'/g, "\\'")}',
+                                        content_name: '${(page.product_name || page.title || '').replace(/'/g, "\\'")}',
                                         status: 'Qualified'
                                     }, { eventID: eventId });
                                 }
@@ -1668,7 +1668,7 @@ export async function GET(request: Request, { params }: RouteProps) {
 
                                 if (window.fbq) {
                                     window.fbq('track', 'Lead', {
-                                        content_name: '${page.product_name.replace(/'/g, "\\'")}',
+                                        content_name: '${(page.product_name || page.title || String()).replace(/'/g, "\\'")}',
                                         status: 'Qualified'
                                     }, { eventID: eventId });
                                 }
