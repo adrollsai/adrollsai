@@ -225,7 +225,10 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
     }),
 
     nobogent_whatsapp_send_template: tool({
-      description: 'Nobogent App MCP: Sends a WhatsApp template message to a phone number or lead.',
+      description:
+        'Nobogent App MCP: Sends a WhatsApp template message to a phone number or lead. This really ' +
+        'sends — it returns the Meta message id on success and the provider error on failure. ' +
+        'Requires human approval first.',
       inputSchema: z.object({
         phone: z.string().describe('Recipient phone number (e.g. +91 9876543210)'),
         templateName: z.string().describe('Name of the approved template to send'),
@@ -233,12 +236,25 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
       }),
       execute: async ({ phone, templateName, variables }) => {
         try {
-          return {
-            success: true,
+          // Previously this returned "queued for delivery" and posted nothing at all.
+          const { sendWhatsAppTemplate } = await import('@/lib/agent/tools/outbound');
+          const result = await sendWhatsAppTemplate({
+            supabase,
+            userId,
             phone,
             templateName,
-            status: 'queued',
-            message: `WhatsApp template "${templateName}" queued for delivery to ${phone}.`,
+            variables,
+          });
+          if (!result.success) {
+            return { success: false, error: result.error, templateName, attemptedTo: result.to ?? phone };
+          }
+          return {
+            success: true,
+            to: result.to,
+            messageId: result.messageId,
+            templateName: result.templateName,
+            testModeRedirect: result.redirected || undefined,
+            message: `WhatsApp template "${templateName}" accepted by Meta for ${result.to} (id ${result.messageId}).`,
           };
         } catch (err: any) {
           return { success: false, error: err.message };
@@ -247,7 +263,10 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
     }),
 
     nobogent_voice_dispatch_call: tool({
-      description: 'Nobogent App MCP: Dispatches an outbound AI phone call to a lead using the 24/7 AI Voice caller.',
+      description:
+        'Nobogent App MCP: Dispatches an outbound AI phone call to a lead using the 24/7 AI Voice ' +
+        'caller. This really dials — it returns the provider call id, or the reason it could not ' +
+        'call. Requires human approval first.',
       inputSchema: z.object({
         phone: z.string().describe('Phone number to call'),
         objective: z.string().describe('Call goal (e.g. "Follow up on luxury villa inquiry, verify budget and schedule site visit")'),
@@ -255,24 +274,22 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
       }),
       execute: async ({ phone, objective, leadName }) => {
         try {
-          const { data, error } = await supabase
-            .from('call_logs')
-            .insert({
-              user_id: userId,
-              phone_number: phone,
-              status: 'queued',
-              summary: `Goal: ${objective} (Lead: ${leadName || 'Contact'})`,
-            })
-            .select()
-            .single();
-
-          if (error) throw error;
-
+          // This used to insert a "queued" call_logs row and report "call initiated" without
+          // dialling anyone. It now places the call through the same dispatcher the cron uses.
+          const { dispatchVoiceCall } = await import('@/lib/agent/tools/outbound');
+          const result = await dispatchVoiceCall({ supabase, userId, phone, objective, leadName });
+          if (!result.success) {
+            return { success: false, error: result.error, attemptedTo: result.to ?? phone };
+          }
           return {
             success: true,
-            callId: data?.id,
-            status: 'initiated',
-            message: `AI Voice agent call initiated to ${leadName ? `${leadName} (${phone})` : phone} with objective: "${objective}".`,
+            callId: result.callId,
+            callSid: result.callSid,
+            to: result.to,
+            scheduled: result.scheduled,
+            message: result.scheduled
+              ? `Call to ${result.to} is scheduled rather than dialled now (outside calling hours).`
+              : `Call placed to ${result.to}${leadName ? ` (${leadName})` : ''} with objective: "${objective}".`,
           };
         } catch (err: any) {
           return { success: false, error: err.message };

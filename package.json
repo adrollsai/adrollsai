@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "nobogent-app",
   "version": "0.1.0",
   "private": true,
@@ -88,7 +88,8 @@
     "verify:routing": "esbuild scripts/verify-routing.ts --bundle --platform=node --format=esm --outfile=.tmp-routing.mjs --log-level=warning && node .tmp-routing.mjs",
     "verify:approval-outcome": "esbuild scripts/verify-approval-outcome.ts --bundle --platform=node --format=esm --outfile=.tmp-approval.mjs --log-level=warning && node .tmp-approval.mjs",
     "verify:approval-resume": "esbuild scripts/verify-approval-resume.ts --bundle --platform=node --format=esm --outfile=.tmp-resume-approval.mjs --log-level=warning && node .tmp-resume-approval.mjs",
-    "verify:approval-loop-live": "esbuild scripts/verify-approval-loop-live.ts --bundle --platform=node --format=esm --outfile=.tmp-approval-loop.mjs --log-level=warning --packages=external && node .tmp-approval-loop.mjs"
+    "verify:approval-loop-live": "esbuild scripts/verify-approval-loop-live.ts --bundle --platform=node --format=esm --outfile=.tmp-approval-loop.mjs --log-level=warning --packages=external && node .tmp-approval-loop.mjs",
+    "verify:outbound-live": "esbuild scripts/verify-outbound-live.ts --bundle --platform=node --format=esm --outfile=.tmp-outbound.mjs --log-level=warning --packages=external --alias:@/lib/agent/tools/outbound=./lib/agent/tools/outbound --alias:@/utils/voice-helper=./utils/voice-helper --alias:@/lib/automation/test-mode=./lib/automation/test-mode"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",
