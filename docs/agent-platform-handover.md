@@ -366,9 +366,32 @@ numbers: a card scene of 2.5 s fails because the card's own blocks need more hol
 ("ADDRESS UNKNOWN is on screen 1.081s but needs 1.1s"), and 4 s fails because it squeezes
 a film beat under its floor (0.737 s against 0.8 s). This reference has no spare time to
 give the card. So on a reference whose last shot carries voice, THAT ONE LINE is timed and
-never drawn; the rest of the film rebuilds correctly. The real fix is to derive the card's
-duration from the measured tail of the reference rather than from a constant, and to let
-the runtime drift a little when there is no tail — a decision, not a patch.
+never drawn; the rest of the rebuild is correct, and the loss is now NAMED in the notes
+with the measured tail (0.000 s for the owner's reference).
+
+### What was tried and reverted, and the root cause it exposed
+
+The obvious fix — give the card its own scene and raise `targetSeconds` by the card's
+duration so no beat pays for it — DOES NOT WORK, and the reason is worth writing down:
+
+1. **A beat's on-screen hold does not come from the fit.** It is `line.dur + gap`, where
+   `line.dur` is the onset the rebuild passed in. `fitTimingToRuntime` only ever changes
+   the GAP (tightening it when the film overruns, or leaving it alone). So when a beat is
+   refused at 0.737 s, that is its measured voice (≈0.38 s) plus the calibrated gap
+   (0.358 s) — raising the target cannot lengthen it. The fix has to lengthen the VOICE
+   slice, which is the grouping/extension step, not the timing step.
+
+2. **`voiceSlices` recovers the grouping by COUNT, not by identity.** It walks a floor
+   ladder (0.8, 1.1, 1.4 …) and takes the first floor that produces exactly as many
+   groups as there are beats. Two different floors can produce the SAME count with
+   DIFFERENT groupings, so the slices can silently belong to a different grouping than the
+   one `buildBeats` used — giving a beat the wrong duration, or none.
+
+**The next attempt must** key the grouping by identity rather than by count: write the
+covered onset indices (or the group start/end) into the beats file, or thread the chosen
+floor through `buildBeats` → `onsetsFromAnalysis` → `voiceSlices` explicitly. Once the
+beat holds are the ones the builder intended, a card scene with a raised `targetSeconds`
+should work — the card then costs runtime and nothing else.
 
 ## Tooling gotchas that cost real time
 
