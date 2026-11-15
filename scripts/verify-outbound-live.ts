@@ -25,6 +25,9 @@ const flag = (name: string, fallback?: string) => {
 };
 
 const OWNER_EMAIL = 'rchopra489@gmail.com';
+// A hard rail: this script may only ever reach one number. Without it, a deployment with
+// OUTBOUND_TEST_MODE off would send to whatever the profile happens to say.
+const OWNER_NUMBER = '918288835235';
 const KIND = args.includes('--call') ? 'call' : 'whatsapp';
 const TEMPLATE = flag('template', 'hello_world') as string;
 // The templates approved on this WABA are all en_US, not en.
@@ -51,6 +54,19 @@ if (!profile?.id) {
   process.exit(1);
 }
 console.log(`account   : ${profile.business_name} (${String(profile.id).slice(0, 8)}…)\n`);
+
+// The rail. Everything below may only reach the owner's own phone.
+const target = process.env.OUTBOUND_TEST_MODE === 'true'
+  ? String(process.env.OUTBOUND_TEST_NUMBER || '').replace(/\D/g, '')
+  : OWNER_NUMBER;
+if (target !== OWNER_NUMBER) {
+  console.error(
+    `REFUSING TO SEND: this script may only reach ${OWNER_NUMBER}, but the configured target is ` +
+      `"${target || '(empty)'}". Fix OUTBOUND_TEST_NUMBER or the profile before running it.`,
+  );
+  process.exit(1);
+}
+console.log(`target    : ${target} (owner only)\n`);
 
 if (KIND === 'whatsapp') {
   console.log(`▸ sending WhatsApp template "${TEMPLATE}" (recipient is forced to the test number)\n`);
