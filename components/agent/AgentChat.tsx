@@ -179,10 +179,11 @@ function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleC
             </div>
             <button
               onClick={() => handleCopyMessage(sanitizedText, mIdx)}
-              className="mt-1 dsh-label-caption dsh-interactive p-0.5"
+              className="mt-1 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 dsh-label-caption dsh-interactive flex items-center justify-center"
               title="Copy"
+              aria-label="Copy this message"
             >
-              {copiedIndex === mIdx ? <Check size={12} className="dsh-success" /> : <Copy size={12} />}
+              {copiedIndex === mIdx ? <Check size={14} className="dsh-success" /> : <Copy size={14} />}
             </button>
           </div>
         </div>
