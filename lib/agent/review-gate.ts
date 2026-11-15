@@ -29,6 +29,8 @@
  * gate fails CLOSED for any tool listed here and is tested for exactly that.
  */
 
+import { z } from 'zod';
+
 export type ReviewActionType =
   | 'whatsapp_broadcast'
   | 'bulk_call'
@@ -146,8 +148,15 @@ export function blockedResult(
 
 /** Where approvals are read from. Injected so the gate can be tested without a database. */
 export interface ApprovalStore {
-  /** Approved actions for this user, newest first. */
-  approved(actionType: ReviewActionType): Promise<{ actionPayload: unknown }[]>;
+  /** Approved actions for this user, newest first. The full event payload, so the gate can
+   *  both compare arguments and re-run the approved one verbatim. */
+  approved(actionType: ReviewActionType): Promise<ApprovedAction[]>;
+}
+
+export interface ApprovedAction {
+  /** Absent on rows written before this field was stored; fingerprint matching still works. */
+  actionId?: string;
+  actionPayload: unknown;
 }
 
 /** `agent_events` rows written by `request_human_approval`, once the owner taps approve. */
@@ -166,9 +175,71 @@ export function supabaseApprovalStore(supabase: any, userId: string): ApprovalSt
       return (data ?? [])
         .map((row: any) => row?.payload ?? {})
         .filter((payload: any) => payload?.actionType === actionType)
-        .map((payload: any) => ({ actionPayload: payload.actionPayload }));
+        .map((payload: any) => ({
+          actionId: typeof payload?.actionId === 'string' ? payload.actionId : undefined,
+          actionPayload: payload?.actionPayload,
+        }));
     },
   };
+}
+
+export interface ApprovalMatch {
+  /** How the call was authorised. */
+  via: 'fingerprint' | 'approvalId';
+  /** The payload the owner actually approved — what should be run. */
+  actionPayload: unknown;
+}
+
+/**
+ * Find the approval that authorises this call, if any.
+ *
+ * TWO WAYS TO MATCH, and the second one exists because the first is not enough in practice:
+ *
+ *   fingerprint — the args are identical to what the owner saw (normalised for key order).
+ *                 Correct, but it asks the MODEL to reproduce its own prose byte for byte. In
+ *                 production it never did: every retry re-worded the image prompt, so the gate
+ *                 kept refusing work the owner had just approved, and the flagship journey
+ *                 ("approve, then it runs") failed at the last step.
+ *
+ *   approvalId  — the agent passes the id of an approved action and the gate runs THAT payload
+ *                 instead of the caller's arguments. The owner approved specific work; this runs
+ *                 exactly it. Nothing about the budget can change, because the stored payload is
+ *                 what was displayed when they tapped approve.
+ *
+ * Both paths are scoped to an approved row of the same action type, and a store failure still
+ * fails CLOSED.
+ */
+export async function findApproval(
+  store: ApprovalStore,
+  policy: ReviewPolicy,
+  input: unknown,
+): Promise<ApprovalMatch | null> {
+  const wanted = approveFingerprint(input);
+  const requestedId =
+    input && typeof input === 'object' && typeof (input as any).approvalId === 'string'
+      ? (input as any).approvalId
+      : null;
+
+  try {
+    const approved = await store.approved(policy.actionType);
+
+    if (requestedId) {
+      const byId = approved.find((entry) => entry.actionId === requestedId);
+      if (byId) return { via: 'approvalId', actionPayload: byId.actionPayload };
+      // An id was given that is not approved: refuse. Never fall back to running the caller's
+      // arguments on the strength of some other approval.
+      return null;
+    }
+
+    const byFingerprint = approved.find((entry) => approveFingerprint(entry.actionPayload) === wanted);
+    if (byFingerprint) return { via: 'fingerprint', actionPayload: byFingerprint.actionPayload };
+
+    return null;
+  } catch {
+    // Fail CLOSED: if approvals cannot be read, nothing dangerous runs. A stuck button is
+    // recoverable; an unreviewed launch is not.
+    return null;
+  }
 }
 
 /** True when an approved action matches this exact call. */
@@ -177,15 +248,7 @@ export async function isApproved(
   policy: ReviewPolicy,
   input: unknown,
 ): Promise<boolean> {
-  const wanted = approveFingerprint(input);
-  try {
-    const approved = await store.approved(policy.actionType);
-    return approved.some((entry) => approveFingerprint(entry.actionPayload) === wanted);
-  } catch {
-    // Fail CLOSED: if approvals cannot be read, nothing dangerous runs. A stuck button is
-    // recoverable; an unreviewed launch is not.
-    return false;
-  }
+  return (await findApproval(store, policy, input)) !== null;
 }
 
 /**
@@ -209,14 +272,70 @@ export function applyReviewGate(
 
     gated[name] = {
       ...definition,
+      // The approval id has to survive schema validation to reach execute, so every gated tool
+      // gains the one optional field. Zod strips unknown keys, which is exactly how the first
+      // attempt at this failed silently.
+      inputSchema: withApprovalId(definition.inputSchema),
       execute: async (input: any, ...rest: any[]) => {
-        if (!(await isApproved(store, policy, input))) {
-          return blockedResult(name, policy, input);
+        const match = await findApproval(store, policy, input);
+        if (!match) {
+          const blocked = blockedResult(name, policy, stripApprovalId(input));
+          return {
+            ...blocked,
+            message:
+              `${blocked.message} If the owner has ALREADY approved this exact step, call "${name}" ` +
+              'again with its `approvalId` and do not re-type the arguments — the approved version ' +
+              'is what runs.',
+          };
         }
-        return definition.execute(input, ...rest);
+        // Run the approved payload, not the caller's restatement of it.
+        const payload =
+          match.via === 'approvalId' ? match.actionPayload : stripApprovalId(input);
+        return definition.execute(payload, ...rest);
       },
     };
   }
 
   return gated;
+}
+
+/** Remove the gate's own bookkeeping field before a tool sees its arguments. */
+export function stripApprovalId(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const { approvalId, ...rest } = input as Record<string, unknown>;
+  void approvalId;
+  return rest;
+}
+
+/** Add the optional `approvalId` to a tool's schema, when the schema can take it. */
+function withApprovalId(schema: any): any {
+  if (!schema || typeof schema.extend !== 'function') return schema;
+  try {
+    return schema.extend({ approvalId: approvalIdSchema() });
+  } catch {
+    // A schema that cannot be extended (refined, union, transformed) keeps its own shape; the
+    // fingerprint path still authorises those tools.
+    return schema;
+  }
+}
+
+/**
+ * The one field the gate adds to every dangerous tool.
+ *
+ * It has to be IN the schema, not merely read off the input: the AI SDK validates arguments
+ * against `inputSchema` and Zod strips unknown keys, so an unlisted `approvalId` would be
+ * dropped before `execute` ever saw it. That silent strip is the difference between the
+ * approval path working and failing without a trace.
+ */
+function approvalIdSchema(): any {
+  // Static import: the file is server-only, and a lazy require splits the zod instance in some
+  // bundlers, which would make `extend` fail at runtime.
+  return z
+    .string()
+    .optional()
+    .describe(
+      'The approvalId of a step the owner has ALREADY approved. When you pass it, the exact ' +
+        'approved arguments are used and any other argument you supply is ignored — so do not ' +
+        're-type the payload.',
+    );
 }

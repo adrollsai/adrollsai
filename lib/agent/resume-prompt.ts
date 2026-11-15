@@ -49,8 +49,10 @@ export function buildResumePrompt(input: ResumePromptInput): string {
     `The owner has already reviewed and APPROVED this ${kind}${title ? ` ("${title.slice(0, 120)}")` : ''}.`,
     `Approval reference: ${actionId}.`,
     'This is not a new request — do not plan it again and do not call request_human_approval for it a second time.',
-    'Execute it now, with exactly the details that were staged and approved.',
-    'If a tool refuses because the arguments differ from what was approved, stop and tell the owner precisely what differs — never ask for the same approval twice.',
+    `Execute it now by calling the tool again and passing this approvalId: ${actionId}. The approved ` +
+      'arguments are used verbatim, so do NOT re-type or re-word the payload — a restated payload ' +
+      'will not match what the owner approved.',
+    'If a tool still refuses, stop and tell the owner exactly what it said — never ask for the same approval twice.',
   ];
 
   const modelSentence = String(input.resumePrompt ?? '').trim();

@@ -22,9 +22,11 @@ import {
   isApproved,
   reviewPolicyFor,
   supabaseApprovalStore,
+  stripApprovalId,
   type ApprovalStore,
   type ReviewActionType,
 } from '../lib/agent/review-gate';
+import { z } from 'zod';
 
 let pass = 0;
 let fail = 0;
@@ -40,12 +42,14 @@ function check(name: string, ok: boolean, detail = '') {
 const head = (title: string) => console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`);
 
 /** A store that holds whatever we tell it to. */
-function storeWith(payloads: { actionType: ReviewActionType; actionPayload: unknown }[]): ApprovalStore {
+function storeWith(
+  payloads: { actionType: ReviewActionType; actionPayload: unknown; actionId?: string }[],
+): ApprovalStore {
   return {
     async approved(actionType) {
       return payloads
         .filter((entry) => entry.actionType === actionType)
-        .map((entry) => ({ actionPayload: entry.actionPayload }));
+        .map((entry) => ({ actionId: entry.actionId, actionPayload: entry.actionPayload }));
     },
   };
 }
@@ -286,6 +290,98 @@ head('8. The blocked result is what the agent needs, not a dead end');
     'it is signposted to request_human_approval specifically',
     blocked.call.tool === 'request_human_approval',
     blocked.call.tool,
+  );
+}
+
+head('9. An approval can carry its own payload — and only that payload runs');
+
+{
+  // THE PRODUCTION FAILURE THIS FIXES: the owner approves, the agent is told to run it, and the
+  // model re-words the image prompt instead of repeating itself. The fingerprint does not match,
+  // so the gate refuses work the owner just approved. Passing the approvalId removes the model
+  // from the copy-verbatim problem entirely.
+  const spy = spyTool();
+  const gated = applyReviewGate(
+    { generate_ai_image: spy.definition },
+    storeWith([{ actionType: 'create_asset', actionPayload: IMAGE_CALL, actionId: 'act_approved' }]),
+  );
+
+  const byId = await gated.generate_ai_image.execute({ approvalId: 'act_approved', brief: 'totally reworded' });
+  check(
+    'passing the approvalId runs the approved call',
+    byId?.ran === true && spy.calls.length === 1,
+    'no fingerprint needed',
+  );
+  check(
+    'and it runs the APPROVED arguments, not the caller\'s restatement',
+    approveFingerprint(spy.calls[0]) === approveFingerprint(IMAGE_CALL),
+    'a reworded payload cannot change what was approved',
+  );
+  check(
+    'the reworded price in the retry is ignored, not merged',
+    !/reworded/.test(JSON.stringify(spy.calls[0])),
+    'the approved ₹999 runs, not a smuggled ₹9,999',
+  );
+
+  const unknownId = await gated.generate_ai_image.execute({ approvalId: 'act_never_approved' });
+  check(
+    'an approvalId that was never approved is refused',
+    unknownId?.needs_review === true && spy.calls.length === 1,
+    'no fallback to the caller\'s arguments',
+  );
+  check(
+    'the refusal tells the agent how to use an approval it really has',
+    /approvalId/.test(String(unknownId?.message)),
+    'actionable, not a dead end',
+  );
+
+  const wrongType = applyReviewGate(
+    { generate_ai_image: spy.definition },
+    storeWith([{ actionType: 'ad_spend', actionPayload: CAMPAIGN_A, actionId: 'act_campaign' }]),
+  );
+  const crossType = await wrongType.generate_ai_image.execute({ approvalId: 'act_campaign' });
+  check(
+    'an approval for a different action type does not unlock this tool',
+    crossType?.needs_review === true,
+    'an ad-spend approval cannot generate an image',
+  );
+}
+
+{
+  const spy = spyTool();
+  const gated = applyReviewGate(
+    { generate_ai_image: spy.definition },
+    storeWith([{ actionType: 'create_asset', actionPayload: IMAGE_CALL, actionId: 'act_approved' }]),
+  );
+  const blocked = await gated.generate_ai_image.execute({ approvalId: 'act_x', brief: 'nope' });
+  check(
+    'the blocked result does not echo the gate\'s own approvalId back as a payload',
+    blocked?.call?.actionPayload && !('approvalId' in (blocked.call.actionPayload as object)),
+    'clean payload for approval',
+  );
+}
+
+{
+  // The field has to survive schema validation or the whole path is dead on arrival.
+  const schema = z.object({ brief: z.string() });
+  const spy = spyTool();
+  const gated = applyReviewGate(
+    { generate_ai_image: { ...spy.definition, inputSchema: schema } },
+    storeWith([{ actionType: 'create_asset', actionPayload: { brief: 'x' }, actionId: 'act_1' }]),
+  );
+  const parsed = gated.generate_ai_image.inputSchema.parse({ brief: 'x', approvalId: 'act_1' });
+  check(
+    'every gated tool accepts an approvalId through its schema',
+    parsed.approvalId === 'act_1',
+    'not stripped by validation',
+  );
+  check(
+    'the tool itself never receives the gate\'s bookkeeping field',
+    (() => {
+      const result = stripApprovalId({ brief: 'x', approvalId: 'act_1' }) as any;
+      return result.brief === 'x' && !('approvalId' in result);
+    })(),
+    'tools see their own arguments only',
   );
 }
 

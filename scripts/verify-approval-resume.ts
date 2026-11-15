@@ -159,13 +159,13 @@ check(
   'the loop is named and closed',
 );
 check(
-  'it tells the agent to execute with the staged details',
-  /exactly the details that were staged and approved/i.test(resumeFor()),
-  'so the fingerprint matches',
+  'it tells the agent to execute by passing the approval id, not by re-typing',
+  resumeFor().includes(`approvalId: act_abc123`) && /do NOT re-type or re-word/i.test(resumeFor()),
+  'the approved payload runs verbatim',
 );
 check(
-  'it says what to do if the gate refuses on a mismatch',
-  /tell the owner precisely what differs/i.test(resumeFor()) &&
+  'it says what to do if the gate still refuses',
+  /tell the owner exactly what it said/i.test(resumeFor()) &&
     /never ask for the same approval twice/i.test(resumeFor()),
   'honest failure instead of another card',
 );
