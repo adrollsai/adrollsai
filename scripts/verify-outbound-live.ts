@@ -29,6 +29,8 @@ const KIND = args.includes('--call') ? 'call' : 'whatsapp';
 const TEMPLATE = flag('template', 'hello_world') as string;
 // The templates approved on this WABA are all en_US, not en.
 const LANG = flag('lang', 'en_US') as string;
+// Call through the owned Indian Vobiz line instead of the Twilio default.
+const USE_BLUESQUARE = args.includes('--bluesquare');
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -69,12 +71,14 @@ if (KIND === 'whatsapp') {
   }
 } else {
   console.log('▸ placing one AI voice call (recipient is forced to the test number)\n');
+  if (USE_BLUESQUARE) console.log('  using the Bluesquare Infra Vobiz DID (+917965480905)\n');
   const result = await dispatchVoiceCall({
     supabase: admin,
     userId: profile.id,
     phone: process.env.OUTBOUND_TEST_NUMBER || String(profile.contact_number || ''),
     objective: 'This is a test call from Nobogent. Say hello and end the call.',
     leadName: 'Owner test call',
+    useBluesquareDid: USE_BLUESQUARE,
   });
   console.log(JSON.stringify(result, null, 2));
   if (result.success) {

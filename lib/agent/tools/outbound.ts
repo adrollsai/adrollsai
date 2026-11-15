@@ -164,6 +164,15 @@ export async function dispatchVoiceCall(params: {
   phone: string;
   objective: string;
   leadName?: string;
+  /**
+   * Call through the Bluesquare Infra Vobiz DID instead of the account's default routing.
+   *
+   * The dispatcher gives a super-admin account Twilio "for testing unless explicitly
+   * configured", which is why a test call from the owner's own account tried an inactive Twilio
+   * account and never dialled. The Bluesquare DID is a real, owned Indian line, so testing on it
+   * is both possible and free of Twilio.
+   */
+  useBluesquareDid?: boolean;
 }): Promise<VoiceCallResult> {
   const { supabase, userId, objective } = params;
   const requested = String(params.phone || '').replace(/\D/g, '');
@@ -205,6 +214,7 @@ export async function dispatchVoiceCall(params: {
     const { triggerOutboundCall } = await import('@/utils/voice-helper');
     const result = await triggerOutboundCall(supabase, leadId as string, userId, false, undefined, {
       allowAfterHours: true,
+      ...(params.useBluesquareDid ? { forceBluesquareDid: true } : {}),
     });
     if (!result?.success) {
       return { success: false, to, error: result?.error || 'The voice provider refused the call.' };
