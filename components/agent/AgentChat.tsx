@@ -101,6 +101,16 @@ const DEFAULT_WORKSPACES: WorkspaceFolder[] = [
   { id: 'ws_default', name: 'General', createdAt: new Date().toISOString() },
 ];
 
+/**
+ * The CEO thread's folder.
+ *
+ * It has to exist in the workspace list, not just be assigned. Code that selected it used
+ * an id nothing else knew about, so the rail highlighted nothing and the first-workspace
+ * effect on mount overwrote the choice — which is exactly what "the CEO tab doesn't
+ * activate" looked like from the outside.
+ */
+const CEO_WORKSPACE_ID = 'ws_ceo';
+
 function formatTimeAgo(isoString: string): string {
   try {
     const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
@@ -307,6 +317,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // Sessions state
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>('session_init');
+  /**
+   * True once the user has picked a thread themselves (a session, the CEO thread, or a
+   * deep link). The mount effect below restores "the last session" on every load; without
+   * this flag it also overwrites a choice the user just made by hand, which is what made
+   * clicking CEO look like a dead button.
+   */
+  const userChoseThreadRef = React.useRef(false);
   // The permanent CEO thread. Created server-side on first load and refusal-protected
   // there too, so this is a view of something the user cannot accidentally destroy.
   const [ceoSessionId, setCeoSessionId] = useState<string | null>(null);
@@ -395,8 +412,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         setCeoSessionId(data.ceoSessionId);
         const params = new URLSearchParams(window.location.search);
         if (params.get('ceo') === '1' || params.get('session') === data.ceoSessionId) {
+          userChoseThreadRef.current = true;
           setActiveSessionId(data.ceoSessionId);
-          setActiveWorkspaceId('ws_ceo');
+          setActiveWorkspaceId(CEO_WORKSPACE_ID);
         }
       } catch {
         /* the tab still works without it; the row simply does not appear */
@@ -525,7 +543,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         }
       }
       setWorkspaces(initialWs);
-      setActiveWorkspaceId(initialWs[0]?.id || 'ws_default');
+      // Only restore a default when the user has not already chosen a thread. Choosing the
+      // CEO thread sets a workspace this effect knows nothing about, and used to be wiped
+      // here a moment later.
+      if (!userChoseThreadRef.current) {
+        setActiveWorkspaceId(initialWs[0]?.id || 'ws_default');
+      }
       localStorage.setItem(workspaceStorageKey, JSON.stringify(initialWs));
 
       const savedSess = localStorage.getItem(sessionStorageKey);
@@ -541,7 +564,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         }
       }
 
-      setActiveSessionId(targetSessionId);
+      setActiveSessionId(userChoseThreadRef.current ? activeSessionId : targetSessionId);
 
       // ALWAYS restore messages on initial mount so refreshing/backgrounding never wipes the screen
       const savedMsgs = localStorage.getItem(`nobo_msg_${targetSessionId}`);
@@ -1120,14 +1143,47 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     return null;
   }, [projected?.items, dismissedQuestionId]);
 
-  const allWorkspaces: WorkspaceFolder[] = useMemo(() => {
-    if (harness.available !== true) return workspaces;
-    if (!harness.workspaces.length) return DEFAULT_WORKSPACES;
-    return harness.workspaces.map((w) => ({ id: w.id, name: w.name, createdAt: '' }));
-  }, [harness.available, harness.workspaces, workspaces]);
+  /**
+   * True while a thread's history is being fetched.
+   *
+   * Opening a session used to render an empty pane and then pop the history in a moment
+   * later, which reads as a broken tab. The harness path had a skeleton; the plain message
+   * path had nothing. This drives one skeleton for both, and it clears itself as soon as
+   * anything arrives — or after a short timeout, so a session that is genuinely empty shows
+   * the welcome card rather than a spinner forever.
+   */
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const lastLoadedSessionRef = React.useRef<string | null>(null);
 
-  const visibleSessions = useMemo(() => {
-    return allSessions.filter((s) => {
+  const allWorkspaces: WorkspaceFolder[] = useMemo(() => {
+    const base =
+      harness.available !== true
+        ? workspaces
+        : !harness.workspaces.length
+          ? DEFAULT_WORKSPACES
+          : harness.workspaces.map((w) => ({ id: w.id, name: w.name, createdAt: '' }));
+    // The CEO folder is always present while its thread exists, so selecting it is a
+    // selection of something real.
+    if (!ceoSessionId) return base.filter((w) => w.id !== CEO_WORKSPACE_ID);
+    const others = base.filter((w) => w.id !== CEO_WORKSPACE_ID);
+    return [{ id: CEO_WORKSPACE_ID, name: 'CEO', createdAt: '' }, ...others];
+  }, [harness.available, harness.workspaces, workspaces, ceoSessionId]);
+
+  // A thread switch is a load: show the skeleton until something arrives.
+  useEffect(() => {
+    if (!activeSessionId || lastLoadedSessionRef.current === activeSessionId) return;
+    lastLoadedSessionRef.current = activeSessionId;
+    setHistoryLoading(true);
+    const safety = setTimeout(() => setHistoryLoading(false), 5000);
+    return () => clearTimeout(safety);
+  }, [activeSessionId]);
+
+  // …and clear it the moment there is something to show.
+  useEffect(() => {
+    if (messages.length > 0 || (projected?.items?.length ?? 0) > 0) setHistoryLoading(false);
+  }, [messages.length, projected?.items?.length]);
+
+  const visibleSessions = useMemo(() => {    return allSessions.filter((s) => {
       const matchesWs = s.workspaceId === activeWorkspaceId;
       if (searchQuery.trim()) {
         return s.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1253,8 +1309,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             <div className="mb-2">
               <button
                 onClick={() => {
+                  userChoseThreadRef.current = true;
                   setActiveSessionId(ceoSessionId);
-                  setActiveWorkspaceId('ws_ceo');
+                  setActiveWorkspaceId(CEO_WORKSPACE_ID);
                 }}
                 className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-[10px] transition ${
                   activeSessionId === ceoSessionId ? 'dsh-strong' : ''
@@ -1279,9 +1336,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             </div>
           )}
 
-          {/* Folder & Nested Sessions List */}
+          {/* Folder & Nested Sessions List. The CEO folder is excluded here: it has its
+              own pinned row above, and showing it twice would be two ways to the same
+              thread. */}
           <div className="space-y-2">
-            {allWorkspaces.map((ws) => {
+            {allWorkspaces.filter((ws) => ws.id !== CEO_WORKSPACE_ID).map((ws) => {
               const isWsActive = ws.id === activeWorkspaceId;
               const wsSessions = allSessions.filter((s) => {
                 if (s.workspaceId !== ws.id) return false;
@@ -1544,7 +1603,25 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
           className="flex-1 overflow-y-auto px-4 py-5 dsh-t-prose"
         >
           <div className="max-w-3xl mx-auto space-y-4">
-            {messages.length === 0 && !(logEnabled && (projected?.items.length ?? 0) > 0) ? (
+            {historyLoading && messages.length === 0 && (projected?.items?.length ?? 0) === 0 ? (
+              // One skeleton for BOTH paths. Previously only the log-backed path had one,
+              // so a plain session opened onto a blank pane and filled in a beat later.
+              <div className="space-y-3 pt-6" aria-label="Loading conversation" role="status">
+                <div className="flex items-center gap-2.5 pb-2">
+                  <Loader2 size={16} className="animate-spin" style={{ color: 'var(--dsw-alias-label-tertiary)' }} />
+                  <span className="dsh-t-xs dsh-label-tertiary">Loading this conversation…</span>
+                </div>
+                {[72, 88, 54, 80].map((w, i) => (
+                  <div key={i} className="flex items-start gap-2.5 animate-pulse">
+                    <div
+                      className="mt-1.5 h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ background: 'var(--dsw-alias-border-l2)' }}
+                    />
+                    <div className="h-3 rounded-full" style={{ width: `${w}%`, background: 'var(--dsw-alias-bg-layer-3)' }} />
+                  </div>
+                ))}
+              </div>
+            ) : messages.length === 0 && !(logEnabled && (projected?.items.length ?? 0) > 0) ? (
               <AgentWelcome
                 disabled={isLoading || isUploading}
                 onPrompt={(text) => handleSend(text)}
@@ -1766,7 +1843,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
             {/* Rounded Dock Container */}
             <div
-              className="nobo-dock p-3 transition"
+              className="nobo-dock dsh-composer p-3 transition"
               style={{
                 background: 'var(--dsw-alias-bg-layer-1)',
                 border: '1px solid var(--dsw-alias-border-l2)',

@@ -144,6 +144,101 @@
   border-color: var(--dsw-alias-border-l2);
 }
 
+/* ------------------------------------------------- tactile baseline + mobile --- */
+
+/*
+ * Most of the agent's 28 buttons are written with inline styles, so overriding
+ * background or border here would fight them. These rules only touch what inline styles
+ * rarely set — the feel: tap feedback, a focus ring, a minimum target size, and the
+ * transition — so every control behaves like a button even when it was hand-styled.
+ */
+.dsh[data-theme='light'] button,
+.dsh[data-theme='light'] [role='button'],
+.dsh[data-theme='light'] a.dsh-btn {
+  transition: transform 120ms ease, box-shadow 140ms ease, background-color 140ms ease,
+    border-color 140ms ease, color 140ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+.dsh[data-theme='light'] button:disabled,
+.dsh[data-theme='light'] [role='button'][aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* A visible ring for keyboard users, never for a mouse click. */
+.dsh[data-theme='light'] button:focus-visible,
+.dsh[data-theme='light'] [role='button']:focus-visible,
+.dsh[data-theme='light'] a:focus-visible {
+  outline: 2px solid var(--nobo-violet-500, #8b5cf6);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+/* Pressed state on everything, so a tap always answers back. */
+.dsh[data-theme='light'] button:active:not(:disabled),
+.dsh[data-theme='light'] [role='button']:active:not([aria-disabled='true']) {
+  transform: scale(0.975);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh[data-theme='light'] button,
+  .dsh[data-theme='light'] [role='button'] {
+    transition: none;
+  }
+  .dsh[data-theme='light'] button:active:not(:disabled),
+  .dsh[data-theme='light'] [role='button']:active {
+    transform: none;
+  }
+}
+
+/*
+ * Phones. The complaint was "cluttered and small buttons", which is two problems:
+ * targets that miss under a thumb, and chrome that competes with the conversation.
+ */
+@media (max-width: 640px) {
+  /* Every control becomes thumb-sized. 44px is the iOS/Android guideline. */
+  .dsh[data-theme='light'] button,
+  .dsh[data-theme='light'] [role='button'] {
+    min-height: 44px;
+  }
+
+  /* …except the icon-only controls inside a row, which would otherwise push the row
+     apart. They get the target through padding instead of height. */
+  .dsh[data-theme='light'] [data-compact-control] button,
+  .dsh[data-theme='light'] button[data-compact] {
+    min-height: 0;
+    padding: 10px;
+  }
+
+  /* Captions and "always on" style chips are the clutter: keep the words that matter. */
+  .dsh[data-theme='light'] .dsh-t-xxxs {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+
+  /* Tighter prose and gutters buy back vertical space for the conversation. */
+  .dsh[data-theme='light'] .dsh-t-prose {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  /* The composer sticks to the bottom and fills the width, so send is always reachable. */
+  .dsh[data-theme='light'] .dsh-composer {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  .dsh[data-theme='light'] .dsh-composer .dsh-btn-primary {
+    min-height: 44px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+}
+
 .dsh[data-theme='light'] .dsh-chip {
   background: var(--nobo-violet-50);
   border: 1px solid var(--dsw-alias-border-l1);
