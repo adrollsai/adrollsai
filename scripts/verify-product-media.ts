@@ -7,6 +7,8 @@
  *
  *   npm run verify:product-media
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   MEDIA_LIMITS,
   checkUpload,
@@ -195,6 +197,49 @@ check(
   'megabytes reads like a person wrote it',
   megabytes(14 * MB) === '14 MB' && megabytes(1.5 * MB) === '1.5 MB',
   `${megabytes(14 * MB)} / ${megabytes(1.5 * MB)}`,
+);
+
+head('5. The upload control writes the same truth the agent reads');
+
+const root = process.cwd();
+const panel = readFileSync(join(root, 'components/catalog/ProductMediaPanel.tsx'), 'utf8');
+const libraryPage = readFileSync(join(root, 'app/dashboard/assets/page.tsx'), 'utf8');
+
+check(
+  'the panel enforces the SAME limits module the agent enforces',
+  /from '@\/lib\/catalog\/product-media'/.test(panel) && /checkUpload\(/.test(panel),
+  'checkUpload imported, not reimplemented',
+);
+check(
+  'no second copy of the numbers is hardcoded in the UI',
+  !/maxPerProduct\s*[:=]\s*\d+/.test(panel) && !/1024\s*\*\s*1024/.test(panel),
+  'caps come from MEDIA_LIMITS',
+);
+check(
+  'an attached file is stamped with product_id AND property_id',
+  /product_id:\s*productId/.test(panel) && /property_id:\s*productId/.test(panel),
+  'the agent reads product_id, this page filters on property_id',
+);
+check(
+  'the panel uploads through the existing R2 helper, not its own path',
+  /uploadToR2\(/.test(panel) && !/api\/upload\/sign/.test(panel),
+  'one storage pipeline',
+);
+check(
+  'removing media DETACHES and never deletes the file',
+  /product_id:\s*null/.test(panel) && !/from\('assets'\)\s*\.delete\(/.test(panel),
+  'the library copy survives',
+);
+check(
+  'a multi-select is validated against a running tally, not just the first file',
+  /\bconst tally\b/.test(panel) && /checkUpload\([^)]*,\s*tally\)/.test(panel) && /tally\[/.test(panel),
+  'the cap cannot be slipped past mid-batch',
+);
+check(
+  'the panel is actually mounted on the Asset Library page',
+  /import ProductMediaPanel from '@\/components\/catalog\/ProductMediaPanel'/.test(libraryPage) &&
+    /<ProductMediaPanel\s*\/>/.test(libraryPage),
+  'mounted above the filters',
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);

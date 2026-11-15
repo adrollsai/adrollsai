@@ -15,6 +15,7 @@ import LazyVideo from '@/components/LazyVideo'
 import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import { getPropertyTags } from '@/utils/property-tags'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
+import ProductMediaPanel from '@/components/catalog/ProductMediaPanel'
 
 type Asset = {
     id: string
@@ -1140,6 +1141,11 @@ export default function AssetsPage() {
                             )}
                         </div>
                     )}
+                </div>
+
+                {/* PRODUCT MEDIA — attach a file to an offering so the agent can use it */}
+                <div className="mb-6">
+                    <ProductMediaPanel />
                 </div>
 
                 {/* BUBBLY FILTER CONTROLS */}
