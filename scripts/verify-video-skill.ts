@@ -61,6 +61,8 @@ import {
   resolveBeats,
   scenePlanFor,
   checkReportCommand,
+  silenceDetectCommand,
+  trimSilenceCommand,
   voiceArtefactKeyFor,
   artefactKeyFor,
   CLIP_MODEL,
@@ -588,11 +590,34 @@ console.log('\n=== traps: the .clip box, the lead-in, the copied plate, the bake
     `${DELIVERY_LUFS} LUFS / ${DELIVERY_TRUE_PEAK_DB} dBTP`,
   );
   check(
-    'mastering is LINEAR gain (measure, then apply), not a compressor',
-    /loudnorm=I=.*measured_I=/.test(master) &&
+    'loudness is normalised in exactly ONE place (master.sh), never stacked',
+    (() => {
+      // "One pass, not both": loudness may be touched in master.sh and nowhere else —
+      // not in grading.sh, not in the voice step (whose commands are exported so they
+      // can be asserted here too). Inside that one stage are two ffmpeg invocations,
+      // measure then apply, because a LINEAR gain needs the measurement first.
+      const count = (text: string) => (text.match(/loudnorm/g) ?? []).length;
+      const elsewhere = {
+        grading: count(grading),
+        trim: count(trimSilenceCommand('/w/a.wav', '/w/b.wav')),
+        detect: count(silenceDetectCommand('/w/a.wav')),
+      };
+      return (
+        count(master) > 0 &&
+        elsewhere.grading === 0 &&
+        elsewhere.trim === 0 &&
+        elsewhere.detect === 0
+      );
+    })(),
+    `master.sh=${(master.match(/loudnorm/g) ?? []).length}, grading.sh=${(grading.match(/loudnorm/g) ?? []).length}, voice step=0`,
+  );
+  check(
+    'that one stage is measure-then-apply: linear gain, not a compressor',
+    /loudnorm=I=.*print_format=json/.test(master) &&
+      /loudnorm=I=.*measured_I=/.test(master) &&
       master.includes('linear=true') &&
-      master.includes('print_format=json'),
-    'two-pass with linear=true',
+      (master.match(/loudnorm=I=/g) ?? []).length === 2,
+    'pass 1 measures, pass 2 applies with linear=true',
   );
   check(
     'master.sh measures the file it wrote and fails below -12 dB peak',

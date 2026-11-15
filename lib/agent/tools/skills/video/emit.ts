@@ -1208,7 +1208,11 @@ if [ "$STREAMS" -eq 0 ]; then
   exit 4
 fi
 
-# ---- pass 1: measure the mix
+# ---- pass 1: MEASURE the mix.
+# This is the first half of ONE normalisation stage, not a second one: pass 2 needs
+# these numbers to apply a single linear gain. Nothing else in the pipeline touches
+# loudness (no loudnorm in the voice step, none in grading.sh) — normalising twice is
+# how a film ends up pumped.
 "$FFMPEG" -hide_banner -nostats -i "$IN" -map 0:a:0 \\
   -af "loudnorm=I=${i}:TP=${tp}:LRA=${lra}:print_format=json" \\
   -f null - 2> "$TMPDIR/loudnorm.json" || true
@@ -1222,7 +1226,9 @@ for v in "$MI" "$MTP" "$MLRA" "$MTH" "$MOFF"; do
 done
 echo "master: measured I=$MI LUFS, TP=$MTP dBTP, LRA=$MLRA, thresh=$MTH"
 
-# ---- pass 2: apply, as linear gain where the target allows it
+# ---- pass 2: APPLY. The second half of the same stage: one linear gain, so the
+# performance is not compressed. \`linear=true\` falls back to dynamic only when the
+# required gain would breach the true-peak ceiling, which is measured below anyway.
 "$FFMPEG" -y -v error -i "$IN" -map 0:v:0 -map 0:a:0 -c:v copy \\
   -af "loudnorm=I=${i}:TP=${tp}:LRA=${lra}:measured_I=$MI:measured_TP=$MTP:measured_LRA=$MLRA:measured_thresh=$MTH:offset=$MOFF:linear=true:print_format=summary" \\
   -c:a aac -ar 48000 -ac 2 -b:a 192k -movflags +faststart "$OUT"
