@@ -1291,7 +1291,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               onClick={() => setSidebarOpen(false)}
               title="Hide sidebar"
               aria-label="Hide sidebar"
-              className="w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center hover:opacity-70 transition"
+              className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 flex items-center justify-center hover:opacity-70 transition"
               style={{ color: 'var(--dsw-alias-label-tertiary)', borderRadius: 'var(--dsh-radius-sm)' }}
             >
               <PanelLeftClose size={16} />
@@ -1327,7 +1327,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               <Search size={13} className="cursor-pointer" />
               <button
                 onClick={() => setShowNewWorkspaceModal(true)}
-                className="w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center dsh-interactive"
+                className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center dsh-interactive"
                 title="New workspace folder"
               >
                 <FolderPlus size={13} />
@@ -1419,14 +1419,14 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                           e.stopPropagation();
                           handleNewSession(ws.id);
                         }}
-                        className="w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded dsh-label-caption dsh-interactive"
+                        className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded dsh-label-caption dsh-interactive"
                         title="New chat in this workspace"
                       >
                         <Plus size={13} />
                       </button>
                       <button
                         onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                        className={`w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
+                        className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
                         title={pendingDelete === ws.id ? 'Click again to delete' : 'Delete workspace folder'}
                       >
                         {pendingDelete === ws.id ? <Check size={13} /> : <Trash2 size={13} />}
@@ -1464,7 +1464,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                               <span>{formatTimeAgo(sess.createdAt)}</span>
                               <button
                                 onClick={(e) => handleDeleteSession(sess.id, e)}
-                                className={`w-10 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
+                                className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
                                 title={pendingDelete === sess.id ? 'Click again to delete' : 'Delete chat session'}
                               >
                                 {pendingDelete === sess.id ? (
@@ -1591,7 +1591,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   setActiveTab('chat');
                   setShowDetails(false);
                 }}
-                className="px-2 sm:px-3 min-h-9 flex items-center transition"
+                className="px-3 min-w-[44px] min-h-[44px] sm:min-h-9 flex items-center justify-center transition"
                 style={{
                   borderRadius: 'var(--dsh-radius-xs)',
                   background: activeTab === 'chat' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
@@ -1608,7 +1608,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   setActiveTab('trajectory');
                   setShowDetails(true);
                 }}
-                className="px-2 sm:px-3 min-h-9 flex items-center transition"
+                className="px-3 min-w-[44px] min-h-[44px] sm:min-h-9 flex items-center justify-center transition"
                 style={{
                   borderRadius: 'var(--dsh-radius-xs)',
                   background: activeTab === 'trajectory' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
@@ -1625,7 +1625,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             <button
               onClick={() => setShowLogsDrawer(!showLogsDrawer)}
               aria-label="Open the session log"
-              className="flex items-center justify-center gap-1.5 min-w-11 min-h-11 sm:min-w-0 sm:min-h-9 px-2 sm:px-2.5 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
+              className="flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-9 px-2 sm:px-2.5 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
             >
               <span className="hidden sm:inline">Session log</span>
               <Download size={13} />
@@ -1851,7 +1851,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 {harness.runInProgress && !harness.activeRun.cancelRequested && (
                   <button
                     onClick={() => void harness.cancelRun()}
-                    className="ml-auto dsh-t-xs dsh-label-tertiary dsh-interactive-danger px-2.5 min-h-8 flex items-center"
+                    className="ml-auto dsh-t-xs dsh-label-tertiary dsh-interactive-danger px-3 min-h-[44px] sm:min-h-8 flex items-center"
                     style={{ borderRadius: 'var(--dsh-radius-xs)' }}
                   >
                     Stop
@@ -1929,7 +1929,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="nobo-tap w-11 h-11 sm:w-9 sm:h-9 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
+                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-9 sm:h-9 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
                     title="Attach file"
                     aria-label="Attach a file"
                   >
@@ -1948,7 +1948,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => setCreateOpen(true)}
-                    className="flex items-center gap-1.5 min-h-11 sm:min-h-9 px-3 dsh-t-xs dsh-strong transition"
+                    className="flex items-center gap-1.5 min-h-[44px] sm:min-h-9 px-3 dsh-t-xs dsh-strong transition"
                     style={{
                       background: 'var(--dsw-alias-bg-layer-2)',
                       color: 'var(--dsw-alias-label-secondary)',
