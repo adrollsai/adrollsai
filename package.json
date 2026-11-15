@@ -84,7 +84,8 @@
     "verify:review-gate-live": "esbuild scripts/verify-review-gate-live.ts --bundle --platform=node --format=esm --outfile=.tmp-gate-live.mjs --log-level=warning --external:@supabase/supabase-js --external:dotenv && node .tmp-gate-live.mjs",
     "verify:product-media": "esbuild scripts/verify-product-media.ts --bundle --platform=node --format=esm --outfile=.tmp-pmedia.mjs --log-level=warning --alias:@/lib/catalog/product-media=./lib/catalog/product-media && node .tmp-pmedia.mjs",
     "verify:ceo-findings": "esbuild scripts/verify-ceo-findings.ts --bundle --platform=node --format=esm --outfile=.tmp-ceof.mjs --log-level=warning && node .tmp-ceof.mjs",
-    "verify:ceo-metrics": "esbuild scripts/verify-ceo-metrics.ts --bundle --platform=node --format=esm --outfile=.tmp-ceom.mjs --log-level=warning && node .tmp-ceom.mjs"
+    "verify:ceo-metrics": "esbuild scripts/verify-ceo-metrics.ts --bundle --platform=node --format=esm --outfile=.tmp-ceom.mjs --log-level=warning && node .tmp-ceom.mjs",
+    "verify:routing": "esbuild scripts/verify-routing.ts --bundle --platform=node --format=esm --outfile=.tmp-routing.mjs --log-level=warning && node .tmp-routing.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

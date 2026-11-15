@@ -1,24 +1,23 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { decideRouting, isPlatformHost, normaliseHost, parseExtraDomains } from '@/lib/routing/host'
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl;
   
   // 1. CLEAN HOSTNAME (Strips port numbers for local testing compatibility)
-  const rawHostname = request.headers.get('host') || '';
-  const hostname = rawHostname.split(':')[0]; 
+  const hostname = normaliseHost(request.headers.get('host'));
 
   // 2. CUSTOM DOMAIN ROUTING
-  const mainDomain = process.env.NEXT_PUBLIC_ROOT_DOMAIN || 'nobogent.com';
-  
-  // Safe list for platform-owned domains
-  const isPlatformDomain = hostname.includes(mainDomain) || 
-                           hostname.includes('nobogent.com') ||
-                           hostname.includes('nobogent') ||
-                           hostname.includes('localhost') || 
-                           hostname.includes('127.0.0.1') ||
-                           hostname.includes('vercel.app') || 
-                           hostname.includes('ngrok-free.dev');
+  //
+  // Whether this host is OURS is answered in code (lib/routing/host.ts), not from the
+  // database. It used to be answered by reading profiles.whitelabel_domain with this
+  // request's cookies — which row-level security correctly hides from a signed-in user, so
+  // every logged-in visitor to app.pipixel.io was treated as a customer's custom domain and
+  // every /dashboard page 404'd. Logged-out visitors were fine, which is why the login page
+  // kept working and hid the fault.
+  const extraDomains = parseExtraDomains(process.env.NEXT_PUBLIC_PLATFORM_DOMAINS);
+  const isPlatformDomain = isPlatformHost(hostname, extraDomains);
 
   if (url.pathname === '/favicon.ico' || url.pathname === '/icon.png') {
     if (!isPlatformDomain) {
@@ -60,10 +59,17 @@ export async function middleware(request: NextRequest) {
           console.error('[Middleware Whitelabel Check]:', wlErr?.message);
         }
 
-        // If it is NOT an agency platform domain, serve the SEO server-rendered landing page directly
-        if (!isWhitelabelPlatform) {
-          const subpath = (url.pathname === '/' || url.pathname === '') ? '/index' : url.pathname;
-          return NextResponse.rewrite(new URL(`/shared/${hostname}${subpath}`, request.url));
+        // A tenant domain we do not already know about: serve their storefront, but NEVER
+        // let the rewrite capture an app path. /dashboard and /login stay the app even on a
+        // domain this check has never heard of.
+        const decision = decideRouting({
+          host: hostname,
+          pathname: url.pathname,
+          isWhitelabelPlatform,
+          extraDomains,
+        });
+        if (decision.kind === 'storefront') {
+          return NextResponse.rewrite(new URL(decision.rewriteTo, request.url));
         }
     }
   }
