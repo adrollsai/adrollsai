@@ -26,7 +26,9 @@ const flag = (name: string, fallback?: string) => {
 
 const OWNER_EMAIL = 'rchopra489@gmail.com';
 const KIND = args.includes('--call') ? 'call' : 'whatsapp';
-const TEMPLATE = flag('template', 'nobogent_vsl_system_welcome_v3') as string;
+const TEMPLATE = flag('template', 'hello_world') as string;
+// The templates approved on this WABA are all en_US, not en.
+const LANG = flag('lang', 'en_US') as string;
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,7 +57,8 @@ if (KIND === 'whatsapp') {
     userId: profile.id,
     phone: process.env.OUTBOUND_TEST_NUMBER || String(profile.contact_number || ''),
     templateName: TEMPLATE,
-    variables: ['Nobogent test'],
+    languageCode: LANG,
+    variables: [],
   });
   console.log(JSON.stringify(result, null, 2));
   if (result.success) {
