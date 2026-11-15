@@ -190,5 +190,28 @@ check(
   'one deterministic sentence',
 );
 
+head('7. The send queue cannot swallow an approval resume');
+
+check(
+  'the flush effect re-runs when something is queued, not only on a loading transition',
+  /\}, \[isLoading, isUploading, queuedCount\]\);/.test(chat),
+  'queuedCount is a dependency',
+);
+check(
+  'it sends from a timer instead of the effect body',
+  /const timer = setTimeout\(/.test(chat) && /return \(\) => clearTimeout\(timer\)/.test(chat),
+  'no work in the render-commit path',
+);
+check(
+  'the timer reads live flags rather than the scheduler closure',
+  /isLoadingRef\.current/.test(chat) && /isUploadingRef\.current/.test(chat),
+  'a stale closure cannot block the flush',
+);
+check(
+  'a lock prevents flushing the same queue twice',
+  /flushingRef\.current = true/.test(chat) && /flushingRef\.current = false/.test(chat),
+  'no double send',
+);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

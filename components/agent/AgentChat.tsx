@@ -464,14 +464,47 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     handleSendRef.current = handleSend;
   });
 
+  // ── the send queue ───────────────────────────────────────────────────────
+  //
+  // A message typed while the agent is working is queued instead of dropped, and this effect
+  // sends it when the turn ends. It only listened for the isLoading transition, which lost
+  // messages two ways:
+  //
+  //   - queued while the flag was set for a reason that never flipped back, the effect never
+  //     re-ran and the message sat there forever. Seen in production: the footer said
+  //     "1 message queued — will send when this turn finishes" and the turn finished and
+  //     nothing was sent. The same dead end swallowed an APPROVAL resume, which is how a
+  //     tapped Approve produced no work.
+  //
+  //   - React can batch the flag back to false inside the same commit that queued the item, so
+  //     there is no transition to observe at all.
+  //
+  // So queuedCount is a dependency too (queueing re-runs this effect immediately), the send is
+  // on a short timer rather than in the effect body, and a lock stops a double flush.
+  const flushingRef = useRef(false);
+  // The timer fires after the render that scheduled it, so it must read the live flags rather
+  // than the ones captured in this closure.
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
+  const isUploadingRef = useRef(isUploading);
+  isUploadingRef.current = isUploading;
   useEffect(() => {
     if (isLoading || isUploading) return;
     if (queueRef.current.length === 0) return;
-    const next = queueRef.current.shift() as string;
-    setQueuedCount(queueRef.current.length);
-    void handleSendRef.current(next);
+    if (flushingRef.current) return;
+    const timer = setTimeout(() => {
+      if (isLoadingRef.current || isUploadingRef.current) return;
+      const next = queueRef.current.shift();
+      if (!next) return;
+      flushingRef.current = true;
+      setQueuedCount(queueRef.current.length);
+      Promise.resolve(handleSendRef.current(next)).finally(() => {
+        flushingRef.current = false;
+      });
+    }, 250);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, isUploading]);
+  }, [isLoading, isUploading, queuedCount]);
 
   // When a run finishes, the turn is in the log — reload the projection so the
   // live view is replaced by the authoritative replay view.
@@ -1515,17 +1548,20 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               <span className="hidden sm:inline">Dashboard</span>
             </a>
 
+            {/* Theme is a preference, not a primary action. On a phone it pushed the session
+                title into a hard clip ("Hi — in one sentence, what can you do for my busin"),
+                so it steps aside below sm. */}
             <button
               type="button"
               onClick={toggleTheme}
-              className="px-2 py-1 rounded-[8px] dsh-t-xs dsh-label-secondary dsh-interactive shrink-0"
+              className="hidden sm:inline-flex px-2 py-1 rounded-[8px] dsh-t-xs dsh-label-secondary dsh-interactive shrink-0"
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
 
-            <div className="flex items-center gap-2 max-w-md truncate text-xs">
-              <span className="font-bold dsh-label-primary truncate">
+            <div className="flex items-center gap-2 min-w-0 flex-1 max-w-md text-xs">
+              <span className="font-bold dsh-label-primary truncate min-w-0">
                 {activeSessionObj?.title || 'New Session'}
               </span>
               <span className="dsh-label-caption dsh-mono hidden sm:inline">
