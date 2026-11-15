@@ -278,6 +278,141 @@ async function main() {
     undescribed.length ? `${undescribed.length} thin: ${undescribed.slice(0, 6).join(', ')}` : 'all described',
   );
 
+  // ── House skills: the platform's own rules must be loadable by every tenant.
+  head('6. The platform rules are loadable, for every tenant');
+  {
+    const { HOUSE_SKILLS, houseSkill, houseSkillCatalogue } = await import('../lib/agent/house-skills');
+    const { formatSkillCatalogue } = await import('../lib/agent/tools/skills');
+
+    check(
+      'the platform ships house skills, each with a name, a one-liner and a body',
+      HOUSE_SKILLS.length >= 5 &&
+        HOUSE_SKILLS.every(
+          (skill) => skill.name.startsWith('nobogent-') && skill.description.length > 30 && skill.content.length > 200,
+        ),
+      HOUSE_SKILLS.map((skill) => skill.name).join(', '),
+    );
+    check(
+      'the rules that cost real renders are all written down',
+      (() => {
+        const all = HOUSE_SKILLS.map((skill) => skill.content).join('\n');
+        return (
+          /0\.5 s \+ 0\.3 s per word/i.test(all) && // readability
+          /lead-in/i.test(all) && // the t=0 trap
+          /reuse one video file|separate copies/i.test(all) && // the shared-mp4 trap
+          /-16 LUFS|loudness/i.test(all) && // mastering
+          /never write a price|Never invent/i.test(all) // the factual guard
+        );
+      })(),
+      'readability, lead-in, shared plates, loudness, factual guard',
+    );
+    check(
+      'a house skill is readable by exact name, case-insensitively',
+      houseSkill('nobogent-video-brief') !== null &&
+        houseSkill('NOBOGENT-VIDEO-BRIEF') !== null &&
+        houseSkill('nobogent-nonsense') === null,
+      'name lookup',
+    );
+    check(
+      'the prompt catalogue shows the platform rules even when the tenant has uploaded none',
+      (() => {
+        const catalogue = formatSkillCatalogue([]);
+        return (
+          /nobogent-video-brief/.test(catalogue) &&
+          /PLATFORM RULES/.test(catalogue) &&
+          houseSkillCatalogue().every((skill) => catalogue.includes(skill.name))
+        );
+      })(),
+      `${houseSkillCatalogue().length} platform skill(s) in the catalogue`,
+    );
+
+    // The rules must be reachable THROUGH the agent's own tools, not only from code.
+    const fromRegistry = await import('../lib/agent/tools/skills');
+    const tools = fromRegistry.createSkillTools(admin as any, tenant.id);
+    const listed = await (tools.list_skills as any).execute({}, {} as any);
+    check(
+      'the agent\'s own list_skills returns the platform rules',
+      listed?.success === true &&
+        (listed.skills ?? []).some((skill: any) => String(skill.name).startsWith('nobogent-')),
+      `${(listed?.skills ?? []).length} skill(s) listed`,
+    );
+    const read = await (tools.get_skill as any).execute({ name: 'nobogent-never-invent' }, {} as any);
+    check(
+      'get_skill reads a platform rule, and says it is not advisory',
+      read?.success === true && read.source === 'platform' && /Never invent/i.test(String(read.content)),
+      read?.source ?? 'not read',
+    );
+  }
+
+  // ── The video planner: the contract the agent must pass before promising a film.
+  head('7. The video planner validates a brief before anything is spent');
+  {
+    const { planVideo } = await import('../lib/agent/tools/video-skill');
+    const goodBeats = {
+      version: 1,
+      jobId: 'capability-check',
+      aspect: '9:16',
+      fps: 30,
+      targetSeconds: 32,
+      onScreenLanguage: 'en',
+      logoOnScreen: false,
+      voice: { language: 'hinglish', scene: 'warm, confident, unhurried — a teacher, not a salesman' },
+      plates: [
+        { id: 'a', source: 'generate', prompt: 'one slow push in', seconds: 6 },
+        { id: 'b', source: 'generate', prompt: 'one slow pull back', seconds: 6 },
+      ],
+      beats: [
+        { id: 'p01', vo: 'Batch 12 shuru ho raha hai', lines: ['BATCH 12 STARTS SOON'], plate: 'a' },
+        { id: 'p02', vo: 'Aaj hi seat book karo', lines: ['BOOK YOUR SEAT'], plate: 'b' },
+      ],
+      scenes: [
+        { id: 's1', kind: 'hook', beats: ['p01'], plate: 'a' },
+        { id: 's2', kind: 'endcard', beats: ['p02'], plate: 'b' },
+      ],
+      endCard: {
+        name: 'Sharma Academy',
+        tagline: 'Edit like a pro',
+        numbers: ['9820012345', '9820012346'],
+        address: ['Pune'],
+      },
+    };
+    const planned = planVideo({ beats: goodBeats });
+    check(
+      'a valid brief is planned and quoted',
+      planned.success === true && (planned.credits?.total ?? 0) > 0,
+      planned.success ? `${planned.credits?.total} credits, ${planned.beats} beats` : planned.error,
+    );
+    check(
+      'the plan names the credits per step, so the owner can be asked first',
+      (planned.steps ?? []).length > 0 && (planned.steps ?? []).every((step) => step.credits >= 0),
+      (planned.steps ?? []).map((step) => `${step.name}:${step.credits}`).join(' '),
+    );
+
+    const tooLong = planVideo({
+      beats: {
+        ...goodBeats,
+        beats: [{ id: 'p01', vo: 'x', lines: ['THIS LINE IS FAR TOO LONG FOR A VERTICAL FRAME'], plate: 'a' }],
+      },
+    });
+    check(
+      'a line too long for the frame is reported, not planned',
+      tooLong.success === false || (tooLong.problems ?? []).length > 0,
+      tooLong.problems?.[0]?.slice(0, 90) ?? tooLong.error ?? 'NOT CAUGHT',
+    );
+
+    const broken = planVideo({ beats: { nothing: true } });
+    check(
+      'a brief that is not a beats file is refused with the path that is wrong',
+      broken.success === false && /beats/i.test(String(broken.error)),
+      broken.error?.slice(0, 90) ?? 'no error',
+    );
+    check(
+      'plan_video is registered with the agent',
+      registryNames.includes('plan_video'),
+      registryNames.includes('plan_video') ? 'present in the registry' : 'NOT registered',
+    );
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exitCode = 1;
 }

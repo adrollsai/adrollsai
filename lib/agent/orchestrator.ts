@@ -29,6 +29,7 @@ import { createReportingTools } from './tools/reporting';
 import { createAutomationTools } from './tools/automation';
 import { createFlowAuthoringTools } from './tools/flows';
 import { createPageAuthoringTools } from './tools/pages';
+import { createVideoSkillTools } from './tools/video-skill';
 import { selectToolGroups, type ToolGroup } from './tool-groups';
 import { preflightPromptSection } from './preflight';
 
@@ -104,6 +105,12 @@ export async function createAgentContext(
     ...(isSuperAdmin ? createSupabaseMcpTools(supabase, true) : {}),
     ...(has('sandbox') ? createSandboxTools(supabase, userId) : {}),
     ...(has('media') ? createMediaStudioTools(supabase, userId) : {}),
+    // plan_video: the video skill's whole contract (readability, the 0.5 s lead-in, the
+    // credit model) as something the agent must pass BEFORE promising a film. Purely a
+    // validation and quote — it spends nothing and renders nothing.
+    ...(has('media') ? createVideoSkillTools() : {}),
+    // create_landing_page, which `sites` alone could only publish.
+    ...(has('sites') ? createPageAuthoringTools(supabase, userId) : {}),
     // Composition sits on top of the media primitives: it applies the business's
     // recipe (what a good artefact looks like, and the degraded path when the
     // ideal is not achievable) so the agent composes rather than being sequenced.
