@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { toast } from 'sonner';
 import { Loader2, Sparkles, Check, Coins, CalendarClock, Bot, ArrowRight, AlertCircle } from 'lucide-react';
 import type { CeoToday } from '@/lib/agent/ceo-today';
+import CeoFindingsCard from '@/components/agent/CeoFindingsCard';
 
 /**
  * The CEO tab's interactive half.
@@ -94,6 +95,10 @@ export default function CeoTodayPanel({ initial }: { initial: CeoToday }) {
           </span>
         </div>
       )}
+
+      {/* Yesterday, in findings — the report the daily job files. Read-only: it shows what
+          the numbers say and what we would do, and never acts on any of it. */}
+      <CeoFindingsCard />
 
       {/* Engine status */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
