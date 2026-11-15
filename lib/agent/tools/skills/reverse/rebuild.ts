@@ -633,6 +633,31 @@ function buildBeats(
         plate,
       });
     }
+    // AN END CARD CANNOT ALSO CARRY LINES. The emitter draws a card's blocks INSTEAD of a
+    // scene's beat lines, so when the reference's last shot IS the card, a line in it
+    // keeps its VOICE and loses its WORDS.
+    //
+    // Splitting the card into a scene of its own is the right shape, and it was built and
+    // measured twice: it needs time the reference does not have. On the owner's 61.353 s
+    // reference the last spoken line ends at 61.353 s — a measured tail of ZERO — so a
+    // 2.5 s card left its own "ADDRESS UNKNOWN" block at 1.081 s against the 1.1 s it
+    // needs, and a 4 s card pushed a film line to 0.737 s against 0.8 s. Nothing gets both,
+    // because there is nothing spare to give.
+    //
+    // So the card stays where it is and the loss is REPORTED, naming the lines, rather than
+    // being silent. Giving the card real time means letting the film run longer than the
+    // reference — a decision about what a rebuild is for, not something to assume for the
+    // owner.
+    if (kind === 'endcard' && beatIds.length > 0) {
+      const tail = roundTo(Math.max(0, analysis.facts.durationSeconds - lastVoiceEnd(analysis)), 3);
+      notes.push(
+        `the end card draws its own blocks instead of a scene's lines, so ${beatIds.length} line(s) ` +
+          `(${beatIds.join(', ')}) keep their voice and are not drawn. The reference has ${tail}s of picture ` +
+          `after its last spoken line — not enough for a card of its own (a card needs about ` +
+          `${END_CARD_SECONDS}s). If the words matter more than matching the runtime, ask for an end card that ` +
+          'lengthens the film.',
+      );
+    }
     scenes.push({ id: sceneId, kind, beats: beatIds, plate });
   }
 
@@ -692,6 +717,20 @@ export function beatsFromAnalysis(
 export const MIN_SILENT_SCENE_SECONDS = 0.5;
 /** The longest one, before it has to be split. */
 export const MAX_SILENT_SCENE_SECONDS = 12;
+
+/**
+ * Roughly how long an end card needs on screen for its four blocks to be read.
+ *
+ * Not used to place one — see the note where the card scene is built. It is the figure
+ * the notes compare a reference's measured tail against, so an owner can see WHY their
+ * reference cannot carry a card of its own.
+ */
+export const END_CARD_SECONDS = 2.5;
+
+/** Where the reference's last spoken line ends. The picture after it is the only spare. */
+export function lastVoiceEnd(analysis: ReverseAnalysis): number {
+  return analysis.vo.spans.reduce((latest, span) => Math.max(latest, span.start + span.dur), 0);
+}
 
 export interface PlateGroup {
   /** Plate id = the shot id at the head of the group (`sh01`). */
@@ -874,12 +913,17 @@ export function rebuildFromAnalysis(
   let fitted: ReturnType<typeof fitTimingToRuntime> | null = null;
   let project: EmittedProject | null = null;
   let attempts = 0;
+  // The notes from the attempt that SUCCEEDED, plus the reason each earlier attempt was
+  // rejected. Accumulating every attempt's notes verbatim repeated the whole derivation
+  // once per retry, which reads as though the film has three end cards.
+  let finalNotes: string[] = [];
+  const retryNotes: string[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     attempts = attempt;
     const derived = buildBeats(analysis, overrides, { minHoldSeconds: minHold });
     raw = derived.raw;
-    notes.push(...derived.notes);
+    finalNotes = derived.notes;
 
     const beatCount = Array.isArray(raw.beats) ? (raw.beats as unknown[]).length : 0;
     if (beatCount === 0) {
@@ -917,18 +961,22 @@ export function rebuildFromAnalysis(
         );
       }
 
-      notes.push(
+      const nextFloor = roundTo(Math.max(raiseTo, minHold + 0.3), 3);
+      retryNotes.push(
         `attempt ${attempt}: the emitter refused ${needed.length} line(s) as too short to read ` +
           `(the longest needs ${raiseTo}s). Grouping the voice into longer beats — floor ` +
-          `${minHold}s → ${raiseTo}s — and laying the clock out again`,
+          `${minHold}s → ${nextFloor}s — and laying the clock out again`,
       );
-      minHold = roundTo(Math.max(raiseTo, minHold + 0.3), 3);
+      minHold = nextFloor;
     }
   }
 
   if (!beats || !timing || !fitted || !project) {
     throw new ReverseRebuildError('the rebuild produced no project at all', notes);
   }
+
+  // The successful attempt's derivation, then why the earlier ones were refused.
+  notes.push(...finalNotes, ...retryNotes);
 
   const spoken = beats.beats.filter((beat) => beat.vo.length > 0).length;
   const unaligned = analysis.alignment.unaligned.map((entry) => entry.index);

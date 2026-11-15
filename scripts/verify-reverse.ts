@@ -1060,6 +1060,33 @@ async function checkFastCut() {
     // version, so reaching here with a project means every line passed the real check.
     'a beat cannot be unreadable and still have a project',
   );
+
+  // The end card cannot also carry lines. That is a real, measured limitation, so the
+  // rebuild must SAY it rather than quietly losing a line.
+  check(
+    'a line the end card will not draw is reported, with the reference\'s measured tail',
+    (() => {
+      const endcard = rebuilt.beats.scenes.find((scene) => scene.kind === 'endcard');
+      if (!endcard || endcard.beats.length === 0) {
+        // This fixture's last shot has voice, so the card scene should carry it.
+        return rebuilt.notes.some((note) => /end card draws its own blocks/.test(note));
+      }
+      const note = rebuilt.notes.find((entry) => /end card draws its own blocks/.test(entry));
+      return Boolean(note) && /s of picture after its last spoken line/.test(String(note));
+    })(),
+    rebuilt.notes.find((note) => /end card/.test(note))?.slice(0, 120) ?? 'no note',
+  );
+  check(
+    'the tail is measured, not assumed',
+    (() => {
+      // The fixture's last shot is 36 s long and its last line is brief, so there IS a
+      // tail; the note must quote a real number rather than a fixed string.
+      const note = rebuilt.notes.find((entry) => /s of picture after its last spoken line/.test(entry));
+      const tail = note ? Number(/has ([\d.]+)s of picture/.exec(note)?.[1]) : NaN;
+      return Number.isFinite(tail) && tail >= 0;
+    })(),
+    'a number from the analysis',
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────

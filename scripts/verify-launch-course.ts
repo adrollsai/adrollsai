@@ -61,8 +61,24 @@ const BRIEF = {
   trustedBy: ['Studio Nine', 'Pune Film Co'],
 };
 
-/** The reference video the owner named, in their Downloads. */
-const REFERENCE = path.join(process.env.USERPROFILE ?? '', 'Downloads', 'sonu sharma.mp4');
+/**
+ * The reference video the owner named, in their Downloads.
+ *
+ * Both possible roots: the file started in `%USERPROFILE%\Downloads` and was later found
+ * in `D:\Downloads` — the machine's C: drive filled up and the folder moved. A scenario
+ * that only knows one of them reports "missing" for a file that is present, so it looks
+ * in both and says which it used.
+ */
+const REFERENCE_CANDIDATES = [
+  path.join(process.env.USERPROFILE ?? '', 'Downloads', 'sonu sharma.mp4'),
+  'D:\\Downloads\\sonu sharma.mp4',
+];
+
+function findReference(): string | null {
+  return REFERENCE_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+const REFERENCE = findReference();
 
 const OUT_ROOT = 'D:\\nobo-renders\\reverse';
 
@@ -244,10 +260,10 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════════
   head('3. The video, modelled on the owner\'s own reference');
   // ══════════════════════════════════════════════════════════════════════
-  if (!fs.existsSync(REFERENCE)) {
-    check('the owner\'s reference video is on this machine', false, REFERENCE);
+  if (!REFERENCE) {
+    check('the owner\'s reference video is on this machine', false, REFERENCE_CANDIDATES.join(' | '));
   } else {
-    check('the owner\'s reference video is on this machine', true, path.basename(REFERENCE));
+    check('the owner\'s reference video is on this machine', true, `${REFERENCE}`);
     const seconds = (() => {
       try {
         return Number(
