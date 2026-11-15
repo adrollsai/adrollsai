@@ -455,5 +455,61 @@ head('10. The gate records the approval itself, with the exact arguments');
   );
 }
 
+head('11. An approval is spent when it is used');
+
+{
+  const consumed: string[] = [];
+  const spy = spyTool();
+  const store: ApprovalStore = {
+    async approved() {
+      return [{ actionId: 'act_once', actionPayload: IMAGE_CALL }];
+    },
+    async consumeApproval(actionId) {
+      consumed.push(actionId);
+    },
+  };
+  const gated = applyReviewGate({ generate_ai_image: spy.definition }, store);
+
+  const first = await gated.generate_ai_image.execute({ approvalId: 'act_once' });
+  check('the approved run happens', first?.ran === true, 'ran');
+  check(
+    'and the approval is marked used, so it cannot authorise a second run',
+    consumed.length === 1 && consumed[0] === 'act_once',
+    `${consumed.length} consumed`,
+  );
+
+  // A store that has already spent it returns nothing, which is what a second attempt sees.
+  const spentStore: ApprovalStore = {
+    async approved() {
+      return [];
+    },
+  };
+  const secondGated = applyReviewGate({ generate_ai_image: spy.definition }, spentStore);
+  const second = await secondGated.generate_ai_image.execute({ approvalId: 'act_once' });
+  check(
+    'a used approval no longer unlocks the tool',
+    second?.needs_review === true,
+    'one approval, one run',
+  );
+
+  // A refusal must not consume anything.
+  const consumedOnBlock: string[] = [];
+  const blockingStore: ApprovalStore = {
+    async approved() {
+      return [];
+    },
+    async consumeApproval(actionId) {
+      consumedOnBlock.push(actionId);
+    },
+  };
+  const blockingGated = applyReviewGate({ generate_ai_image: spy.definition }, blockingStore);
+  await blockingGated.generate_ai_image.execute(IMAGE_CALL);
+  check(
+    'a blocked call consumes no approval',
+    consumedOnBlock.length === 0,
+    'nothing spent',
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

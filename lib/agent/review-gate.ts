@@ -162,6 +162,14 @@ export interface ApprovalStore {
     title: string;
     why: string;
   }): Promise<{ actionId: string } | null>;
+  /**
+   * Spend an approval once its work has run.
+   *
+   * Approvals used to stay valid forever, which meant an approval the owner gave for one image
+   * kept authorising that identical call on every later attempt — including in a loop. An
+   * approval is a decision about ONE action; once it has been carried out, it is used up.
+   */
+  consumeApproval?(actionId: string): Promise<void>;
 }
 
 export interface ApprovedAction {
@@ -202,6 +210,23 @@ export function supabaseApprovalStore(supabase: any, userId: string): ApprovalSt
      * all, and the faithful attempt returned "prompt is required." The gate is the only code
      * that holds the exact arguments, so it is the only code that can record them.
      */
+    /**
+     * Mark the approval used. The row moves to `used`, which the store's own `approved()` query
+     * no longer returns — so the same approval cannot authorise a second run.
+     */
+    async consumeApproval(actionId) {
+      try {
+        await supabase
+          .from('agent_events')
+          .update({ status: 'used', updated_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .eq('event_type', 'PENDING_ACTION_APPROVAL')
+          .eq('payload->>actionId', actionId);
+      } catch (error: any) {
+        console.warn('[Review gate] could not mark the approval used:', error?.message || error);
+      }
+    },
+
     async recordPending({ actionType, tool, toolInput, title, why }) {
       try {
         const actionId = 'act_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
@@ -239,6 +264,8 @@ export interface ApprovalMatch {
   via: 'fingerprint' | 'approvalId';
   /** The payload the owner actually approved — what should be run. */
   actionPayload: unknown;
+  /** Which approval this was, so it can be spent. */
+  actionId?: string;
 }
 
 /**
@@ -276,14 +303,15 @@ export async function findApproval(
 
     if (requestedId) {
       const byId = approved.find((entry) => entry.actionId === requestedId);
-      if (byId) return { via: 'approvalId', actionPayload: byId.actionPayload };
+      if (byId) return { via: 'approvalId', actionPayload: byId.actionPayload, actionId: byId.actionId };
       // An id was given that is not approved: refuse. Never fall back to running the caller's
       // arguments on the strength of some other approval.
       return null;
     }
 
     const byFingerprint = approved.find((entry) => approveFingerprint(entry.actionPayload) === wanted);
-    if (byFingerprint) return { via: 'fingerprint', actionPayload: byFingerprint.actionPayload };
+    if (byFingerprint)
+      return { via: 'fingerprint', actionPayload: byFingerprint.actionPayload, actionId: byFingerprint.actionId };
 
     return null;
   } catch {
@@ -384,7 +412,15 @@ export function applyReviewGate(
         // Run the approved payload, not the caller's restatement of it.
         const payload =
           match.via === 'approvalId' ? match.actionPayload : stripApprovalId(input);
-        return definition.execute(payload, ...rest);
+        const result = await definition.execute(payload, ...rest);
+
+        // Spend the approval: one approval authorises one run, not every future attempt with
+        // the same arguments.
+        if (match.actionId && store.consumeApproval) {
+          await store.consumeApproval(match.actionId);
+        }
+
+        return result;
       },
     };
   }
