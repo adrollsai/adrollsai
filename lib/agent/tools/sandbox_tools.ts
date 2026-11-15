@@ -430,6 +430,16 @@ python3 render_card.py
         startSeconds: z.number().optional().describe('Render only the span starting at this second — the cheap way to re-check one section while iterating.'),
         endSeconds: z.number().optional().describe('Render only up to this second. Use with startSeconds to re-render just one span.'),
         audioUrl: z.string().optional().describe('Optional URL to real celebratory audio or background music track to mix into the MP4'),
+        loopSeconds: z
+          .number()
+          .optional()
+          .describe(
+            'Render only this many seconds and repeat it to fill durationSeconds. Use it for LONG films whose ' +
+              'content loops or repeats (a held background with moving accents, a repeating lower third, a ' +
+              'looping promo): an hour rendered from a 20-second loop takes seconds instead of hours and looks ' +
+              'identical. Do not use it when the content genuinely evolves over time (a story, a countdown, ' +
+              'changing prices).',
+          ),
         chunkSeconds: z
           .number()
           .optional()
@@ -438,7 +448,7 @@ python3 render_card.py
               'stitched; smaller spans resume more finely if a slice runs out of time, larger spans start fewer browsers.',
           ),
       }),
-      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds }) => {
+      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds, loopSeconds }) => {
         try {
           const isVertical = resolution === '1080x1920_vertical';
           const dur = Math.min(Math.max(durationSeconds || 15, 5), 3600);
@@ -471,8 +481,10 @@ python3 render_card.py
 
           // A film is rendered in spans, and the slice budget comes from the request we are
           // inside rather than a hard-coded number. Whatever does not fit is resumed next call.
+          // When the piece is a loop, only the loop is rendered — the rest is a stream copy.
+          const renderSeconds = loopSeconds && loopSeconds > 0 ? Math.min(loopSeconds, dur) : dur;
           const spans = planRenderSpans({
-            durationSeconds: dur,
+            durationSeconds: renderSeconds,
             chunkSeconds,
             startSeconds,
             endSeconds,
@@ -505,6 +517,7 @@ python3 render_card.py
               audioUrl,
               chunkSeconds,
               budgetSeconds,
+              loopSeconds,
             });
 
             lastRes = await executeInE2BSandbox({
@@ -569,7 +582,7 @@ python3 render_card.py
           // project files. Pause it instead of letting it bill compute while the
           // user watches the result; the filesystem survives, so a follow-up
           // render in this session resumes in about a second.
-          const renderSeconds = Number((/(?:render-seconds:\s*)(\d+)/.exec(res.stdout || '') || [])[1] || 0) || undefined;
+          const renderSecondsTaken = Number((/(?:render-seconds:\s*)(\d+)/.exec(res.stdout || '') || [])[1] || 0) || undefined;
           try {
             await pauseSandbox(userId);
           } catch (e) {}
@@ -603,8 +616,8 @@ python3 render_card.py
             durationSeconds: dur,
             resolution,
             videoUrl,
-            ...(renderSeconds ? { renderSeconds } : {}),
-            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSeconds ? `, ${renderSeconds}s render` : ''}).`,
+            ...(renderSecondsTaken ? { renderSeconds: renderSecondsTaken } : {}),
+            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${loopSeconds ? `, looped from ${renderSeconds}s` : ''}).`,
             artifact: {
               type: 'video_player',
               title,

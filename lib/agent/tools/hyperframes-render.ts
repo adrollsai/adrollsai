@@ -148,6 +148,16 @@ export interface HyperFramesRenderScriptOptions {
   chunkSeconds?: number;
   /** Seconds this slice may spend rendering before it stops and lets the next call continue. */
   budgetSeconds?: number;
+  /**
+   * Render only this many seconds, then repeat the result to fill `durationSeconds`.
+   *
+   * Rendering is Chrome frame-by-frame: an hour of film is ~108,000 frames and hours of compute.
+   * Almost every long marketing piece is a looping animation, a held background with the same
+   * moving accent, or a repeated lower third — content that does not change frame to frame. For
+   * those, rendering one loop and repeating it costs seconds instead of hours and looks identical.
+   * Only genuinely evolving footage (a story, a countdown to a real event) needs every frame.
+   */
+  loopSeconds?: number;
 }
 
 export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions): string {
@@ -168,11 +178,14 @@ export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions):
         (typeof o.endSeconds === 'number' ? ` --end ${Math.max(o.endSeconds, 0)}` : '')
       : '';
   const chunks = planRenderSpans({
-    durationSeconds: o.durationSeconds,
+    durationSeconds: o.loopSeconds ? Math.min(o.loopSeconds, o.durationSeconds) : o.durationSeconds,
     chunkSeconds: o.chunkSeconds,
     startSeconds: o.startSeconds,
     endSeconds: o.endSeconds,
   });
+  const loopTo = Math.round(Number(o.loopSeconds) || 0) > 0 && Math.round(Number(o.loopSeconds)) < Math.round(Number(o.durationSeconds))
+    ? Math.round(Number(o.durationSeconds))
+    : 0;
   const sliceBudget = Math.max(0, Math.round(Number(o.budgetSeconds) || 0));
   void fpsFlag;
   void span;
@@ -320,6 +333,14 @@ if [ "$HAVE" -eq "$TOTAL_CHUNKS" ] && [ "$TOTAL_CHUNKS" -gt 0 ]; then
   fi
   if [ "$STITCH_RC" -eq 0 ] && [ -f out.mp4 ]; then
     echo "HF-STITCHED: yes"
+    # A short render repeated to fill the requested length. A stream copy means this costs
+    # seconds, not a re-encode: an hour from a 20s loop is a few seconds of work.
+    if [ "${loopTo}" -gt 0 ]; then
+      echo "HF-LOOPING: ${loopTo}s total from a ${Math.min(Number(o.loopSeconds) || 0, Number(o.durationSeconds) || 0)}s render"
+      ffmpeg -y -v error -stream_loop -1 -i out.mp4 -t ${loopTo} -c copy looped.mp4 \\
+        && mv -f looped.mp4 out.mp4 \\
+        && echo "HF-LOOPED: yes" || echo "HF-LOOPED: failed, keeping the single pass"
+    fi
     ls -l out.mp4
     ffprobe -v error -show_entries format=duration,size -of default=nw=1 out.mp4 2>/dev/null || true
   else

@@ -161,5 +161,41 @@ check(
   'no giving up',
 );
 
+head('6. Long pieces are rendered as a loop, not frame by frame');
+
+const looped = buildHyperFramesRenderScript({
+  projectDir: 'p',
+  durationSeconds: 3600,
+  loopSeconds: 20,
+  chunkSeconds: 20,
+  budgetSeconds: 300,
+});
+check(
+  'a one-hour film asks for ONE 20s span when it is a loop',
+  /HF-SPANS: 0:0-20/.test(looped) && !/1:20-40/.test(looped),
+  '20s of rendering, not 108,000 frames',
+);
+check('it repeats the result with a stream copy', /-stream_loop -1 -i out\.mp4 -t 3600 -c copy/.test(looped), 'seconds, not hours');
+check('the loop outcome is logged honestly', /HF-LOOPING: 3600s total/.test(looped) && /HF-LOOPED: /.test(looped), 'visible either way');
+check(
+  'a non-looping film is untouched',
+  /if \[ "0" -gt 0 \]; then\n\s+echo "HF-LOOPING/.test(
+    buildHyperFramesRenderScript({ projectDir: 'p', durationSeconds: 45, chunkSeconds: 20 }),
+  ),
+  'the loop branch is never entered',
+);
+check(
+  'a loop longer than the film is ignored',
+  /if \[ "0" -gt 0 \]/.test(
+    buildHyperFramesRenderScript({ projectDir: 'p', durationSeconds: 10, loopSeconds: 30 }),
+  ),
+  'loopSeconds must be shorter to mean anything',
+);
+check(
+  'the prompt tells the agent when to use it',
+  /loopSeconds/.test(orchestrator) && /RENDER TIME IS FRAMES/.test(orchestrator),
+  'the model knows the cost',
+);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
