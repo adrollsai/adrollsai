@@ -987,6 +987,85 @@ async function checkEdges() {
 // Run
 // ────────────────────────────────────────────────────────────────────────────
 
+// ════════════════════════════════════════════════════════════════════════════
+// 8. A fast-cut reference: many brief onsets, none long enough to carry a word
+// ════════════════════════════════════════════════════════════════════════════
+
+async function checkFastCut() {
+  section('8. A fast-cut reference still rebuilds, readably');
+
+  // Six shots, each with ONE brief spoken line of 0.45-0.95 s. This is the shape of the
+  // owner's real reference (a 61 s course promo whose 44 onsets were mostly under a
+  // second): there is nothing to merge within a shot, so the only way to keep every line
+  // readable is to let the beat borrow the silence that follows it.
+  const SHORT_SILENCES: readonly (readonly [number, number])[] = [
+    [0.45, 6],
+    [6.95, 12],
+    [13, 18],
+    [19, 24],
+    [25, 30],
+    [31, 36],
+  ];
+
+  const shortAnalysis = await analyseVideo('fast.mp4', fakeTools({ silences: SHORT_SILENCES }));
+  check(
+    'the brief lines are measured, not lost',
+    shortAnalysis.vo.present && shortAnalysis.vo.spans.length === 6,
+    `${shortAnalysis.vo.spans.length} onset(s), longest ${Math.max(
+      ...shortAnalysis.vo.spans.map((span) => span.dur),
+    )}s`,
+  );
+
+  const rebuilt = rebuildFromAnalysis(shortAnalysis);
+  check(
+    'a fast-cut reference REBUILDS instead of being refused',
+    Boolean(rebuilt.project) && rebuilt.project.files.length > 0,
+    `${rebuilt.project.files.length} files, ${rebuilt.beats.beats.length} beat(s) from ${shortAnalysis.vo.spans.length} onsets`,
+  );
+  check(
+    'every drawn line is within the word limit for its aspect',
+    rebuilt.beats.beats.every((beat) =>
+      beat.lines.every((line) => {
+        const words = line.split(/\s+/).filter(Boolean).length;
+        return words >= 1 && words <= MAX_LINE_WORDS[rebuilt.beats.aspect];
+      }),
+    ),
+    rebuilt.beats.beats.map((beat) => beat.lines[0]).join(' | '),
+  );
+  check(
+    'the rebuild still matches the reference runtime',
+    near(rebuilt.timing.total, shortAnalysis.facts.durationSeconds, 0.31),
+    `${rebuilt.timing.total}s vs ${shortAnalysis.facts.durationSeconds}s`,
+  );
+  check(
+    'the grouping is explained rather than silent',
+    rebuilt.notes.some((note) => /share one beat|shorter than the|too short to hold|borrows/i.test(note)),
+    rebuilt.notes.find((note) => /beat/i.test(note))?.slice(0, 110) ?? 'no grouping note',
+  );
+
+  // The bug this covers: `voiceSlices` assumed beats mapped 1:1 to onsets, so a merged
+  // beat lost its voice and the film failed with "no measured onset" on a beat that
+  // plainly has one.
+  const reread = rebuildFromAnalysis(shortAnalysis);
+  check(
+    'the beat-to-voice mapping survives a rebuild that grouped the voice',
+    reread.beats.beats.length === rebuilt.beats.beats.length &&
+      JSON.stringify(reread.project.files) === JSON.stringify(rebuilt.project.files),
+    `${reread.beats.beats.length} beats, identical project`,
+  );
+  check(
+    'the emitter accepted it, which it only does for readable lines',
+    Boolean(rebuilt.project.files.find((file) => file.path === 'grading.sh')),
+    // emitProject runs INSIDE rebuildFromAnalysis and is what refused the unreadable
+    // version, so reaching here with a project means every line passed the real check.
+    'a beat cannot be unreadable and still have a project',
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Run
+// ────────────────────────────────────────────────────────────────────────────
+
 (async () => {
   checkParsers();
   const analysis = await checkAnalysis();
@@ -995,6 +1074,7 @@ async function checkEdges() {
   await checkSkill();
   checkCompare();
   await checkEdges();
+  await checkFastCut();
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);

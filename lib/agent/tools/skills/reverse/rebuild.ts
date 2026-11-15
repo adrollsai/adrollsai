@@ -58,7 +58,7 @@ import {
   type SceneKind,
 } from '../video/beats';
 import { measureVoiceover, type Timing, type VoOnset } from '../video/timing';
-import { emitProject, type EmittedProject } from '../video/emit';
+import { emitProject, EmitError, type EmittedProject } from '../video/emit';
 import { scenePlanFor } from '../video/index';
 import type { ReverseAnalysis, ShotFacts, SpeechSpan } from './analyse';
 
@@ -418,12 +418,84 @@ export function kindFor(onsetCount: number, isFirstVoiced: boolean, isLast: bool
 }
 
 /**
+ * Group one shot's measured onsets into beats that can actually hold a readable line.
+ *
+ * THE BUG THIS FIXES
+ * One beat per onset is fine for a slow film. On a real fast-cut promo — the 61 s
+ * 720x720 reference measured 41 onsets across 16 scenes — 21 of those lines are on
+ * screen for 0.6–0.7 s, while the video skill's own readability floor is
+ * `0.5 s + 0.3 s per word` (0.8 s for one word). The emitter therefore refuses the
+ * whole film, which is correct: a word nobody can read is not a rebuild.
+ *
+ * So consecutive onsets that cannot each carry a word are merged into ONE beat whose
+ * voice spans them. Nothing is invented and nothing is dropped: the voice is still the
+ * reference's own audio, sliced over a longer window, and every line that IS drawn can
+ * be read. The cost is that the rebuild has fewer beats than the reference has spoken
+ * lines, and `compareBeats` reports that difference rather than hiding it.
+ *
+ * Both `buildBeats` and `voiceSlices` call this, so the beat→voice mapping is derived
+ * the same way on both sides instead of being assumed.
+ */
+export interface OnsetGroup {
+  entries: ShotOnset[];
+  start: number;
+  end: number;
+}
+
+export function groupShotOnsets(entries: readonly ShotOnset[], minHold: number, shotEnd?: number): OnsetGroup[] {
+  const groups: OnsetGroup[] = [];
+
+  for (const entry of entries) {
+    const last = groups[groups.length - 1];
+    // Absorb into the open group while that group is still too short to be read.
+    if (last && roundTo(last.end - last.start, 3) < minHold) {
+      last.entries.push(entry);
+      last.end = Math.max(last.end, entry.span.end);
+      continue;
+    }
+    groups.push({ entries: [entry], start: entry.span.start, end: entry.span.end });
+  }
+
+  // A trailing group that is still unreadable joins the one before it rather than
+  // being emitted alone.
+  if (groups.length > 1) {
+    const last = groups[groups.length - 1];
+    if (roundTo(last.end - last.start, 3) < minHold) {
+      const previous = groups[groups.length - 2];
+      previous.entries.push(...last.entries);
+      previous.end = Math.max(previous.end, last.end);
+      groups.pop();
+    }
+  }
+
+  // Still short — because the shot ran out of onsets to merge with, or its one line is
+  // genuinely 0.4 s long. Extend the beat into the SILENCE THAT FOLLOWS IT, up to the
+  // next beat's first voice or the end of the shot.
+  //
+  // This invents nothing: the extra screen time is the reference's own quiet audio, so
+  // the voice is unchanged and the words stay on the picture instead of being refused.
+  // Without it, a fast-cut reference with one short line per shot can never be rebuilt,
+  // because grouping has nothing left to merge.
+  groups.forEach((group, index) => {
+    const span = roundTo(group.end - group.start, 3);
+    if (span >= minHold) return;
+    const next = groups[index + 1];
+    const limit = next ? next.start : (shotEnd ?? group.end);
+    const target = Math.min(limit, roundTo(group.start + minHold, 3));
+    if (target > group.end) group.end = roundTo(target, 3);
+  });
+
+  return groups;
+}
+
+/**
  * Turn one analysis into the raw beats file, plus the derivation notes that explain
  * every adjustment it had to make.
  */
 function buildBeats(
   analysis: ReverseAnalysis,
   overrides: RebuildOverrides,
+  options: { minHoldSeconds?: number } = {},
 ): { raw: Record<string, unknown>; notes: string[] } {
   const aspect = analysis.facts.aspect;
   const fps = nearestSupportedFps(analysis.facts.fps);
@@ -502,17 +574,49 @@ function buildBeats(
     }
 
     const beatIds: string[] = [];
-    for (const entry of onsets) {
+    const minHold = options.minHoldSeconds ?? minHoldSeconds(1);
+    const groups = groupShotOnsets(onsets, minHold, shot.end);
+    for (const group of groups) {
       const box = shot.textBoxes[0];
       const geometryWords = box ? estimatedWords(box.width, box.height, aspect) : 1;
-      // The hold the emitter will actually give this line: its own measured duration
-      // plus the gap to the next line (or the scene's pad, for the last one).
-      const holdGuess = entry.span.dur + Math.max(calibration.gap, calibration.pad);
+      // The hold this BEAT will get: the voice it spans, plus the gap to the next beat
+      // (or the scene's pad, for the last one). Grouped onsets share one line, so the
+      // line is sized against the whole group rather than one short burst.
+      const spoken = roundTo(group.end - group.start, 3);
+      // CONSERVATIVE ON PURPOSE: the line is sized against the VOICE it covers, not the
+      // voice plus the gap and pad. The gap is what `fitTimingToRuntime` tightens when
+      // the film overruns, so counting on it produced lines that were one word too long
+      // for the clock they actually landed on (four words needing 1.7 s in a 1.5 s
+      // window). Sizing against the voice alone can only ever under-count, and a line
+      // that is too short is readable while one that is too long is refused.
+      const holdGuess = spoken;
       const readable = wordsThatFit(holdGuess);
+      if (group.entries.length > 1) {
+        notes.push(
+          `${group.entries.length} onsets in shot ${shot.id} (${group.entries
+            .map((entry) => `${entry.span.dur}s`)
+            .join(', ')}) are each shorter than the ${minHold}s one word needs, so they share one beat ` +
+            `of ${spoken}s: the voice is unchanged and every drawn line stays readable`,
+        );
+      }
+      const voiceSeconds = roundTo(
+        group.entries.reduce((sum, entry) => sum + entry.span.dur, 0),
+        3,
+      );
+      if (spoken > voiceSeconds + 1e-9) {
+        // Said out loud: the beat is on screen longer than the voice inside it, because
+        // the line would otherwise be too short to read. The extra time is the
+        // reference's own quiet audio, so nothing has been invented.
+        notes.push(
+          `the beat at ${group.start}s in shot ${shot.id} holds for ${spoken}s where its voice is ` +
+            `${voiceSeconds}s: it borrows ${roundTo(spoken - voiceSeconds, 3)}s of the reference's own silence ` +
+            'so the line stays on the picture long enough to read',
+        );
+      }
       if (readable < 1) {
         notes.push(
-          `onset ${entry.span.index} (${entry.span.dur}s, shot ${shot.id}) is too short to hold even one word: ` +
-            `${minHoldSeconds(1)}s on screen is the floor, so it keeps its voice but gets no on-screen line`,
+          `the beat at ${group.start}s in shot ${shot.id} spans only ${spoken}s, under the ${minHold}s floor ` +
+            'for one word; it keeps its voice and its line is reported as unreadable rather than silently shipped',
         );
       }
       const words = Math.max(1, Math.min(geometryWords, readable));
@@ -680,13 +784,57 @@ export function voiceSlices(
   raw: Record<string, unknown>,
 ): { id: string; start: number; dur: number }[] {
   const beats = Array.isArray(raw.beats) ? (raw.beats as { id: string }[]) : [];
-  const byShot = onsetsByShot(analysis);
-  if (beats.length !== byShot.length) return [];
-  return byShot.map((entry, index) => ({
+  // The beats are one per GROUP of onsets, and how hard the voice was grouped depends
+  // on how fast-cut the reference is — the rebuild raises the floor and tries again
+  // when the emitter refuses its lines as too short. So the mapping is recovered FROM
+  // THE BEATS FILE by finding the floor that produces exactly this many groups, rather
+  // than assumed to be 1:1 or assumed to be the one-word minimum. Assuming either is
+  // how a merged beat silently lost its voice and the film failed with "no measured
+  // onset" on a beat that plainly has one.
+  const groups = beatGroups(analysis, beats.length);
+  if (beats.length !== groups.length) return [];
+  return groups.map((group, index) => ({
     id: beats[index].id,
-    start: entry.span.start,
-    dur: entry.span.dur,
+    start: group.start,
+    dur: roundTo(group.end - group.start, 3),
   }));
+}
+
+/** The floors tried when recovering the grouping from a beats file. Monotonic. */
+const GROUP_FLOOR_LADDER: readonly number[] = [0.8, 1.1, 1.4, 1.7, 2.0, 2.4, 2.8, 3.2, 3.6, 4.0, 4.6, 5.2, 6.0];
+
+/** Every shot's onset groups at one floor, flattened in scene order. */
+function groupsAtFloor(analysis: ReverseAnalysis, floor: number): OnsetGroup[] {
+  const byShot = onsetsByShot(analysis);
+  const perShot = new Map<number, ShotOnset[]>();
+  for (const entry of byShot) {
+    const list = perShot.get(entry.shot.index) ?? [];
+    list.push(entry);
+    perShot.set(entry.shot.index, list);
+  }
+  const ordered: OnsetGroup[] = [];
+  for (const shotIndex of [...perShot.keys()].sort((a, b) => a - b)) {
+    ordered.push(...groupShotOnsets(perShot.get(shotIndex) ?? [], floor, analysis.shots.find((s) => s.index === shotIndex)?.end));
+  }
+  return ordered;
+}
+
+/**
+ * The grouping that produces `expectedCount` beats, or the one-word grouping when no
+ * floor on the ladder matches.
+ *
+ * Grouping is monotonic in the floor (a higher floor never yields more groups), so the
+ * smallest matching rung is the one the builder used.
+ */
+export function beatGroups(analysis: ReverseAnalysis, expectedCount?: number): OnsetGroup[] {
+  const first = groupsAtFloor(analysis, GROUP_FLOOR_LADDER[0]);
+  if (expectedCount === undefined || first.length === expectedCount) return first;
+
+  for (const floor of GROUP_FLOOR_LADDER.slice(1)) {
+    const groups = groupsAtFloor(analysis, floor);
+    if (groups.length === expectedCount) return groups;
+  }
+  return first;
 }
 
 /** The onsets the clock is laid out from: one per spoken beat, in beat order. */
@@ -706,32 +854,81 @@ export function rebuildFromAnalysis(
   overrides: RebuildOverrides = {},
 ): RebuildPlan {
   const notes: string[] = [];
-  const derived = buildBeats(analysis, overrides);
-  const raw = derived.raw;
-  notes.push(...derived.notes);
+  const calibration = calibrateTiming(analysis);
 
-  // A film with no spoken beat is not a film the video skill can emit: its
-  // `parseBeats` refuses an empty `beats` array and its emitter writes a voice
-  // track per beat. So a reference whose voice cannot be measured is STOPPED here,
-  // with the measurement's own reason, instead of producing a project that would
-  // fail at render time with a message nobody can act on.
-  const beatCount = Array.isArray(raw.beats) ? (raw.beats as unknown[]).length : 0;
-  if (beatCount === 0) {
-    throw new ReverseRebuildError(
-      `no beat could be built: the reference has no measurable voice line, and the video skill requires at ` +
-        `least one spoken beat (an empty "beats" array is refused, and every beat carries a voice track). ` +
-        `${analysis.vo.reason} Reverse a reference that carries a voiceover, or supply the copy by hand and ` +
-        `build the beats file directly — this pipeline has no transcript to invent one from.`,
-      notes,
-    );
+  // Build, lay out the clock, and let the EMITTER judge readability — then try again
+  // with longer beats if it refuses.
+  //
+  // The emitter's rule is `0.5 s + 0.3 s per word` on the hold it actually gives, which
+  // depends on the gap that `fitTimingToRuntime` tightens to reach the reference's
+  // runtime. Predicting that analytically means reimplementing the emitter; asking it
+  // and reacting does not, and it cannot drift from the real rule because the real rule
+  // IS the check. Each attempt raises the beat floor to what the refusal said the line
+  // needed, so it converges in one or two steps on the films tried so far, and gives up
+  // loudly rather than shipping something unreadable.
+  const MAX_ATTEMPTS = 4;
+  let minHold = minHoldSeconds(1);
+  let raw: Record<string, unknown> = {};
+  let beats: Beats | null = null;
+  let timing = null as ReturnType<typeof fitTimingToRuntime>['timing'] | null;
+  let fitted: ReturnType<typeof fitTimingToRuntime> | null = null;
+  let project: EmittedProject | null = null;
+  let attempts = 0;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    attempts = attempt;
+    const derived = buildBeats(analysis, overrides, { minHoldSeconds: minHold });
+    raw = derived.raw;
+    notes.push(...derived.notes);
+
+    const beatCount = Array.isArray(raw.beats) ? (raw.beats as unknown[]).length : 0;
+    if (beatCount === 0) {
+      throw new ReverseRebuildError(
+        `no beat could be built: the reference has no measurable voice line, and the video skill requires at ` +
+          `least one spoken beat (an empty "beats" array is refused, and every beat carries a voice track). ` +
+          `${analysis.vo.reason} Reverse a reference that carries a voiceover, or supply the copy by hand and ` +
+          `build the beats file directly — this pipeline has no transcript to invent one from.`,
+        notes,
+      );
+    }
+
+    beats = parseBeats(raw);
+    const onsets = onsetsFromAnalysis(analysis, raw);
+    fitted = fitTimingToRuntime(onsets, scenePlanFor(beats), calibration, overrides.timing ?? {});
+    timing = fitted.timing;
+
+    try {
+      project = emitProject(beats, timing);
+      break;
+    } catch (error) {
+      if (!(error instanceof EmitError)) throw error;
+      // "… is on screen 0.707s but needs 0.8s (0.5s + 0.3s × 1 words)" — the number to
+      // satisfy is stated by the checker itself.
+      const needed = [...String(error.message).matchAll(/needs ([\d.]+)s/g)].map((match) => Number(match[1]));
+      const raiseTo = needed.length ? Math.max(...needed) : roundTo(minHold + 0.4, 3);
+
+      if (attempt === MAX_ATTEMPTS) {
+        throw new ReverseRebuildError(
+          `the reference is too fast-cut to rebuild as readable type after ${MAX_ATTEMPTS} attempts: ` +
+            `${String(error.message).slice(0, 400)}. Every line must be on screen for 0.5 s + 0.3 s per word; ` +
+            `grouping the voice harder would merge separate spoken lines into one, which is a different film. ` +
+            'A reference shot this fast needs a human to write the lines for it.',
+          notes,
+        );
+      }
+
+      notes.push(
+        `attempt ${attempt}: the emitter refused ${needed.length} line(s) as too short to read ` +
+          `(the longest needs ${raiseTo}s). Grouping the voice into longer beats — floor ` +
+          `${minHold}s → ${raiseTo}s — and laying the clock out again`,
+      );
+      minHold = roundTo(Math.max(raiseTo, minHold + 0.3), 3);
+    }
   }
 
-  const beats = parseBeats(raw);
-  const onsets = onsetsFromAnalysis(analysis, raw);
-  const calibration = calibrateTiming(analysis);
-  const fitted = fitTimingToRuntime(onsets, scenePlanFor(beats), calibration, overrides.timing ?? {});
-  const timing = fitted.timing;
-  const project = emitProject(beats, timing);
+  if (!beats || !timing || !fitted || !project) {
+    throw new ReverseRebuildError('the rebuild produced no project at all', notes);
+  }
 
   const spoken = beats.beats.filter((beat) => beat.vo.length > 0).length;
   const unaligned = analysis.alignment.unaligned.map((entry) => entry.index);
