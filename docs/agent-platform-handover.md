@@ -248,6 +248,19 @@ is.
 - `18_scrape_definitions` — `agent_scrape_definitions`: 1 table, **4 RLS policies**,
   3 indexes. APPLIED (12/12 statements). P8's Supabase definition store is therefore
   live; the earlier note that it was unapplied is obsolete.
+- `19_lead_journey` — `lead_journey_steps`: 1 table, 3 indexes, RLS enabled.
+  **APPLIED (6/6 statements), verified in the catalogue afterwards:** the table exists
+  with `relrowsecurity = true`, and `lead_journey_steps_unique_step UNIQUE (lead_id,
+  step_id)` is present — which is the constraint P7's exactly-once send depends on, so
+  it is worth having checked rather than assumed. Earlier notes saying this was
+  unapplied are obsolete.
+
+Apply one with `node scripts/db-apply-migration.mjs <file.sql>`; `--check` reports what
+is already present without applying, and `--sql "select …"` asks the catalogue a
+question directly. It reads `SUPABASE_MANAGEMENT_TOKEN` from `.env.local`, applies
+STATEMENT BY STATEMENT (the endpoint rejects whole files that carry many comments and
+returns an empty body on 400), and prints the catalogue state before and after rather
+than trusting the HTTP status.
 
 **Still open, and it matters:** neither live proof writes `agent_runs`. A fabricated
 `run_id` UPDATEs zero rows while Supabase returns `error: null`, so a naive check
