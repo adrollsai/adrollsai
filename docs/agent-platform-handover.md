@@ -219,6 +219,51 @@ There is no `profiles.owner_id` column. A team member's workspace owner comes fr
 wallet uses, so the spine and the balance cannot disagree about whose workspace it
 is.
 
+## KNOWN DEFECT: the reverse rebuild can render as one long end card
+
+Found by looking at frames, not by any gate. This is the P3 lesson repeating: a film
+can pass every check and still be wrong on screen.
+
+**What happens.** Reverse a reference that measures as very few shots and the rebuild
+can turn its only content scene into the end card. `kindFor()` returns `'endcard'`
+whenever a scene is last, and the emitter draws a card's blocks INSTEAD of a scene's
+beat lines — so the beats are measured, counted, timed, and never seen. The result is
+a brand card with placeholder digits over the plate for the whole runtime.
+
+**The evidence.** `node scripts/reverse-live-proof.ts --end 9` against
+`D:\nobo-renders\proof\proof-toolchain-9x16-06f40b79\final.mp4` (a real 31.98 s
+1080×1920 film):
+
+- measurement is honest: 2 shots, 3 type boxes, 10 onsets, `check` 0 errors, SPEC
+  audit 203 figures and 0 unaccounted, runtime 0.00 s drift, beat count 10/10
+- the render is wrong: the contact sheet at
+  `D:\nobo-renders\reverse\final-reverse\contact-sheet.png` shows the reference
+  playing "HOMÈ OR PROPERTY?" and "EVERY BUDGET" over the city while the rebuild shows
+  "BRAND UNKNOWN / TAGLINE UNKNOWN / 0000000000 / 0000000001" at every one of the five
+  compared timecodes
+- a raw frame from the render (`-ss 2.0`) confirms it: the plate is playing underneath
+  and the card's type is drawn over it from ~1.9 s
+- `timing.json` explains why: the film is `s0` (0.5 s) + `s1` (31.48 s, kind
+  `endcard`). There is no content scene at all.
+
+**Why it is not fixed here.** The obvious fix — never let a scene with beats be the
+end card, and give the card its own beatless scene — was implemented and reverted. It
+is correct in principle but it ADDS duration, and `fitTimingToRuntime` then tightens
+the inter-line gap to reach the reference's runtime until a beat drops below the
+readability floor (`s1/p02: "WORD WORD WORD" is on screen 1.17s but needs 1.4s`).
+Paying for the card by making the words unreadable is not a fix.
+
+**What the fix needs.** The card's duration has to come from the reference's own
+measured tail — the silence between the last onset's end and the end of the film —
+rather than being a constant added on top, so the total is unchanged and no beat is
+squeezed. If the reference has no measurable tail, the honest outcome is to say so and
+report runtime drift, not to compress the voice.
+
+**Until then:** treat a reverse of a low-shot-count reference as needing a human look
+at the contact sheet before it is delivered. The measurement, the SPEC, the beats file
+and the project are all still correct and editable; it is the scene-kind mapping that
+is wrong.
+
 ## What a read-only pass over production found
 
 `npm run verify:live-data` drives the P10, P9 and P6 functions against the real
