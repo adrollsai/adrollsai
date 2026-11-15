@@ -111,6 +111,26 @@ export function layoutFor(aspect: AspectRatio): Layout {
       lineStagger: 0.22,
     };
   }
+  if (aspect === '1:1') {
+    // A square frame: as wide as 9:16 is tall, and roughly half its height. The safe band
+    // is the middle of the frame, because a square post is cropped by feed UIs at the top
+    // and bottom far more often than at the sides. Type is a little smaller than 9:16
+    // because there is less vertical room for a three-line hook.
+    return {
+      width: 1080,
+      height: 1080,
+      margin: 60,
+      safeTop: 132,
+      safeBottom: 880,
+      hookSize: 104,
+      beatSize: 90,
+      rowSize: 64,
+      plaqueSize: 78,
+      labelSize: 27,
+      lineHeight: 1.1,
+      lineStagger: 0.22,
+    };
+  }
   return {
     width: 1080,
     height: 1920,

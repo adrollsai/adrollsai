@@ -24,8 +24,14 @@
  *    artefact key on every machine, forever.
  */
 
-/** The two deliverable shapes. One beats file drives both. */
-export type AspectRatio = '9:16' | '16:9';
+/**
+ * The deliverable shapes. One beats file drives all of them.
+ *
+ * `1:1` exists because references arrive square: the owner's own reference video is
+ * 720x720, and before this it was forced to 9:16, which CROPPED the sides of their footage
+ * rather than showing it. A square deliverable is also the shape most feeds show uncropped.
+ */
+export type AspectRatio = '9:16' | '16:9' | '1:1';
 
 /**
  * How a scene draws its beats. This is the only place the emitter's vocabulary is
@@ -171,7 +177,7 @@ export const SUPPORTED_FPS: readonly number[] = [24, 25, 30];
  * Words per on-screen line. 9:16 is the tight one: five words at 128 px fills the
  * 948 px usable width, so a sixth word either clips or shrinks below legible.
  */
-export const MAX_LINE_WORDS: Record<AspectRatio, number> = { '9:16': 5, '16:9': 9 };
+export const MAX_LINE_WORDS: Record<AspectRatio, number> = { '9:16': 5, '16:9': 9, '1:1': 7 };
 
 /**
  * The lead-in. A scene that is on screen at t = 0 never reveals its non-media
@@ -251,9 +257,11 @@ export function parseBeats(raw: unknown): Beats {
     );
   }
 
-  const aspect = String(raw.aspect ?? '');
-  if (aspect !== '9:16' && aspect !== '16:9') {
-    fail('aspect', `must be "9:16" or "16:9" (got ${JSON.stringify(raw.aspect)})`);
+  const aspectRaw = String(raw.aspect ?? '');
+  const ASPECTS = ['9:16', '16:9', '1:1'] as const;
+  const aspect = aspectRaw as AspectRatio;
+  if (!(ASPECTS as readonly string[]).includes(aspectRaw)) {
+    fail('aspect', `must be one of ${ASPECTS.map((entry) => `"${entry}"`).join(', ')} (got ${JSON.stringify(raw.aspect)})`);
   }
 
   const fpsRaw = raw.fps === undefined ? 30 : Number(raw.fps);

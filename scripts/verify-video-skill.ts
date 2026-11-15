@@ -1064,7 +1064,7 @@ console.log('\n=== beats.json schema ===');
   const cases: { name: string; raw: Record<string, unknown>; pattern: RegExp }[] = [
     { name: 'a missing version', raw: { ...fixtureBeats(), version: undefined }, pattern: /version/ },
     { name: 'a generated (uppercase) jobId', raw: { ...fixtureBeats(), jobId: 'Meridian Film' }, pattern: /jobId/ },
-    { name: 'an unsupported aspect', raw: { ...fixtureBeats(), aspect: '1:1' }, pattern: /aspect/ },
+    { name: 'an unsupported aspect', raw: { ...fixtureBeats(), aspect: '4:5' }, pattern: /aspect/ },
     { name: 'an unsupported fps', raw: { ...fixtureBeats(), fps: 29.97 }, pattern: /fps/ },
     {
       name: 'three end-card numbers',

@@ -431,8 +431,12 @@ export function parseRate(rate: unknown): number {
   return roundTo(numerator / denominator, 3);
 }
 
-/** Aspect of a frame, as the two shapes the emitter can draw. */
+/** Aspect of a frame, as one of the shapes the emitter can draw. */
 export function aspectOf(width: number, height: number): AspectRatio {
+  // Within 2% of square, call it square. The owner's own reference is 720x720; forcing it
+  // to 9:16 cropped the sides of their footage, which a rebuild must never do.
+  const longest = Math.max(width, height);
+  if (longest > 0 && Math.abs(width - height) / longest <= 0.02) return '1:1';
   return height >= width ? '9:16' : '16:9';
 }
 

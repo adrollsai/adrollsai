@@ -30,6 +30,7 @@
 import {
   alignOnsets,
   analyseVideo,
+  aspectOf,
   dominantColours,
   parseProbeJson,
   parseSceneDetect,
@@ -1133,6 +1134,47 @@ async function checkFastCut() {
   checkCompare();
   await checkEdges();
   await checkFastCut();
+
+  // ── a SQUARE reference must not be cropped into 9:16
+  const square = await analyseVideo('square.mp4', {
+    ...fakeTools(),
+    async probeJson() {
+      const parsed = JSON.parse(probeJsonText());
+      parsed.streams[0].width = 720;
+      parsed.streams[0].height = 720;
+      return JSON.stringify(parsed);
+    },
+  });
+  check(
+    'a 720x720 reference is measured as 1:1, not forced to 9:16',
+    square.facts.aspect === '1:1',
+    `${square.facts.width}x${square.facts.height} -> ${square.facts.aspect}`,
+  );
+  check(
+    'the aspect is called by its shape: square within 2%, otherwise portrait or landscape',
+    aspectOf(1080, 1080) === '1:1' &&
+      aspectOf(1000, 1020) === '1:1' &&
+      aspectOf(1920, 1080) === '16:9' &&
+      aspectOf(1080, 1920) === '9:16',
+    '1:1 / 16:9 / 9:16',
+  );
+  const squareRebuild = rebuildFromAnalysis(square);
+  check(
+    'the square rebuild is emitted at 1:1 in a square frame',
+    squareRebuild.beats.aspect === '1:1' &&
+      (() => {
+        const composition = squareRebuild.project.files.find((file) => /s1-hook\.html$/.test(file.path));
+        return composition
+          ? /data-width="1080"/.test(composition.content) && /data-height="1080"/.test(composition.content)
+          : false;
+      })(),
+    `aspect ${squareRebuild.beats.aspect}, ${squareRebuild.project.files.length} files`,
+  );
+  check(
+    'a square line may be longer than a vertical one but shorter than a wide one',
+    MAX_LINE_WORDS['1:1'] > MAX_LINE_WORDS['9:16'] && MAX_LINE_WORDS['1:1'] < MAX_LINE_WORDS['16:9'],
+    `9:16=${MAX_LINE_WORDS['9:16']} 1:1=${MAX_LINE_WORDS['1:1']} 16:9=${MAX_LINE_WORDS['16:9']}`,
+  );
 
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
