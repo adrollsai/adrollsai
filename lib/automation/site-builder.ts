@@ -130,8 +130,8 @@ export function siteBaseUrl(profile: SiteProfile): string {
 }
 
 /**
- * Template assets live in `public/` and are served on ANY host — platform domain
- * or tenant custom domain — so they are referenced by a relative path and the
+ * Template assets live in `public/` and are served on ANY host â€” platform domain
+ * or tenant custom domain â€” so they are referenced by a relative path and the
  * template's own <base href> resolves them.
  *
  * An earlier version rewrote this to an absolute NEXT_PUBLIC_APP_URL, which meant
@@ -155,6 +155,44 @@ export interface BuildSiteOptions {
   baseUrl?: string
 }
 
+const BACKTICK = String.fromCharCode(96)
+
+/**
+ * Catalogue copy is often markdown, and it was being injected into the page raw â€” a customer
+ * website showed literal "#" and "##" and an emoji heading. Strip the syntax, keep the first real
+ * sentence.
+ */
+export function plainSummary(raw: unknown, limit = 180): string {
+  const text = String(raw ?? '')
+    .replace(/^\s*#{1,6}\s*/gm, '')
+    .split(BACKTICK)
+    .join('')
+    .replace(/[*_>]/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (text.length <= limit) return text
+  const cut = text.slice(0, limit)
+  const stop = cut.lastIndexOf('. ')
+  return (stop > 60 ? cut.slice(0, stop + 1) : cut).trim()
+}
+
+/**
+ * A price as a person writes it. The catalogue stores "9999" and the template printed it raw, so a
+ * customer's website advertised "9999" with no currency at all.
+ */
+export function displayPrice(raw: unknown): string {
+  const text = String(raw ?? '').trim()
+  if (!text) return ''
+  if (/[â‚¹$â‚¬Â£]/.test(text) || /[a-z]/i.test(text)) return text // already formatted, or "On request"
+  const digits = text.replace(/[^\d.]/g, '')
+  const value = Number(digits)
+  if (!Number.isFinite(value) || value <= 0) return text
+  return `â‚¹${value.toLocaleString('en-IN')}`
+}
+
 export function buildSiteHtml(
   profile: SiteProfile,
   properties: SiteProperty[],
@@ -168,7 +206,7 @@ export function buildSiteHtml(
 
   // Scrub the template's demo identity out of the static markup BEFORE injecting
   // anything of ours. app.js renders header/footer from window.SITE, but the raw
-  // HTML still carries "Everline Realty" in text nodes, alt text and attributes —
+  // HTML still carries "Everline Realty" in text nodes, alt text and attributes â€”
   // which a crawler reads.
   //
   // NOTE: the replacement MUST be HTML-escaped, and the match MUST be
@@ -176,13 +214,25 @@ export function buildSiteHtml(
   // markup straight into their own page; matching only the exact casing left
   // upper-case HTML comments (e.g. "<!-- WHY EVERLINE -->") in the output.
   const safeBrand = esc(brandName)
+  // The template ships with TWO demo companies baked into its markup. Only "Everline" was replaced,
+  // so a real tenant's site still read "Riverton's boutique brokerage since 2009" â€” another
+  // business's copy on a customer's public page.
   html = html
     .replace(/everlinerealty\.com/gi, '')
+    .replace(/rivertonrealty\.com/gi, '')
+    // Whole possessive phrases first: replacing the name before removing the phrase left an
+    // orphaned "Nobogent's" floating on the page.
+    .replace(/riverton[^<.?!]{0,4}s?\s+boutique brokerage since 2009/gi, '')
+    .replace(/everline[^<.?!]{0,4}s?\s+boutique brokerage since 2009/gi, '')
     .replace(/everline\s+realty/gi, safeBrand)
+    .replace(/riverton\s+realty/gi, safeBrand)
     .replace(/everline/gi, safeBrand)
+    .replace(/riverton/gi, safeBrand)
+    .replace(/boutique brokerage since 2009/gi, '')
+    .replace(/sixteen years[^<.]*\.?/gi, '')
 
   const tagline = (profile.mission_statement || vocab.taglineFallback).trim()
-  const description = (profile.business_info || tagline).replace(/\s+/g, ' ').trim().slice(0, 158)
+  const description = plainSummary(profile.business_info, 158) || tagline
   const phone = (profile.contact_number || profile.whatsapp_phone_number || '').trim()
   const wa = digits(profile.whatsapp_phone_number || profile.contact_number)
   const email = (profile.email || '').trim()
@@ -203,7 +253,7 @@ export function buildSiteHtml(
     : canonical
 
   /* ---------------- head: title, description, canonical, social ------- */
-  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` — ${esc(city)}` : ''} </title>`)
+  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''} </title>`)
   html = html.replace(
     /<meta name="description" content="[^"]*">/i,
     `<meta name="description" content="${esc(description)}">`
@@ -213,7 +263,7 @@ export function buildSiteHtml(
   const socialTags = `
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(brandName)}">
-<meta property="og:title" content="${esc(brandName)}${city ? ` — ${esc(city)}` : ''}">
+<meta property="og:title" content="${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(canonical)}">
 <meta property="og:image" content="${esc(ogImage)}">
@@ -235,7 +285,7 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
   const listingSchema = props.slice(0, 20).map((p) => ({
     '@type': 'Product',
     name: p.title || 'Listing',
-    description: (p.description || '').replace(/\s+/g, ' ').slice(0, 300) || undefined,
+    description: plainSummary(p.description, 300) || undefined,
     image: propertyImage(p) || undefined,
     url: `${propertyBase}/properties/${p.id}`,
     ...(p.price
@@ -255,7 +305,7 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
     '@context': 'https://schema.org',
     '@type': vocab.schemaType,
     name: brandName,
-    description: profile.business_info || tagline,
+    description: plainSummary(profile.business_info, 300) || tagline,
     url: canonical,
     image: ogImage,
     logo,
@@ -315,7 +365,7 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
 `
 
   // Inject immediately before app.js so the renderer picks up tenant branding.
-  // Locate by string index — a regex missed tags with extra attributes and
+  // Locate by string index â€” a regex missed tags with extra attributes and
   // silently fell back to appending after app.js, which made the override a no-op.
   const appJsIdx = html.indexOf('assets/js/app.js')
   if (appJsIdx > -1) {
@@ -340,16 +390,16 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
     ${img ? `<img src="${esc(img)}" alt="${esc(p.title || 'Property')}${city ? ` in ${esc(city)}` : ''}" loading="lazy" width="480" height="360">` : ''}
     <h3>${esc(p.title || 'Listing')}</h3>
   </a>
-  ${p.price ? `<p class="seo-price">${esc(p.price)}</p>` : ''}
+  ${p.price ? `<p class="seo-price">${esc(displayPrice(p.price))}</p>` : ''}
   ${p.address ? `<p class="seo-muted">${esc(p.address)}</p>` : ''}
-  ${p.description ? `<p>${esc(String(p.description).replace(/\s+/g, ' ').slice(0, 240))}</p>` : ''}
+  ${p.description ? `<p>${esc(plainSummary(p.description, 240))}</p>` : ''}
 </article>`
     })
     .join('\n')
 
   const serverContent = `
 <section id="nobogent-server-content" aria-labelledby="nobogent-h1" style="max-width:1180px;margin:0 auto;padding:48px 20px;">
-  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` — ${esc(city)}` : ''}</h1>
+  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''}</h1>
   <p style="margin:0 0 18px;max-width:62ch;">${esc(tagline)}</p>
   ${address ? `<address style="font-style:normal;margin:0 0 6px;">${esc(address)}</address>` : ''}
   ${phone ? `<p style="margin:0 0 6px;">Call or WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
