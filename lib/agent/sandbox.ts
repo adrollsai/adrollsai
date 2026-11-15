@@ -192,7 +192,12 @@ export async function getOrCreateSandbox(userId: string = 'default', apiKey?: st
   //    No template => the stock E2B image, which does NOT ship ffmpeg/Chrome,
   //    so provisioning below is mandatory until E2B_TEMPLATE is set.
   const template = getE2BTemplate();
-  const sandbox = await Sandbox.create({
+  // Rendering is CPU-bound and the stock box has 2 cores — that is why a long film takes hours.
+  // These are deployment knobs. If the plan cannot provide the hardware, creation is retried with
+  // the defaults instead of failing the job: a slower render beats no render.
+  const cpuCount = Number((process.env.E2B_CPU_COUNT || '').replace(/\D/g, '')) || undefined;
+  const memoryMB = Number((process.env.E2B_MEMORY_MB || '').replace(/\D/g, '')) || undefined;
+  const baseOptions: any = {
     apiKey: resolvedKey,
     // Hard backstop for when this Node process disappears (dev restart,
     // serverless freeze) and our own idle timer never gets to run: pause rather
@@ -200,7 +205,22 @@ export async function getOrCreateSandbox(userId: string = 'default', apiKey?: st
     timeoutMs: Math.max(timeoutMs, 900_000),
     lifecycle: { onTimeout: { action: 'pause' }, autoResume: true },
     ...(template ? { template } : {}),
-  });
+  };
+  let sandbox;
+  try {
+    sandbox = await Sandbox.create({
+      ...baseOptions,
+      ...(cpuCount ? { cpuCount } : {}),
+      ...(memoryMB ? { memoryMB } : {}),
+    });
+  } catch (error: any) {
+    if (!cpuCount && !memoryMB) throw error;
+    console.warn(
+      `[E2B Sandbox] could not get ${cpuCount ?? 'default'} cpu / ${memoryMB ?? 'default'} MB ` +
+        `(${String(error?.message || error).slice(0, 120)}) — falling back to the default box.`,
+    );
+    sandbox = await Sandbox.create(baseOptions);
+  }
 
   const capabilities = await provisionSandbox(sandbox, { skipped: Boolean(template) });
 

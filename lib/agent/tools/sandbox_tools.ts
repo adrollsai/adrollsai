@@ -12,6 +12,8 @@ import {
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildHyperFramesRenderScript,
+  MAX_SLICE_SECONDS,
+  maxDrawnSeconds,
   normaliseCompositionHtml,
   planRenderSpans,
   renderSliceBudgetSeconds,
@@ -430,6 +432,15 @@ python3 render_card.py
         startSeconds: z.number().optional().describe('Render only the span starting at this second — the cheap way to re-check one section while iterating.'),
         endSeconds: z.number().optional().describe('Render only up to this second. Use with startSeconds to re-render just one span.'),
         audioUrl: z.string().optional().describe('Optional URL to real celebratory audio or background music track to mix into the MP4'),
+        fullRenderSeconds: z
+          .number()
+          .optional()
+          .describe(
+            'Draw EVERY frame of a film longer than the drawing cap, however long it takes. Only for content that ' +
+              'genuinely evolves (a story, a countdown, changing prices). Rendering takes about 0.085s per frame, ' +
+              'so 1 minute is ~2.5 minutes of work and 10 minutes is ~25. Estimate it with the tool and tell the ' +
+              'user the wait before you start.',
+          ),
         loopSeconds: z
           .number()
           .optional()
@@ -448,7 +459,7 @@ python3 render_card.py
               'stitched; smaller spans resume more finely if a slice runs out of time, larger spans start fewer browsers.',
           ),
       }),
-      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds, loopSeconds }) => {
+      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds, loopSeconds, fullRenderSeconds }) => {
         try {
           const isVertical = resolution === '1080x1920_vertical';
           const dur = Math.min(Math.max(durationSeconds || 15, 5), 3600);
@@ -481,8 +492,16 @@ python3 render_card.py
 
           // A film is rendered in spans, and the slice budget comes from the request we are
           // inside rather than a hard-coded number. Whatever does not fit is resumed next call.
-          // When the piece is a loop, only the loop is rendered — the rest is a stream copy.
-          const renderSeconds = loopSeconds && loopSeconds > 0 ? Math.min(loopSeconds, dur) : dur;
+          //
+          // Past the drawing cap we stop drawing every frame. At ~0.085s per frame an hour of
+          // film is two to three HOURS of compute, which is not something anyone waits for. So a
+          // long film is drawn for a representative stretch and repeated to length, and the
+          // result says plainly that it happened. A caller who truly needs every frame (a story, a
+          // countdown, changing prices) passes fullRenderSeconds and gets the honest estimate.
+          const drawingCap = maxDrawnSeconds();
+          const autoLooped = !loopSeconds && !fullRenderSeconds && dur > drawingCap;
+          const effectiveLoopSeconds = loopSeconds ?? (autoLooped ? drawingCap : undefined);
+          const renderSeconds = effectiveLoopSeconds && effectiveLoopSeconds > 0 ? Math.min(effectiveLoopSeconds, dur) : dur;
           const spans = planRenderSpans({
             durationSeconds: renderSeconds,
             chunkSeconds,
@@ -499,11 +518,15 @@ python3 render_card.py
           // film of any length eventually lands without anyone being asked to retry.
           let videoUrl = '';
           let lastRes: Awaited<ReturnType<typeof executeInE2BSandbox>> | undefined;
+          let lastError = '';
           let spansDone = 0;
           let spansTotal = spans.length;
 
           for (let slice = 0; slice < 40; slice++) {
-            const budgetSeconds = renderSliceBudgetSeconds(remainingTurnBudgetMs());
+            // E2B cuts a command at ~300s, so a slice asks for less than that however much time
+            // the request has left. The outer loop is what makes a long film possible; a single
+            // command never needs to be long.
+            const budgetSeconds = Math.min(renderSliceBudgetSeconds(remainingTurnBudgetMs()), MAX_SLICE_SECONDS);
             // No usable time left in this request: stop cleanly and let the next slice continue.
             if (slice > 0 && budgetSeconds < 45) break;
 
@@ -517,21 +540,36 @@ python3 render_card.py
               audioUrl,
               chunkSeconds,
               budgetSeconds,
-              loopSeconds,
+              loopSeconds: effectiveLoopSeconds,
             });
 
-            lastRes = await executeInE2BSandbox({
-              command: runScript,
-              files: slice === 0 ? files : [], // the composition is already on disk after slice 0
-              readFiles: [`${safeName}/out.mp4`],
-              userId,
-              timeoutMs: renderTimeoutMs(budgetSeconds, spans.length),
-            });
+            let crashed = false;
+            try {
+              lastRes = await executeInE2BSandbox({
+                command: runScript,
+                files: slice === 0 ? files : [], // the composition is already on disk after slice 0
+                readFiles: [`${safeName}/out.mp4`],
+                userId,
+                timeoutMs: renderTimeoutMs(budgetSeconds, spans.length),
+              });
+            } catch (error: any) {
+              // A dropped sandbox connection is not the end of the film: every finished span is
+              // on disk, so the next slice picks up where this one stopped. Only give up when the
+              // retries are exhausted.
+              crashed = true;
+              lastError = String(error?.message || error).slice(0, 300);
+              console.warn(`[HyperFrames] slice ${slice + 1} lost its sandbox, retrying: ${lastError.slice(0, 120)}`);
+            }
 
-            videoUrl = lastRes.uploadedFiles?.[`${safeName}/out.mp4`] || '';
+            if (crashed) {
+              if (slice >= 2) break; // two free retries, then report
+              continue;
+            }
+
+            videoUrl = lastRes!.uploadedFiles?.[`${safeName}/out.mp4`] || '';
             if (videoUrl) break;
 
-            const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(lastRes.stdout || '');
+            const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(lastRes!.stdout || '');
             spansDone = partsMatch ? Number(partsMatch[1]) : spansDone;
             spansTotal = partsMatch ? Number(partsMatch[2]) : spansTotal;
             // Nothing progressed and nothing is pending: a real failure, let the caller see it.
@@ -617,7 +655,7 @@ python3 render_card.py
             resolution,
             videoUrl,
             ...(renderSecondsTaken ? { renderSeconds: renderSecondsTaken } : {}),
-            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${loopSeconds ? `, looped from ${renderSeconds}s` : ''}).`,
+            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render (${autoLooped ? 'automatic — long film' : 'requested'})` : ''}).`,
             artifact: {
               type: 'video_player',
               title,

@@ -60,6 +60,43 @@ export function renderSliceBudgetSeconds(remainingMs: number): number {
   return Math.max(0, Math.floor(usable / 1000));
 }
 
+/**
+ * The longest a single sandbox command may run.
+ *
+ * E2B cuts a command off at ~300 seconds no matter what timeout we pass — measured, not
+ * documented: a 10-minute film attempt died at 301 seconds with "the connection to sandbox ended
+ * before the stream completed". That is where the original 300_000 came from, so the number was
+ * right and the mistake was treating one command as the whole job.
+ *
+ * Kept below the cut with room to concatenate and report, so a slice always ends by itself rather
+ * than being killed mid-frame and losing the work it was doing.
+ */
+export const MAX_SLICE_SECONDS = 210;
+
+/**
+ * The most film we are willing to DRAW frame by frame.
+ *
+ * Drawing is roughly 0.07-0.10 seconds per frame in this sandbox, so:
+ *   60s  of film =  1,800 frames = ~2-3 minutes
+ *   180s of film =  5,400 frames = ~6-9 minutes
+ *   1hr  of film = 108,000 frames = ~2-3 HOURS
+ *
+ * Nobody waits three hours, so past this point the honest trade is: draw a representative
+ * stretch and repeat it to the requested length, and say that is what happened. Callers who
+ * genuinely need every frame (a story, a countdown, changing prices) say so with
+ * `fullRenderSeconds`, and they get an accurate estimate of the wait first.
+ */
+export function maxDrawnSeconds(): number {
+  const raw = Number((process.env.HF_MAX_DRAWN_SECONDS || '').replace(/\D/g, ''));
+  return Number.isFinite(raw) && raw > 0 ? raw : 180;
+}
+
+/** How long drawing this much film will take, from the measured rate. */
+export function estimateRenderSeconds(drawnSeconds: number, fps = 30): number {
+  const frames = Math.max(1, drawnSeconds * fps);
+  return Math.round(frames * 0.085);
+}
+
 export type RenderQuality = 'draft' | 'looks' | 'delivery';
 
 /**
