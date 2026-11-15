@@ -11,6 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  bitrateForSize,
   buildHyperFramesRenderScript,
   planRenderSpans,
   renderSliceBudgetSeconds,
@@ -195,6 +196,29 @@ check(
   'the prompt tells the agent when to use it',
   /loopSeconds/.test(orchestrator) && /RENDER TIME IS FRAMES/.test(orchestrator),
   'the model knows the cost',
+);
+
+head('7. The delivered file fits what people can actually send');
+
+check(
+  'a capped film computes a bitrate for the target size',
+  bitrateForSize(24, 600) > 200 && bitrateForSize(24, 600) < 400,
+  `24MB over 600s = ${bitrateForSize(24, 600)}k`,
+);
+check(
+  'a tiny target for a long film shrinks the frame instead of pretending',
+  /HF-CAP-SCALE/.test(buildHyperFramesRenderScript({ projectDir: 'p', durationSeconds: 600, maxSizeMB: 1 })),
+  'resolution is the variable, not honesty',
+);
+check(
+  'the delivered size is always logged',
+  /HF-FINAL-SIZE/.test(buildHyperFramesRenderScript({ projectDir: 'p', durationSeconds: 30 })),
+  'the agent can tell the user what they got',
+);
+check(
+  'missing the target is reported as partial, not as success',
+  /HF-CAPPED: partial/.test(buildHyperFramesRenderScript({ projectDir: 'p', durationSeconds: 600, maxSizeMB: 1 })),
+  'no silent oversize',
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);

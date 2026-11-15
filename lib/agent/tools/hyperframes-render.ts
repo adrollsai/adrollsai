@@ -100,6 +100,26 @@ export function estimateRenderSeconds(drawnSeconds: number, fps = 30): number {
 export type RenderQuality = 'draft' | 'looks' | 'delivery';
 
 /**
+ * The largest file we will hand back, in MB.
+ *
+ * A 12-second 1080x1920 reel came out at 12.9 MB — repeating that to an hour produced 3.8 GB,
+ * which cannot be sent on WhatsApp (~16 MB), will not play smoothly off a phone, and costs real
+ * money to store. So a finished film is measured and, if it is over the cap, re-encoded to a
+ * bitrate that fits. Delivery beats fidelity when nobody can open the file.
+ */
+export function maxFilmSizeMB(): number {
+  const raw = Number((process.env.HF_MAX_SIZE_MB || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(raw) && raw > 0 ? raw : 24;
+}
+
+/** Bitrate in kbit/s that puts `seconds` of film inside `sizeMB`, with headroom for muxing. */
+export function bitrateForSize(sizeMB: number, seconds: number): number {
+  const safeSeconds = Math.max(1, Number(seconds) || 1);
+  const bits = Math.max(1, Number(sizeMB) || 1) * 1024 * 1024 * 8 * 0.9; // 10% headroom
+  return Math.max(200, Math.round(bits / safeSeconds / 1000));
+}
+
+/**
  * Make a hand-written composition renderable.
  *
  * HyperFrames identifies a composition by `data-composition-id` on the root element and learns
@@ -195,6 +215,8 @@ export interface HyperFramesRenderScriptOptions {
    * Only genuinely evolving footage (a story, a countdown to a real event) needs every frame.
    */
   loopSeconds?: number;
+  /** Largest file to hand back, in MB. Over this, the film is re-encoded to fit. */
+  maxSizeMB?: number;
 }
 
 export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions): string {
@@ -224,6 +246,8 @@ export function buildHyperFramesRenderScript(o: HyperFramesRenderScriptOptions):
     ? Math.round(Number(o.durationSeconds))
     : 0;
   const sliceBudget = Math.max(0, Math.round(Number(o.budgetSeconds) || 0));
+  // The size cap is a shell integer; default from env so a deployment can tune deliverability.
+  const sizeCapMB = Math.max(0, Math.round(Number(o.maxSizeMB ?? maxFilmSizeMB()) || 0));
   void fpsFlag;
   void span;
 
@@ -379,6 +403,55 @@ if [ "$HAVE" -eq "$TOTAL_CHUNKS" ] && [ "$TOTAL_CHUNKS" -gt 0 ]; then
         && echo "HF-LOOPED: yes" || echo "HF-LOOPED: failed, keeping the single pass"
     fi
     ls -l out.mp4
+
+    # ── keep the file deliverable ──────────────────────────────────────────────
+    # Repeating a 12.9 MB reel to an hour produced 3.8 GB — unsendable on WhatsApp, unplayable
+    # off a phone, and expensive to store. If the finished film is over the cap, re-encode it at
+    # a bitrate that fits; a smaller film the user can actually send beats a perfect one they
+    # cannot.
+    SIZE_CAP_MB=${sizeCapMB}
+    SIZE_BYTES=$(stat -c%s out.mp4 2>/dev/null || echo 0)
+    CAP_BYTES=$(( SIZE_CAP_MB * 1024 * 1024 ))
+    if [ "$CAP_BYTES" -gt 0 ] && [ "$SIZE_BYTES" -gt "$CAP_BYTES" ]; then
+      DUR=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 out.mp4 2>/dev/null | cut -d. -f1)
+      [ -z "$DUR" ] && DUR=${o.durationSeconds}
+      [ "$DUR" -lt 1 ] && DUR=1
+      # bits available per second, minus 10% for muxing overhead, in kbit/s
+      VB=$(( (SIZE_CAP_MB * 1024 * 1024 * 8 * 9 / 10) / DUR / 1000 ))
+      # Below 200k the picture falls apart at 1080p, so trade resolution instead of quality:
+      # a smaller frame that fits beats a detailed frame nobody can send. Scale factor follows
+      # the square root of the bitrate ratio, floored so the film stays legible.
+      SCALE_FILTER=""
+      if [ "$VB" -lt 200 ]; then
+        NEED=$(( VB < 1 ? 1 : VB ))
+        # 200/need is the bitrate gap; sqrt approximates the linear-dimension change
+        PCT=$(awk -v gap=200 -v need="$NEED" 'BEGIN { s = sqrt(need / gap); if (s < 0.30) s = 0.30; printf "%d", s * 100 }')
+        SCALE_FILTER="-vf scale=trunc(iw*\${PCT}/200)*2:-2"
+        echo "HF-CAP-SCALE: \${PCT}% frame size to fit \${SIZE_CAP_MB}MB"
+        VB=200
+      fi
+      echo "HF-CAPPING: \${SIZE_BYTES} bytes over \${SIZE_CAP_MB}MB → re-encoding at \${VB}k for \${DUR}s"
+      if ffmpeg -y -v error -i out.mp4 $SCALE_FILTER -c:v libx264 -preset veryfast -b:v \${VB}k \\
+           -maxrate $(( VB * 12 / 10 ))k -bufsize $(( VB * 2 ))k -pix_fmt yuv420p capped.mp4 \\
+         && [ -s capped.mp4 ]; then
+        mv -f capped.mp4 out.mp4
+        FINAL=$(stat -c%s out.mp4 2>/dev/null || echo 0)
+        if [ "$FINAL" -le "$CAP_BYTES" ]; then
+          echo "HF-CAPPED: yes (\${FINAL} bytes)"
+        else
+          # Honest reporting: the cap could not be met without destroying the film.
+          echo "HF-CAPPED: partial (\${FINAL} bytes, over the \${SIZE_CAP_MB}MB target)"
+        fi
+      else
+        rm -f capped.mp4
+        echo "HF-CAPPED: failed, keeping the larger file"
+      fi
+    else
+      echo "HF-CAPPED: no (\${SIZE_BYTES:-0} bytes, cap \${SIZE_CAP_MB}MB)"
+    fi
+
+    echo "HF-FINAL-SIZE: $(stat -c%s out.mp4 2>/dev/null || echo 0)"
+
     ffprobe -v error -show_entries format=duration,size -of default=nw=1 out.mp4 2>/dev/null || true
   else
     echo "HF-STITCHED: failed rc=\${STITCH_RC}"

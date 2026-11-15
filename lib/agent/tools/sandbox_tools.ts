@@ -441,6 +441,14 @@ python3 render_card.py
               'so 1 minute is ~2.5 minutes of work and 10 minutes is ~25. Estimate it with the tool and tell the ' +
               'user the wait before you start.',
           ),
+        maxSizeMB: z
+          .number()
+          .optional()
+          .describe(
+            'Largest file to deliver, in MB (default 24). A finished film over this is re-encoded at a bitrate ' +
+              'that fits, because a file nobody can send or play is not a deliverable. WhatsApp tops out around ' +
+              '16MB; use 64 for a long film where quality matters more than easy sending.',
+          ),
         loopSeconds: z
           .number()
           .optional()
@@ -459,7 +467,7 @@ python3 render_card.py
               'stitched; smaller spans resume more finely if a slice runs out of time, larger spans start fewer browsers.',
           ),
       }),
-      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds, loopSeconds, fullRenderSeconds }) => {
+      execute: async ({ projectName, title, htmlContent, durationSeconds, resolution, quality, fps, startSeconds, endSeconds, audioUrl, chunkSeconds, loopSeconds, fullRenderSeconds, maxSizeMB }) => {
         try {
           const isVertical = resolution === '1080x1920_vertical';
           const dur = Math.min(Math.max(durationSeconds || 15, 5), 3600);
@@ -541,6 +549,7 @@ python3 render_card.py
               chunkSeconds,
               budgetSeconds,
               loopSeconds: effectiveLoopSeconds,
+              maxSizeMB,
             });
 
             let crashed = false;
@@ -621,6 +630,15 @@ python3 render_card.py
           // user watches the result; the filesystem survives, so a follow-up
           // render in this session resumes in about a second.
           const renderSecondsTaken = Number((/(?:render-seconds:\s*)(\d+)/.exec(res.stdout || '') || [])[1] || 0) || undefined;
+          // The delivered size is a fact the user cares about (WhatsApp tops out near 16MB), and a
+          // cap that could not be met is reported as "partial" rather than quietly ignored.
+          const finalBytes = Number((/(?:HF-FINAL-SIZE:\s*)(\d+)/.exec(res.stdout || '') || [])[1] || 0);
+          const sizeMB = finalBytes > 0 ? Math.round((finalBytes / (1024 * 1024)) * 10) / 10 : undefined;
+          const capVerdict = /HF-CAPPED:\s*partial/.test(res.stdout || '')
+            ? 'over-target'
+            : /HF-CAPPED:\s*yes/.test(res.stdout || '')
+              ? 'trimmed-to-fit'
+              : undefined;
           try {
             await pauseSandbox(userId);
           } catch (e) {}
@@ -655,7 +673,9 @@ python3 render_card.py
             resolution,
             videoUrl,
             ...(renderSecondsTaken ? { renderSeconds: renderSecondsTaken } : {}),
-            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render (${autoLooped ? 'automatic — long film' : 'requested'})` : ''}).`,
+            ...(sizeMB ? { sizeMB } : {}),
+            ...(capVerdict ? { sizeCap: capVerdict } : {}),
+            message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render (${autoLooped ? 'automatic — long film' : 'requested'})` : ''}${sizeMB ? `, ${sizeMB}MB` : ''}${capVerdict === 'trimmed-to-fit' ? ', trimmed to fit the size cap' : capVerdict === 'over-target' ? ', still over the size target — tell the user' : ''}).`,
             artifact: {
               type: 'video_player',
               title,
