@@ -411,6 +411,41 @@ async function main() {
       registryNames.includes('plan_video'),
       registryNames.includes('plan_video') ? 'present in the registry' : 'NOT registered',
     );
+
+    // The image half, same discipline: the P5 rules reachable, without a second
+    // spending path.
+    const { planImage } = await import('../lib/agent/tools/video-skill');
+    const image = planImage({
+      brief: 'a Diwali offer card for a film editing course',
+      facts: { price: 'Rs 24,000', phone: '+91 98200 12345' },
+      aspectRatio: '1:1',
+    });
+    check(
+      'an image brief is planned with the exact prompt and a price',
+      image.success === true && Boolean(image.prompt) && (image.credits ?? 0) > 0,
+      image.success ? `${image.credits} credits, ${image.aspectRatio}, route ${image.route}` : image.error,
+    );
+    check(
+      'the supplied facts appear in the prompt, verbatim',
+      image.success === true && image.prompt!.includes('Rs 24,000') && image.prompt!.includes('+91 98200 12345'),
+      'facts carried into the prompt',
+    );
+    check(
+      'a reference image switches the route to the edit model',
+      (() => {
+        const withRef = planImage({
+          brief: 'the same card, but with our own building in the background',
+          referenceUrls: ['https://example.com/building.jpg'],
+        });
+        return withRef.success === true && withRef.route !== image.route && (withRef.references ?? 0) === 1;
+      })(),
+      'reference routes to the edit model',
+    );
+    check(
+      'plan_image is registered with the agent',
+      registryNames.includes('plan_image'),
+      registryNames.includes('plan_image') ? 'present in the registry' : 'NOT registered',
+    );
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -25,6 +25,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { BeatsError, MAX_LINE_WORDS } from './skills/video/beats';
 import { planVideoSkill } from './skills/video/index';
+import { planImageSkill } from './skills/image/index';
 
 export interface PlanVideoResult {
   success: boolean;
@@ -107,8 +108,53 @@ export function planVideo(input: unknown): PlanVideoResult {
   }
 }
 
-export function createVideoSkillTools() {
-  return {
+export interface PlanImageResult {
+  success: boolean;
+  /** The exact prompt the provider will receive — the thing worth showing the owner. */
+  prompt?: string;
+  route?: string;
+  model?: string;
+  aspectRatio?: string;
+  credits?: number;
+  artefactKey?: string;
+  references?: number;
+  briefing?: string;
+  notes?: string[];
+  error?: string;
+}
+
+/**
+ * Validate an image brief and quote it. Pure: no vendor, no upload, no charge.
+ *
+ * Exported so the gate can drive it without an agent context.
+ */
+export function planImage(input: unknown): PlanImageResult {
+  try {
+    const payload = (input ?? {}) as Record<string, unknown>;
+    const plan = planImageSkill({
+      brief: String(payload.brief ?? ''),
+      ...(payload.facts && typeof payload.facts === 'object' ? { facts: payload.facts as never } : {}),
+      ...(Array.isArray(payload.referenceUrls) ? { referenceUrls: payload.referenceUrls as string[] } : {}),
+      ...(payload.aspectRatio ? { aspectRatio: String(payload.aspectRatio) } : {}),
+    });
+    return {
+      success: true,
+      prompt: plan.prompt,
+      route: plan.route,
+      model: plan.model,
+      aspectRatio: plan.aspectRatio,
+      credits: plan.credits,
+      artefactKey: plan.artefactKey,
+      references: plan.referenceUrls.length,
+      briefing: plan.briefing,
+      notes: plan.notes,
+    };
+  } catch (error: any) {
+    return { success: false, error: String(error?.message ?? error) };
+  }
+}
+
+export function createVideoSkillTools() {  return {
     plan_video: tool({
       description:
         'Validate a video brief and quote it before anything is spent. Pass a beats file ' +
@@ -130,6 +176,28 @@ export function createVideoSkillTools() {
         endCard: z.record(z.string(), z.any()).optional(),
       }),
       execute: async (input: any) => planVideo(input),
+    }),
+
+    plan_image: tool({
+      description:
+        'Validate an image brief and quote it before anything is spent. Returns the exact prompt the ' +
+        'provider will receive, the credits, the aspect ratio and the model route (a reference image ' +
+        'switches it to the edit model). Call this BEFORE promising a creative: it applies the platform ' +
+        'rules — the image IS the creative (never an HTML or background overlay) — and only the facts you ' +
+        'pass in appear in the prompt. Read get_skill("nobogent-creative") first.',
+      inputSchema: z.object({
+        brief: z.string().min(3).describe('What the image is for, in the business\'s own words'),
+        facts: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe('Verified facts only — a price, a date, a phone number. Anything absent must not appear.'),
+        referenceUrls: z
+          .array(z.string())
+          .optional()
+          .describe('Public https URLs of the real subject; a non-empty list routes to the edit model'),
+        aspectRatio: z.string().optional().describe('One of the ratios the app offers; 3:4 by default'),
+      }),
+      execute: async (input: any) => planImage(input),
     }),
   };
 }
