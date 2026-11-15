@@ -625,6 +625,7 @@ export async function sendDueJourneySteps(
       businessName: ctx.businessName,
       leadName: lead?.name ?? null,
       phone: outboundRecipient(lead?.phone) || null,
+      journey: ctx.journey,
     }
   }
 

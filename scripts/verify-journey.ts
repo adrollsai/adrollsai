@@ -580,6 +580,31 @@ async function main() {
       `${h.store.logs.filter((e) => e.event === 'blocked').length} blocked log row(s)`
     )
 
+    // "The journey has nothing safe left to say" is a HUMAN HANDOFF, not a dead
+    // end: the rest of the journey stops and the owner is told once.
+    check(
+      'a blocked step hands the lead to a human',
+      !!h.store.state.get(LEAD_ID)?.handoffAt && res.handoffs === 1,
+      `handoffs=${res.handoffs} handoffAt=${h.store.state.get(LEAD_ID)?.handoffAt}`
+    )
+    check('the owner is told exactly once about it', h.notices.length === 1, `notices=${h.notices.length}`)
+    check(
+      'the remaining steps are stopped, not left waiting',
+      h.store.rows.filter((r) => r.stepId !== 'first_reply').every((r) => r.status === 'cancelled'),
+      h.store.rows.map((r) => `${r.stepId}:${r.status}`).join(', ')
+    )
+    check(
+      'the handoff is logged with what we could not say',
+      h.logs.some((l) => l.startsWith('handoff:') && /no_safe_message:industry_vocabulary/.test(l)),
+      h.logs.filter((l) => l.startsWith('handoff:')).join(' | ') || 'no handoff log line'
+    )
+    const afterBlock = await processDueSteps(h.deps, { contextFor: context('Nobogent Academy', 'Asha', null) })
+    check(
+      'after a policy handoff nothing else is attempted',
+      afterBlock.sent === 0 && h.sender.sent.length === 0,
+      `sent=${afterBlock.sent}`
+    )
+
     // Outside the 24h window a free-form message is a policy violation, not a send.
     const outside = harness()
     const nowWindow = createMemoryJourneyStore({ windowExpiresAt: new Date(T0.getTime() - HOUR).toISOString() })
