@@ -58,7 +58,16 @@ export type SectionKind =
   | 'faq'
   | 'cta'
   | 'contact'
-  | 'footer';
+  | 'footer'
+  // Learned from a real webinar-registration page an owner asked us to match
+  // (`realestatewebinar.sonusharmaacademy.com`): a conversion page carries a mentor
+  // block, hard numbers, a deadline, an event gallery, a logo wall and a registration
+  // form. None of those existed, so a page "like that one" could not be built.
+  | 'mentor'
+  | 'proof'
+  | 'logos'
+  | 'countdown'
+  | 'register';
 
 export interface SectionSpec {
   kind: SectionKind;
@@ -80,7 +89,14 @@ export const SECTION_SPECS: readonly SectionSpec[] = [
   { kind: 'hero', label: 'Hero', industries: null },
   { kind: 'about', label: 'About', industries: null },
   { kind: 'offerings', label: 'Offerings', industries: null, headingFromVocabulary: true },
+  // The five a registration page needs most: the person, the numbers, the deadline,
+  // the proof-of-crowd and the form. All universal — every industry sells a date.
+  { kind: 'proof', label: 'Numbers', industries: null },
+  { kind: 'mentor', label: 'Your mentor', industries: null },
+  { kind: 'countdown', label: 'Starts in', industries: null },
+  { kind: 'register', label: 'Register', industries: null },
   { kind: 'gallery', label: 'Gallery', industries: null },
+  { kind: 'logos', label: 'Trusted by', industries: null },
   { kind: 'floor-plan', label: 'Floor plans', industries: ['real_estate'] },
   { kind: 'specifications', label: 'Specifications', industries: ['real_estate'] },
   { kind: 'process', label: 'How it works', industries: ['real_estate', 'education', 'immigration'] },

@@ -48,6 +48,17 @@ const BRIEF = {
   ],
   phone: '+91 98200 12345',
   industry: 'education',
+  // The blocks a registration page needs, modelled on the reference page the owner
+  // pointed at (realestatewebinar.sonusharmaacademy.com — hero, mentor, hard numbers,
+  // a deadline, an event gallery, a logo wall, a registration form). Every value here is
+  // a fact the owner supplied; the gallery URLs are harmless stand-ins for a test.
+  startsAt: '5 January, 7:30 PM IST',
+  mentorName: 'Asha Sharma',
+  mentorTitle: 'Working editor and teacher',
+  mentorCredentials: ['Twelve years cutting for agencies', 'Trained 400+ editors'],
+  proofPoints: ['400+ editors trained', '12 cities', '6 weeks to a portfolio'],
+  galleryImages: ['https://example.com/class-1.jpg', 'https://example.com/class-2.jpg'],
+  trustedBy: ['Studio Nine', 'Pune Film Co'],
 };
 
 /** The reference video the owner named, in their Downloads. */
@@ -120,6 +131,55 @@ async function main() {
       }
     })(),
     'refused with the reason',
+  );
+
+  // ── the blocks a registration page needs, modelled on the reference URL
+  const ids = pageSections.sections.map((section) => section.id);
+  check(
+    'the page has the blocks a registration page needs, modelled on the reference',
+    ['proof', 'countdown', 'mentor', 'gallery', 'logos', 'register'].every((id) => ids.includes(id)),
+    ids.join(', '),
+  );
+  check(
+    'the deadline is the owner\'s words, not a date we guessed',
+    page.html.includes('5 January, 7:30 PM IST'),
+    'startsAt verbatim',
+  );
+  check(
+    'the mentor block names the person and their credentials as given',
+    page.html.includes('Asha Sharma') &&
+      page.html.includes('Working editor and teacher') &&
+      page.html.includes('Trained 400+ editors'),
+    'mentor block',
+  );
+  check(
+    'the numbers on the page are only the ones the owner supplied',
+    BRIEF.proofPoints.every((point) => page.html.includes(point)),
+    `${BRIEF.proofPoints.length} proof point(s)`,
+  );
+  check(
+    'the registration form opens WhatsApp with the details filled in',
+    page.html.includes('noboRegister') && page.html.includes('wa.me/919820012345?text='),
+    'form -> WhatsApp',
+  );
+
+  // The same brief WITHOUT those facts must not gain those blocks: an omitted section is
+  // honest, an invented crowd size or mentor is a claim the owner never made.
+  const bare = buildLandingPage({
+    businessName: BRIEF.businessName,
+    productName: BRIEF.productName,
+    phone: BRIEF.phone,
+    industry: BRIEF.industry,
+  });
+  const bareIds = ensureSections(bare.html).sections.map((section) => section.id);
+  check(
+    'blocks the owner gave no facts for are OMITTED, never filled in',
+    !bareIds.includes('mentor') &&
+      !bareIds.includes('proof') &&
+      !bareIds.includes('gallery') &&
+      !bareIds.includes('logos') &&
+      bareIds.includes('register'),
+    bareIds.join(', '),
   );
 
   // ══════════════════════════════════════════════════════════════════════

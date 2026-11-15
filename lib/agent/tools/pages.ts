@@ -45,6 +45,27 @@ export interface LandingPageBrief {
   brandColor?: string;
   /** URL slug. Defaults to a slug of the product name. */
   slug?: string;
+
+  // ── the blocks a registration page needs, all supplied by the owner ──────────
+  /**
+   * When it starts, as the owner stated it ("5 January, 7:30 PM IST").
+   *
+   * A string, not a Date: this page shows the deadline the owner promised, and a
+   * timezone guessed by us is a customer arriving at the wrong hour.
+   */
+  startsAt?: string;
+  /** The person teaching or hosting: their name as they write it. */
+  mentorName?: string;
+  /** What they are, in the owner's words ("India's leading business mentor"). */
+  mentorTitle?: string;
+  /** Their credentials, verbatim. Never inferred from a website. */
+  mentorCredentials?: string[];
+  /** Hard numbers the owner can stand behind: "50,000+ realtors trained". */
+  proofPoints?: string[];
+  /** Image URLs the owner supplied for an event/venue gallery. */
+  galleryImages?: string[];
+  /** Client or partner names the owner is allowed to display. */
+  trustedBy?: string[];
 }
 
 export class LandingPageError extends Error {
@@ -132,11 +153,97 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
 </section>`,
   );
 
+  // ── the registration-page blocks. Each is OMITTED when its facts were not given,
+  // because a page that invents a crowd size or a mentor's credentials is a claim the
+  // owner never made. Absent is honest; invented is a liability.
+  const proofPoints = (brief.proofPoints ?? []).map((line) => String(line).trim()).filter(Boolean).slice(0, 4);
+  if (proofPoints.length) {
+    section(
+      'proof',
+      `<section class="proof">
+  <ul>${proofPoints.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
+</section>`,
+    );
+  }
+
+  if (brief.startsAt || brief.mentorName) {
+    const credentials = (brief.mentorCredentials ?? []).map((line) => String(line).trim()).filter(Boolean).slice(0, 4);
+    section(
+      'countdown',
+      `<section class="countdown">
+  ${brief.startsAt ? `<p class="eyebrow">Starts in</p><p class="big">${esc(brief.startsAt)}</p>` : ''}
+  ${brief.offer ? `<p class="lede">${esc(brief.offer)}</p>` : ''}
+  <a class="cta" href="${esc(wa)}">${esc(vocabulary.enquiryCta)}</a>
+</section>`,
+    );
+    if (brief.mentorName) {
+      section(
+        'mentor',
+        `<section class="mentor">
+  <h2>Your mentor</h2>
+  <p class="big">${esc(brief.mentorName)}</p>
+  ${brief.mentorTitle ? `<p class="lede">${esc(brief.mentorTitle)}</p>` : ''}
+  ${credentials.length ? `<ul>${credentials.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+</section>`,
+      );
+    }
+  }
+
+  const gallery = (brief.galleryImages ?? [])
+    .map((url) => String(url).trim())
+    .filter((url) => /^https:\/\//i.test(url))
+    .slice(0, 6);
+  if (gallery.length) {
+    section(
+      'gallery',
+      `<section class="gallery">
+  <h2>Glimpses</h2>
+  <div class="grid">${gallery.map((url) => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')}</div>
+</section>`,
+    );
+  }
+
+  const trustedBy = (brief.trustedBy ?? []).map((name) => String(name).trim()).filter(Boolean).slice(0, 12);
+  if (trustedBy.length) {
+    section(
+      'logos',
+      `<section class="logos">
+  <h2>Trusted by</h2>
+  <p>${trustedBy.map((name) => esc(name)).join(' · ')}</p>
+</section>`,
+    );
+  }
+
   section(
     'about',
     `<section class="about">
   <h2>About ${esc(businessName)}</h2>
   <p>${esc(businessName)} works with ${esc(brief.audience || 'customers')} in and around your area.</p>
+</section>`,
+  );
+
+  section(
+    'register',
+    `<section class="register">
+  <h2>Register</h2>
+  <form id="reg" onsubmit="return noboRegister(event)">
+    <label>Name <input name="name" required autocomplete="name"></label>
+    <label>WhatsApp number <input name="phone" required inputmode="tel" autocomplete="tel"></label>
+    <button class="cta" type="submit">Send on WhatsApp</button>
+  </form>
+  <p class="hint">Opens WhatsApp with your details filled in — press send there.</p>
+  <script>
+    function noboRegister(event) {
+      event.preventDefault();
+      var form = event.target;
+      var name = (form.elements.name.value || '').trim();
+      var phone = (form.elements.phone.value || '').trim();
+      var text = 'Hi ${esc(businessName).replace(/'/g, "\\'")}, I want to register for ${esc(productName).replace(/'/g, "\\'")}.'
+        + (name ? ' My name is ' + name + '.' : '') + (phone ? ' My number is ' + phone + '.' : '');
+      window.open('${esc(wa)}?text=' + encodeURIComponent(text), '_blank');
+      return false;
+    }
+  </script>
 </section>`,
   );
 
@@ -185,6 +292,17 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
   .cta { display: inline-block; margin-top: 18px; padding: 14px 22px; border-radius: 999px;
          background: var(--ink); color: #0b0f19; font-weight: 700; text-decoration: none; }
   ul { padding-left: 20px; }
+  .big { font-size: clamp(18px, 3.4vw, 24px); font-weight: 700; margin: 4px 0 10px; }
+  .proof ul, .logos p { display: flex; flex-wrap: wrap; gap: 10px 22px; list-style: none; padding: 0; }
+  .proof li { padding: 8px 14px; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; }
+  .gallery .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .gallery img { width: 100%; height: 120px; object-fit: cover; border-radius: 12px; display: block; }
+  form { display: grid; gap: 12px; max-width: 360px; }
+  label { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
+  input { padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2);
+          background: rgba(255,255,255,.06); color: var(--ink); font: inherit; }
+  button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
+  .hint { font-size: 13px; color: var(--dim); }
   li { margin: 6px 0; }
   a { color: inherit; }
   footer { color: var(--dim); font-size: 14px; border-top: 1px solid rgba(255,255,255,.1); }
