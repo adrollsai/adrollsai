@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { ShieldAlert, Check, X, Loader2, Coins, Mic, ImageIcon } from 'lucide-react';
 import { ActionConfirmationArtifact } from '@/lib/agent/types';
+import { buildResumePrompt } from '@/lib/agent/resume-prompt';
 import { toast } from 'sonner';
 
 interface ActionConfirmationCardProps {
@@ -38,8 +39,19 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume 
         // Approving used to just mark the row approved on the server, which left a
         // creative job dead in the water. The staged instruction goes back into the
         // conversation so the agent actually continues.
-        if (onResume && artifact.resumePrompt) {
-          onResume(artifact.resumePrompt);
+        //
+        // The sentence is built here rather than taken from the model's own `resumePrompt`:
+        // in production that prose read as an ordinary request, so the agent re-planned and
+        // staged the same approval again — an approval loop. See lib/agent/resume-prompt.ts.
+        if (onResume) {
+          onResume(
+            buildResumePrompt({
+              actionId: artifact.actionId,
+              actionType: artifact.actionType,
+              title: artifact.title,
+              resumePrompt: artifact.resumePrompt,
+            }),
+          );
         }
       } else {
         toast.info('Action cancelled.');

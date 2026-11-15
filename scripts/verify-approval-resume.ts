@@ -18,6 +18,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { buildResumePrompt } from '../lib/agent/resume-prompt';
 
 let pass = 0;
 let fail = 0;
@@ -46,13 +47,13 @@ head('1. The card resumes the conversation when approved');
 
 check(
   'approving calls onResume with the staged instruction',
-  /onResume\(artifact\.resumePrompt\)/.test(card),
+  /onResume\(\s*buildResumePrompt\(/.test(card),
   'the card hands the job back',
 );
 check(
-  'it only resumes when there is a prompt to resume with',
-  /onResume\s*&&\s*artifact\.resumePrompt/.test(card),
-  'no empty send',
+  'it only resumes when a handler is actually wired',
+  /if \(onResume\) \{/.test(card) && /actionId: artifact\.actionId/.test(card),
+  'no empty send, and always labelled with the action',
 );
 check(
   'rejecting does not resume anything',
@@ -129,6 +130,64 @@ check(
   'the non-durable renderer passes onResume as well',
   /<ToolFeedRow[\s\S]{0,400}?onResume=\{handleSend\}/.test(chat),
   'both paths, or one of them is a dead end',
+);
+
+head('6. The resume sentence ends the approval cycle instead of restarting it');
+
+const resumeFor = (over: Record<string, unknown> = {}) =>
+  buildResumePrompt({
+    actionId: 'act_abc123',
+    actionType: 'create_asset',
+    title: 'Grand Opening 1:1',
+    resumePrompt: 'Approved — generate the image now.',
+    ...over,
+  });
+
+check(
+  'it states the decision as a decision, not a request',
+  /already reviewed and APPROVED/i.test(resumeFor()),
+  'approved, not "please"',
+);
+check(
+  'it names the approval reference so the gate and transcript agree',
+  resumeFor().includes('act_abc123'),
+  'actionId carried',
+);
+check(
+  'it forbids asking for the same approval twice',
+  /do not call request_human_approval for it a second time/i.test(resumeFor()),
+  'the loop is named and closed',
+);
+check(
+  'it tells the agent to execute with the staged details',
+  /exactly the details that were staged and approved/i.test(resumeFor()),
+  'so the fingerprint matches',
+);
+check(
+  'it says what to do if the gate refuses on a mismatch',
+  /tell the owner precisely what differs/i.test(resumeFor()) &&
+    /never ask for the same approval twice/i.test(resumeFor()),
+  'honest failure instead of another card',
+);
+check(
+  'the model\'s own sentence is kept as context, not as the instruction',
+  /The staged instruction was: Approved — generate the image now\./i.test(resumeFor()),
+  'context preserved',
+);
+check(
+  'an unknown action type still produces a usable sentence',
+  /approved this action/i.test(resumeFor({ actionType: 'something_new', title: undefined })),
+  'no undefined in the copy',
+);
+check(
+  'a missing actionId does not produce a broken reference',
+  /Approval reference: unknown/.test(resumeFor({ actionId: '' })),
+  'degrades safely',
+);
+check(
+  'the card builds the prompt itself rather than trusting the model prose',
+  /buildResumePrompt\(/.test(card) && !/onResume\(artifact\.resumePrompt\)/.test(card),
+  'one deterministic sentence',
 );
 
 console.log(`\n${pass} passed, ${fail} failed`);
