@@ -151,6 +151,17 @@ export interface ApprovalStore {
   /** Approved actions for this user, newest first. The full event payload, so the gate can
    *  both compare arguments and re-run the approved one verbatim. */
   approved(actionType: ReviewActionType): Promise<ApprovedAction[]>;
+  /**
+   * Record a pending approval for a call the gate just refused, using the EXACT arguments it
+   * refused. Optional so the gate still works (and is still testable) without a database.
+   */
+  recordPending?(request: {
+    actionType: ReviewActionType;
+    tool: string;
+    toolInput: unknown;
+    title: string;
+    why: string;
+  }): Promise<{ actionId: string } | null>;
 }
 
 export interface ApprovedAction {
@@ -179,6 +190,46 @@ export function supabaseApprovalStore(supabase: any, userId: string): ApprovalSt
           actionId: typeof payload?.actionId === 'string' ? payload.actionId : undefined,
           actionPayload: payload?.actionPayload,
         }));
+    },
+
+    /**
+     * The gate writes the pending approval itself, so the payload the owner approves is the
+     * tool's real arguments rather than the model's summary of them.
+     *
+     * This is what makes "approve, then it runs" work. When the model staged the card through
+     * `request_human_approval`, it described the call in its own words — `{brief, facts}` where
+     * `generate_ai_image` needs `{prompt}` — so the approved payload could not be executed at
+     * all, and the faithful attempt returned "prompt is required." The gate is the only code
+     * that holds the exact arguments, so it is the only code that can record them.
+     */
+    async recordPending({ actionType, tool, toolInput, title, why }) {
+      try {
+        const actionId = 'act_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
+        const { error } = await supabase.from('agent_events').insert({
+          user_id: userId,
+          event_type: 'PENDING_ACTION_APPROVAL',
+          status: 'pending',
+          scheduled_for: new Date().toISOString(),
+          payload: {
+            actionId,
+            actionType,
+            title,
+            description: `This step cannot run until it is approved, because ${why}.`,
+            targetTool: tool,
+            // The exact arguments the tool was called with — not a description of them.
+            actionPayload: toolInput ?? {},
+            resumePrompt: '',
+          },
+        });
+        if (error) {
+          console.warn('[Review gate] could not record the pending approval:', error.message);
+          return null;
+        }
+        return { actionId };
+      } catch (error: any) {
+        console.warn('[Review gate] could not record the pending approval:', error?.message || error);
+        return null;
+      }
     },
   };
 }
@@ -279,7 +330,49 @@ export function applyReviewGate(
       execute: async (input: any, ...rest: any[]) => {
         const match = await findApproval(store, policy, input);
         if (!match) {
-          const blocked = blockedResult(name, policy, stripApprovalId(input));
+          const cleanInput = stripApprovalId(input);
+
+          // Record the approval here, with these exact arguments, and hand the chat a card it
+          // can render directly. Nothing is left to the model to transcribe.
+          const recorded = store.recordPending
+            ? await store.recordPending({
+                actionType: policy.actionType,
+                tool: name,
+                toolInput: cleanInput,
+                title: `Approve: ${name}`,
+                why: policy.why,
+              })
+            : null;
+
+          const blocked = blockedResult(name, policy, cleanInput);
+
+          if (recorded?.actionId) {
+            return {
+              ...blocked,
+              actionId: recorded.actionId,
+              requiresApproval: true,
+              actionPayload: {
+                actionType: policy.actionType,
+                title: `Approve: ${name}`,
+                description: policy.why,
+              },
+              artifact: {
+                type: 'action_confirmation',
+                actionId: recorded.actionId,
+                actionType: policy.actionType,
+                title: `Approve: ${name}`,
+                description: `This step cannot run until it is approved, because ${policy.why}.`,
+                status: 'pending',
+                payload: cleanInput,
+              },
+              message:
+                `"${name}" did not run: ${policy.why}. The approval card (${recorded.actionId}) is ` +
+                'already on the owner\'s screen with the exact arguments — do NOT call ' +
+                'request_human_approval for this step, and do not restate the arguments. Tell the ' +
+                'owner what you have staged and that one tap on the card lets it run.',
+            };
+          }
+
           return {
             ...blocked,
             message:

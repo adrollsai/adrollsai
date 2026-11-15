@@ -385,5 +385,75 @@ head('9. An approval can carry its own payload — and only that payload runs');
   );
 }
 
+head('10. The gate records the approval itself, with the exact arguments');
+
+{
+  // THE PRODUCTION FAILURE THIS FIXES: the model staged the card via request_human_approval and
+  // described the call in its own words — {brief, facts} where generate_ai_image needs {prompt}.
+  // The owner approved, the faithful re-run passed that description to the tool, and the tool
+  // answered "prompt is required." The owner approved something that could not run.
+  const recorded: { tool?: string; toolInput?: unknown; actionType?: string }[] = [];
+  const spy = spyTool();
+  const store: ApprovalStore = {
+    async approved() {
+      return [];
+    },
+    async recordPending(request) {
+      recorded.push(request);
+      return { actionId: 'act_recorded' };
+    },
+  };
+  const gated = applyReviewGate({ generate_ai_image: spy.definition }, store);
+  const blocked = await gated.generate_ai_image.execute(IMAGE_CALL);
+
+  check(
+    'a refused call is recorded with the exact tool arguments',
+    recorded.length === 1 && approveFingerprint(recorded[0].toolInput) === approveFingerprint(IMAGE_CALL),
+    'not a paraphrase',
+  );
+  check(
+    'the record names the tool that must run, so the payload has a known shape',
+    recorded[0].tool === 'generate_ai_image' && recorded[0].actionType === 'create_asset',
+    'generate_ai_image / create_asset',
+  );
+  check(
+    'the chat gets a renderable card without the model transcribing anything',
+    blocked?.artifact?.type === 'action_confirmation' &&
+      blocked?.artifact?.actionId === 'act_recorded' &&
+      blocked?.requiresApproval === true,
+    'the card is the gate\'s own output',
+  );
+  check(
+    'the agent is told not to stage a second card',
+    /do NOT call request_human_approval/.test(String(blocked?.message)),
+    'one card, not two',
+  );
+  check(
+    'an approved id then runs the recorded arguments',
+    await (async () => {
+      const spy2 = spyTool();
+      const store2: ApprovalStore = {
+        async approved() {
+          return [{ actionId: 'act_recorded', actionPayload: IMAGE_CALL }];
+        },
+      };
+      const gated2 = applyReviewGate({ generate_ai_image: spy2.definition }, store2);
+      const ran = await gated2.generate_ai_image.execute({ approvalId: 'act_recorded' });
+      return ran?.ran === true && spy2.calls.length === 1;
+    })(),
+    'round trip closes',
+  );
+  check(
+    'a store without recordPending still blocks honestly',
+    await (async () => {
+      const spy3 = spyTool();
+      const gated3 = applyReviewGate({ generate_ai_image: spy3.definition }, storeWith([]));
+      const result = await gated3.generate_ai_image.execute(IMAGE_CALL);
+      return result?.needs_review === true && spy3.calls.length === 0;
+    })(),
+    'no database, no false green',
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;
