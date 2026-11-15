@@ -1291,7 +1291,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               onClick={() => setSidebarOpen(false)}
               title="Hide sidebar"
               aria-label="Hide sidebar"
-              className="p-1 hover:opacity-70 transition"
+              className="w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center hover:opacity-70 transition"
               style={{ color: 'var(--dsw-alias-label-tertiary)', borderRadius: 'var(--dsh-radius-sm)' }}
             >
               <PanelLeftClose size={16} />
@@ -1327,7 +1327,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               <Search size={13} className="cursor-pointer" />
               <button
                 onClick={() => setShowNewWorkspaceModal(true)}
-                className="dsh-interactive"
+                className="w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center dsh-interactive"
                 title="New workspace folder"
               >
                 <FolderPlus size={13} />
@@ -1419,14 +1419,14 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                           e.stopPropagation();
                           handleNewSession(ws.id);
                         }}
-                        className="p-1 rounded dsh-label-caption dsh-interactive"
+                        className="w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded dsh-label-caption dsh-interactive"
                         title="New chat in this workspace"
                       >
                         <Plus size={13} />
                       </button>
                       <button
                         onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                        className={`p-1 rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
+                        className={`w-11 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
                         title={pendingDelete === ws.id ? 'Click again to delete' : 'Delete workspace folder'}
                       >
                         {pendingDelete === ws.id ? <Check size={13} /> : <Trash2 size={13} />}
@@ -1464,7 +1464,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                               <span>{formatTimeAgo(sess.createdAt)}</span>
                               <button
                                 onClick={(e) => handleDeleteSession(sess.id, e)}
-                                className={`p-1 rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
+                                className={`w-10 h-11 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
                                 title={pendingDelete === sess.id ? 'Click again to delete' : 'Delete chat session'}
                               >
                                 {pendingDelete === sess.id ? (
@@ -1574,60 +1574,61 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             </div>
           </div>
 
-          {/* Chat | Trajectory — toggles the third column. Sized down on phones:
-              at full size the pill and the session title did not both fit, and
-              "Trajectory" was clipped at the viewport edge. */}
-          <div
-            className="flex items-center gap-1 p-0.5 dsh-t-xs dsh-strong shrink-0 text-[11px] sm:text-[13px]"
-            style={{
-              background: 'var(--dsw-alias-bg-layer-2)',
-              border: '1px solid var(--dsw-alias-border-l1)',
-              borderRadius: 'var(--dsh-radius-sm)',
-            }}
-          >
-            <button
-              onClick={() => {
-                setActiveTab('chat');
-                setShowDetails(false);
-              }}
-              className="px-2 sm:px-3 py-1 transition"
+          {/* Chat | Trajectory and the session log in ONE right-hand cluster. They used
+              to be two children of a space-between header, so the pill floated in the
+              middle of the bar and the three groups read as three unrelated things. */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              className="flex items-center gap-1 p-0.5 dsh-t-xs dsh-strong shrink-0 text-[11px] sm:text-[13px]"
               style={{
-                borderRadius: 'var(--dsh-radius-xs)',
-                background: activeTab === 'chat' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
-                color:
-                  activeTab === 'chat'
-                    ? 'var(--dsw-alias-label-primary)'
-                    : 'var(--dsw-alias-label-tertiary)',
+                background: 'var(--dsw-alias-bg-layer-2)',
+                border: '1px solid var(--dsw-alias-border-l1)',
+                borderRadius: 'var(--dsh-radius-sm)',
               }}
             >
-              Chat
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('trajectory');
-                setShowDetails(true);
-              }}
-              className="px-2 sm:px-3 py-1 transition"
-              style={{
-                borderRadius: 'var(--dsh-radius-xs)',
-                background: activeTab === 'trajectory' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
-                color:
-                  activeTab === 'trajectory'
-                    ? 'var(--dsw-alias-label-primary)'
-                    : 'var(--dsw-alias-label-tertiary)',
-              }}
-            >
-              Trajectory
-            </button>
-          </div>
+              <button
+                onClick={() => {
+                  setActiveTab('chat');
+                  setShowDetails(false);
+                }}
+                className="px-2 sm:px-3 min-h-9 flex items-center transition"
+                style={{
+                  borderRadius: 'var(--dsh-radius-xs)',
+                  background: activeTab === 'chat' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
+                  color:
+                    activeTab === 'chat'
+                      ? 'var(--dsw-alias-label-primary)'
+                      : 'var(--dsw-alias-label-tertiary)',
+                }}
+              >
+                Chat
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab('trajectory');
+                  setShowDetails(true);
+                }}
+                className="px-2 sm:px-3 min-h-9 flex items-center transition"
+                style={{
+                  borderRadius: 'var(--dsh-radius-xs)',
+                  background: activeTab === 'trajectory' ? 'var(--dsw-alias-bg-layer-3)' : 'transparent',
+                  color:
+                    activeTab === 'trajectory'
+                      ? 'var(--dsw-alias-label-primary)'
+                      : 'var(--dsw-alias-label-tertiary)',
+                }}
+              >
+                Trajectory
+              </button>
+            </div>
 
-          <div className="flex items-center gap-2">
             <button
               onClick={() => setShowLogsDrawer(!showLogsDrawer)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
+              aria-label="Open the session log"
+              className="flex items-center justify-center gap-1.5 min-w-11 min-h-11 sm:min-w-0 sm:min-h-9 px-2 sm:px-2.5 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
             >
-              <span>Session log</span>
-              <Download size={12} />
+              <span className="hidden sm:inline">Session log</span>
+              <Download size={13} />
             </button>
           </div>
         </div>
@@ -1732,11 +1733,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               ))
             )}
 
-            {/* Live status strip. The previous indicator was one small line that
-                scrolled out of view, so a background run looked like nothing was
-                happening at all. This stays pinned under the transcript with the
-                elapsed time, what is going on, and a Stop control. */}
-            {isLoading && (
+            {/* Live status strip. Hidden when a durable run is already reported below: two
+                "working" rows, each with its own Stop, was the most confusing thing on a
+                phone — the agent looked busy twice. */}
+            {isLoading && !harness.activeRun && (
               <div
                 className="sticky bottom-0 mt-3 flex items-center gap-2.5 rounded-[10px] px-3 py-2.5 dsh-t-s"
                 style={{
@@ -1851,7 +1851,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 {harness.runInProgress && !harness.activeRun.cancelRequested && (
                   <button
                     onClick={() => void harness.cancelRun()}
-                    className="dsh-t-xxxs dsh-label-tertiary dsh-interactive-danger px-1.5 py-0.5"
+                    className="ml-auto dsh-t-xs dsh-label-tertiary dsh-interactive-danger px-2.5 min-h-8 flex items-center"
                     style={{ borderRadius: 'var(--dsh-radius-xs)' }}
                   >
                     Stop
@@ -1907,8 +1907,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 }}
                 placeholder={
                   isLoading
-                    ? 'Type a correction — it queues and sends when this run finishes'
-                    : 'Ask for anything — a poster, a reel, a campaign…'
+                    ? 'Queued — sends when this run finishes'
+                    : 'Ask Nobo anything…'
                 }
                 aria-label="Message the agent"
                 rows={1}
@@ -1917,7 +1917,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               />
 
               <div className="flex items-center justify-between pt-2 mt-1 dsh-border-t">
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-1 sm:gap-2 text-xs">
                   {/* File attach + */}
                   <input
                     type="file"
@@ -1929,10 +1929,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="nobo-tap p-1.5 rounded-full dsh-label-tertiary dsh-interactive"
+                    className="nobo-tap w-11 h-11 sm:w-9 sm:h-9 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
                     title="Attach file"
+                    aria-label="Attach a file"
                   >
-                    <Plus size={16} />
+                    <Plus size={18} />
                   </button>
 
                   {/* Dictation: speak, and the words land in the box to edit and send.
@@ -1947,7 +1948,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => setCreateOpen(true)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 dsh-t-xs dsh-strong transition"
+                    className="flex items-center gap-1.5 min-h-11 sm:min-h-9 px-3 dsh-t-xs dsh-strong transition"
                     style={{
                       background: 'var(--dsw-alias-bg-layer-2)',
                       color: 'var(--dsw-alias-label-secondary)',
@@ -1956,7 +1957,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     }}
                     title="Start a creative job — pick dimensions and a reference, then talk it through"
                   >
-                    <Sparkles size={12} />
+                    <Sparkles size={13} />
                     Create
                   </button>
 
@@ -2038,14 +2039,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               </div>
             </div>
 
-            {/* Bottom Status Metadata Bar */}
+            {/* Bottom status metadata bar. The static mode line is a desktop nicety — on a
+                phone it only ever showed a clipped "Full Acc…" under the composer. */}
             <div className="mt-2 text-center dsh-t-xxxs dsh-mono dsh-label-caption truncate">
               {queuedCount > 0 ? (
                 <span className="dsh-accent">
-                  {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — will send when this turn finishes
+                  {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — sends when this turn finishes
                 </span>
               ) : (
-                <>Nobogent Autonomous Operator • Standard mode • Full Access</>
+                <span className="hidden sm:inline">Nobogent Autonomous Operator • Standard mode • Full Access</span>
               )}
             </div>
           </div>
