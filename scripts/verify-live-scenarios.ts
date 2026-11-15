@@ -74,12 +74,25 @@ const CASES: Case[] = [
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false },
   });
-  const { data: profile } = await sb.from('profiles').select('id, business_name').limit(1).maybeSingle();
+  // NEVER default to whichever profile happens to be first: that is a real customer, and these
+  // cases deliberately provoke send/spend behaviour. Point it at a throwaway account.
+  const wantedId = process.env.AGENT_TEST_PROFILE_ID;
+  const { data: profile } = wantedId
+    ? await sb.from('profiles').select('id, business_name').eq('id', wantedId).maybeSingle()
+    : await sb
+        .from('profiles')
+        .select('id, business_name')
+        .like('email', '%@nobogent.test')
+        .limit(1)
+        .maybeSingle();
   if (!profile?.id) {
-    console.error('no profile');
+    console.error(
+      'No safe test profile. Set AGENT_TEST_PROFILE_ID to a throwaway account — refusing to run ' +
+        'provocative scenarios against a real customer.',
+    );
     process.exit(1);
   }
-  console.log(`agent under test: ${profile.business_name}\n`);
+  console.log(`agent under test: ${profile.business_name} (${String(profile.id).slice(0, 8)}…)\n`);
 
   let pass = 0;
   let fail = 0;
