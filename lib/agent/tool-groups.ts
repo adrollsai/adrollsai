@@ -47,8 +47,13 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
   },
   media: {
     with: ['sandbox'],
+    // Plain "video" belongs here as well as in `sandbox`. It used to be only a
+    // sandbox signal, so "make a 30 second video about our new batch" loaded the
+    // rendering toolkit and NOT one video-generating tool — the agent could shell out
+    // but had nothing to compose. A video request needs both, and `with` only ever
+    // adds groups, so naming it here is safe.
     signals:
-      /\b(images?|creatives?|posters?|banners?|thumbnails?|voice ?overs?|narrations?|tts|audio|music|grok|imagine|video clips?|b-?roll|generate (an? )?(image|video|voice)|logos?|graphics?|designs?|diwali|bhai ?dooj|holi|festivals?|wishes|wish)\b/i,
+      /\b(images?|creatives?|posters?|banners?|thumbnails?|voice ?overs?|narrations?|tts|audio|music|grok|imagine|video|videos|reels?|shorts?|films?|promo|b-?roll|generate (an? )?(image|video|voice)|logos?|graphics?|designs?|diwali|bhai ?dooj|holi|festivals?|wishes|wish)\b/i,
   },
   meta: {
     signals:

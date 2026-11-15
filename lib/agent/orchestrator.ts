@@ -27,6 +27,8 @@ import { createRecipeTools } from './tools/recipes';
 import { createNotificationTools } from './tools/notifications';
 import { createReportingTools } from './tools/reporting';
 import { createAutomationTools } from './tools/automation';
+import { createFlowAuthoringTools } from './tools/flows';
+import { createPageAuthoringTools } from './tools/pages';
 import { selectToolGroups, type ToolGroup } from './tool-groups';
 import { preflightPromptSection } from './preflight';
 
@@ -112,6 +114,10 @@ export async function createAgentContext(
     ...(has('media') ? create24fpsMotionTools() : {}),
     ...(has('publishing') ? createPublishingTools(supabase, userId) : {}),
     ...(has('sites') ? createSiteTools(supabase, userId) : {}),
+    // Generating a landing page, which `sites` alone only knew how to PUBLISH. The page
+    // is composed from facts the owner supplied and emitted with editable sections, so
+    // the page editor can then change one section without regenerating the rest.
+    ...(has('sites') ? createPageAuthoringTools(supabase, userId) : {}),
     // Playbook is always available: it is how the CEO reads its own decisions and
     // how the user changes behaviour in plain language. Not feature-gated.
     ...createPlaybookTools(supabase, userId),
@@ -119,6 +125,10 @@ export async function createAgentContext(
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),
     ...(has('automation') ? createAutomationTools(supabase, userId) : {}),
+    // Creating a flow, which `automation` alone only knew how to LIST. The agent could
+    // describe a flow it was incapable of building, and answered "I cannot do that" to
+    // a request it should have served.
+    ...(has('automation') ? createFlowAuthoringTools(supabase, userId) : {}),
     // run_routine / run_one_off: starting the day, or one piece of it, on demand.
     ...(has('automation') || has('media') ? createRoutineTools(supabase, userId) : {}),
     ...(has('recipes') ? createRecipeTools() : {}),
