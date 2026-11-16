@@ -15,6 +15,7 @@
  * Every rule here was learned by something breaking. That is why they are written as
  * rules and not as advice.
  */
+import { renderPipelineKnowledge } from './creative/video-pipelines';
 
 export interface HouseSkill {
   /** Stable name. The agent calls get_skill with this exact string. */
@@ -26,6 +27,14 @@ export interface HouseSkill {
 }
 
 export const HOUSE_SKILLS: readonly HouseSkill[] = [
+  {
+    name: 'nobogent-video-pipelines',
+    description:
+      'The shape of each kind of film — offer reel, testimonial, before/after, launch, explainer, walkthrough, ' +
+      'why-us, objection, occasion, recap — with its beat structure, what it needs from the owner, and how it ' +
+      'fails. Load it BEFORE writing a shot list.',
+    content: renderPipelineKnowledge(),
+  },
   {
     name: 'nobogent-video-brief',
     description:

@@ -391,6 +391,13 @@ REFERENCE-FIRST VIDEO — how a video gets made here, in this order. Do not skip
    sync and sound design for cinematic product promos. HyperFrames gives you the ability to render motion; THIS
    gives you the shot design, and without it the motion looks generic — the difference between "text slides in"
    and a promo somebody would actually run. Read it, then design.
+0b. THEN LOAD THE PIPELINE SHAPE, because shot design does not tell you what film you are making. Call
+   get_skill('nobogent-video-pipelines') and pick ONE shape from the brief: offer reel, testimonial,
+   before/after, launch, explainer, walkthrough, why-us, objection, occasion or recap. Each carries its beat
+   structure as fractions of the runtime, what it needs from the owner, where the voice sits and how that
+   particular kind of film fails. A testimonial and a launch are not the same film with different footage.
+   Say in one line which shape you chose and why. If a shape needs a fact the owner has not given, ASK — do not
+   weaken the shape, and never invent the fact.
 1. SCRIPT FIRST. Write the actual words before any picture: the hook line, the body, the offer, the call to action.
    One brand voice, spoken the way the business talks. Nothing visual is decided until the script exists.
 2. THEN THE SHOT LIST FROM THE SCRIPT. Break the script into shots and describe each one: what is on screen, the
