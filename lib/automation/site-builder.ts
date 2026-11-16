@@ -398,23 +398,48 @@ ${profile.brand_color ? `<meta name="theme-color" content="${esc(profile.brand_c
     .join('\n')
 
   const serverContent = `
-<section id="nobogent-server-content" aria-labelledby="nobogent-h1" style="max-width:1180px;margin:0 auto;padding:48px 20px;">
-  <h1 id="nobogent-h1" style="font-size:34px;line-height:1.15;margin:0 0 10px;">${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''}</h1>
-  <p style="margin:0 0 18px;max-width:62ch;">${esc(tagline)}</p>
-  ${address ? `<address style="font-style:normal;margin:0 0 6px;">${esc(address)}</address>` : ''}
-  ${phone ? `<p style="margin:0 0 6px;">Call or WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
-  ${wa ? `<p style="margin:0 0 22px;"><a href="https://wa.me/${esc(wa)}" rel="noopener">Get in touch on WhatsApp</a></p>` : ''}
-  ${props.length ? `<h2 style="font-size:24px;margin:26px 0 14px;">What we offer (${props.length})</h2>
+<section id="nobogent-server-content" aria-labelledby="nobogent-h1">
+  <h1 id="nobogent-h1">${esc(brandName)}${city ? ` · ${esc(city)}` : ''}</h1>
+  <p class="nobo-lede">${esc(tagline)}</p>
+  ${address ? `<address class="nobo-address">${esc(address)}</address>` : ''}
+  ${phone ? `<p class="nobo-contact">Call or WhatsApp: <a href="tel:${esc(phone)}">${esc(phone)}</a></p>` : ''}
+  ${wa ? `<p class="nobo-actions"><a class="nobo-cta" href="https://wa.me/${esc(wa)}" rel="noopener">Get in touch on WhatsApp</a>${phone ? `<a class="nobo-cta nobo-cta--quiet" href="tel:${esc(phone)}">Call now</a>` : ''}</p>` : ''}
+  ${props.length ? `<h2 class="nobo-h2">What we offer (${props.length})</h2>
   <div class="seo-grid">${cards}</div>` : ''}
 </section>
 <style>
-  .seo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px}
-  .seo-card{border:1px solid rgba(0,0,0,.12);border-radius:14px;padding:14px;background:#fff}
-  .seo-card img{width:100%;height:auto;border-radius:10px;display:block;margin-bottom:10px}
-  .seo-card h3{font-size:16px;margin:0 0 6px}
-  .seo-card a{text-decoration:none;color:inherit}
-  .seo-price{font-weight:700;margin:0 0 6px}
-  .seo-muted{opacity:.75;font-size:13px;margin:0 0 6px}
+  /* The house design system, scoped to the injected block so it cannot fight the tenant template:
+     the same spacing scale, type scale and 44px touch targets the generated pages use. */
+  #nobogent-server-content{
+    --s1:8px;--s2:12px;--s3:16px;--s4:24px;--s5:32px;--s6:48px;
+    --radius:16px;
+    --step-0:clamp(16px,1.9vw,18px);
+    --step-1:clamp(19px,2.6vw,23px);
+    --step-2:clamp(24px,3.6vw,31px);
+    --step-3:clamp(31px,5vw,43px);
+    max-width:1120px;margin:0 auto;padding:var(--s6) var(--s4);
+    font-size:var(--step-0);line-height:1.6;
+  }
+  #nobogent-server-content h1{font-size:var(--step-3);line-height:1.12;letter-spacing:-.02em;margin:0 0 var(--s3);text-wrap:balance}
+  #nobogent-server-content .nobo-h2{font-size:var(--step-2);line-height:1.15;letter-spacing:-.01em;margin:var(--s6) 0 var(--s4)}
+  #nobogent-server-content .nobo-lede{font-size:var(--step-1);margin:0 0 var(--s3);max-width:62ch}
+  #nobogent-server-content .nobo-address{font-style:normal;margin:0 0 var(--s1)}
+  #nobogent-server-content .nobo-contact{margin:0 0 var(--s2)}
+  #nobogent-server-content .nobo-actions{display:flex;flex-wrap:wrap;gap:var(--s2);margin:var(--s4) 0 0}
+  #nobogent-server-content .nobo-cta{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-height:44px;padding:0 var(--s5);border-radius:999px;
+    background:#0F172A;color:#fff;font-weight:800;text-decoration:none;
+  }
+  #nobogent-server-content .nobo-cta--quiet{background:transparent;color:#0F172A;border:1px solid rgba(15,23,42,.24)}
+  #nobogent-server-content .nobo-cta:focus-visible{outline:3px solid #0F172A;outline-offset:3px}
+  #nobogent-server-content .seo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:var(--s4)}
+  #nobogent-server-content .seo-card{border:1px solid rgba(0,0,0,.12);border-radius:var(--radius);padding:var(--s3);background:#fff}
+  #nobogent-server-content .seo-card img{width:100%;height:auto;border-radius:12px;display:block;margin-bottom:var(--s2)}
+  #nobogent-server-content .seo-card h3{font-size:var(--step-1);margin:0 0 var(--s1)}
+  #nobogent-server-content .seo-card a{text-decoration:none;color:inherit}
+  #nobogent-server-content .seo-price{font-weight:700;margin:0 0 var(--s1)}
+  #nobogent-server-content .seo-muted{opacity:.75;font-size:14px;margin:0 0 var(--s1)}
 </style>
 `
 

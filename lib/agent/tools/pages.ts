@@ -27,6 +27,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { industryVocabulary } from '@/lib/automation/industry';
 import { markSection, isSectionAllowed, type SectionKind } from '@/lib/site/page-sections';
+import { landingPageCss, noEmDash, paletteFor, revealScript } from '@/lib/site/design-system';
 
 export interface LandingPageBrief {
   businessName: string;
@@ -66,6 +67,12 @@ export interface LandingPageBrief {
   galleryImages?: string[];
   /** Client or partner names the owner is allowed to display. */
   trustedBy?: string[];
+  /** A hero photograph (the business's own, or a generated one). */
+  heroImage?: string;
+  /** Real customer quotes the owner supplied. The page writes none of its own. */
+  testimonials?: { quote: string; name?: string; detail?: string }[];
+  /** Questions the owner actually gets asked, with the answers they gave. */
+  faqs?: { question: string; answer: string }[];
 }
 
 export class LandingPageError extends Error {
@@ -117,12 +124,27 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
   }
 
   const vocabulary = industryVocabulary(brief.industry);
-  const brand = safeColor(brief.brandColor);
+  const palette = paletteFor(brief.brandColor || safeColor(brief.brandColor));
   const slug = slugify(brief.slug || productName);
   const highlights = (brief.highlights ?? []).map((line) => String(line).trim()).filter(Boolean).slice(0, 6);
   const wa = `https://wa.me/${phone.replace(/\D/g, '')}`;
+  const tel = `tel:${phone.replace(/[^\d+]/g, '')}`;
   const used: SectionKind[] = [];
   const parts: string[] = [];
+
+  // Copy is cleaned on the way out: `scroll-craft` treats an em dash as machine-written tell, and this is the one
+  // place every human-visible string passes through.
+  const say = (value: unknown) => esc(noEmDash(String(value ?? '')));
+
+  // At most one eyebrow per three sections. A page with a kicker above every heading reads as a template, so the
+  // budget is enforced here rather than trusted to whoever wrote the copy.
+  let eyebrows = 0;
+  const eyebrow = (text: string) => {
+    const budget = Math.max(1, Math.floor(used.length / 3) + 1);
+    if (eyebrows >= budget) return '';
+    eyebrows += 1;
+    return `<p class="eyebrow">${say(text)}</p>`;
+  };
 
   const section = (kind: SectionKind, html: string) => {
     if (!isSectionAllowed(brief.industry ?? null, kind)) return;
@@ -130,38 +152,58 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
     parts.push(markSection(kind, html));
   };
 
+  const heroImage = /^https:\/\//i.test(String(brief.heroImage ?? '')) ? String(brief.heroImage) : '';
+
   section(
     'hero',
     `<header class="hero">
-  <p class="eyebrow">${esc(businessName)}</p>
-  <h1>${esc(productName)}</h1>
-  ${brief.audience ? `<p class="lede">For ${esc(brief.audience)}.</p>` : ''}
-  ${brief.offer ? `<p class="offer">${esc(brief.offer)}</p>` : ''}
-  <a class="cta" href="${esc(wa)}">${esc(vocabulary.enquiryCta)}</a>
+  <div class="wrap split">
+    <div class="split__copy">
+      ${eyebrow(businessName)}
+      <h1>${say(productName)}</h1>
+      ${brief.audience ? `<p class="lede">For ${say(brief.audience)}.</p>` : ''}
+      ${brief.offer ? `<p class="offer">${say(brief.offer)}</p>` : ''}
+      <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
+      <p class="note">${esc(phone)}</p>
+    </div>
+    ${
+      heroImage
+        ? `<div class="hero__media"><img src="${esc(heroImage)}" alt="${say(businessName)}" width="1120" height="720" loading="eager" fetchpriority="high"><div class="hero__scrim"></div></div>`
+        : ''
+    }
+  </div>
 </header>`,
   );
 
   section(
     'offerings',
     `<section class="offerings">
-  <h2>${esc(vocabulary.collectionHeading)}</h2>
-  ${
-    highlights.length
-      ? `<ul>${highlights.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>`
-      : `<p>${esc(productName)} — details on request.</p>`
-  }
+  <div class="wrap split split--trail">
+    <div class="split__copy">
+      <h2>${say(vocabulary.collectionHeading)}</h2>
+      ${
+        highlights.length
+          ? `<div class="cards">${highlights
+              .map((line) => `<div class="card"><p>${say(line)}</p></div>`)
+              .join('')}</div>`
+          : `<p>${say(productName)}. Details on request.</p>`
+      }
+    </div>
+  </div>
 </section>`,
   );
 
   // ── the registration-page blocks. Each is OMITTED when its facts were not given,
   // because a page that invents a crowd size or a mentor's credentials is a claim the
   // owner never made. Absent is honest; invented is a liability.
-  const proofPoints = (brief.proofPoints ?? []).map((line) => String(line).trim()).filter(Boolean).slice(0, 4);
+  const proofPoints = (brief.proofPoints ?? []).map((line) => noEmDash(String(line).trim())).filter(Boolean).slice(0, 4);
   if (proofPoints.length) {
     section(
       'proof',
       `<section class="proof">
-  <ul>${proofPoints.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>
+  <div class="wrap">
+    <ul>${proofPoints.map((line) => `<li>${say(line)}</li>`).join('')}</ul>
+  </div>
 </section>`,
     );
   }
@@ -171,19 +213,23 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
     section(
       'countdown',
       `<section class="countdown">
-  ${brief.startsAt ? `<p class="eyebrow">Starts in</p><p class="big">${esc(brief.startsAt)}</p>` : ''}
-  ${brief.offer ? `<p class="lede">${esc(brief.offer)}</p>` : ''}
-  <a class="cta" href="${esc(wa)}">${esc(vocabulary.enquiryCta)}</a>
+  <div class="wrap narrow">
+    ${brief.startsAt ? `${eyebrow('Starts in')}<p class="big">${say(brief.startsAt)}</p>` : ''}
+    ${brief.offer ? `<p class="lede">${say(brief.offer)}</p>` : ''}
+    <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
+  </div>
 </section>`,
     );
     if (brief.mentorName) {
       section(
         'mentor',
         `<section class="mentor">
-  <h2>Your mentor</h2>
-  <p class="big">${esc(brief.mentorName)}</p>
-  ${brief.mentorTitle ? `<p class="lede">${esc(brief.mentorTitle)}</p>` : ''}
-  ${credentials.length ? `<ul>${credentials.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
+  <div class="wrap narrow">
+    <h2>Your mentor</h2>
+    <p class="big">${say(brief.mentorName)}</p>
+    ${brief.mentorTitle ? `<p class="lede">${say(brief.mentorTitle)}</p>` : ''}
+    ${credentials.length ? `<ul>${credentials.map((line) => `<li>${say(line)}</li>`).join('')}</ul>` : ''}
+  </div>
 </section>`,
       );
     }
@@ -197,8 +243,12 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
     section(
       'gallery',
       `<section class="gallery">
-  <h2>Glimpses</h2>
-  <div class="grid">${gallery.map((url) => `<img src="${esc(url)}" alt="" loading="lazy">`).join('')}</div>
+  <div class="wrap">
+    <h2>Glimpses</h2>
+    <div class="grid">${gallery
+      .map((url, index) => `<img src="${esc(url)}" alt="${say(businessName)} photograph ${index + 1}" loading="lazy" decoding="async" width="480" height="320">`)
+      .join('')}</div>
+  </div>
 </section>`,
     );
   }
@@ -208,8 +258,66 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
     section(
       'logos',
       `<section class="logos">
-  <h2>Trusted by</h2>
-  <p>${trustedBy.map((name) => esc(name)).join(' · ')}</p>
+  <div class="wrap narrow">
+    <h2>Trusted by</h2>
+    <p>${trustedBy.map((name) => say(name)).join(' · ')}</p>
+  </div>
+</section>`,
+    );
+  }
+
+  // Only quotes the owner actually supplied. A generated testimonial is a fabricated endorsement, which is both a
+  // legal problem and the fastest way to lose the audience's trust.
+  const testimonials = (brief.testimonials ?? [])
+    .map((item) => ({
+      quote: noEmDash(String(item?.quote ?? '').trim()),
+      name: noEmDash(String(item?.name ?? '').trim()),
+      detail: noEmDash(String(item?.detail ?? '').trim()),
+    }))
+    .filter((item) => item.quote.length > 0)
+    .slice(0, 3);
+  if (testimonials.length) {
+    section(
+      'testimonials',
+      `<section class="testimonials">
+  <div class="wrap">
+    <h2>What people say</h2>
+    <div class="cards">${testimonials
+      .map(
+        (item) => `<figure class="card">
+      <blockquote><p>${say(item.quote)}</p></blockquote>
+      ${item.name ? `<figcaption class="note">${say(item.name)}${item.detail ? `, ${say(item.detail)}` : ''}</figcaption>` : ''}
+    </figure>`,
+      )
+      .join('')}</div>
+  </div>
+</section>`,
+    );
+  }
+
+  // Answers the questions that stop a purchase. Uses <details> so it costs nothing until opened, and needs no JS.
+  const faqs = (brief.faqs ?? [])
+    .map((item) => ({
+      question: noEmDash(String(item?.question ?? '').trim()),
+      answer: noEmDash(String(item?.answer ?? '').trim()),
+    }))
+    .filter((item) => item.question.length > 0 && item.answer.length > 0)
+    .slice(0, 6);
+  if (faqs.length) {
+    section(
+      'faq',
+      `<section class="faq">
+  <div class="wrap narrow">
+    <h2>Questions</h2>
+    ${faqs
+      .map(
+        (item) => `<details>
+      <summary>${say(item.question)}</summary>
+      <p>${say(item.answer)}</p>
+    </details>`,
+      )
+      .join('\n    ')}
+  </div>
 </section>`,
     );
   }
@@ -217,28 +325,32 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
   section(
     'about',
     `<section class="about">
-  <h2>About ${esc(businessName)}</h2>
-  <p>${esc(businessName)} works with ${esc(brief.audience || 'customers')} in and around your area.</p>
+  <div class="wrap narrow">
+    <h2>About ${say(businessName)}</h2>
+    <p>${say(businessName)} works with ${say(brief.audience || 'customers')} in and around your area.</p>
+  </div>
 </section>`,
   );
 
   section(
     'register',
     `<section class="register">
-  <h2>Register</h2>
-  <form id="reg" onsubmit="return noboRegister(event)">
-    <label>Name <input name="name" required autocomplete="name"></label>
-    <label>WhatsApp number <input name="phone" required inputmode="tel" autocomplete="tel"></label>
-    <button class="cta" type="submit">Send on WhatsApp</button>
-  </form>
-  <p class="hint">Opens WhatsApp with your details filled in — press send there.</p>
+  <div class="wrap narrow">
+    <h2>Register</h2>
+    <form id="reg" onsubmit="return noboRegister(event)">
+      <label>Name <input name="name" required autocomplete="name" placeholder="Your name"></label>
+      <label>WhatsApp number <input name="phone" required inputmode="tel" autocomplete="tel" placeholder="10-digit mobile"></label>
+      <button class="cta" type="submit">Send on WhatsApp</button>
+    </form>
+    <p class="note">Opens WhatsApp with your details filled in. Press send there.</p>
+  </div>
   <script>
     function noboRegister(event) {
       event.preventDefault();
       var form = event.target;
       var name = (form.elements.name.value || '').trim();
       var phone = (form.elements.phone.value || '').trim();
-      var text = 'Hi ${esc(businessName).replace(/'/g, "\\'")}, I want to register for ${esc(productName).replace(/'/g, "\\'")}.'
+      var text = 'Hi ${esc(noEmDash(businessName)).replace(/'/g, "\\'")}, I want to register for ${esc(noEmDash(productName)).replace(/'/g, "\\'")}.'
         + (name ? ' My name is ' + name + '.' : '') + (phone ? ' My number is ' + phone + '.' : '');
       window.open('${esc(wa)}?text=' + encodeURIComponent(text), '_blank');
       return false;
@@ -247,69 +359,67 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
 </section>`,
   );
 
+  // The engineered peak: one full-width band, the only place the accent inverts. It gets the scroll room and the
+  // strongest contrast on the page, so the page has somewhere it is going rather than a flat run of sections.
   section(
     'cta',
-    `<section class="cta-band">
-  <h2>Want to know more?</h2>
-  <a class="cta" href="${esc(wa)}">${esc(vocabulary.enquiryCta)}</a>
+    `<section class="cta-band band">
+  <div class="wrap narrow">
+    <h2>${say(brief.offer ? `Ready for ${productName}?` : 'Want to know more?')}</h2>
+    ${brief.offer ? `<p class="lede">${say(brief.offer)}</p>` : ''}
+    <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
+  </div>
 </section>`,
   );
 
   section(
     'contact',
     `<section class="contact">
-  <h2>Talk to us</h2>
-  <p>Call or message <a href="tel:${esc(phone.replace(/\s+/g, ''))}">${esc(phone)}</a>.</p>
+  <div class="wrap narrow">
+    <h2>Talk to us</h2>
+    <p>Call or message <a href="${esc(tel)}">${esc(phone)}</a>.</p>
+  </div>
 </section>`,
   );
 
   section(
     'footer',
     `<footer>
-  <p>${esc(businessName)} · ${esc(phone)}</p>
+  <div class="wrap narrow">
+    <p>${say(businessName)} · ${esc(phone)}</p>
+  </div>
 </footer>`,
   );
+
+  const sticky = `<div class="sticky-cta" aria-label="Contact ${esc(noEmDash(businessName))}">
+  <a class="sticky-cta__call" href="${esc(tel)}">Call</a>
+  <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
+</div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(productName)} | ${esc(businessName)}</title>
-<meta name="description" content="${esc(`${productName} from ${businessName}.`)}">
+<title>${esc(noEmDash(productName))} | ${esc(noEmDash(businessName))}</title>
+<meta name="description" content="${esc(noEmDash(`${productName} from ${businessName}${brief.offer ? `. ${brief.offer}` : ''}.`))}">
+<meta name="theme-color" content="${palette.brand}">
+<meta property="og:title" content="${esc(noEmDash(productName))}">
+<meta property="og:description" content="${esc(noEmDash(brief.offer || `${productName} from ${businessName}.`))}">
+${heroImage ? `<meta property="og:image" content="${esc(heroImage)}">` : ''}
 <style>
-  :root { --brand: ${brand}; --ink: #f6f5f2; --dim: #b9b6ae; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--brand); color: var(--ink);
-         font: 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 0 20px; }
-  section, header.hero, footer { padding: 44px 20px; max-width: 720px; margin: 0 auto; }
-  header.hero { padding-top: 72px; }
-  h1 { font-size: clamp(28px, 6vw, 44px); line-height: 1.15; margin: 8px 0 14px; }
-  h2 { font-size: clamp(20px, 4vw, 28px); margin: 0 0 14px; }
-  .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: 12px; color: var(--dim); margin: 0; }
-  .lede, .offer { color: var(--dim); }
-  .cta { display: inline-block; margin-top: 18px; padding: 14px 22px; border-radius: 999px;
-         background: var(--ink); color: #0b0f19; font-weight: 700; text-decoration: none; }
-  ul { padding-left: 20px; }
-  .big { font-size: clamp(18px, 3.4vw, 24px); font-weight: 700; margin: 4px 0 10px; }
-  .proof ul, .logos p { display: flex; flex-wrap: wrap; gap: 10px 22px; list-style: none; padding: 0; }
-  .proof li { padding: 8px 14px; border: 1px solid rgba(255,255,255,.14); border-radius: 999px; }
-  .gallery .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-  .gallery img { width: 100%; height: 120px; object-fit: cover; border-radius: 12px; display: block; }
-  form { display: grid; gap: 12px; max-width: 360px; }
-  label { display: grid; gap: 6px; font-size: 14px; color: var(--dim); }
-  input { padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2);
-          background: rgba(255,255,255,.06); color: var(--ink); font: inherit; }
-  button.cta { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
-  .hint { font-size: 13px; color: var(--dim); }
-  li { margin: 6px 0; }
-  a { color: inherit; }
-  footer { color: var(--dim); font-size: 14px; border-top: 1px solid rgba(255,255,255,.1); }
+${landingPageCss(palette)}
 </style>
 </head>
 <body>
-${parts.join('\n')}
+<main>
+${/* Each section's root landmark opts into the reveal observer. Done here, not in fourteen templates, so a
+   section added later cannot forget to animate and cannot accidentally animate twice. */ ''}${parts
+    .map((part) => part.replace(/<(header|section|footer)(\s|>)/, '<$1 data-reveal$2'))
+    .join('\n')}
+</main>
+${sticky}
+${revealScript()}
 </body>
 </html>
 `;

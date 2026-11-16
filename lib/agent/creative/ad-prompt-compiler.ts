@@ -311,27 +311,10 @@ const CTA_LABELS: Record<'call' | 'whatsapp' | 'visit' | 'apply' | 'book', strin
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 
-/** WCAG relative luminance, so a palette choice is measured rather than trusted. */
-export function relativeLuminance(hex: string): number | null {
-  const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!match) return null;
-  let value = match[1];
-  if (value.length === 3) value = value.split('').map((c) => c + c).join('');
-  const channel = (offset: number) => {
-    const srgb = parseInt(value.slice(offset, offset + 2), 16) / 255;
-    return srgb <= 0.03928 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
-  };
-  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-}
-
-/** WCAG contrast ratio between two hex colours, 1–21. Null when a colour cannot be parsed. */
-export function contrastRatio(a: string, b: string): number | null {
-  const la = relativeLuminance(a);
-  const lb = relativeLuminance(b);
-  if (la === null || lb === null) return null;
-  const [light, dark] = la > lb ? [la, lb] : [lb, la];
-  return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
-}
+// The contrast maths lives in lib/design/contrast.ts so the page generator measures palettes the same way this
+// compiler does. Imported for use here, and re-exported because this module's public surface already had it.
+import { contrastRatio } from '@/lib/design/contrast';
+export { contrastRatio, relativeLuminance } from '@/lib/design/contrast';
 
 /** Pick the angle whose required facts the business actually supplied, scoring industry fit as a tiebreak. */
 export function chooseAngle(input: AdBriefInput): { angle: AdAngle; whyChosen: string } {

@@ -119,6 +119,7 @@
     "verify:video-preview": "esbuild scripts/verify-video-preview.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-preview.mjs --log-level=warning && node .tmp-video-preview.mjs",
     "verify:ad-default": "esbuild scripts/verify-ad-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-default.mjs --log-level=warning && node .tmp-ad-default.mjs",
     "verify:video-pipelines": "esbuild scripts/verify-video-pipelines.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-pipelines.mjs --log-level=warning && node .tmp-video-pipelines.mjs",
+    "verify:skills-default": "esbuild scripts/verify-skills-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-skills-default.mjs --log-level=warning && node .tmp-skills-default.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },

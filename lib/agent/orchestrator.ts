@@ -20,6 +20,7 @@ import { createRoutineTools } from './tools/routine';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceSearchTools } from './tools/reference_search';
 import { createAdCreativeTools } from './tools/ad_creative';
+import { renderSkillMandate, requiredSkillsFor } from './creative/skill-routing';
 import { createSkillTools, formatSkillCatalogue } from './tools/skills';
 import { createScrapeTools } from './tools/skills/scrape';
 import { createPublishingTools } from './tools/publishing';
@@ -539,6 +540,12 @@ NOTIFICATIONS & SCHEDULING:
 - 'schedule_agent_task': run something at a specific future time (send a follow-up tomorrow, launch a campaign at 10 AM).
 - 'list_scheduled_tasks' / 'cancel_or_delete_scheduled_task': what is queued, and how to pull it back.
 `);
+
+  // The craft skills this request requires, named before the model gets a chance to improvise. Applied from the
+  // request itself rather than from a model decision — see lib/agent/creative/skill-routing.ts for why, and note
+  // that the generators ALSO apply the design rules in code so the output carries them regardless.
+  const { requirements: requiredSkills } = requiredSkillsFor(opts.intentText || '');
+  if (requiredSkills.length) parts.push(renderSkillMandate(requiredSkills));
 
   parts.push(`
 OPERATING GUIDELINES:
