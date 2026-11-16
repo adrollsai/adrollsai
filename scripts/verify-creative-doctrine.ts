@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
+import { applyReviewGate } from '../lib/agent/review-gate';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -113,6 +114,56 @@ check(
   'not on every tab',
 );
 check('with a title explaining it', /title="Alpha/.test(nav));
+
+// ── 4b. Shot design, review before delivery, and the unrendered preview.
+//
+// The owner's rule: "nothing it says is done until I can click and see it". A film the agent encoded but never
+// showed them breaks that rule, so the prompt has to send the edit to chat BEFORE the render — and the gate
+// has to make a delivery render impossible without the approval that follows.
+console.log('\n▸ 4b. the owner sees the edit before anything is rendered');
+const flat = prompt.replace(/\s+/g, ' ');
+check(
+  'the shot-design skill is loaded before designing a film',
+  /get_skill\('video-shotcraft'\)/.test(flat),
+  'a vendored recipe library, not vibes',
+);
+const skill = fs.readFileSync('lib/agent/skills-vendor/video-shotcraft.ts', 'utf8');
+check('and the skill is actually vendored', skill.length > 5000, `${Math.round(skill.length / 1000)}k of source`);
+check(
+  'the skill is registered so get_skill can return it',
+  /video-shotcraft/.test(fs.readFileSync('lib/agent/skills-vendor/index.ts', 'utf8')),
+);
+check(
+  'the stills tool is named in the prompt',
+  /sandbox_preview_hyperframes/.test(prompt),
+  'the agent has to be told it exists, or it renders blind',
+);
+check(
+  'and the review happens before the delivery render, not after',
+  /BEFORE any delivery render/.test(flat),
+);
+check(
+  'the owner reviews the EDIT, not a finished file',
+  /not a render/i.test(flat),
+);
+const iPreview = flat.indexOf('sandbox_preview_hyperframes');
+const iDelivery = flat.indexOf('The DELIVERY render');
+check('preview is stated before delivery', iPreview > -1 && iDelivery > iPreview, `${iPreview} < ${iDelivery}`);
+
+// The gate, not just the prose: a delivery render must be refused without approval.
+let ran = 0;
+const gated = applyReviewGate(
+  { sandbox_render_hyperframes: { execute: async () => { ran++; return { success: true }; } } },
+  { approved: async () => [] },
+);
+const draftRun = await gated.sandbox_render_hyperframes.execute({ projectName: 'x', quality: 'draft' });
+check('a draft render is free (the agent may inspect its own work)', draftRun?.success === true && ran === 1);
+const deliveryRun = await gated.sandbox_render_hyperframes.execute({ projectName: 'x', quality: 'delivery' });
+check(
+  'a delivery render without approval does not render at all',
+  deliveryRun?.needs_review === true && ran === 1,
+  'the gate is what enforces the doctrine, not the paragraph above it',
+);
 
 // ── Guard the thing I broke once already: no ghost tools in the new prose.
 console.log('\n▸ 5. the new prose names no tool this turn does not have');

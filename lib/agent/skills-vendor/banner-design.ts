@@ -3,7 +3,7 @@
  *
  *   upstream : nextlevelbuilder/ui-ux-pro-max-skill
  *   path     : .claude/skills/banner-design/SKILL.md
- *   commit   : d643997c82e94742dd3bee43210b0198e8bbba3d
+ *   commit   : e59ff376a41f7ca47b7541ad5c116495cbade3ee
  *   licence  : MIT
  *
  * Banner and ad-unit composition, for creatives that are not square or vertical.
@@ -26,8 +26,8 @@ export const skill = {
   attribution: {
     repo: "nextlevelbuilder/ui-ux-pro-max-skill",
     path: ".claude/skills/banner-design/SKILL.md",
-    commit: "d643997c82e94742dd3bee43210b0198e8bbba3d",
+    commit: "e59ff376a41f7ca47b7541ad5c116495cbade3ee",
     licence: "MIT",
-    url: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/d643997c82e94742dd3bee43210b0198e8bbba3d/.claude/skills/banner-design/SKILL.md",
+    url: "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/blob/e59ff376a41f7ca47b7541ad5c116495cbade3ee/.claude/skills/banner-design/SKILL.md",
   },
 } as const;

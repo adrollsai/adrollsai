@@ -7,7 +7,7 @@
  *
  * WHY VENDOR RATHER THAN FETCH AT RUNTIME
  * A production agent must not depend on GitHub being up, must not pay a network round trip
- * to read instructions, and must be reproducible — the same deploy must answer the same way
+ * to read instructions, and must be reproducible â€” the same deploy must answer the same way
  * next month. Vendoring gives all three, at the cost of a manual refresh, which is a
  * deliberate price: the content changes only when we choose.
  *
@@ -21,6 +21,7 @@ import { skill as bannerDesign } from './banner-design';
 import { skill as metaAdsCreative } from './meta-ads-creative';
 import { skill as scrollCraft } from './scroll-craft';
 import { skill as uiUxProMax } from './ui-ux-pro-max';
+import { skill as videoShotcraft } from './video-shotcraft';
 
 export interface VendoredSkill {
   name: string;
@@ -51,6 +52,7 @@ export const VENDORED_SKILLS: readonly VendoredSkill[] = [
   scrollCraft as VendoredSkill,
   uiUxProMax as VendoredSkill,
   bannerDesign as VendoredSkill,
+  videoShotcraft as VendoredSkill,
 ];
 
 /** By name, for `get_skill`. */
@@ -76,5 +78,5 @@ export function vendoredSkillCatalogue(): { name: string; description: string }[
 /** Where a vendored skill came from, as one line for the log or an admin view. */
 export function attributionLine(skill: VendoredSkill): string {
   const { repo, licence, commit } = skill.attribution;
-  return `${skill.name} — ${repo} (${licence}, ${commit.slice(0, 8)})`;
+  return `${skill.name} â€” ${repo} (${licence}, ${commit.slice(0, 8)})`;
 }

@@ -411,6 +411,120 @@ python3 render_card.py
       },
     }),
 
+    /**
+     * STOP-MOTION REVIEW: show the edit before paying to encode it.
+     *
+     * `hyperframes snapshot` captures PNG stills at chosen instants — every graphic in place, at real
+     * resolution — without encoding a single frame of video. That is the difference between "here is my
+     * plan" and "here is what it actually looks like", and it costs seconds rather than minutes.
+     *
+     * This exists because the owner asked for exactly this flow: review the edit in chat, then approve,
+     * and only then spend the render. It is also why the delivery render is the only gated render — a
+     * preview must never need permission, or the agent cannot show its work.
+     */
+    sandbox_preview_hyperframes: tool({
+      description:
+        'Show the owner what a video composition ACTUALLY looks like, without rendering it. Captures PNG ' +
+        'still frames at chosen moments (every graphic, type and image in place at full resolution) and ' +
+        'publishes them so they appear in chat. Use it BEFORE any delivery render: build the composition, ' +
+        'snapshot the key beats, put them in front of the owner, get approval, and only then render. ' +
+        'Cheap — seconds, not minutes — so use it freely while iterating on a cut.',
+      inputSchema: z.object({
+        projectName: z.string().default('hyperframes_comp').describe('Project folder the composition is already written to'),
+        frames: z.number().default(5).describe('How many evenly spaced stills to capture (1-12)'),
+        timestamps: z
+          .array(z.number())
+          .optional()
+          .describe('Exact seconds to capture instead of even spacing, e.g. [0.5, 3, 7.5, 14]. Prefer this: capture the beats that matter.'),
+        width: z.number().default(540).describe('Width of each preview PNG (540 keeps a tall frame readable in chat)'),
+        title: z.string().optional().describe('Title for the artefact feed'),
+      }),
+      execute: async ({ projectName, frames, timestamps, width, title }: any) => {
+        const safeName = String(projectName || 'hyperframes_comp').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const count = Math.min(Math.max(Math.round(Number(frames) || 5), 1), 12);
+        const previewWidth = Math.min(Math.max(Math.round(Number(width) || 540), 240), 1080);
+        const at = Array.isArray(timestamps) && timestamps.length
+          ? timestamps
+              .map((t: any) => Number(t))
+              .filter((t: number) => Number.isFinite(t) && t >= 0)
+              .slice(0, 12)
+          : [];
+        const sampleArg = at.length ? `--at ${at.join(',')}` : `--frames ${count}`;
+        const expected = at.length || count;
+
+        const readFiles = Array.from({ length: expected }, (_, i) => `previews/p${i}.png`);
+
+        const script = [
+          'set -uo pipefail',
+          'rm -rf previews_raw previews && mkdir -p previews',
+          // The composition must already be on disk at <projectName>/index.html.
+          `if [ ! -f "${safeName}/index.html" ]; then echo "NO_COMPOSITION"; exit 3; fi`,
+          `npx --yes hyperframes snapshot "${safeName}" ${sampleArg} -o previews_raw --timeout 60000 2>&1 | tail -5`,
+          'i=0',
+          'for f in $(ls previews_raw/*.png 2>/dev/null | sort); do',
+          `  ffmpeg -y -v error -i "$f" -vf "scale=${previewWidth}:-1:flags=lanczos" "previews/p$i.png" 2>/dev/null || cp "$f" "previews/p$i.png"`,
+          '  i=$((i+1))',
+          'done',
+          'echo "COUNT:$i"',
+          'ls previews 2>/dev/null',
+        ].join('\n');
+
+        const res = await executeInE2BSandbox({
+          userId,
+          command: script,
+          files: [],
+          readFiles,
+          timeoutMs: 260_000,
+        });
+
+        if (/NO_COMPOSITION/.test(res.stdout || '')) {
+          return {
+            success: false,
+            error:
+              `No composition at ${safeName}/index.html. Write it with sandbox_write_file first ` +
+              '(the root needs data-composition-id and data-duration, and a paused GSAP timeline on ' +
+              'window.__timelines), then snapshot it.',
+          };
+        }
+
+        const uploaded = res.uploadedFiles ?? {};
+        const shots = readFiles
+          .map((path, index) => {
+            const url = uploaded[path];
+            if (!url) return null;
+            return {
+              index,
+              seconds: at.length ? at[index] : null,
+              url,
+              artifact: { type: 'image_preview', title: `${title || safeName} — still ${index + 1}`, imageUrl: url },
+            };
+          })
+          .filter(Boolean) as any[];
+
+        if (!shots.length) {
+          return {
+            success: false,
+            error:
+              'Snapshot produced no frames. The composition most likely renders nothing at these timestamps — ' +
+              'check that the GSAP timeline is registered on window.__timelines paused, and that the root has ' +
+              'data-composition-id and data-duration. Raw output: ' +
+              renderLogTail(res.stdout, res.stderr).slice(0, 400),
+          };
+        }
+
+        return {
+          success: true,
+          projectName: safeName,
+          count: shots.length,
+          previews: shots,
+          note:
+            'These are STILLS from the real composition — every graphic in place, nothing encoded. Show them, ' +
+            'describe the cut (which beat is which), and ask for changes before any delivery render. ' +
+            'Draft renders stay free for your own checking; the DELIVERY render needs the owner\'s approval.',
+        };
+      },
+    }),
+
     sandbox_render_hyperframes: tool({
       description: 'USE THIS FOR ANY DESIGNED VIDEO — reel, promo, ad, explainer, kinetic type, animated title card, anything with scenes/reveals/transitions. Pass the HTML/CSS/GSAP composition (Tailwind, Google Fonts, gradients, glassmorphism, paused GSAP timelines) and it renders frame by frame with headless Chrome into a studio-grade MP4, publishes it to storage and returns a playable artifact. It installs and runs the HyperFrames CLI itself (never hunt for the binary in bash) and repairs the data-composition-id / data-duration root attributes for you. Do NOT build a designed video with ffmpeg drawtext — that is for editing existing footage only.',
       inputSchema: z.object({

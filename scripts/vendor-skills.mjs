@@ -57,6 +57,23 @@ const SOURCES = [
     licence: 'MIT',
     why: 'Banner and ad-unit composition, for creatives that are not square or vertical.',
   },
+  {
+    slug: 'video-shotcraft',
+    name: 'video-shotcraft',
+    // The owner asked for this one by URL: HyperFrames gives motion, but the SHOT DESIGN — how a
+    // product promo is actually cut, what each shot is for, beat sync and sound design — is the part
+    // that was coming out basic. 124 shot recipe cards and 150 motion previews, from a 20k-star repo.
+    //
+    // Apache-2.0, not MIT: permissive and fine for a closed-source product *with attribution*, which
+    // is what `attribution` carries and what the vendor gate enforces. Deliberately NOT the AGPL
+    // OpenMontage (see docs/openmontage-decision.md) — that licence would reach our own source.
+    repo: 'Vincentwei1021/video-shotcraft',
+    filePath: 'SKILL.md',
+    licence: 'Apache-2.0',
+    why:
+      'Cinematic shot design for product promos — shot recipes, beat sync, sound design and edit ' +
+      'structure. Load it before designing any promo or reel; it is what stops the motion looking generic.',
+  },
 ];
 
 const raw = (repo, filePath) =>

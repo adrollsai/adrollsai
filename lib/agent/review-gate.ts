@@ -43,6 +43,15 @@ export interface ReviewPolicy {
   actionType: ReviewActionType;
   /** One sentence the owner reads: why this needs their eyes. */
   why: string;
+  /**
+   * Optional condition on the CALL. When it returns false the call runs ungated.
+   *
+   * Needed because "may this run?" is not always a property of the tool: rendering a cheap draft for the
+   * agent's own checking loop should be free, while the DELIVERY render — the file the owner actually
+   * posts — is exactly the thing that should need a human look first. Gating the tool wholesale would
+   * make the agent ask permission to check its own work.
+   */
+  when?: (input: any) => boolean;
 }
 
 /**
@@ -59,6 +68,17 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   generate_voiceover: { actionType: 'create_asset', why: 'voice generation costs credits' },
   composeVideo: { actionType: 'create_asset', why: 'rendering a film costs credits and sandbox time' },
   composeCreative: { actionType: 'create_asset', why: 'composing a creative costs credits' },
+  // THE DELIVERY RENDER, NOT EVERY RENDER.
+  //
+  // A draft render is how the agent checks its own work — its compositing loop, its frame reviews — and
+  // gating that would mean asking permission to look at its own output. The DELIVERY render is the file
+  // the owner posts, and that is the one a human should see first. This is also what lets the flow be:
+  // storyboard and drafts first, approval, then the final encode.
+  sandbox_render_hyperframes: {
+    actionType: 'create_asset',
+    why: 'it produces the final video file the owner will publish',
+    when: (input: any) => String(input?.quality ?? '').trim().toLowerCase() === 'delivery',
+  },
 
   // ── the owner's ad budget
   meta_mcp_launch_leadgen_campaign: { actionType: 'ad_spend', why: 'it launches a campaign that spends real ad budget' },
@@ -361,6 +381,12 @@ export function applyReviewGate(
       // attempt at this failed silently.
       inputSchema: withApprovalId(definition.inputSchema),
       execute: async (input: any, ...rest: any[]) => {
+        // A conditional policy can let this particular call through — e.g. only the DELIVERY render of a
+        // film is gated, not the drafts the agent renders to check its own work.
+        if (policy.when && !policy.when(input)) {
+          return definition.execute(input, ...rest);
+        }
+
         const match = await findApproval(store, policy, input);
         if (!match) {
           const cleanInput = stripApprovalId(input);
