@@ -19,6 +19,7 @@ import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceSearchTools } from './tools/reference_search';
+import { createAdCreativeTools } from './tools/ad_creative';
 import { createSkillTools, formatSkillCatalogue } from './tools/skills';
 import { createScrapeTools } from './tools/skills/scrape';
 import { createPublishingTools } from './tools/publishing';
@@ -127,6 +128,9 @@ export async function createAgentContext(
     // Real, licensed reference creatives from the open web — re-hosted on our own storage so a
     // generator receives a URL that cannot 404.
     ...(has('media') ? createReferenceSearchTools(supabase, userId) : {}),
+    // The default ad system: a brief becomes an angle, copy, a complete image prompt, a pixel layout and a
+    // checklist. It is what makes an ad convert when no reference was passed AND when a search came back empty.
+    ...(has('media') ? createAdCreativeTools(supabase, userId) : {}),
     // Business-uploaded skills: always on, because any task might fall inside one.
     ...createSkillTools(supabase, userId),
     ...(has('media') ? create24fpsMotionTools() : {}),
@@ -354,6 +358,7 @@ MEDIA STUDIO â€” the app's own generation models, for actually creating med
 - 'check_media_task': collect the result of any of the above that returned status "processing_in_background".
 - 'list_reference_creatives': the app's built-in reference creatives (35 finished ad designs, each with a public image URL). Use when the user says "like this one", "in that style", or asks what templates exist. Pass the chosen url to generate_ai_image as referenceImageUrls â€” and be clear the reference is a style guide, never their own asset.
 - 'get_creative_rules': the house visual rules for this business's vertical (composition, typography, lighting, what to avoid). Fetch these before writing any branded graphic or ad-creative prompt; the dashboard applies them automatically, the agent must ask for them.
+- 'build_ad_creative_prompt': the default ad system. Brief in, conversion angle + headline + offer + CTA + a complete imagePrompt + a pixel layout + a verification checklist out. Use it for every ad, with or without a reference.
 - 'search_24fps_motion_graphics', 'get_24fps_clip_source', 'search_24fps_editor_presets', 'get_24fps_editor_preset': search 7,000+ motion graphic clips, presets and GSAP templates.
 Voiceover + Grok video + HyperFrames is the full ad pipeline: generate the images, animate them with Grok, narrate with Gemini TTS, then mux or compose in the sandbox.
 REFERENCES ARE THE DEFAULT, NOT A REQUEST — nobody should have to ask you to look.
@@ -362,6 +367,23 @@ REFERENCES ARE THE DEFAULT, NOT A REQUEST — nobody should have to ask you to l
   e.g. "creative ads for a cinematography course") BEFORE you write a single prompt${has('vision') ? ", look at the best two or three with 'analyze_image_with_gemini'" : ', look at the best two or three'}, and say which one you followed and what you took from it.
 - If the owner DID hand you a reference image or link, use THAT first — look at it, and follow it. Finding your own
   is the fallback, not the first move.
+EVERY AD IS COMPILED, NOT IMPROVISED — the default that holds when nobody passes a reference.
+A reference decides the LOOK. It does not decide the ARGUMENT, and a search can return nothing without the ad
+getting worse. So for any ad, poster, offer card, campaign creative or reel:
+- Call 'build_ad_creative_prompt' FIRST, every time — with a reference, without a reference, and especially when
+  'find_reference_creatives' came back empty. Give it the product, the offer exactly as it should appear, the
+  audience, the place, the format and every FACT the owner actually supplied. It returns the conversion angle
+  (and why it chose it), the headline and subhead, the offer line, one call to action, a complete imagePrompt, a
+  layout in real pixels with safe areas, a measured contrast verdict, video beats for 9:16, and a checklist.
+- Then build: pass its imagePrompt to 'generate_ai_image', or implement its layout exactly in HTML. A reference
+  image URL sits alongside that prompt and changes the styling, never the structure.
+- IT IS A FLOOR, NOT A CEILING. Improve the copy if you can, but do not quietly drop the hierarchy: one dominant
+  message, the offer in figures, one CTA, type legible at the size it will be seen.
+- ANYTHING IT RETURNS AS [NEEDS: …] IS A CLAIM YOU DO NOT HAVE. Ask the owner for it, or pick a different angle
+  with 'avoid'. Never fill a missing deadline, seat count, result or statistic with something plausible — an
+  invented claim in a client's ad is a legal exposure, not a creative choice.
+- VERIFY IT BEFORE SHOWING IT: check the image or preview against its 'checklist' (reads at 540px, one CTA, the
+  contrast number passes, nothing clipped by the safe area). If a check fails, fix it and say what you changed.
 - A video the owner supplies as a reference is WATCHED FIRST, before anything else happens: ${has('vision') ? "call 'analyze_video_with_gemini' on it, report" : 'report'} its hook, pacing, shot list, captions and end card, and only then decide what to build. Never design a film for a reference you have not looked at.
 REFERENCE-FIRST VIDEO — how a video gets made here, in this order. Do not skip a step and do not reorder them:
 0. LOAD THE SHOT-DESIGN SKILL BEFORE YOU DESIGN ANY FILM. Call get_skill('video-shotcraft'). It is a vendored
