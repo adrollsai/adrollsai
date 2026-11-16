@@ -13,6 +13,7 @@
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
+import { googleImagesConfigured, parseBingImages } from '../lib/agent/tools/reference_search';
 
 dotenv.config({ path: '.env.local', quiet: true });
 
@@ -90,6 +91,33 @@ check(
   String(result?.note ?? '').slice(0, 70),
 );
 
+// ── The engine question the owner actually raised: where did this come from?
+console.log('\n▸ it searched a real web image index, and says which');
+const engines: string[] = result?.engines ?? [];
+console.log(`  engines: ${engines.join(', ') || '(none)'}`);
+check('at least one real web engine answered', engines.length >= 1, engines.join(', '));
+check(
+  'the engines are web image indexes, not the CC stock library',
+  engines.every((e) => /google-images|bing-images|duckduckgo-images/.test(e)),
+  engines.join(', '),
+);
+check(
+  'each reference names the engine that found it',
+  refs.every((r) => /google-images|bing-images|duckduckgo-images/.test(String(r.source ?? ''))),
+  [...new Set(refs.map((r) => r.source))].join(', '),
+);
+check(
+  'and NOT ONE of them is CC stock standing in for a web result',
+  refs.every((r) => r.licence !== 'cc0' && r.licence !== 'pdm' && r.licence !== 'by' && r.licence !== 'by-sa'),
+  'this is the bug the owner caught: a web search returning a stock photo of a camera',
+);
+check(
+  'Google Images takes priority when the deployment is keyed for it',
+  googleImagesConfigured({ GOOGLE_CSE_KEY: 'k', GOOGLE_CSE_CX: 'c' } as any) === true &&
+    googleImagesConfigured({} as any) === false,
+  googleImagesConfigured() ? 'keyed — Google Images is the primary engine' : 'no key — Bing + DuckDuckGo',
+);
+
 console.log('\n▸ the URLs a viewer would receive actually resolve');
 for (const ref of refs) {
   const res = await fetch(ref.url, { method: 'HEAD' }).catch(() => null);
@@ -123,19 +151,42 @@ const videoRes = await tool.execute({ query: 'cinematic reel', kind: 'video', li
 check('a video search returns guidance rather than pretending', /search_24fps_motion_graphics/.test(String(videoRes?.guidance ?? '')));
 check('and it returns no fabricated video URLs', (videoRes?.references ?? []).length === 0);
 
-console.log('\n▸ a hopeless query never fabricates');
+console.log('\n▸ a hopeless query never fabricates, and never hides behind stock');
 const none = await tool.execute({ query: 'zzzqqqxxxyyy nonexistent subject 9921', kind: 'image', limit: 2 }, {} as any);
-// The web search degrades to licensed media by design, so the honest contract is not "always zero
-// results" — it is "never invent one". Either it says plainly that it found nothing, or everything it
-// returns is a real, licensed reference.
-const nothing = none?.success === false && /could not find a reference/i.test(String(none?.error ?? ''));
-const realOnly = (none?.references ?? []).length === 0 ||
-  (none?.references ?? []).every((r: any) => /^https?:\/\//.test(String(r.url)) && r.licence !== 'inspiration-fabricated');
+// The honest contract is not "always zero results" — it is "never invent one, and never quietly swap in
+// public-domain stock to look successful". Either it says it found nothing, or what it returned really
+// came off a web image index.
+const saidNothing = none?.success === false && /No web reference found/i.test(String(none?.error ?? ''));
+const webOnly = (none?.references ?? []).length === 0 ||
+  (none?.references ?? []).every((r: any) => /^https?:\/\//.test(String(r.url)) && r.licence === 'inspiration');
 check(
-  'it either says it found nothing, or returns only real licensed references',
-  nothing || realOnly,
-  nothing ? String(none?.error ?? '').slice(0, 60) : `${(none?.references ?? []).length} licensed fallback(s)`,
+  'it either says it found nothing, or returns only real web references',
+  saidNothing || webOnly,
+  saidNothing ? String(none?.error ?? '').slice(0, 70) : `${(none?.references ?? []).length} web result(s)`,
 );
+
+console.log('\n▸ the results parser, on real markup, with no network');
+// A trimmed copy of an actual Bing attribute (Facebook ad, lookaside wrapper + thumbnail), so the parser is
+// pinned to the shape that exists rather than to a shape I imagined.
+const FIXTURE =
+  '<a class="iusc" m="{&quot;cid&quot;:&quot;1&quot;,&quot;purl&quot;:&quot;https://www.facebook.com/somepage/photos/1/&quot;,' +
+  '&quot;murl&quot;:&quot;https://lookaside.fbsbx.com/lookaside/crawler/media/?media_id=1&quot;,' +
+  '&quot;turl&quot;:&quot;https://ts4.mm.bing.net/th?id=OIP.abc&amp;pid=15.1&quot;,' +
+  '&quot;t&quot;:&quot;Learn Cinematography&quot;}"></a>' +
+  '<a class="iusc" m="{&quot;murl&quot;:&quot;https://cdn.example.com/poster.jpg&quot;,' +
+  '&quot;purl&quot;:&quot;https://example.com/course&quot;,&quot;t&quot;:&quot;Film School Poster&quot;}"></a>';
+const parsed = parseBingImages(FIXTURE, 3);
+check('the parser reads Bing results out of real markup', parsed.length === 2, `${parsed.length} parsed`);
+check(
+  'it keeps the full-size URL, the page it came from and the thumbnail fallback',
+  parsed[0]?.url.startsWith('https://lookaside.fbsbx.com') &&
+    parsed[0]?.landingUrl === 'https://www.facebook.com/somepage/photos/1/' &&
+    /^https:\/\/ts4\.mm\.bing\.net/.test(String(parsed[0]?.thumbnail)),
+  `${parsed[0]?.creator} / thumb=${Boolean(parsed[0]?.thumbnail)}`,
+);
+check('html entities in the markup are decoded, not left raw', parsed[0]?.thumbnail?.includes('&pid=') === true);
+check('a plain CDN result parses too', parsed[1]?.url === 'https://cdn.example.com/poster.jpg');
+check('and every parsed result is labelled inspiration, never a licence', parsed.every((p) => p.licence === 'inspiration'));
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

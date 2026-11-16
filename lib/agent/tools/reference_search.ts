@@ -8,12 +8,19 @@
  *
  * THE TWO THINGS THAT MAKE THIS SAFE RATHER THAN SKETCHY
  *
- *   1. LICENSED SOURCES, NOT SCRAPING. Results come from Openverse, which indexes CC0 / public-domain /
- *      CC-BY media and returns licence + creator + source page for every item. That is the difference
- *      between "I found a picture" and "I found a picture I am allowed to use, and here is who to credit".
- *      Deliberately not scraping Meta's Ad Library or Google Images: those have no licence metadata, and
- *      the Ad Library API is scoped to political ads, so a crawler there would be a ToS problem with no
- *      upside.
+ *   1. A REAL WEB IMAGE SEARCH, IN A MEASURED ORDER. Google Images is the search the owner asks for, and it is
+ *      gated behind a key rather than faked: the official Custom Search JSON API (searchType=image) is used the
+ *      moment GOOGLE_CSE_KEY + GOOGLE_CSE_CX are set. Everything else about Google Images was measured and
+ *      found closed — `google.com/search?tbm=isch` returns a 95 KB JavaScript shell with ZERO image URLs, the
+ *      long-standing `asearch=ichunk` async endpoint now 404s, and a fetch from our own sandbox IP gets a 302
+ *      (the sandbox also has no browser to fall back on). So when there is no key we do not pretend: we search
+ *      a different real index of the same web — Bing Images, then DuckDuckGo — and we report which engine
+ *      answered. That is the difference between "references from the web" and "references from a stock library".
+ *
+ *      OPENVERSE IS NOT A FALLBACK. It indexes CC0/public-domain media, which is the right corpus only when the
+ *      caller passes licensedOnly:true. Using it to pad an empty web search is how a search for a competitor's
+ *      cinematography ad came back with a photo of a camera — the owner noticed, and it was wrong: an unrelated
+ *      reference is worse than none, because the agent will faithfully copy its look.
  *
  *   2. PERSISTED, NOT HOTLINKED. Generators need a URL they can fetch. Random internet URLs rot, block
  *      hotlinking, or expire between the search and the generation call — so each accepted reference is
@@ -40,6 +47,10 @@ interface Candidate {
   creator: string | null;
   width: number | null;
   height: number | null;
+  /** Which engine found it. Shown to the owner, so a reference is never anonymised into "the web". */
+  source: string;
+  /** Set for web results whose full-size URL may be an HTML wrapper; tried when `url` is not an image. */
+  thumbnail?: string | null;
 }
 
 function normaliseCandidate(raw: any): Candidate | null {
@@ -55,6 +66,7 @@ function normaliseCandidate(raw: any): Candidate | null {
     creator: raw?.creator ? String(raw.creator).slice(0, 80) : null,
     width: Number.isFinite(Number(raw?.width)) ? Number(raw.width) : null,
     height: Number.isFinite(Number(raw?.height)) ? Number(raw.height) : null,
+    source: 'openverse',
   };
 }
 
@@ -108,15 +120,15 @@ export function queryLadders(query: string): string[] {
 /**
  * Real web image search — the corpus that is actually useful for inspiration.
  *
- * WHY NOT GOOGLE IMAGES (measured, not assumed): a plain fetch of
- * `google.com/search?tbm=isch` returns a ~95 KB JavaScript shell with ZERO image URLs in it. Google
- * Images needs a browser and blocks datacenter IPs, so scraping it from a Vercel function gets an empty
- * page and scraping it from a sandbox gets a captcha. The official Programmable Search JSON API is the
- * clean route and needs a key + CX, which this deployment does not have.
+ * WHY NOT GOOGLE IMAGES BY DEFAULT (measured, not assumed — see the header): the HTML endpoint is a JS shell,
+ * the legacy async endpoint 404s, and our sandbox IP is answered with a 302 and has no browser to drive. The
+ * clean route is the official Programmable Search JSON API, which needs a key and a CX that this deployment
+ * does not carry; when it does, `searchGoogleImages` is tried first.
  *
- * DuckDuckGo's image endpoint returns what we actually want: real ad creatives, course posters, Pinterest
- * pins — 100 results for "creative ads for cinematography course", including live Facebook ad images.
- * That is the difference between a public-domain photo of a camera and an actual competitor's ad.
+ * Bing's image endpoint returns what we actually want and needs no key: 35 real results per page for a
+ * cinematography query, including live Facebook ads (their lookaside wrapper URLs are why every candidate
+ * carries a thumbnail fallback). DuckDuckGo's `i.js` is the second index, kept because it finds Pinterest pins
+ * and course posters Bing sometimes buries.
  *
  * TWO HONEST CAVEATS, both handled in the output rather than hidden:
  *   - these are somebody else's copyrighted ads, so they are INSPIRATION: look at them, take the layout
@@ -125,54 +137,262 @@ export function queryLadders(query: string): string[] {
  *   - some result URLs are HTML wrappers (Facebook's lookaside redirect), so each candidate is validated
  *     as an image and falls back to its thumbnail before being accepted.
  */
-async function searchWebImages(query: string, limit: number): Promise<Candidate[]> {
-  const UA =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
-  // A vqd token is required, and it only comes from the HTML page.
-  const tokenPage = await fetch(
-    `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
-    { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) },
+/** Decode the handful of entities that appear inside search-engine JSON attributes. */
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+/** Is the official Google Images API configured? Checked per call so a key can be added without a deploy. */
+export function googleImagesConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(
+    (env.GOOGLE_CSE_KEY || env.GOOGLE_SEARCH_API_KEY) && (env.GOOGLE_CSE_CX || env.GOOGLE_SEARCH_CX),
   );
-  const tokenHtml = await tokenPage.text();
-  const vqd = /vqd=["']?([\d-]+)["']?/.exec(tokenHtml)?.[1];
-  if (!vqd) return [];
+}
 
-  const res = await fetch(
-    `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,&p=1`,
-    {
-      headers: { 'User-Agent': UA, Referer: 'https://duckduckgo.com/', Accept: 'application/json' },
+/**
+ * Google Images, through the official Programmable Search JSON API.
+ *
+ * This is the real thing the owner asked for — Google's own image index, legally, with a quota instead of a
+ * captcha. It returns nothing when the key is absent, which is why the ladder has real engines underneath it.
+ */
+async function searchGoogleImages(query: string, limit: number): Promise<Candidate[]> {
+  const key = process.env.GOOGLE_CSE_KEY || process.env.GOOGLE_SEARCH_API_KEY;
+  const cx = process.env.GOOGLE_CSE_CX || process.env.GOOGLE_SEARCH_CX;
+  if (!key || !cx) return [];
+
+  try {
+    const params = new URLSearchParams({
+      key,
+      cx,
+      q: query,
+      searchType: 'image',
+      num: String(Math.min(Math.max(limit * 2, 6), 10)),
+      safe: 'off',
+      imgSize: 'large',
+    });
+    const res = await fetch(`https://www.googleapis.com/customsearch/v1?${params.toString()}`, {
       signal: AbortSignal.timeout(20_000),
-    },
-  );
-  if (!res.ok) return [];
-  const body: any = await res.json().catch(() => ({}));
+    });
+    if (!res.ok) return [];
+    const body: any = await res.json().catch(() => ({}));
+    return (body?.items ?? [])
+      .map((raw: any): Candidate | null => {
+        const url = String(raw?.link ?? '').trim();
+        if (!/^https?:\/\//i.test(url)) return null;
+        const width = Number(raw?.image?.width) || 0;
+        const height = Number(raw?.image?.height) || 0;
+        if (width && height && (width < 400 || height < 400)) return null;
+        return {
+          title: String(raw?.title ?? 'Reference').trim().slice(0, 120) || 'Reference',
+          url,
+          landingUrl: raw?.image?.contextLink ? String(raw.image.contextLink) : null,
+          licence: 'inspiration',
+          licenceVersion: null,
+          creator: raw?.displayLink ? String(raw.displayLink).slice(0, 60) : null,
+          width: width || null,
+          height: height || null,
+          source: 'google-images',
+          thumbnail: raw?.image?.thumbnailLink ? String(raw.image.thumbnailLink) : null,
+        };
+      })
+      .filter(Boolean) as Candidate[];
+  } catch {
+    return [];
+  }
+}
 
-  return (body?.results ?? [])
-    .map((raw: any) => {
-      const width = Number(raw?.width) || 0;
-      const height = Number(raw?.height) || 0;
-      const image = String(raw?.image ?? '').trim();
-      const thumbnail = String(raw?.thumbnail ?? '').trim();
-      // Prefer the full-size original, keep the thumbnail as a fallback for wrapper URLs.
-      const url = /^https?:\/\//i.test(image) ? image : /^https?:\/\//i.test(thumbnail) ? thumbnail : '';
-      if (!url) return null;
-      // Tiny results and banners are not useful composition references.
-      if (width && height && (width < 400 || height < 400)) return null;
-      return {
-        title: String(raw?.title ?? 'Reference').trim().slice(0, 120) || 'Reference',
-        url,
-        landingUrl: raw?.url ? String(raw.url) : null,
-        licence: 'inspiration',
-        licenceVersion: null,
-        creator: raw?.source ? String(raw.source).slice(0, 60) : null,
-        width: width || null,
-        height: height || null,
-        thumbnail: /^https?:\/\//i.test(thumbnail) ? thumbnail : null,
-      } as Candidate & { thumbnail: string | null };
-    })
-    .filter(Boolean)
-    .slice(0, Math.max(limit * 3, 9)) as (Candidate & { thumbnail: string | null })[];
+/**
+ * Parse Bing's image results out of the page.
+ *
+ * Each result is a single HTML-escaped JSON attribute (`m="{&quot;murl&quot;:...}"`) holding the full image
+ * URL, the page it came from, a thumbnail and the title, so one regex plus a decode gets every field. Kept pure
+ * and exported so the same parser serves the direct fetch AND the sandbox fetch — two code paths, one parse.
+ */
+export function parseBingImages(html: string, limit: number): Candidate[] {
+  const out: Candidate[] = [];
+  for (const attr of html.match(/m="\{[^"]*?\}"/g) || []) {
+    let blob: any;
+    try {
+      blob = JSON.parse(decodeEntities(attr.slice(3, -1)));
+    } catch {
+      continue;
+    }
+    const murl = String(blob?.murl ?? '').trim();
+    const turl = String(blob?.turl ?? '').trim();
+    const image = /^https?:\/\//i.test(murl) ? murl : /^https?:\/\//i.test(turl) ? turl : '';
+    if (!image) continue;
+    out.push({
+      title: String(blob?.t ?? 'Reference').trim().slice(0, 120) || 'Reference',
+      url: image,
+      landingUrl: /^https?:\/\//i.test(String(blob?.purl ?? '')) ? String(blob.purl) : null,
+      licence: 'inspiration',
+      licenceVersion: null,
+      creator: blob?.purl ? hostOf(String(blob.purl)) : null,
+      width: null,
+      height: null,
+      source: 'bing-images',
+      thumbnail: /^https?:\/\//i.test(turl) && turl !== image ? turl : null,
+    });
+    if (out.length >= Math.max(limit * 3, 9)) break;
+  }
+  return out;
+}
+
+const bingSearchUrl = (query: string) =>
+  `https://www.bing.com/images/search?q=${encodeURIComponent(query)}&form=HDRSC2&first=1`;
+
+/** Bing Images — a real web index, no key required. */
+async function searchBingImages(query: string, limit: number): Promise<Candidate[]> {
+  try {
+    const res = await fetch(bingSearchUrl(query), {
+      headers: { 'User-Agent': BROWSER_UA, 'Accept-Language': 'en-US,en;q=0.9', Accept: 'text/html' },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return [];
+    return parseBingImages(await res.text(), limit);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The same Bing search, run from the SANDBOX instead of the app server.
+ *
+ * This exists because of a real asymmetry: our serverless functions egress from a datacenter range that search
+ * engines are entitled to throttle, while the sandbox is a different machine that can be told to try again. When
+ * every in-process engine comes back empty, one sandbox fetch is cheap insurance against "the reference search
+ * is broken in production but fine on my laptop" — which is exactly the class of bug that made the owner ask
+ * why their reference search was returning stock photos.
+ *
+ * No browser needed for this: Bing's results are in the HTML. (A browser IS installed in the sandbox and it does
+ * load pages, but Google answers it with HTTP 429 "unusual traffic" — measured — so this is a network change, not
+ * a rendering one. See googleImagesConfigured for the sanctioned route to Google's own index.)
+ */
+async function searchBingViaSandbox(query: string, limit: number): Promise<Candidate[]> {
+  try {
+    // Imported lazily so a deployment without an E2B key still loads this tool.
+    const { executeInE2BSandbox } = await import('@/lib/agent/sandbox');
+    const res = await executeInE2BSandbox({
+      command:
+        `curl -sS --max-time 25 -A "${BROWSER_UA}" ` +
+        `-H "Accept-Language: en-US,en;q=0.9" ` +
+        `"${bingSearchUrl(query).replace(/"/g, '\\"')}"`,
+      userId: 'reference-search',
+      timeoutMs: 90_000,
+    });
+    if (!res.stdout) return [];
+    return parseBingImages(res.stdout, limit);
+  } catch {
+    return [];
+  }
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').slice(0, 60);
+  } catch {
+    return null;
+  }
+}
+
+/** DuckDuckGo's image index — the second web engine. */
+async function searchWebImages(query: string, limit: number): Promise<Candidate[]> {
+  try {
+    // A vqd token is required, and it only comes from the HTML page.
+    const tokenPage = await fetch(
+      `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
+      { headers: { 'User-Agent': BROWSER_UA }, signal: AbortSignal.timeout(15_000) },
+    );
+    const tokenHtml = await tokenPage.text();
+    const vqd = /vqd=["']?([\d-]+)["']?/.exec(tokenHtml)?.[1];
+    if (!vqd) return [];
+
+    const res = await fetch(
+      `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,&p=1`,
+      {
+        headers: { 'User-Agent': BROWSER_UA, Referer: 'https://duckduckgo.com/', Accept: 'application/json' },
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    if (!res.ok) return [];
+    const body: any = await res.json().catch(() => ({}));
+
+    return (body?.results ?? [])
+      .map((raw: any): Candidate | null => {
+        const width = Number(raw?.width) || 0;
+        const height = Number(raw?.height) || 0;
+        const image = String(raw?.image ?? '').trim();
+        const thumbnail = String(raw?.thumbnail ?? '').trim();
+        // Prefer the full-size original, keep the thumbnail as a fallback for wrapper URLs.
+        const url = /^https?:\/\//i.test(image) ? image : /^https?:\/\//i.test(thumbnail) ? thumbnail : '';
+        if (!url) return null;
+        // Tiny results and banners are not useful composition references.
+        if (width && height && (width < 400 || height < 400)) return null;
+        return {
+          title: String(raw?.title ?? 'Reference').trim().slice(0, 120) || 'Reference',
+          url,
+          landingUrl: raw?.url ? String(raw.url) : null,
+          licence: 'inspiration',
+          licenceVersion: null,
+          creator: raw?.source ? String(raw.source).slice(0, 60) : null,
+          width: width || null,
+          height: height || null,
+          source: 'duckduckgo-images',
+          thumbnail: /^https?:\/\//i.test(thumbnail) && thumbnail !== url ? thumbnail : null,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, Math.max(limit * 3, 9)) as Candidate[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The ladder: Google Images if it is configured, then Bing, then DuckDuckGo.
+ *
+ * Each engine is asked in turn until there are enough deduplicated candidates, so a single blocked or empty
+ * engine costs one request instead of the whole search. `engines` is returned rather than swallowed, because
+ * "which engine answered" is something the owner is entitled to see.
+ */
+export async function searchReferenceImages(
+  query: string,
+  limit: number,
+): Promise<{ candidates: Candidate[]; engines: string[] }> {
+  const engines: string[] = [];
+  const collected: Candidate[] = [];
+  const seen = new Set<string>();
+
+  const order: Array<{ name: string; run: (q: string, n: number) => Promise<Candidate[]> }> = [];
+  if (googleImagesConfigured()) order.push({ name: 'google-images', run: searchGoogleImages });
+  order.push({ name: 'bing-images', run: searchBingImages });
+  order.push({ name: 'duckduckgo-images', run: searchWebImages });
+  // Last rung: the same Bing index from a different machine, for when this server's egress is throttled.
+  order.push({ name: 'bing-images-via-sandbox', run: searchBingViaSandbox });
+
+  for (const engine of order) {
+    if (collected.length >= limit) break;
+    const found = await engine.run(query, limit - collected.length).catch(() => []);
+    if (found.length) engines.push(engine.name);
+    for (const candidate of found) {
+      if (collected.length >= limit) break;
+      // Dedupe on the image URL: the same ad is usually served from several CDNs across two indexes.
+      const key = candidate.url.replace(/^https?:\/\//, '').split('?')[0];
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(candidate);
+    }
+  }
+
+  return { candidates: collected, engines };
 }
 
 /**
@@ -252,7 +472,7 @@ async function persist(candidate: Candidate, userId: string): Promise<{ url: str
     // non-image response is expected rather than exceptional — fall back to the thumbnail.
     const primary = await tryFetch(candidate.url);
     if (primary) return primary;
-    const thumbnail = (candidate as any).thumbnail;
+    const thumbnail = candidate.thumbnail;
     if (thumbnail && thumbnail !== candidate.url) return await tryFetch(thumbnail);
     return null;
   } catch {
@@ -271,10 +491,13 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
      */
     find_reference_creatives: tool({
       description:
-        'Search the web for REAL creative ads and designs that match a brief, and return them as ' +
+        'Search the WEB for REAL creative ads and designs that match a brief, and return them as ' +
         'inspiration you can SEE. Use it for things like "creative ads for a cinematography course", ' +
         '"festive diwali sale ad", "gym membership instagram post" — it returns actual ads other people ' +
         'are running (Facebook ads, Pinterest pins, course posters), re-hosted on our own storage. ' +
+        'It searches real image indexes: Google Images when the deployment is keyed for it, otherwise Bing ' +
+        'Images and DuckDuckGo, and it tells you which engine answered in `engines` and on each reference ' +
+        '(`source`). It does NOT substitute stock photography for a web search that came up empty. ' +
         'Then call analyze_image_with_gemini on the ones that fit, take the layout, type treatment, ' +
         'palette and offer hierarchy, and MAKE YOUR OWN. ' +
         'THESE ARE SOMEBODY ELSE\'S COPYRIGHTED ADS: they are inspiration only, never a deliverable, ' +
@@ -319,32 +542,40 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
         }
 
         try {
-          // Real ads first — that is what "find a good reference for this use case" means. Public-domain
-          // stock is the explicit alternative, and also the fallback when the web search finds nothing
-          // usable (a blocked query should degrade to something rather than to nothing).
-          const candidates = licensedOnly
-            ? await searchOpenverse(query, wanted)
-            : (await searchWebImages(query, wanted)).concat([]);
+          // Real ads first — that is what "find a good reference for this use case" means. Public-domain stock
+          // is the explicit alternative (licensedOnly), and it is NEVER a silent stand-in for a web search that
+          // came up empty: a stock photo of a camera in place of a competitor's cinematography ad is exactly the
+          // wrong answer, because the agent then copies a look nobody asked for.
+          let candidates: Candidate[] = [];
+          let engines: string[] = [];
 
-          const pool = candidates.length
-            ? candidates
-            : licensedOnly
-              ? []
-              : await searchOpenverse(query, wanted);
+          if (licensedOnly) {
+            candidates = await searchOpenverse(query, wanted);
+            if (candidates.length) engines = ['openverse'];
+          } else {
+            const ladder = await searchReferenceImages(query, wanted);
+            candidates = ladder.candidates;
+            engines = ladder.engines;
+          }
 
-          if (!pool.length) {
+          if (!candidates.length) {
             return {
               success: false,
-              error:
-                `No licensed reference found for "${query}". That is an answer, not a failure: say you could ` +
-                'not find a reference and design from the brand profile and the brief instead. Do not invent a ' +
-                'reference you did not see.',
+              error: licensedOnly
+                ? `No Creative-Commons reference found for "${query}". That is an answer, not a failure: say you ` +
+                  'could not find a licensed reference and design from the brand profile and the brief instead. ' +
+                  'Do not invent a reference you did not see.'
+                : `No web reference found for "${query}" (tried ${googleImagesConfigured() ? 'Google Images, Bing, DuckDuckGo' : 'Bing, DuckDuckGo'}). ` +
+                  'Do not substitute a stock photo — it would be a different picture of a different thing. Try a ' +
+                  'shorter, more literal query (e.g. "cinematography course ad"), or design from the brand ' +
+                  'profile and the brief and say plainly that you found no reference.',
               references: [],
+              engines,
             };
           }
 
           const persisted: any[] = [];
-          for (const candidate of pool) {
+          for (const candidate of candidates) {
             if (persisted.length >= wanted) break;
             const stored = await persist(candidate, userId);
             if (!stored) continue;
@@ -354,6 +585,7 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
               url: stored.url,
               sourceUrl: candidate.landingUrl ?? candidate.url,
               title: candidate.title,
+              source: candidate.source,
               licence: candidate.licence,
               licenceVersion: candidate.licenceVersion,
               creator: candidate.creator,
@@ -384,6 +616,7 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
             kind: 'image',
             query,
             count: persisted.length,
+            engines,
             references: persisted,
             note: anyInspiration
               ? 'THESE ARE OTHER PEOPLE\'S ADS — INSPIRATION ONLY. Look at them with ' +
