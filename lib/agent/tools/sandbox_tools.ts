@@ -12,7 +12,9 @@ import {
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   buildHyperFramesRenderScript,
+  decideRenderSlice,
   MAX_SLICE_SECONDS,
+  MAX_STALLED_SLICES,
   maxDrawnSeconds,
   normaliseCompositionHtml,
   planRenderSpans,
@@ -527,6 +529,10 @@ python3 render_card.py
           let lastError = '';
           let spansDone = 0;
           let spansTotal = spans.length;
+          // Consecutive slices that finished with no new span. A broken composition can render
+          // nothing at all, and that must stop quickly and say why instead of melting the sandbox.
+          let stalledSlices = 0;
+          let stallReason = '';
 
           for (let slice = 0; slice < 40; slice++) {
             // E2B cuts a command at ~300s, so a slice asks for less than that however much time
@@ -577,10 +583,32 @@ python3 render_card.py
             if (videoUrl) break;
 
             const partsMatch = /HF-PARTS:\s*(\d+)\s*\/\s*(\d+)/.exec(lastRes!.stdout || '');
+            const previousSpansDone = spansDone;
             spansDone = partsMatch ? Number(partsMatch[1]) : spansDone;
             spansTotal = partsMatch ? Number(partsMatch[2]) : spansTotal;
             // Nothing progressed and nothing is pending: a real failure, let the caller see it.
             if (!partsMatch || spansDone >= spansTotal) break;
+
+            // A composition that renders NOTHING makes no progress, and this loop used to spend a
+            // full slice on it up to forty times — over two hours of sandbox time for a film that
+            // could never render, reported as if it were merely slow. decideRenderSlice() stops it.
+            const decision = decideRenderSlice({
+              previousSpansDone,
+              spansDone,
+              spansTotal,
+              stalledSlices,
+              hasVideo: false,
+            });
+            stalledSlices = decision.stalledSlices;
+            if (!decision.progressed) {
+              stallReason = renderLogTail(lastRes!.stdout, lastRes!.stderr) || '';
+            }
+            if (decision.action === 'stop-stalled') {
+              console.warn(
+                `[HyperFrames] ${stalledSlices} slices made no progress at ${spansDone}/${spansTotal} spans — stopping`,
+              );
+              break;
+            }
             console.log(`[HyperFrames] slice ${slice + 1}: ${spansDone}/${spansTotal} spans, continuing`);
           }
 
@@ -617,9 +645,18 @@ python3 render_card.py
             // space", a lint error). Returning a bare "exit status 1" left the agent guessing — it
             // spent whole minutes probing paths — so the tail goes into the error the model reads.
             const logTail = renderLogTail(res.stdout, res.stderr);
+            // A stalled render is not "out of time" — it will never finish, and telling the agent
+            // otherwise makes it call again for another two hours. Say which it was.
             const cause = missing.length
               ? `sandbox is missing ${missing.join(', ')} — the stock E2B image does not ship them; set E2B_TEMPLATE to a pre-built image`
-              : (logTail || res.error || 'no output produced').slice(0, 1200);
+              : stalledSlices >= MAX_STALLED_SLICES
+                ? `the composition rendered no frames in ${stalledSlices} consecutive slices ` +
+                  `(${spansDone}/${spansTotal} spans), so it will never finish — it is not slow, it is ` +
+                  `broken. Check that the root element carries data-composition-id and data-duration, that a ` +
+                  `GSAP timeline is registered on window.__timelines paused, and that the composition does not ` +
+                  `rely on a <video>/<audio> element or any network load during the seek. ` +
+                  `${stallReason || logTail || ''}`.slice(0, 1200)
+                : (logTail || res.error || 'no output produced').slice(0, 1200);
             throw new Error(`HyperFrames render did not produce ${safeName}/out.mp4: ${cause}`);
           }
 

@@ -74,6 +74,67 @@ export function renderSliceBudgetSeconds(remainingMs: number): number {
 export const MAX_SLICE_SECONDS = 210;
 
 /**
+ * How many consecutive zero-progress slices mean "this composition will never render".
+ *
+ * Measured live: a composition holding a `<video>` element reported `0/1 spans` on every slice.
+ * The resume loop only stopped on the request budget or after FORTY slices, so a broken
+ * composition could burn up to 40 x 210s (over two hours) of sandbox time and then report no
+ * cause at all — which is the same customer experience as "rendering takes 15-30 hours".
+ *
+ * A slice is 210s and a 15-20s span takes well under that at this cost model, so a healthy render
+ * completes at least one span per slice. Three consecutive empty slices is a broken composition,
+ * not a slow one. Three rather than two so a pathologically slow first span still gets a retry.
+ */
+export const MAX_STALLED_SLICES = 3;
+
+export interface RenderSliceProgress {
+  /** Spans finished before this slice. */
+  previousSpansDone: number;
+  /** Spans finished after this slice. */
+  spansDone: number;
+  spansTotal: number;
+  /** Consecutive zero-progress slices BEFORE this one. */
+  stalledSlices: number;
+  /** True when the render produced its stitched MP4. */
+  hasVideo: boolean;
+}
+
+export interface RenderSliceDecision {
+  action: 'stop-done' | 'stop-stalled' | 'stop-no-signal' | 'continue';
+  /** Consecutive zero-progress slices AFTER this slice. */
+  stalledSlices: number;
+  /** True when this slice finished at least one new span. */
+  progressed: boolean;
+}
+
+/**
+ * What the resume loop should do after one slice. PURE, so every case is testable without a sandbox.
+ *
+ * Order matters: a finished MP4 wins over everything; a stalled render is stopped before it is
+ * reported as merely "out of time", because those two need completely different advice.
+ *
+ * The count INCREMENTS on a slice that moved nothing. The first version returned the input unchanged,
+ * so the counter could never reach the cap and the guard would have been inert — a brake that is
+ * never applied. That is exactly the class of bug this function exists to make visible.
+ */
+export function decideRenderSlice(input: RenderSliceProgress): RenderSliceDecision {
+  if (input.hasVideo) {
+    return { action: 'stop-done', stalledSlices: 0, progressed: true };
+  }
+  if (input.spansDone >= input.spansTotal) {
+    // All spans are on disk; the next step is stitching, which this slice did not get to.
+    return { action: 'continue', stalledSlices: 0, progressed: true };
+  }
+  const progressed = input.spansDone > input.previousSpansDone;
+  const stalledSlices = progressed ? 0 : input.stalledSlices + 1;
+  return {
+    action: stalledSlices >= MAX_STALLED_SLICES ? 'stop-stalled' : 'continue',
+    stalledSlices,
+    progressed,
+  };
+}
+
+/**
  * The most film we are willing to DRAW frame by frame.
  *
  * Drawing is roughly 0.07-0.10 seconds per frame in this sandbox, so:
