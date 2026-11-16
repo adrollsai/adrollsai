@@ -102,6 +102,10 @@
     "verify:meta-readiness": "esbuild scripts/verify-meta-readiness.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-meta-ready.mjs --log-level=warning && node .tmp-meta-ready.mjs",
     "verify:site-domain": "esbuild scripts/verify-site-domain.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-site-domain.mjs --log-level=warning && node .tmp-site-domain.mjs",
     "verify:publish-verification": "esbuild scripts/verify-publish-verification.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-publish.mjs --log-level=warning && node .tmp-publish.mjs",
+    "verify:form-to-crm": "esbuild scripts/verify-form-to-crm.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-form-crm.mjs --log-level=warning && node .tmp-form-crm.mjs",
+    "verify:music-bed": "esbuild scripts/verify-music-bed.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-music-bed.mjs --log-level=warning && node .tmp-music-bed.mjs",
+    "verify:video-models-live": "esbuild scripts/verify-video-models-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-models.mjs --log-level=warning && node .tmp-video-models.mjs",
+    "verify:ceo-guide": "esbuild scripts/verify-ceo-guide.ts --bundle --platform=node --format=esm --outfile=.tmp-ceo-guide.mjs --log-level=warning && node .tmp-ceo-guide.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },
