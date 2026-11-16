@@ -53,7 +53,7 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
     // but had nothing to compose. A video request needs both, and `with` only ever
     // adds groups, so naming it here is safe.
     signals:
-      /\b(images?|creatives?|posters?|banners?|thumbnails?|voice ?overs?|narrations?|tts|audio|music|grok|imagine|video|videos|reels?|shorts?|films?|promo|b-?roll|generate (an? )?(image|video|voice)|logos?|graphics?|designs?|diwali|bhai ?dooj|holi|festivals?|wishes|wish)\b/i,
+      /\b(images?|creatives?|posters?|banners?|thumbnails?|voice ?overs?|narrations?|tts|audio|music|grok|imagine|video|videos|reels?|shorts?|films?|promo|b-?roll|generate (an? )?(image|video|voice)|logos?|graphics?|designs?|diwali|bhai ?dooj|holi|festivals?|wishes|wish|ads?|advert\w*|campaign creatives?|social posts?|content|clips?)\b/i,
   },
   meta: {
     signals:
