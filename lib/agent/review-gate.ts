@@ -73,6 +73,10 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   publish_social_post: { actionType: 'whatsapp_broadcast', why: 'it publishes publicly in the business name' },
   site_publish_landing_page: { actionType: 'custom', why: 'it makes a page public in the business name' },
   build_website: { actionType: 'custom', why: 'it publishes a public website in the business name' },
+  // `landing_pages` has no draft/status column, so a page is reachable at its slug the instant the row
+  // exists. Creating one is therefore just as public as publishing one, and it was the only page tool
+  // NOT behind this gate: the prompt claimed "creating a page stages it", and it did not stage anything.
+  create_landing_page: { actionType: 'custom', why: 'the page is live at its slug the moment it is created' },
 
   // ── irreversible
   delete_data: { actionType: 'delete_data', why: 'deleting cannot be undone' },

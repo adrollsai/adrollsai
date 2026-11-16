@@ -189,12 +189,27 @@ export function tierCapacity(tier: CreditTier): TierCapacity {
   };
 }
 
+/**
+ * Seconds as the unit a person actually reads: `45s`, `25 min`.
+ *
+ * The doc comment on `describeTier` has always promised "25 min of video", and the code printed
+ * "1500s" instead. Nobody budgets in fifteen hundred seconds. Anything under two minutes stays in
+ * seconds, because "1.5 min" is worse than "90s".
+ */
+export function formatDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  if (total < 120) return `${total}s`;
+  const minutes = total / 60;
+  return Number.isInteger(minutes) ? `${minutes} min` : `${minutes.toFixed(1)} min`;
+}
+
 /** The pricing-card line: `₹9,999 — 5,000 credits: 500 images, or 25 min of video`. */
 export function describeTier(tier: CreditTier): string {
   const capacity = tierCapacity(tier);
   return (
     `${formatInr(tier.pricePaise)} — ${tier.monthlyCredits.toLocaleString('en-IN')} credits: ` +
-    `${capacity.images} images, or ${capacity.videoSeconds}s of video, or ${capacity.callMinutes} call minutes`
+    `${capacity.images} images, or ${formatDuration(capacity.videoSeconds)} of video, or ` +
+    `${capacity.callMinutes} call minutes`
   );
 }
 

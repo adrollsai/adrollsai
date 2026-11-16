@@ -370,6 +370,81 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
         }
       },
     }),
+
+    /**
+     * "What does my balance actually buy?"
+     *
+     * The pricing table already knew how to say this — `describeTier` renders
+     * "₹9,999 — 5,000 credits: 500 images, or 375s of video, or 1000 call minutes" — but only the
+     * admin ledger route ever called it. So an owner asking "what do 5,000 credits buy?" either got
+     * a number with no units, or the agent did the arithmetic itself and got it wrong.
+     *
+     * The unit prices come from CREDIT_COSTS through the tiers module, not from here, so this tool
+     * cannot drift from the ledger. Balance is the owner's spendable credits (open holds subtracted),
+     * and it is reported as unknown rather than as zero when it cannot be read.
+     */
+    nobogent_credits_explainer: tool({
+      description:
+        'Nobogent App MCP: What the account\'s credits actually buy, and what each plan costs. Reads the REAL ' +
+        'credit unit prices (image, 15s of video, call minute, piece of copy) and the real plan table, plus this ' +
+        'account\'s spendable balance. Use it whenever the owner asks what credits buy, what a plan includes, ' +
+        'how much a video or a call costs, or whether they have enough left — never do that arithmetic yourself.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          // Imported lazily: these modules reach the ledger, and a tool registry build must not.
+          const { CREDIT_TIERS, RECOMMENDED_TIER_ID, describeTier, tierCapacity, paisePerCredit, formatInr } =
+            await import('@/lib/automation/credit-tiers');
+          const { availableCredits, CREDIT_COSTS } = await import('@/utils/credits');
+
+          const balance = await availableCredits(supabase, userId);
+
+          const unitPrices = {
+            image: CREDIT_COSTS.AI_IMAGE_GENERATION,
+            video15s: CREDIT_COSTS.AI_VIDEO_15SEC_CHUNK,
+            callMinute: CREDIT_COSTS.VOICE_CALL_MINUTE,
+            copy: CREDIT_COSTS.AI_COPY_GENERATION,
+          };
+
+          // What THIS balance buys, on the same "alternatives, not a bundle" basis the plans use.
+          const buys =
+            balance === null
+              ? null
+              : {
+                  images: Math.floor(balance / unitPrices.image),
+                  videoSeconds: Math.floor(balance / unitPrices.video15s) * 15,
+                  callMinutes: Math.floor(balance / unitPrices.callMinute),
+                  copy: Math.floor(balance / unitPrices.copy),
+                };
+
+          return {
+            success: true,
+            balance,
+            balanceKnown: balance !== null,
+            balanceNote:
+              balance === null
+                ? 'The balance could not be read. Say that plainly; do not assume zero and do not guess.'
+                : 'Spendable credits after open reservations.',
+            unitPrices,
+            unitNote:
+              'Each figure is the whole units the balance pays for, floored. They are ALTERNATIVES, not a ' +
+              'combined bundle — the same credit is not spent on an image and on a call.',
+            thisBalanceBuys: buys,
+            plans: CREDIT_TIERS.map((tier: any) => ({
+              id: tier.id,
+              price: formatInr(tier.pricePaise),
+              credits: tier.monthlyCredits,
+              paisePerCredit: paisePerCredit(tier),
+              includes: tierCapacity(tier),
+              recommended: tier.id === RECOMMENDED_TIER_ID,
+              summary: describeTier(tier),
+            })),
+          };
+        } catch (err: any) {
+          return { success: false, error: err.message };
+        }
+      },
+    }),
   };
 }
 
