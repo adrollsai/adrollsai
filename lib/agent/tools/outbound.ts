@@ -277,78 +277,72 @@ export async function dispatchVoiceCall(params: {
   }
 
   try {
-    // WHICH PIPELINE ANSWERS — the difference between a call and a silent call.
+    // THE PIPELINE, AND WHY IT IS THE DEFAULT ONE.
     //
-    // The default answer route points at the Gemini Live bridge. Measured on this deployment: that bridge accepts
-    // the media socket, completes its setup handshake, and then sends ZERO audio frames, in L16 and in μ-law. Two
-    // real calls to the owner's phone connected, billed 12 s and 9 s, and nobody heard anything. The Gemini
-    // TTS-Flash pipeline runs on a separate, healthy bridge (its own /tts-flash-health reports gemini-3.8-flash-tts)
-    // and is the pipeline the demo page uses successfully, so an agent call with something to SAY must use it.
-    const { resolveTtsFlashBridgeHttpUrl } = await import('@/utils/app-url');
-    const { DEFAULT_TTS_FLASH_VOICE_ID } = await import('@/utils/tts-flash-config');
-    const ttsBridge = resolveTtsFlashBridgeHttpUrl();
-    const voiceId = DEFAULT_TTS_FLASH_VOICE_ID;
-
-    // The opener: what it says, and how long until it says it. These are two different things, and confusing them
-    // cost a round of wrong fixes, so both are recorded here.
+    // The working demo on this platform (/dashboard/ai-call-demo → /api/voice/demo-call) uses the DEFAULT answer route —
+    // the Gemini Live bridge — which is native speech-to-speech and answers in a few hundred milliseconds. It does not
+    // pass an answerPath, does not prewarm, and does not use the TTS pipeline at all.
     //
-    // TIME TO FIRST WORD is already ~0.2 s, because the bridge renders the greeting to PCM during prewarm — while the
-    // phone is still ringing — and plays it the instant the call is answered. Measured from a real call's recording:
-    // speech starts at 0.0 s. Nothing needs doing to make that faster.
-    //
-    // LENGTH OF THE OPENER is what went wrong. The first call passed a multi-sentence objective as the "reason", the
-    // bridge rendered it into a 25.7-second monologue, the callee interrupted at five seconds, barge-in cut the agent
-    // off, and the bridge dropped its in-flight reply — twelve seconds of billable silence.
-    //
-    // The fix is not just a shorter string. The bridge puts the reason into a sentence: "aapne <reason> ke baare mein
-    // enquiry ki thi na?" — so it has to be a SUBJECT ("Nobogent ki marketing service"), not a clause from the brief.
-    // Capping the objective's first eight words produced "...enquiry about you are an automated assistant calling
-    // from Nobogent", which is worse than long: it is wrong. So the reason is supplied, or derived from the business
-    // name, and the objective is never used as a substitute.
+    // What it DOES do, and what our dispatcher did not, is create a `voice_campaigns` row carrying the script and the
+    // greeting, link it to the lead, and pass its id to the dialler. The bridge reads the campaign from the lead to know
+    // what to say. Without one it connects, completes its handshake and stays mute — which is what produced two calls
+    // that billed 12 s and 9 s in total silence. Chasing that silence, I wrongly concluded the Live bridge was dead and
+    // routed agent calls through the TTS-Flash pipeline (STT → LLM → TTS), which speaks but adds ~2.5 s to every turn.
+    // That was the latency the owner then heard. The bridge was never broken; the call had no script.
     const businessName = await supabase
       .from('profiles')
-      .select('business_name')
+      .select('business_name, industry')
       .eq('id', userId)
       .maybeSingle()
       .then((res: any) => String(res?.data?.business_name ?? '').trim())
       .catch(() => '');
-    const givenReason = String(params.reason ?? '').trim();
-    const reason = (givenReason || (businessName ? `${businessName} ki marketing service` : 'hamari service'))
-      .split(/\s+/)
-      .slice(0, 9)
-      .join(' ')
-      .replace(/[,\s]+$/, '');
 
-    // Warm the opener so the first thing the person hears is not three seconds of silence. The payload mirrors the
-    // demo's exactly, because the demo is the only call path on this platform that is known to speak.
-    await fetch(`${ttsBridge}/tts-flash-prewarm`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        leadId,
-        profileId: userId,
-        voiceId,
-        language: 'hinglish',
-        gender: 'female',
-        prospectName: params.leadName || 'ji',
-        reason,
-        // No `greeting` override: the bridge's template builds "Namaste <name> ji, main <agent> bol rahi hoon
-        // <company> se, aapne <reason> ke baare mein enquiry ki thi na?" and ends with a question. Overriding it was
-        // how the opener got clipped to "Namaste ji", which is not a greeting.
-        // The full objective is the agent's context for the conversation, never what it says first.
-        instruction: params.objective,
-      }),
-      signal: AbortSignal.timeout(12_000),
-    }).catch((err: any) => console.warn('[Outbound] TTS-Flash prewarm failed (dialling anyway):', err?.message));
+    // The opener: short enough to invite a reply, and specific enough to explain the call. The bridge speaks this
+    // verbatim on connect, so it is written once, here, rather than generated from a brief.
+    const openerReason = String(params.reason ?? '').trim();
+    const subject = openerReason || (businessName ? `${businessName} ki marketing service` : 'hamari service');
+    const greeting =
+      `Namaste ${String(params.leadName || '').trim().split(/\s+/)[0] || 'ji'} ji, ` +
+      `main ${businessName || 'Nobogent'} se bol rahi hoon, ${subject} ke baare mein. Do minute baat kar sakte hain?`;
+
+    // The script the Live session speaks from for the rest of the call.
+    const campaignPrompt = [
+      `You are a warm, efficient Indian sales agent calling on behalf of ${businessName || 'the business'}.`,
+      `WHAT THIS CALL IS ABOUT: ${subject}.`,
+      `YOUR OBJECTIVE: ${params.objective}`,
+      'RULES:',
+      '- Speak Hinglish, one or two short sentences per turn. Never monologue.',
+      '- Say you are an AI assistant if asked, and never claim to be human.',
+      '- The greeting has already been spoken. Do not repeat it or re-introduce yourself.',
+      '- Ask one question at a time and let the person answer.',
+      '- Never invent a price, a date, a discount, a guarantee or a result. If you do not know, say the team will confirm.',
+      '- If they are busy, offer to call back and end politely.',
+    ].join('\n');
+
+    const campaignId = await (async () => {
+      const { data: campaign, error } = await supabase
+        .from('voice_campaigns')
+        .insert({
+          user_id: userId,
+          name: `Agent call — ${subject}`.slice(0, 120),
+          audience_filter: { voice_name: 'Aoede', language: 'hinglish', greeting },
+          custom_prompt: campaignPrompt,
+          status: 'running',
+        })
+        .select('id')
+        .single();
+      if (error || !campaign?.id) {
+        console.warn('[Outbound] Could not create the call script campaign:', error?.message);
+        return null;
+      }
+      // The bridge finds the script through the LEAD, so the link matters as much as the row.
+      await supabase.from('leads').update({ voice_campaign_id: campaign.id }).eq('id', leadId);
+      return campaign.id as string;
+    })();
 
     const { triggerOutboundCall } = await import('@/utils/voice-helper');
-    const result = await triggerOutboundCall(supabase, leadId as string, userId, false, undefined, {
+    const result = await triggerOutboundCall(supabase, leadId as string, userId, false, campaignId ?? undefined, {
       allowAfterHours: true,
-      answerPath: `${ttsBridge}/tts-flash-xml`,
-      // The voice must be named: the bridge synthesises the opener from these, and the demo passes them for that
-      // reason. Without a voice id the call connects and stays silent even on the working pipeline.
-      answerParams: { voiceId, gender: 'female' },
-      skipBridgeWarmup: true,
       ...(params.useBluesquareDid ? { forceBluesquareDid: true } : {}),
     });
     if (!result?.success) {

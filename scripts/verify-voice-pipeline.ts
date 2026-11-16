@@ -92,40 +92,52 @@ check(
   (answer.body.match(/voiceId=[^&\s<]+/) ?? ['no voiceId'])[0],
 );
 
-// ── 2. What the agent dials.
-console.log('\n▸ the agent dials that pipeline, with a voice, and not the silent one');
+// ── 2. What the agent dials — and it must be what the working demo dials.
+console.log('\n▸ the agent dials exactly what the working demo dials');
 const outbound = codeOf('lib/agent/tools/outbound.ts');
-check('the dispatcher names the TTS-Flash answer path', /tts-flash-xml/.test(outbound), 'answerPath to the working bridge');
-check('it resolves the TTS bridge rather than the Live one', /resolveTtsFlashBridgeHttpUrl\s*\(/.test(outbound));
+const demoRoute = codeOf('app/api/voice/demo-call/route.ts');
+
 check(
-  'it does NOT point the answer at the Live bridge',
-  !/resolveVoiceBridgeHttpUrl\s*\(/.test(outbound),
-  'the Live bridge is the silent one',
+  'the demo dials the DEFAULT answer route (no answerPath override)',
+  !/answerPath/.test(demoRoute),
+  'this is the low-latency Gemini Live pipeline',
 );
-check('it sends a voice id and a gender', /answerParams\s*:\s*\{[^}]*voiceId/.test(outbound) && /gender/.test(outbound));
-check('it prewarms the opener on the TTS bridge', /tts-flash-prewarm/.test(outbound));
-// The greeting is built from `reason`, inside the sentence "aapne <reason> ke baare mein enquiry ki thi na?". So the
-// reason has to be a SUBJECT. The first real call passed the whole objective, the bridge rendered a 25.7 s monologue,
-// the callee interrupted at 5 s, barge-in cut the agent off and the bridge dropped its reply — twelve seconds of
-// billable silence. Capping the objective to eight words then produced "...enquiry about you are an automated
-// assistant calling from Nobogent", which is wrong rather than merely long.
 check(
-  'the spoken reason is a subject, never a clause of the brief',
-  !/firstClause/.test(outbound) && /params\.reason/.test(outbound) && /ki marketing service/.test(outbound),
-  'supplied, or derived from the business name — never sliced out of the objective',
+  'and so does the agent now',
+  !/answerPath/.test(outbound),
+  'the TTS-Flash pipeline speaks but adds ~2.5 s per turn — that was the latency',
 );
-check('and it is capped so it cannot become a monologue', /slice\(0,\s*9\)/.test(outbound), 'nine words');
 check(
-  'the full objective goes in instruction, where it is context rather than speech',
-  /instruction:\s*params\.objective/.test(outbound),
+  'neither of them prewarms the TTS bridge',
+  !/tts-flash-prewarm/.test(outbound) && !/tts-flash-prewarm/.test(demoRoute),
+  'the Live bridge generates its greeting natively on connect',
 );
-// Time to first word and length of the opener are different things. The bridge pre-renders the greeting during
-// prewarm, so it starts in about 0.2 s either way; clipping the greeting to "Namaste ji" made it start fast and stop
-// being a greeting. What must never happen again is the opener being built from a paragraph.
+
+// The reason the Live bridge was silent for agent calls is that it had no script. The demo creates a
+// `voice_campaigns` row (greeting + language + prompt) and links it to the lead; the bridge reads it from there.
+// Chasing the silence, that distinction was missed and the pipeline was blamed instead of the missing campaign.
 check(
-  'the opener is not clipped to a bare word (it already starts in ~0.2 s)',
-  !/greeting,/.test(outbound) && !/Namaste \$\{firstName\} ji/.test(outbound),
-  'no greeting override — the template writes a full sentence ending in a question',
+  'the agent creates the call script campaign the bridge reads',
+  /from\('voice_campaigns'\)/.test(outbound) && /custom_prompt/.test(outbound),
+  'greeting, language and prompt live on the campaign',
+);
+check(
+  'including the greeting and the language',
+  /audience_filter\s*:\s*\{[^}]*greeting/.test(outbound) && /language:\s*'hinglish'/.test(outbound),
+);
+check(
+  'and links it to the lead, because the bridge finds it through the lead',
+  /voice_campaign_id:\s*campaign\.id/.test(outbound),
+  'the link matters as much as the row',
+);
+check(
+  'then passes that campaign to the dialler',
+  /triggerOutboundCall\([\s\S]{0,120}campaignId/.test(outbound),
+);
+check(
+  'the greeting is one sentence ending in a question, not a brief',
+  /Do minute baat kar sakte hain\?/.test(outbound) && !/params\.objective\s*[,)]/.test(outbound.match(/greeting\s*=[\s\S]{0,400}/)?.[0] ?? ''),
+  'a 25.7 s monologue got interrupted at 5 s and the reply was dropped',
 );
 
 // ── 3. The hop that was silently dropping the option.
