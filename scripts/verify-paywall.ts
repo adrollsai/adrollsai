@@ -131,7 +131,7 @@ check(
 
 // Ordering, on CODE not comments: the unpaid redirect must be decided BEFORE the onboarding redirect,
 // or an unpaid user is walked through setup and only then hits the wall.
-const paywallIdx = layout.indexOf('if (!isPaid && isAdminLike');
+const paywallIdx = layout.indexOf('const mustPay =');
 const onboardingIdx = layout.indexOf('if (!onboardingCompleted && !isOnboardingPage && isAdminLike)');
 check(
   'the paywall check is emitted before the onboarding check',
@@ -140,8 +140,44 @@ check(
 );
 check(
   'an unpaid account is sent to the paywall step',
-  /if \(!isPaid && isAdminLike && !isOnboardingPage && !isBillingPage && !isProfilePage\)/.test(layout),
+  /if \(!isPaid && isAdminLike && !isOnboardingPage && !isBillingPage && !isProfilePage\)/.test(layout) ||
+    /mustPay && !isOnboardingPage && !isBillingPage && !isProfilePage/.test(layout),
   'billing and profile stay reachable; nothing else does',
+);
+
+// ── THE FAIL-OPEN BUG THE OWNER HIT ──────────────────────────────────────────────────────────────
+// A brand-new signup was let into the dashboard and only met the paywall a moment later, because the
+// check required `isAdminLike` — false whenever the profile row had not loaded yet — and the catch
+// branch authorised the layout on any error. Both are fail-OPEN on a money gate.
+console.log('\n▸ the paywall cannot fail open');
+check(
+  'the gate does not depend on a role being loaded',
+  !/mustPay\s*=[^;\n]*isAdminLike/.test(layout) && !/!isPaid && isAdminLike/.test(layout),
+  'a profile with no role yet used to slip through',
+);
+check(
+  'the profile read is retried before it is judged',
+  /for \(let attempt = 0; attempt < 6; attempt\+\+\)/.test(layout) && /maybeSingle\(\)/.test(layout),
+  'a just-signed-up row may not exist for a moment',
+);
+check(
+  'an unreadable profile is treated as unpaid, not as fine',
+  /still unreadable after retries — treating as unpaid/.test(layout),
+);
+check(
+  'an exception no longer authorises the dashboard',
+  !/catch[\s\S]{0,400}?setIsAuthorized\(true\)/.test(layout),
+  'the catch branch used to fail OPEN — the whole product on a network blip',
+);
+check(
+  'the paywall redirect replaces history rather than pushing',
+  /router\.replace\('\/dashboard\/onboarding'\)/.test(layout),
+  'no back-button route into the dashboard',
+);
+check(
+  'the layout still refuses to render until the check completes',
+  /if \(!isAuthorized\) \{/.test(layout) && /Loader2/.test(layout),
+  'children must not mount before the decision',
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

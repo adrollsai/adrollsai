@@ -59,12 +59,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
 
-        // Check user's profile
-        const { data: userProfile } = await supabase
-          .from('profiles')
-          .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, client_features')
-          .eq('id', session.user.id)
-          .single()
+        // Read the profile, RETRYING briefly. On a brand-new signup the row may not exist for a moment
+        // (the signup trigger is still committing), and the old code treated that as "no problem",
+        // authorised the layout, rendered the whole dashboard, and only caught the missing subscription
+        // on a later run — which is exactly the "it let me in, then showed the paywall a moment later"
+        // behaviour the owner hit. A money gate must never be decided from data it failed to read.
+        let userProfile: any = null
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const { data } = await supabase
+            .from('profiles')
+            .select('subscription_status, subscription_valid_until, email, role, parent_id, agency_id, onboarding_completed, accepted_terms, client_features')
+            .eq('id', session.user.id)
+            .maybeSingle()
+          if (data) {
+            userProfile = data
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400))
+        }
 
         // Check if user account is disabled by admin
         const isAccountDisabled = session.user.user_metadata?.is_disabled === true
@@ -149,16 +161,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const isProfilePage = pathname === '/dashboard/profile'
       const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
+      const isTeamMemberEarly = !!(userProfile?.parent_id || userProfile?.agency_id)
+      if (!userProfile) {
+        console.warn('[DashboardLayout] profile row still unreadable after retries — treating as unpaid')
+      }
 
       // 0. PAYWALL FIRST, AND IT CANNOT BE SKIPPED.
       //
-      // Payment is the first thing a customer meets, and onboarding (profile, integrations,
-      // templates) runs only after they have bought — the details we collect are only useful once the
-      // sale exists. Step 1 of /dashboard/onboarding IS the paywall, so that is where an unpaid
-      // account goes. Billing and profile stay reachable because they are where you pay and where you
-      // accept terms; nothing else is.
-      if (!isPaid && isAdminLike && !isOnboardingPage && !isBillingPage && !isProfilePage) {
-        router.push('/dashboard/onboarding')
+      // Deliberately ROLE-AGNOSTIC. It used to require isAdminLike, which is false whenever the role
+      // has not loaded yet — so a brand-new signup sailed past the gate and only met it after the
+      // profile arrived. Payment is the first thing a customer meets, and onboarding (profile,
+      // integrations, templates) runs only after they have bought.
+      //
+      // Exemptions are narrow and explicit: the platform's own whitelisted accounts, and team members
+      // whose agency pays for them. NOTE there is no role test here at all — a profile with no role set
+      // yet would otherwise satisfy neither branch and slip through, which is the same fail-open shape
+      // as the original bug.
+      const mustPay = !isPaid && !isWhitelisted && !isTeamMemberEarly
+      if (mustPay && !isOnboardingPage && !isBillingPage && !isProfilePage) {
+        router.replace('/dashboard/onboarding')
         return
       }
 
@@ -272,8 +293,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         setAcceptedTerms(isTeamMember || userProfile?.accepted_terms !== false)
         setIsAuthorized(true)
       } catch (err) {
+        // FAIL CLOSED. This used to authorise the layout on any error, so a failed profile read or a
+        // flaky network was enough to walk straight into the product. Now an unreadable check sends the
+        // user to the paywall page, which is the one place that can always resolve it — and never into
+        // the dashboard on a guess.
         console.error('[DashboardLayout enforcePaywall error]:', err)
-        setIsAuthorized(true)
+        setAcceptedTerms(true)
+        if (!pathname.startsWith('/dashboard/onboarding') && !pathname.startsWith('/dashboard/login')) {
+          router.replace('/dashboard/onboarding')
+        }
+        // Keep the layout in its loading state: the redirect above is what moves the user on.
+        return
       }
     }
 
