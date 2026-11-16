@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot } from 'lucide-react'
+import { LayoutGrid, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -119,9 +119,10 @@ export default function BottomNav() {
     { name: 'Nobogent', icon: Bot, path: '/dashboard/agent' },
     { name: 'Catalog', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
-    // Creation was removed as a separate tab: creatives are produced in the
-    // Nobogent agent surface now. The /dashboard/creation route still exists and
-    // redirects there, so bookmarks and old links keep working.
+    // Creation is its own tab again, at the owner's request: the pipeline view is where they work,
+    // and the agent remains the place creatives are produced conversationally. Both surfaces stay;
+    // the agent is additive, not a replacement.
+    { name: 'Creation', icon: Sparkles, path: '/dashboard/creation' },
     { name: 'Ads', icon: Zap, path: '/dashboard/ads' },
     { name: 'CRM', icon: Users, path: '/dashboard/crm' },
     { name: 'WhatsApp', icon: MessageCircle, path: '/dashboard/whatsapp' },
