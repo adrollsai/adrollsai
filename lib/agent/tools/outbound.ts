@@ -319,25 +319,43 @@ export async function dispatchVoiceCall(params: {
       '- If they are busy, offer to call back and end politely.',
     ].join('\n');
 
+    // One long-lived campaign per business, reused and updated — the same shape production uses when a new lead
+    // arrives (the Facebook webhook matches an existing voice campaign and dials with it). Creating a fresh campaign
+    // for every call filled the table with one-call campaigns and made the settings impossible to find or tune, which
+    // is how a per-call campaign ended up with a 25-second greeting in the first place.
     const campaignId = await (async () => {
-      const { data: campaign, error } = await supabase
+      const campaignName = `Agent outbound calls — ${businessName || 'business'}`.slice(0, 120);
+      const settings = {
+        audience_filter: { voice_name: 'Aoede', language: 'hinglish', greeting },
+        custom_prompt: campaignPrompt,
+        status: 'running',
+      };
+
+      const { data: existing } = await supabase
         .from('voice_campaigns')
-        .insert({
-          user_id: userId,
-          name: `Agent call — ${subject}`.slice(0, 120),
-          audience_filter: { voice_name: 'Aoede', language: 'hinglish', greeting },
-          custom_prompt: campaignPrompt,
-          status: 'running',
-        })
+        .select('id')
+        .eq('user_id', userId)
+        .eq('name', campaignName)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await supabase.from('voice_campaigns').update(settings).eq('id', existing.id);
+        await supabase.from('leads').update({ voice_campaign_id: existing.id }).eq('id', leadId);
+        return existing.id as string;
+      }
+
+      const { data: created, error } = await supabase
+        .from('voice_campaigns')
+        .insert({ user_id: userId, name: campaignName, ...settings })
         .select('id')
         .single();
-      if (error || !campaign?.id) {
+      if (error || !created?.id) {
         console.warn('[Outbound] Could not create the call script campaign:', error?.message);
         return null;
       }
       // The bridge finds the script through the LEAD, so the link matters as much as the row.
-      await supabase.from('leads').update({ voice_campaign_id: campaign.id }).eq('id', leadId);
-      return campaign.id as string;
+      await supabase.from('leads').update({ voice_campaign_id: created.id }).eq('id', leadId);
+      return created.id as string;
     })();
 
     const { triggerOutboundCall } = await import('@/utils/voice-helper');

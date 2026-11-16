@@ -127,12 +127,17 @@ check(
 );
 check(
   'and links it to the lead, because the bridge finds it through the lead',
-  /voice_campaign_id:\s*campaign\.id/.test(outbound),
+  /voice_campaign_id:\s*(existing|created|campaign)\.id/.test(outbound),
   'the link matters as much as the row',
 );
 check(
+  'and reuses one campaign per business, the way the new-lead flow matches an existing one',
+  /eq\('name',\s*campaignName\)/.test(outbound) && /update\(settings\)/.test(outbound),
+  'a campaign per call filled the table with one-call rows nobody could tune',
+);
+check(
   'then passes that campaign to the dialler',
-  /triggerOutboundCall\([\s\S]{0,120}campaignId/.test(outbound),
+  /triggerOutboundCall\([\s\S]{0,160}campaignId/.test(outbound),
 );
 check(
   'the greeting is one sentence ending in a question, not a brief',
