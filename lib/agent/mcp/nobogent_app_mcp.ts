@@ -161,9 +161,18 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
       }),
       execute: async ({ query, category, limit }) => {
         try {
+          // These column names are the table's REAL ones. This select used to ask for `location`
+          // and filter on `category`, neither of which exists on `properties` (they are `address`
+          // and `property_type`), so PostgREST rejected the whole query. The error handler then
+          // re-issued the SAME broken select as a "fallback" and reported its null data as
+          // `success: true, count: 0` — so the agent was truthfully told the catalogue was empty
+          // while four live products sat in it, and said so to the owner.
+          const COLUMNS =
+            'id, title, description, price, address, property_type, status, image_url, images, configurations, created_at';
+
           let q = supabase
             .from('properties')
-            .select('id, title, description, price, location, images, created_at, category')
+            .select(COLUMNS)
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(limit);
@@ -173,21 +182,35 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
             q = q.or(`title.ilike.%${cleanQ}%,description.ilike.%${cleanQ}%`);
           }
           if (category && category.trim()) {
-            q = q.ilike('category', `%${category.trim()}%`);
+            q = q.ilike('property_type', `%${category.trim()}%`);
           }
 
           const { data, error } = await q;
+
           if (error) {
-            // Fallback to fetch all items for this user without strict query match
-            const fallback = await supabase
+            // A read that FAILED is not an empty catalogue. Saying "0 items" here is how the agent
+            // ends up telling an owner their catalogue is empty and then inventing a product.
+            const unfiltered = await supabase
               .from('properties')
-              .select('id, title, description, price, location, images, created_at, category')
+              .select(COLUMNS)
               .eq('user_id', userId)
               .limit(limit);
+
+            if (unfiltered.error) {
+              return {
+                success: false,
+                error:
+                  `Could not read the catalogue: ${error.message}. ` +
+                  `The fallback read failed too: ${unfiltered.error.message}.`,
+              };
+            }
+
             return {
               success: true,
-              count: fallback.data?.length || 0,
-              items: fallback.data || [],
+              count: unfiltered.data?.length || 0,
+              items: unfiltered.data || [],
+              note:
+                'The filtered search failed, so these are ALL items in the catalogue with no filter applied.',
             };
           }
 
@@ -233,8 +256,16 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
         phone: z.string().describe('Recipient phone number (e.g. +91 9876543210)'),
         templateName: z.string().describe('Name of the approved template to send'),
         variables: z.array(z.string()).default([]).describe('List of replacement values for template parameters like {{1}}, {{2}}'),
+        languageCode: z
+          .string()
+          .optional()
+          .describe(
+            "The template's approved locale, e.g. en_US. Omit it and the locale is resolved from " +
+              'Meta, which is almost always right — a wrong locale is rejected as "template name ' +
+              'does not exist in the translation".',
+          ),
       }),
-      execute: async ({ phone, templateName, variables }) => {
+      execute: async ({ phone, templateName, variables, languageCode }) => {
         try {
           // Previously this returned "queued for delivery" and posted nothing at all.
           const { sendWhatsAppTemplate } = await import('@/lib/agent/tools/outbound');
@@ -244,6 +275,7 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
             phone,
             templateName,
             variables,
+            languageCode,
           });
           if (!result.success) {
             return { success: false, error: result.error, templateName, attemptedTo: result.to ?? phone };

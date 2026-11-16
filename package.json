@@ -92,7 +92,11 @@
     "verify:outbound-live": "esbuild scripts/verify-outbound-live.ts --bundle --platform=node --format=esm --outfile=.tmp-outbound.mjs --log-level=warning --packages=external --alias:@/lib/agent/tools/outbound=./lib/agent/tools/outbound --alias:@/utils/voice-helper=./utils/voice-helper --alias:@/lib/automation/test-mode=./lib/automation/test-mode",
     "verify:hyperframes-live": "esbuild scripts/verify-hyperframes-live.ts --bundle --platform=node --format=esm --outfile=.tmp-hflive.mjs --log-level=warning --packages=external",
     "verify:hyperframes": "esbuild scripts/verify-hyperframes.ts --bundle --platform=node --format=esm --outfile=.tmp-hfgate.mjs --log-level=warning && node .tmp-hfgate.mjs",
-    "verify:render-spans": "esbuild scripts/verify-render-spans.ts --bundle --platform=node --format=esm --outfile=.tmp-span.mjs --log-level=warning && node .tmp-span.mjs"
+    "verify:render-spans": "esbuild scripts/verify-render-spans.ts --bundle --platform=node --format=esm --outfile=.tmp-span.mjs --log-level=warning && node .tmp-span.mjs",
+    "verify:approval-whatsapp-live": "esbuild scripts/verify-approval-whatsapp-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-approval-wa.mjs --log-level=warning && node .tmp-approval-wa.mjs",
+    "verify:inventory-live": "esbuild scripts/verify-inventory-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-inv-live.mjs --log-level=warning && node .tmp-inv-live.mjs",
+    "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
+    "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

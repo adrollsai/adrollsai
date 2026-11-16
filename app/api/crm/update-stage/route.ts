@@ -249,7 +249,17 @@ async function dispatchUmangStageWhatsApp(supabaseAdmin: any, lead: any, newStag
 
     const token = profile?.whatsapp_access_token || profile?.facebook_token;
     const phoneId = profile?.whatsapp_phone_number_id || '1465196976677120';
-    const wabaId = profile?.whatsapp_waba_id || '1603442687285990';
+    // The fallback here used to be the literal '1603442687285990', which is not this tenant's WABA
+    // and not the platform's either — a mystery constant that would send business-initiated
+    // messages under someone else's account if the profile row were ever missing the column.
+    // Read it from configuration instead, and say so loudly when neither source has it.
+    const wabaId = profile?.whatsapp_waba_id || process.env.DEV_WHATSAPP_WABA_ID || '';
+    if (!profile?.whatsapp_waba_id) {
+        console.warn(
+            '[UMANG WA STAGE] profile.whatsapp_waba_id is missing — falling back to ' +
+                `${wabaId || '(nothing configured)'}. Business-initiated sends need the tenant's own WABA.`
+        );
+    }
 
     if (!token || !phoneId) {
         console.warn('[UMANG WA STAGE] WhatsApp token or phone ID missing.');

@@ -29,12 +29,60 @@ export interface WhatsAppSendResult {
   to?: string;
   messageId?: string;
   templateName?: string;
+  /** The locale the template was actually sent in, resolved from Meta when it was not given. */
+  languageCode?: string;
   error?: string;
   /** True when the guard redirected the message away from the requested number. */
   redirected?: boolean;
 }
 
 const GRAPH_VERSION = 'v20.0';
+
+/**
+ * Templates are approved per LANGUAGE, and a mismatch comes back as "template name does not exist in
+ * the translation" (Meta code 132001) — which reads like a missing template and is not one.
+ *
+ * This used to default to 'en' while 34 of the 35 approved templates on this WABA are en_US, so
+ * every send through this tool failed at the last step: the owner approved the message, the gate
+ * replayed it faithfully, and WhatsApp refused it. The approval round trip "worked" and no message
+ * was ever delivered. Resolve the locale from Meta instead of guessing it.
+ */
+const templateLanguageCache = new Map<string, string>();
+
+async function resolveTemplateLanguage(opts: {
+  token: string;
+  wabaId?: string | null;
+  templateName: string;
+}): Promise<string> {
+  const { token, templateName } = opts;
+  const wabaId = String(opts.wabaId || '').trim();
+  const key = `${wabaId}:${templateName}`;
+  const cached = templateLanguageCache.get(key);
+  if (cached) return cached;
+
+  if (wabaId) {
+    try {
+      const res = await fetch(
+        `https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/message_templates` +
+          '?fields=name,language,status&limit=250',
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const body: any = await res.json().catch(() => ({}));
+      const approved = (body?.data ?? []).filter(
+        (t: any) => String(t.name) === templateName && String(t.status).toUpperCase() === 'APPROVED',
+      );
+      if (approved.length) {
+        const language = String(approved[0].language);
+        templateLanguageCache.set(key, language);
+        return language;
+      }
+    } catch {
+      /* fall through to the locale default below */
+    }
+  }
+  // Nothing resolvable: en_US is what the templates on this platform's WABA are approved as.
+  return 'en_US';
+}
 
 /**
  * Send one approved WhatsApp template.
@@ -62,7 +110,7 @@ export async function sendWhatsAppTemplate(params: {
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('whatsapp_phone_number_id, whatsapp_access_token, business_name')
+    .select('whatsapp_phone_number_id, whatsapp_access_token, whatsapp_waba_id, business_name')
     .eq('id', userId)
     .maybeSingle();
 
@@ -75,6 +123,14 @@ export async function sendWhatsAppTemplate(params: {
         'Connect a WABA in dashboard settings, then try again.',
     };
   }
+
+  const languageCode =
+    params.languageCode ||
+    (await resolveTemplateLanguage({
+      token: String(profile.whatsapp_access_token),
+      wabaId: profile.whatsapp_waba_id,
+      templateName,
+    }));
 
   const components =
     params.variables && params.variables.length
@@ -92,7 +148,7 @@ export async function sendWhatsAppTemplate(params: {
     type: 'template',
     template: {
       name: templateName,
-      language: { code: params.languageCode || 'en' },
+      language: { code: languageCode },
       ...(components ? { components } : {}),
     },
   };
@@ -135,7 +191,7 @@ export async function sendWhatsAppTemplate(params: {
       // Logging is best-effort; the message has already been accepted by Meta.
     }
 
-    return { success: true, to, messageId, templateName, redirected };
+    return { success: true, to, messageId, templateName, redirected, languageCode };
   } catch (error: any) {
     return { success: false, to, templateName, error: String(error?.message || error) };
   }
