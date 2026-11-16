@@ -111,7 +111,10 @@ export function paletteFor(brandInput?: string | null): Palette {
     // A surface one notch off the brand, so cards read as depth rather than as a border.
     surface: dark ? 'rgba(255,255,255,0.045)' : 'rgba(11,15,25,0.035)',
     line: dark ? 'rgba(255,255,255,0.14)' : 'rgba(11,15,25,0.12)',
-    invertedInk: dark ? '#0B0F19' : '#F7F6F3',
+    // The INVERTED pair is what a solid button is filled with. For a DARK brand that fill must be LIGHT with a dark
+    // label; the first version had it backwards, so every call to action on a dark page rendered as an invisible
+    // dark-on-dark bar. A headless-Chrome screenshot showed it; no structural check could have.
+    invertedInk: dark ? '#F7F6F3' : '#0B0F19',
     contrast: resolved.ratio,
     contrastPasses: resolved.passes,
   };

@@ -525,7 +525,37 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
       }),
       execute: async (input: any) => {
         try {
-          const built = buildLandingPage(input as LandingPageBrief);
+          // IMAGERY THE BUSINESS ACTUALLY OWNS. A page with one hero photograph is the page the owner rejected, and
+          // the cause was that the brief carried a single image — the builder happily emits a gallery when it is given
+          // one. So when the caller supplies no gallery, use the images already in this business's asset library: their
+          // own photos or ones generated for them. Nothing invented, and the page stops being a single-column template.
+          const inputWithImagery = { ...(input as any) };
+          const hasGallery = Array.isArray(inputWithImagery.galleryImages) && inputWithImagery.galleryImages.length > 0;
+          if (!hasGallery) {
+            try {
+              const { data: assets } = await supabase
+                .from('assets')
+                .select('url, created_at')
+                .eq('user_id', userId)
+                .eq('type', 'image')
+                .order('created_at', { ascending: false })
+                .limit(8);
+              const urls = (assets ?? [])
+                .map((row: any) => String(row?.url ?? ''))
+                .filter((url: string) => /^https:\/\//i.test(url))
+                .filter((url: string) => url !== inputWithImagery.heroImage)
+                // The asset library holds EVERY creative made for this account, including other businesses and
+                // festive posters. Pulling it blindly put a Diwali "GRAND OPENING 50% OFF" poster on a Nobogent page,
+                // which is worse than no gallery: somebody else's offer on our own page.
+                .filter((url: string) => !/grand[-_ ]?opening|diwali|holi|bhai[-_ ]?dooj|festive|christmas|new[-_ ]?year/i.test(url))
+                .slice(0, 4);
+              if (urls.length) inputWithImagery.galleryImages = urls;
+            } catch {
+              /* the gallery is an enhancement; a page without one is still a page */
+            }
+          }
+
+          const built = buildLandingPage(inputWithImagery as LandingPageBrief);
 
           // QA BEFORE SAVING. `landing_pages` has no draft state - creating the row publishes the page - so a page
           // that fails the design grade must not be written at all. What this refuses is exactly what shipped last
