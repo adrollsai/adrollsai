@@ -141,7 +141,26 @@ export async function POST(req: Request) {
                                Object.values(RAZORPAY_PLANS).find(p => p.id === effectivePlanId || p.title.toLowerCase().includes(effectivePlanId));
 
             const durationMonths = planConfig?.durationMonths || (orderNotes.durationMonths ? Number(orderNotes.durationMonths) : 1);
-            const creditsToAdd = planConfig?.creditsIncluded || (orderNotes.creditsIncluded ? Number(orderNotes.creditsIncluded) : (isTrial ? 2500 : 10000));
+            // Every credit figure comes from RAZORPAY_PLANS. The last-resort fallback used to be
+            // `isTrial ? 2500 : 10000` — a third hardcoded table no pricing page had ever shown, so an
+            // unrecognised plan silently granted 10,000 credits. A trial falls back to the trial
+            // config, and anything unrecognised grants ZERO and says so, because granting a number
+            // nobody priced is worse than granting none.
+            const configuredCredits = planConfig?.creditsIncluded;
+            const creditsToAdd =
+                typeof configuredCredits === 'number'
+                    ? configuredCredits
+                    : orderNotes.creditsIncluded
+                        ? Number(orderNotes.creditsIncluded)
+                        : isTrial
+                            ? RAZORPAY_PLANS['trial'].creditsIncluded
+                            : 0;
+            if (!planConfig && !orderNotes.creditsIncluded && !isTrial) {
+                console.warn(
+                    `[razorpay/verify] unknown plan "${effectivePlanId}" — granting ${creditsToAdd} credits. ` +
+                        'Add it to RAZORPAY_PLANS instead of relying on a fallback.',
+                );
+            }
             const planTitle = planConfig?.title || (isTrial ? '7-Day Trial Pass' : `Pro Plan (${effectivePlanId})`);
 
             const planValidUntil = new Date();

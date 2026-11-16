@@ -117,11 +117,18 @@ export async function POST(request: Request) {
             profileUpdates.custom_domain = websiteUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase();
         }
 
+        // THE PAYWALL CANNOT BE SKIPPED, so there is no server path that records a skip.
+        //
+        // This accepted `paywallSkipped` / `skipPayment` in the body and stored
+        // `client_features.paywall_skipped = true`, which `dashboard/layout.tsx` then read as "paid".
+        // Any client — or anyone posting to this endpoint — could therefore grant themselves the whole
+        // product for free. The flags are now ignored, and if an old client sends them it is logged
+        // rather than honoured.
         if (body.paywallSkipped || body.skipPayment) {
-            profileUpdates.client_features.paywall_skipped = true;
-            if (!existingProfile?.subscription_status || existingProfile.subscription_status === '') {
-                profileUpdates.subscription_status = 'free';
-            }
+            console.warn(
+                '[onboarding/complete] a paywall skip was requested and IGNORED — payment is required ' +
+                    'before onboarding. Update the caller.',
+            );
         }
 
         const { error: profileError } = await supabaseAdmin

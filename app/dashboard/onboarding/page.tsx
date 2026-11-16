@@ -70,8 +70,14 @@ export default function OnboardingPage() {
     const { openCheckout, isProcessing: isPaymentProcessing } = useRazorpay();
 
     // Active Step
-    const [step, setStep] = useState<OnboardingStep>('profile');
-    const [paymentType, setPaymentType] = useState<'one_time' | 'recurring'>('one_time');
+    // PAYMENT FIRST. The paywall is the first thing a new customer meets and it cannot be skipped,
+  // so the product's first step is choosing a plan. Everything else is collected after the sale,
+  // because the details we ask for only matter once someone has actually bought the service.
+  const [step, setStep] = useState<OnboardingStep>('payment');
+    // The monthly plan auto-renews through the gateway mandate. The customer is told once, in small
+  // print; the product copy does not label it. `paymentType` therefore defaults to recurring so the
+  // ₹9,999 plan actually renews rather than quietly expiring after one month.
+  const [paymentType, setPaymentType] = useState<'one_time' | 'recurring'>('recurring');
     const [hasPurchasedTrial, setHasPurchasedTrial] = useState<boolean>(false);
 
     // Quote rotation
@@ -516,36 +522,16 @@ export default function OnboardingPage() {
         });
     };
 
+    // THE PAYWALL CANNOT BE SKIPPED.
+    //
+    // This used to write `client_features.paywall_skipped = true` and mark onboarding complete, and
+    // layout.tsx then treated that flag as "paid" — so a new signup could enter the whole product
+    // without buying anything. Payment is now the first step and there is no route past it: this
+    // function only sends the user back to the plans, and the flag is no longer written anywhere.
     const handleSkipPaymentAndEnterDashboard = async () => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                const { data: existingProfile } = await supabase
-                    .from('profiles')
-                    .select('client_features, subscription_status')
-                    .eq('id', user.id)
-                    .single();
-
-                const existingFeatures = existingProfile?.client_features || {};
-
-                await supabase
-                    .from('profiles')
-                    .update({
-                        onboarding_completed: true,
-                        subscription_status: existingProfile?.subscription_status || 'free',
-                        client_features: {
-                            ...existingFeatures,
-                            paywall_skipped: true
-                        }
-                    })
-                    .eq('id', user.id);
-            }
-        } catch (err) {
-            console.error("Error setting skip paywall:", err);
-        }
-        toast.info("Welcome to Nobogent! You can explore the workspace and upgrade anytime in Billing.");
-        router.push('/dashboard/assets');
+        setStep('payment');
     };
+
 
     // Filter templates for the visual selection gallery
     const filteredTemplates = ALL_REFERENCE_TEMPLATES.filter((tmpl) => {
@@ -603,13 +589,6 @@ export default function OnboardingPage() {
                     <span className="text-xs font-bold text-slate-400 hidden sm:inline">
                         Step {currentStepNumber} of 4
                     </span>
-                    <button
-                        type="button"
-                        onClick={handleSkipPaymentAndEnterDashboard}
-                        className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-all cursor-pointer"
-                    >
-                        Go to Dashboard &rarr;
-                    </button>
                 </div>
             </header>
 
@@ -618,7 +597,7 @@ export default function OnboardingPage() {
                 <div className="relative flex items-center justify-between p-2 rounded-2xl bg-white/90 border border-slate-200/80 backdrop-blur-xl shadow-xs">
                     <div className="absolute top-1/2 left-8 right-8 -translate-y-1/2 h-[2px] bg-slate-100 z-0" />
                     {STEPS_NAV.map((m) => {
-                        const stepOrder: OnboardingStep[] = ['profile', 'integrations', 'templates', 'payment'];
+                        const stepOrder: OnboardingStep[] = ['payment', 'profile', 'integrations', 'templates'];
                         const currentIdx = stepOrder.indexOf(step);
                         const milestoneIdx = stepOrder.indexOf(m.key);
                         const isDone = currentIdx > milestoneIdx;
@@ -1457,60 +1436,24 @@ export default function OnboardingPage() {
                             {/* Header */}
                             <div className="text-center max-w-2xl mx-auto">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200/80 mb-2">
-                                    <Crown size={14} className="text-emerald-600" /> Step 4 &bull; Activate Plan
+                                    <Crown size={14} className="text-emerald-600" /> Step 1 &bull; Activate Plan
                                 </span>
                                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
                                     Activate Your Growth Workspace
                                 </h1>
                                 <p className="text-xs sm:text-sm text-slate-500 mt-1.5 leading-relaxed">
-                                    Select a plan to unlock all AI creative generations, WhatsApp chatbot flows, and Meta Ads management. You can also skip now and explore your generated creatives.
+                                    Choose a plan to unlock AI creative generation, WhatsApp chatbot flows and Meta Ads
+                                    management. Setup takes a few minutes once your plan is active.
                                 </p>
                             </div>
 
-                            {/* Payment Frequency Switcher (One-Time vs Recurring) */}
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-slate-50/90 rounded-3xl border border-slate-200">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                                        <RefreshCw size={18} />
-                                    </div>
-                                    <div>
-                                        <div className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                                            Payment Option
-                                        </div>
-                                        <div className="text-[11px] text-slate-500 font-medium">
-                                            {paymentType === 'one_time'
-                                                ? "Pay once for your selected plan. No auto-debit or recurring surprises."
-                                                : "Hassle-free recurring auto-debit. Cancel or change plan anytime."}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white p-1 rounded-2xl border border-slate-200 shadow-sm flex items-center shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => setPaymentType('one_time')}
-                                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                                            paymentType === 'one_time'
-                                                ? 'bg-slate-900 text-white shadow-sm'
-                                                : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                    >
-                                        One-Time Payment
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setPaymentType('recurring')}
-                                        className={`px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                                            paymentType === 'recurring'
-                                                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
-                                                : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                    >
-                                        <span>Recurring Payment</span>
-                                        <span className="text-[9px] bg-white/20 text-white px-2 py-0.5 rounded-full uppercase tracking-wider font-extrabold">Auto-Renew</span>
-                                    </button>
-                                </div>
-                            </div>
+                            {/* Renewal disclosure — the one place it is stated. The plan label is simply
+                                "1 Month (₹9,999)"; this line is what keeps the auto-renewal honest for
+                                Razorpay's mandate rules and for the customer. */}
+                            <p className="text-[10px] leading-relaxed text-slate-400 text-center max-w-2xl mx-auto">
+                                The 1 Month plan renews every month at ₹9,999 until you cancel. Cancel any time from
+                                Billing — access continues to the end of the paid month. Prices exclude 18% GST.
+                            </p>
 
                             {/* 7-Days Trial Package (₹999 + 18% GST - Purchased Only Once Per User) */}
                             <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 p-6 sm:p-7 text-white shadow-xl border-2 border-indigo-400/40">
@@ -1534,11 +1477,11 @@ export default function OnboardingPage() {
                                             7 Days All-Access Growth Trial
                                         </h3>
                                         <p className="text-xs text-indigo-200 leading-relaxed font-medium">
-                                            Experience the full power of Nobogent AI for 7 full days with 2,500 platform credits, AI videos, creatives, and chatbot.
+                                            Experience the full power of Nobogent AI for 7 full days with 1,000 platform credits, AI videos, creatives, and chatbot.
                                         </p>
                                         <div className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1 text-[11px] text-indigo-100 font-semibold">
                                             <span className="flex items-center gap-1.5"><Check size={14} className="text-amber-400" /> 7 Full Days Access</span>
-                                            <span className="flex items-center gap-1.5"><Check size={14} className="text-amber-400" /> 2,500 Credits</span>
+                                            <span className="flex items-center gap-1.5"><Check size={14} className="text-amber-400" /> 1,000 Credits</span>
                                             <span className="flex items-center gap-1.5"><Check size={14} className="text-amber-400" /> 15 AI Creatives + 2 AI Videos</span>
                                             <span className="flex items-center gap-1.5"><Check size={14} className="text-amber-400" /> Full WhatsApp &amp; Meta Ads</span>
                                         </div>
@@ -1576,7 +1519,8 @@ export default function OnboardingPage() {
                             </div>
 
                             {/* Plan Cards Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                            <div className="grid grid-cols-1 gap-6 pt-2 max-w-md mx-auto">
+                                {/* One plan, by design: 1 Month / ₹9,999 / 5,000 credits. */}
                                 {/* 1 Month Plan */}
                                 <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col justify-between shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
                                     <div>
@@ -1588,7 +1532,7 @@ export default function OnboardingPage() {
                                             <span className="text-3xl font-extrabold text-slate-900">₹9,999</span>
                                             <span className="text-[11px] text-slate-400 font-semibold block mt-0.5">+ 18% GST</span>
                                             <span className="text-[10px] text-indigo-600 font-bold block mt-1">
-                                                {paymentType === 'recurring' ? 'Auto-renews monthly • Cancel anytime' : '1-time payment • No auto-renewal'}
+                                                Cancel anytime
                                             </span>
                                         </div>
                                         <ul className="space-y-2 text-xs text-slate-600 font-medium mb-6">
@@ -1605,76 +1549,16 @@ export default function OnboardingPage() {
                                         disabled={isPaymentProcessing}
                                         className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-sm"
                                     >
-                                        {paymentType === 'recurring' ? 'Subscribe Recurring (₹9,999)' : 'Choose 1 Month (₹9,999)'}
+                                        Choose 1 Month (₹9,999)
                                     </button>
                                 </div>
 
-                                {/* 6 Months Plan (Featured / Most Popular) */}
-                                <div className="bg-gradient-to-b from-slate-900 via-slate-900 to-indigo-950 text-white rounded-3xl border-2 border-indigo-400 p-6 flex flex-col justify-between shadow-2xl relative overflow-hidden transform md:-translate-y-2 ring-4 ring-indigo-500/10">
-                                    <div className="absolute top-4 right-4 bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full shadow-sm">
-                                        Most Popular
-                                    </div>
-                                    <div>
-                                        <span className="text-[10px] font-black uppercase tracking-wider text-amber-300">
-                                            Save ₹5,001 (8% Off)
-                                        </span>
-                                        <h3 className="text-xl font-extrabold text-white mt-0.5">6 Months</h3>
-                                        <div className="mt-3 mb-4">
-                                            <span className="text-3xl font-extrabold text-white">₹54,999</span>
-                                            <span className="text-[11px] text-indigo-200 font-semibold block mt-0.5">+ 18% GST</span>
-                                            <span className="text-[10px] text-amber-300 font-bold block mt-1">
-                                                {paymentType === 'recurring' ? 'Auto-renews every 6 months • Cancel anytime' : '1-time payment • No auto-renewal'}
-                                            </span>
-                                        </div>
-                                        <ul className="space-y-2 text-xs text-indigo-100 font-medium mb-6">
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-amber-400 shrink-0" /> 300 AI Ad Creatives</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-amber-400 shrink-0" /> 60 Cinematic AI Videos</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-amber-400 shrink-0" /> Dedicated Account Manager</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-amber-400 shrink-0" /> Full WhatsApp Automation Suite</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-amber-400 shrink-0" /> Priority Meta Ad Approval</li>
-                                        </ul>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handlePurchasePlan('6-months')}
-                                        disabled={isPaymentProcessing}
-                                        className="w-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black text-xs uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-md"
-                                    >
-                                        {paymentType === 'recurring' ? 'Subscribe Recurring (₹54,999)' : 'Choose 6 Months (Save 8%)'}
-                                    </button>
-                                </div>
+                                {/* 6-month and 12-month plans were removed from the offer: the product is
+                                    one plan (1 Month, 5,000 credits) plus the one-off 7-day trial. Their
+                                    cards advertised 25,000 / 100,000 credits at per-credit rates that no
+                                    longer matched the monthly plan. The configs remain in
+                                    utils/razorpay.ts so an existing subscriber's renewal still resolves. */}
 
-                                {/* 12 Months Plan */}
-                                <div className="bg-white rounded-3xl border border-slate-200 p-6 flex flex-col justify-between shadow-xs hover:border-blue-400 hover:shadow-md transition-all">
-                                    <div>
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600">
-                                            Save ₹20,001 (17% Off)
-                                        </span>
-                                        <h3 className="text-xl font-extrabold text-slate-900 mt-0.5">12 Months</h3>
-                                        <div className="mt-3 mb-4">
-                                            <span className="text-3xl font-extrabold text-slate-900">₹99,999</span>
-                                            <span className="text-[11px] text-slate-400 font-semibold block mt-0.5">+ 18% GST</span>
-                                            <span className="text-[10px] text-emerald-600 font-bold block mt-1">
-                                                {paymentType === 'recurring' ? 'Auto-renews annually • Cancel anytime' : '1-time payment • No auto-renewal'}
-                                            </span>
-                                        </div>
-                                        <ul className="space-y-2 text-xs text-slate-600 font-medium mb-6">
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-emerald-600 shrink-0" /> 600 AI Ad Creatives</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-emerald-600 shrink-0" /> 120 Cinematic AI Videos</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-emerald-600 shrink-0" /> Unlimited Team Members</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-emerald-600 shrink-0" /> Custom Landing Pages &amp; Domain</li>
-                                            <li className="flex items-center gap-2"><Check size={14} className="text-emerald-600 shrink-0" /> AI Voice Calling Minutes</li>
-                                        </ul>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handlePurchasePlan('12-months')}
-                                        disabled={isPaymentProcessing}
-                                        className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider py-3.5 rounded-xl transition-all cursor-pointer active:scale-95 shadow-sm"
-                                    >
-                                        {paymentType === 'recurring' ? 'Subscribe Recurring (₹99,999)' : 'Choose 12 Months (Best Value)'}
-                                    </button>
-                                </div>
                             </div>
 
                             {/* Skip Payment Option Banner */}
@@ -1694,14 +1578,6 @@ export default function OnboardingPage() {
                                     Secure payments encrypted by Razorpay (UPI, Credit/Debit Cards, NetBanking).
                                 </span>
 
-                                <button
-                                    type="button"
-                                    onClick={handleSkipPaymentAndEnterDashboard}
-                                    className="w-full sm:w-auto px-5 py-2.5 rounded-xl text-xs font-black text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-300 shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-98"
-                                >
-                                    <span>Skip for now &amp; explore dashboard</span>
-                                    <ArrowRight size={14} />
-                                </button>
                             </div>
                         </motion.div>
                     )}

@@ -84,7 +84,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           subscription_status?: string | null
           subscription_valid_until?: string | null
           onboarding_completed?: boolean | null
-          client_features?: { paywall_skipped?: boolean } | null
+          // `paywall_skipped` was removed from this shape on purpose: it used to be read as
+          // entitlement. Leaving it declared invites the bug back, so a future use is a type error.
         } | null = null
         const parentId = userProfile?.parent_id || userProfile?.agency_id
         if (parentId) {
@@ -135,20 +136,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             subscriptionStatus = 'expired'
         }
 
-        const hasSkippedPaywall = Boolean(
-          userProfile?.client_features?.paywall_skipped === true ||
-          parentProfile?.client_features?.paywall_skipped === true
-        )
-      const isPaid = isWhitelisted || 
+        // `client_features.paywall_skipped` used to count as "paid" here, so a new signup could walk
+        // past the paywall and use the whole product for free. The onboarding page no longer writes
+        // that flag, and it is deliberately not read as entitlement any more.
+        const isPaid = isWhitelisted || 
                      subscriptionStatus === 'active' || 
                      subscriptionStatus === 'trialing' || 
                      subscriptionStatus === 'pro' || 
-                     subscriptionStatus === 'enterprise' ||
-                     (subscriptionStatus !== 'expired' && (subscriptionStatus === 'free' || hasSkippedPaywall))
+                     subscriptionStatus === 'enterprise'
+
       const isBillingPage = pathname === '/dashboard/billing'
       const isProfilePage = pathname === '/dashboard/profile'
       const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
+
+      // 0. PAYWALL FIRST, AND IT CANNOT BE SKIPPED.
+      //
+      // Payment is the first thing a customer meets, and onboarding (profile, integrations,
+      // templates) runs only after they have bought — the details we collect are only useful once the
+      // sale exists. Step 1 of /dashboard/onboarding IS the paywall, so that is where an unpaid
+      // account goes. Billing and profile stay reachable because they are where you pay and where you
+      // accept terms; nothing else is.
+      if (!isPaid && isAdminLike && !isOnboardingPage && !isBillingPage && !isProfilePage) {
+        router.push('/dashboard/onboarding')
+        return
+      }
 
       // 1. Onboarding Check: Ensure new users and accounts with incomplete onboarding go through onboarding first
       if (!onboardingCompleted && isAdminLike) {

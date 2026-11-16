@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { PLANS, ADDONS } from '@/utils/subscription';
+import { RAZORPAY_PLANS } from '@/utils/razorpay';
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,24 +68,35 @@ export async function POST(req: Request) {
                 validUntil.setMonth(validUntil.getMonth() + 1);
 
                 if (planId) {
-                    const planKey = planId.toLowerCase();
-                    
-                    let creditsToAdd = 0;
-                    let monthsValid = 1;
-                    let planLabel = planId;
+                    const planKey = planId.toLowerCase().trim();
 
-                    if (planKey.includes('monthly') || planKey === 'growth') {
-                        creditsToAdd = 10000;
-                        monthsValid = 1;
-                        planLabel = "Pro Plan - Monthly";
-                    } else if (planKey.includes('quarterly') || planKey === 'pro') {
-                        creditsToAdd = 25000;
-                        monthsValid = 3;
-                        planLabel = "Pro Plan - Quarterly";
-                    } else if (planKey.includes('yearly') || planKey === 'enterprise') {
-                        creditsToAdd = 100000;
-                        monthsValid = 12;
-                        planLabel = "Pro Plan - Yearly";
+                    // ONE source of truth for price and credits: utils/razorpay.ts.
+                    //
+                    // This block used to carry its own table — 10,000 credits for "monthly", 25,000 for
+                    // "quarterly", 100,000 for "yearly" — against plan ids that do not exist
+                    // ('1-month', '6-months', '12-months' are the real ones). A payment landing here
+                    // therefore granted a number no pricing page had ever shown, and nothing compared
+                    // the two. Aliases keep any older links working without inventing figures.
+                    const PLAN_ALIAS: Record<string, string> = {
+                        monthly: '1-month',
+                        growth: '1-month',
+                        pro: '1-month',
+                        quarterly: '6-months',
+                        yearly: '12-months',
+                        enterprise: '12-months',
+                    };
+                    const planConfig =
+                        RAZORPAY_PLANS[planKey] ?? RAZORPAY_PLANS[PLAN_ALIAS[planKey] ?? ''] ?? null;
+
+                    // No match means no credits: granting an invented number is worse than granting none.
+                    const creditsToAdd = planConfig?.creditsIncluded ?? 0;
+                    const monthsValid = planConfig?.durationMonths ?? 1;
+                    const planLabel = planConfig?.title ?? planId;
+                    if (!planConfig) {
+                        console.warn(
+                            `[PhonePe callback] unknown planId "${planId}" — no credits granted. ` +
+                                'Add it to RAZORPAY_PLANS rather than mapping it here.',
+                        );
                     }
 
                     const planValidUntil = new Date();

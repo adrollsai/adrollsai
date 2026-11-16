@@ -108,7 +108,7 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         basePrice: 999,
         gstRate: 0.18,
         totalPrice: Math.round(999 * 1.18), // ₹1,179
-        creditsIncluded: 2500,
+        creditsIncluded: 1000,
         description: 'Nobogent 7-Day Trial Pass (₹999 + 18% GST - One-time purchase per user)',
         oncePerUser: true
     },
@@ -120,7 +120,7 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         basePrice: 999,
         gstRate: 0.18,
         totalPrice: Math.round(999 * 1.18), // ₹1,179
-        creditsIncluded: 2500,
+        creditsIncluded: 1000,
         description: 'Nobogent 7-Day Trial Pass (₹999 + 18% GST - One-time purchase per user)',
         oncePerUser: true
     },
@@ -131,8 +131,8 @@ export const RAZORPAY_PLANS: Record<string, RazorpayPlanConfig> = {
         basePrice: 9999,
         gstRate: 0.18,
         totalPrice: Math.round(9999 * 1.18), // ₹11,799
-        creditsIncluded: 10000,
-        description: 'Nobogent Pro Plan (1 Month Subscription)',
+        creditsIncluded: 5000,
+        description: 'Nobogent Pro Plan (1 Month)',
         razorpayPlanId: 'plan_TuTputefIk9tWN'
     },
     '6-months': {
