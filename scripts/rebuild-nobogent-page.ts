@@ -11,6 +11,7 @@
  *     --outfile=.tmp-rebuild-page.mjs && node .tmp-rebuild-page.mjs
  */
 import fs from 'node:fs';
+import 'dotenv/config';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createPageAuthoringTools } from '../lib/agent/tools/pages';

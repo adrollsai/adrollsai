@@ -11,6 +11,7 @@
  *     --outfile=.tmp-design-page.mjs && node .tmp-design-page.mjs
  */
 import fs from 'node:fs';
+import 'dotenv/config';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { getAgentModel } from '../lib/agent/deepseek';

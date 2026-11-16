@@ -101,7 +101,7 @@ export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?:
         const res = await fetch(imageUrl);
         if (!res.ok) {
             console.warn(`[Image Analysis] Failed to fetch image (${res.status} ${res.statusText}): ${imageUrl}`);
-            return "Commercial product showcase featuring clear physical details and modern aesthetic.";
+            return '[VISION UNAVAILABLE] the image could not be analysed';
         }
 
         const buffer = Buffer.from(await res.arrayBuffer());
@@ -145,7 +145,7 @@ export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?:
         console.error(`[Image Analysis] Gemini fallback vision analysis failed for ${imageUrl}:`, err.message);
     }
 
-    return "Commercial product showcase featuring clean physical details, vibrant colors, and modern aesthetic.";
+    return '[VISION UNAVAILABLE] the image could not be analysed';
 }
 
 /**
