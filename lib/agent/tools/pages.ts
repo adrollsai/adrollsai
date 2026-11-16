@@ -596,11 +596,11 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
                 blocking.map((f) => `{f.check} ({f.detail})`).join('; ') +
                 '. A page that is one hero and a column of text is not a landing page. Add at least two images ' +
                 '(a hero plus a gallery or product shot), five or more distinct sections, and a proof block or an ' +
-                'FAQ that answers the questions which stop a purchase, then build it again.',
-                ' If the imagery cannot be verified (the vision service is unreachable or unavailable), generate the ' +
-                'pictures yourself with generate_ai_image — a hero photograph with NO baked-in text, plus two supporting ' +
-                'shots — and pass their URLs as heroImage and galleryImages. Do not reuse an ad poster as a page hero: ' +
-                'the poster already contains the headline, so the page repeats itself beside it.',
+                'FAQ that answers the questions which stop a purchase, then build it again. ' +
+                'If the imagery cannot be verified because the vision service is unavailable, generate the pictures ' +
+                'yourself with generate_ai_image — a hero photograph with NO baked-in text, plus two supporting shots ' +
+                '— and pass their URLs as heroImage and galleryImages. Do not reuse an ad poster as a page hero: the ' +
+                'poster already contains the headline, so the page repeats itself beside it.',
               qa: pageQa.findings,
               sections: built.sections,
             };
