@@ -226,24 +226,113 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
     }),
 
     nobogent_whatsapp_list_templates: tool({
-      description: 'Nobogent App MCP: Fetches available WhatsApp broadcast/messaging templates.',
-      inputSchema: z.object({}),
-      execute: async () => {
+      description:
+        'Nobogent App MCP: Lists the WhatsApp templates you can actually send, with each one\'s approved ' +
+        'language, status, and body text so you can see how many {{n}} variables it takes. Reads them from ' +
+        'Meta (the source of truth for sending) and merges any this business added locally.',
+      inputSchema: z.object({
+        approvedOnly: z.boolean().default(true).describe('Only templates Meta has approved, which are the only ones that can be sent'),
+      }),
+      execute: async ({ approvedOnly }) => {
+        // WHY THIS READS FROM META
+        // It used to read only the `whatsapp_templates` table, which is empty for an account that has never
+        // imported into it — so a business with 35 APPROVED templates on its WABA was told there were none, and
+        // "send a test template" was impossible. The templates that can actually be sent live on Meta; the table
+        // is a convenience copy. Reading the copy and calling it the list is how that bug happened.
+        const sources: string[] = [];
+        let templates: any[] = [];
+        let warning: string | undefined;
+
         try {
-          const { data, error } = await supabase
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('whatsapp_waba_id, whatsapp_access_token')
+            .eq('id', userId)
+            .maybeSingle();
+
+          const wabaId = String(profile?.whatsapp_waba_id ?? '').trim();
+          const token = String(profile?.whatsapp_access_token ?? '').trim();
+
+          if (wabaId && token) {
+            const res = await fetch(
+              `https://graph.facebook.com/v20.0/${wabaId}/message_templates` +
+                '?fields=name,language,status,category,components&limit=250',
+              { headers: { Authorization: `Bearer ${token}` } },
+            );
+            const body: any = await res.json().catch(() => ({}));
+            if (body?.error) {
+              warning = `Meta refused the template list: ${body.error.message}`;
+            } else {
+              templates = (body?.data ?? []).map((template: any) => {
+                const bodyComponent = (template.components ?? []).find((c: any) => String(c?.type).toUpperCase() === 'BODY');
+                const text = String(bodyComponent?.text ?? '');
+                const components = template.components ?? [];
+                const header = components.find((c: any) => String(c?.type).toUpperCase() === 'HEADER');
+                return {
+                  name: template.name,
+                  language: template.language,
+                  languageCode: template.language,
+                  status: template.status,
+                  category: template.category,
+                  body: text,
+                  // The count the caller needs: how many values this template will ask for.
+                  variables: (text.match(/\{\{\d+\}\}/g) || []).length,
+                  hasHeader: Boolean(header),
+                  headerFormat: header?.format ?? null,
+                  source: 'meta',
+                };
+              });
+              sources.push(`meta (${templates.length})`);
+            }
+          } else {
+            warning = 'WhatsApp is not connected for this account, so Meta could not be asked for templates.';
+          }
+        } catch (err: any) {
+          warning = `Could not reach Meta for the template list: ${err?.message || err}`;
+        }
+
+        try {
+          const { data } = await supabase
             .from('whatsapp_templates')
             .select('id, name, category, language, status, components')
             .eq('user_id', userId);
-
-          if (error) throw error;
-
-          return {
-            success: true,
-            templates: data || [],
-          };
-        } catch (err: any) {
-          return { success: false, error: err.message };
+          const local = (data ?? []).map((row: any) => ({
+            name: row.name,
+            language: row.language,
+            languageCode: row.language,
+            status: row.status,
+            category: row.category,
+            body: String((row.components ?? []).find?.((c: any) => String(c?.type).toUpperCase() === 'BODY')?.text ?? ''),
+            variables: 0,
+            source: 'local',
+          }));
+          if (local.length) sources.push(`local (${local.length})`);
+          // Locally-imported rows are older copies of the same templates; Meta wins on a name collision.
+          const known = new Set(templates.map((t) => `${t.name}:${t.language}`));
+          templates = [...templates, ...local.filter((t) => !known.has(`${t.name}:${t.language}`))];
+        } catch {
+          /* the local table is optional */
         }
+
+        const filtered = approvedOnly
+          ? templates.filter((t) => String(t.status).toUpperCase() === 'APPROVED')
+          : templates;
+
+        return {
+          success: true,
+          count: filtered.length,
+          total: templates.length,
+          templates: filtered,
+          sources,
+          ...(warning ? { warning } : {}),
+          ...(filtered.length
+            ? {}
+            : {
+                error:
+                  'There is no approved template to send. A template must be approved by Meta before it can be used; ' +
+                  'pick none and tell the owner rather than inventing a template name.',
+              }),
+        };
       },
     }),
 

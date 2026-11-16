@@ -253,7 +253,9 @@ export function buildSiteHtml(
     : canonical
 
   /* ---------------- head: title, description, canonical, social ------- */
-  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''} </title>`)
+  // `·`, not an em dash: scroll-craft lists the em dash as a ship-blocker, and this is the one string that
+  // appears in the browser tab, the search result and every share card.
+  html = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${esc(brandName)}${city ? ` · ${esc(city)}` : ''} </title>`)
   html = html.replace(
     /<meta name="description" content="[^"]*">/i,
     `<meta name="description" content="${esc(description)}">`
@@ -263,7 +265,7 @@ export function buildSiteHtml(
   const socialTags = `
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(brandName)}">
-<meta property="og:title" content="${esc(brandName)}${city ? ` â€” ${esc(city)}` : ''}">
+<meta property="og:title" content="${esc(brandName)}${city ? ` · ${esc(city)}` : ''}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:url" content="${esc(canonical)}">
 <meta property="og:image" content="${esc(ogImage)}">

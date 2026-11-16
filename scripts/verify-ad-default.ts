@@ -269,16 +269,53 @@ check('mid grey on black is far below the threshold', (contrastRatio('#333333', 
 check('luminance rises with brightness', (relativeLuminance('#FFFFFF') ?? 0) > (relativeLuminance('#888888') ?? 0));
 check('an unparseable colour is reported as unmeasurable, not as passing', contrastRatio('cornflower', '#000000') === null);
 const badPalette = composeAdCreative({ product: 'Diploma', brandColor: '#151B28' });
+// The contract changed here, on purpose. This used to assert that a failing brand colour produced a failing
+// verdict and a warning — and it did, while the prompt went on telling the model to set the type in that colour.
+// Measuring a problem and then shipping it is not a check. Now the compiler DEMOTES the brand to an accent and
+// says so, which is why the verdict reads "passes": it is describing the type colour, which is no longer the brand.
 check(
-  'a brand colour that fails contrast is called out in the verdict',
-  badPalette.layout.contrast.actual !== null && badPalette.layout.contrast.actual < 4.5 && /fails/i.test(badPalette.layout.contrast.verdict),
-  badPalette.layout.contrast.verdict,
+  'a brand colour that fails is demoted instead of used for type',
+  /ALL TYPE in #F7F6F3/i.test(badPalette.imagePrompt) && !/type in #151B28/i.test(badPalette.imagePrompt),
+  badPalette.imagePrompt.match(/ALL TYPE in #[0-9A-F]{6}/i)?.[0] ?? 'none',
 );
 check(
-  'and the failing contrast reaches the checklist the agent reads',
-  badPalette.checklist.some((c) => /BELOW 4\.5:1/.test(c)),
+  'and the demotion is stated in the checklist the agent reads',
+  badPalette.checklist.some((c) => /ACCENT ONLY/.test(c)),
+  badPalette.checklist.find((c) => /ACCENT ONLY/.test(c)) ?? 'no note',
 );
 check('a passing palette says so', /passes/i.test(withOffer.layout.contrast.verdict), withOffer.layout.contrast.verdict);
+
+// A dark brand colour must not become unreadable type.
+//
+// The defect this catches, found by compiling Nobogent's own ad: its brand is #0F172A, a near-black navy, and the
+// prompt said "accents and type in #0F172A" on a #0B1220 background — 1.05:1, invisible. The compiler measured it
+// correctly and then told the model to do it anyway. A measurement has to change the instruction, not sit next to it.
+console.log('\n▸ a brand colour that cannot be read is never used for type');
+const darkBrand = composeAdCreative({
+  product: 'AI marketing department',
+  offer: 'First month ₹999',
+  contact: '9872669935',
+  businessName: 'Nobogent',
+  brandColor: '#0F172A',
+  format: '4:5',
+});
+check(
+  'the type colour it instructs passes 4.5:1',
+  (darkBrand.layout.contrast.actual ?? 0) >= 4.5,
+  `${darkBrand.layout.contrast.actual}:1 — ${darkBrand.layout.contrast.measure}`,
+);
+check(
+  'and the prompt does not ask for type in the failing brand colour',
+  !/type in #0F172A/i.test(darkBrand.imagePrompt) && /ALL TYPE in #F7F6F3/i.test(darkBrand.imagePrompt),
+  darkBrand.imagePrompt.match(/ALL TYPE in #[0-9A-F]{6}/i)?.[0] ?? 'no type instruction found',
+);
+check('the brand colour is kept, as an accent', /#0F172A/.test(darkBrand.imagePrompt) && /accent/i.test(darkBrand.imagePrompt));
+const lightBrand = composeAdCreative({ product: 'Diploma', offer: '₹999', brandColor: '#7DD3FC' });
+check(
+  'a brand colour that DOES pass contrast is used for type',
+  /ALL TYPE in #7DD3FC/i.test(lightBrand.imagePrompt),
+  lightBrand.imagePrompt.match(/ALL TYPE in #[0-9A-F]{6}/i)?.[0] ?? 'none',
+);
 
 // â”€â”€ 6. Wired into the real agent, and said out loud in the prompt.
 console.log('\nâ–¸ the agent actually has it, and is told to use it');

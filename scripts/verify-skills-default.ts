@@ -195,6 +195,13 @@ check(
   /Nobogent · Chandigarh/.test(siteHtml) && !/Nobogent — Chandigarh/.test(siteHtml),
   'it did, and that is exactly the tell scroll-craft forbids',
 );
+// The same em dash appeared in <title> and og:title — the two strings that show up in a browser tab, a search
+// result and every share card, which is the worst place to look machine-written.
+check(
+  'nor does the page title or the share card',
+  !/<title>[^<]*—/.test(siteHtml) && !/og:title" content="[^"]*—/.test(siteHtml),
+  siteHtml.match(/<title>[^<]*<\/title>/)?.[0] ?? 'no title',
+);
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

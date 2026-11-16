@@ -498,6 +498,30 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
         industry: z.string().optional().describe('The business industry, if known'),
         brandColor: z.string().optional().describe('#RRGGBB'),
         slug: z.string().optional().describe('URL slug'),
+        // The three things a page needs to convert that copy alone cannot supply. All optional and all
+        // owner-supplied: the builder refuses to invent a quote, a number or a question.
+        heroImage: z
+          .string()
+          .optional()
+          .describe('A public https image URL for the hero: the business\'s own photograph, or one generated for this offer'),
+        proofPoints: z
+          .array(z.string())
+          .optional()
+          .describe('Hard numbers the owner can stand behind ("launched in a week"). Never invent one.'),
+        testimonials: z
+          .array(
+            z.object({
+              quote: z.string().describe('The customer\'s words, verbatim'),
+              name: z.string().optional(),
+              detail: z.string().optional().describe('Where they are from, or what they bought'),
+            }),
+          )
+          .optional()
+          .describe('Real customer quotes only. A generated testimonial is a fabricated endorsement: pass none instead.'),
+        faqs: z
+          .array(z.object({ question: z.string(), answer: z.string() }))
+          .optional()
+          .describe('Questions the owner actually gets asked, with the answer they gave. Ask, do not write them.'),
       }),
       execute: async (input: any) => {
         try {

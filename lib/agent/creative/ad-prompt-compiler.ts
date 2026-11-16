@@ -314,6 +314,7 @@ const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 // The contrast maths lives in lib/design/contrast.ts so the page generator measures palettes the same way this
 // compiler does. Imported for use here, and re-exported because this module's public surface already had it.
 import { contrastRatio } from '@/lib/design/contrast';
+import { readableInkFor } from '@/lib/site/design-system';
 export { contrastRatio, relativeLuminance } from '@/lib/design/contrast';
 
 /** Pick the angle whose required facts the business actually supplied, scoring industry fit as a tiebreak. */
@@ -520,7 +521,14 @@ export function composeAdCreative(input: AdBriefInput): AdCreativeSpec {
 
   const brand = input.brandColor || '#D0E8FF';
   const background = '#0B1220';
-  const ratio = contrastRatio(brand, background);
+  // The type colour is MEASURED, not assumed. This is the bug a real run caught: Nobogent's brand is #0F172A, a
+  // near-black navy, and the prompt was telling the model to set the type in it on a #0B1220 background — 1.05:1,
+  // invisible. The brand is still the accent; the ink is whatever the page can actually be read in.
+  const ink = readableInkFor(background).ink;
+  const brandAsType = contrastRatio(brand, background);
+  const typeColor = brandAsType !== null && brandAsType >= 4.5 ? brand : ink;
+  const brandDemoted = typeColor !== brand;
+  const ratio = contrastRatio(typeColor, background);
 
   const headlinePx = Math.round(spec.height * spec.headlineScale);
   const subheadPx = Math.round(headlinePx * 0.34);
@@ -552,8 +560,10 @@ export function composeAdCreative(input: AdBriefInput): AdCreativeSpec {
     `THE VISUAL: ${angle.visual}`,
     `THE SUBJECT: ${input.product}${input.place ? `, in ${input.place}` : ''}. Photographic, real, ` +
       'specific to this business — not a stock scene and not a generic symbol of the category.',
-    `COLOUR: background ${background}, accents and type in ${brand} where contrast allows; keep total palette to ` +
-      'three values. No gradients-for-the-sake-of-gradients, no lens flares, no drop shadows on body text.',
+    `COLOUR: background ${background}; ALL TYPE in ${typeColor} (that pair measures ${ratio === null ? 'unmeasurable' : `${ratio}:1`}); ` +
+      `the brand colour ${brand} is for accents, rules and a band behind the offer, never for body text unless it ` +
+      'passes contrast. Keep the total palette to three values. No gradients for the sake of gradients, no lens ' +
+      'flares, no drop shadows on body text.',
     `TYPOGRAPHY: one family, two weights. Exactly ${textElementCount} text elements in the whole frame — do not add ` +
       `a tagline, a slogan or secondary copy that was not asked for. ` +
       `Keep every text element inside ${marginX}px of the left and right edge and ${marginY}px of the top and bottom.`,
@@ -579,8 +589,16 @@ export function composeAdCreative(input: AdBriefInput): AdCreativeSpec {
     `Headline is ${headlineWords} word(s)${tooLong ? ` — OVER the ${spec.maxHeadlineWords}-word limit for ${format}; cut it` : ', inside the limit'}` +
       `${picked.shortenedProduct ? ' (the product name was shortened to fit; keep it in the subhead)' : ''}` +
       `${picked.productMovedToSubhead ? ' (the product name moved to the subhead so the offer could be the headline)' : ''}.`,
-    `Contrast ${ratio === null ? 'could not be measured (brand colour not a hex value)' : `brand-on-background is ${ratio}:1`}` +
+    `Contrast ${ratio === null ? 'could not be measured (brand colour not a hex value)' : `type-on-background is ${ratio}:1`}` +
       `${ratio !== null && ratio < 4.5 ? ' — BELOW 4.5:1, darken or lighten one of them before building' : ''}.`,
+    // When the brand colour had to be demoted, say so explicitly: otherwise the agent sees "passes" and never
+    // learns that the brand is accent-only, then re-introduces it as type on the next attempt.
+    ...(brandDemoted
+      ? [
+          `Brand colour ${brand} measures ${brandAsType === null ? 'unmeasurable' : `${brandAsType}:1`} on ${background}, ` +
+            `so it is ACCENT ONLY; all type is ${typeColor}. Do not set type in the brand colour.`,
+        ]
+      : []),
     `No invented claim: ${relevantNeeds.length ? `still needs ${relevantNeeds.join(', ')} from the business` : 'every claim came from supplied facts'}.`,
     `All text inside the ${marginX}/${marginY}px safe area so placement crops cannot clip it.`,
   ];
@@ -607,7 +625,7 @@ export function composeAdCreative(input: AdBriefInput): AdCreativeSpec {
         `${subhead ? 4 : 3}. ${input.businessName || 'business mark'}${input.place ? ` · ${input.place}` : ''}`,
       ],
       contrast: {
-        measure: `brand ${brand} on background ${background}`,
+        measure: `type ${typeColor} on background ${background} (brand ${brand} used for accents)`,
         required: 4.5,
         actual: ratio,
         verdict:
