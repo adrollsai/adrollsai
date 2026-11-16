@@ -142,5 +142,38 @@ check(
   'dead arithmetic invites a second charge later',
 );
 
+// THE REAL TELEPHONY PATH. Credit for this check: the Vobiz status-callback is where genuine calls are
+// billed, and it kept the old flat 5-credits-per-minute after bill-call was fixed — so the fix did not
+// reach production until this was caught. Both paths must use the one model.
+console.log('\n▸ the VOBiz status callback (real calls) uses the same model');
+const vobizRaw = fs.readFileSync('app/api/voice/vobiz/status-callback/route.ts', 'utf8');
+const vobiz = vobizRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('vobiz callback imports the shared model', /from '@\/lib\/automation\/call-billing'/.test(vobiz));
+check(
+  'it charges from callChargeCredits, not its own arithmetic',
+  /callChargeCredits\(/.test(vobiz),
+);
+check(
+  'the old flat per-minute multiplication is gone from it',
+  !/billableMinutes\s*\*\s*CREDIT_COSTS\.VOICE_CALL_MINUTE/.test(vobiz),
+  'this was the path real calls took',
+);
+check(
+  'it still routes to the calling pot',
+  /deductCredits\([\s\S]{0,200}'calling'/.test(vobiz),
+  'a call spends calling credits, never AI credits',
+);
+
+console.log('\n▸ nobody else charges a connected call by the minute either');
+const fsMod = fs;
+const suspectFiles = [
+  'app/api/voice/bill-call/route.ts',
+  'app/api/voice/vobiz/status-callback/route.ts',
+];
+for (const f of suspectFiles) {
+  const src = fsMod.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  check(`  ${f} has no flat per-minute call charge`, !/ceil\([^)]*\/\s*60\)\s*\*\s*CREDIT_COSTS/.test(src));
+}
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

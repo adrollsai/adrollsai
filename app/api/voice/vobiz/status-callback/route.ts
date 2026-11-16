@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { dispatchNextCall } from '@/utils/voice-helper'
 import { deductCredits, CREDIT_COSTS } from '@/utils/credits'
+import { callChargeCredits } from '@/lib/automation/call-billing'
 import { fetchVobizCallRecording } from '@/utils/vobiz-helper'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
 
@@ -275,15 +276,22 @@ async function handleStatusCallback(req: Request) {
                     if (isTestCall) {
                         console.log(`[VOBIZ STATUS] 🧪 Test/Demo call detected for lead ${lead.id} (${lead.phone}). Skipping credit deduction — 0 credits charged to Bioque Estates.`)
                     } else if (callDuration > 0 && updatedStatus === 'completed') {
-                        // Connected call: 5 credits per minute (rounded up to nearest minute)
-                        const billableMinutes = Math.ceil(callDuration / 60)
-                        const totalCredits = billableMinutes * CREDIT_COSTS.VOICE_CALL_MINUTE
+                        // Connected call, charged by the ONE billing model
+                        // (lib/automation/call-billing.ts): 1 credit for each started minute block plus
+                        // 0.05 credits per second, in integer hundredths, with the AI cost baked in.
+                        //
+                        // This used to be `Math.ceil(callDuration / 60) * VOICE_CALL_MINUTE` — a flat
+                        // 5 credits per minute. That is a different tariff to the one specified, and
+                        // this is the path REAL calls take, so fixing bill-call alone never reached
+                        // production. The two must stay one calculation.
+                        const totalCredits = callChargeCredits(callDuration)
                         deductCredits(
                             supabaseAdmin,
                             lead.user_id,
                             totalCredits,
                             'calling',
-                            `🎙️ AI Voice Call to ${lead.name || lead.phone || 'lead'} (${callDuration}s - ${billableMinutes} min)`
+                            `🎙️ AI Voice Call to ${lead.name || lead.phone || 'lead'} (${callDuration}s - ` +
+                                `${Math.ceil(callDuration / 60)} minute block(s) + ${callDuration} x 0.05)`
                         ).catch(e => console.error('[VOBIZ STATUS] Credit deduction error:', e))
                     } else {
                         // Unconnected call (no answer, busy, failed, or 0 duration): 0.02 credits
