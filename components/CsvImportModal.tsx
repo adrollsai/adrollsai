@@ -270,7 +270,11 @@ export default function CsvImportModal({
           source: 'CSV Import',
           budget: budget || null,
           status: rawStage || 'New',
-          pipeline_stage: 'New',
+          // Honour the CSV's own stage column. This was hardcoded to 'New', so a
+          // file containing thousands of "Lost/NI" or "Visit Done" rows imported
+          // as thousands of *Fresh* leads and corrupted every CRM chip count
+          // (categorizeLeadStage reads pipeline_stage first).
+          pipeline_stage: rawStage || 'New',
           notes: notes || null,
           csv_audience: finalAudienceName,
           custom_fields: customFieldsObj,

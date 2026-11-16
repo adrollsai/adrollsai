@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { canActForUser } from '@/utils/route-auth'
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +10,18 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { subscription, ownerId, fcmToken, platform } = body
     const { data: { user } } = await supabase.auth.getUser()
+
+    // A device subscription must belong to a signed-in user, and `ownerId` (the
+    // tenant whose alerts this device receives) must be one the caller may act
+    // for. Previously this accepted any caller and any ownerId, so a visitor
+    // could register their own device against a tenant and receive that
+    // tenant's lead alerts.
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (ownerId && !(await canActForUser(user.id, String(ownerId)))) {
+      return NextResponse.json({ error: 'Forbidden: not your workspace.' }, { status: 403 })
+    }
 
     if (!subscription && !fcmToken) {
       return NextResponse.json({ error: 'Invalid subscription or FCM token' }, { status: 400 })

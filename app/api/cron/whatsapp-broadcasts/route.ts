@@ -32,11 +32,20 @@ async function handleReconciliation(req: Request) {
 
         console.log('[BROADCAST RECONCILER CRON] Checking for incomplete broadcasts...')
 
-        // Find broadcasts that are in 'processing' status
+        // Find broadcasts that need work: already-processing ones, plus
+        // scheduled ones whose time has arrived.
+        //
+        // Scheduled broadcasts are created with status 'pending'
+        // (app/api/whatsapp/broadcasts/route.ts stores
+        // `scheduledAt ? 'pending' : 'processing'`). This reconciler only ever
+        // looked for 'processing', so a scheduled broadcast sat in 'pending'
+        // forever while the UI had already told the user "Broadcast scheduled
+        // successfully" — nothing ever sent it.
+        const nowIso = new Date().toISOString()
         const { data: activeBroadcasts, error: bErr } = await supabaseAdmin
             .from('whatsapp_broadcasts')
             .select('id, user_id, title, template_name, created_at')
-            .eq('status', 'processing')
+            .or(`status.eq.processing,and(status.eq.pending,scheduled_at.lte.${nowIso})`)
             .order('created_at', { ascending: false })
             .limit(5)
 

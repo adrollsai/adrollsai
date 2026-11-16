@@ -3,6 +3,8 @@
  * Powers CRM List/Card Views, Analytics Action Manager, and Lead Details.
  */
 
+import { isHistoryRestrictedForViewer } from './lead-visibility';
+
 export function parseCustomFields(cf: any): Record<string, any> {
   if (!cf) return {};
   let obj = cf;
@@ -193,7 +195,7 @@ export function getLeadLatestRemark(lead: any, currentRole?: string): { remark: 
   if (!lead) return { remark: null, formattedTime: '', timestamp: 0 };
   const cf = parseCustomFields(lead.custom_fields);
 
-  const isAgent = currentRole === 'agent';
+  const isAgent = isHistoryRestrictedForViewer(currentRole);
   const cutoff = cf.history_visible_from;
   const cutoffTime = cutoff ? new Date(cutoff).getTime() : null;
 

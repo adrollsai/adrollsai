@@ -25,6 +25,7 @@ import CRMErrorBoundary from '@/components/CRMErrorBoundary'
 import { syncAndroidCallLogs } from '@/utils/callTracking'
 import { DEFAULT_PIPELINE_STAGES, PipelineStageConfig, categorizeLeadStage, extractStagesFromProfile } from '@/utils/pipeline-stages'
 import { parseCustomFields, getLeadFollowupCount, getLeadReopenCount, isLeadLastStatusDnp, getLeadNextActionRemark } from '@/utils/lead-helpers'
+import { isHistoryRestrictedForViewer } from '@/utils/lead-visibility'
 import { openPhoneDialer } from '@/utils/dialer'
 import VoipCallingModal from '@/components/VoipCallingModal'
 import CrmDialerTab from '@/components/CrmDialerTab'
@@ -143,7 +144,7 @@ function getLeadLastRemark(lead: any, currentRole?: string): string | null {
     try { while (typeof cf === 'string') cf = JSON.parse(cf); } catch (e) {}
   }
 
-  const isAgent = currentRole === 'agent';
+  const isAgent = isHistoryRestrictedForViewer(currentRole);
   const cutoff = cf?.history_visible_from;
 
   // For Agents:
@@ -307,7 +308,11 @@ function CRMPageContent() {
   const [autoCallNewLeads, setAutoCallNewLeads] = useState(false)
   const [callingVoipLeadId, setCallingVoipLeadId] = useState<string | null>(null)
 
-  const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(role)
+  // Only real admins may use the destructive/ownership controls (delete,
+  // bulk transfer, distribution). This list previously contained all five roles,
+  // so it was a constant `true` and every gate guarded by it was dead code —
+  // removing the intended restriction on `agent`/`client` accounts entirely.
+  const isAdminLike = ['super_admin', 'agency', 'admin'].includes(role)
 
   // --- CRM STATE (100% Live Real-Time Database Data) ---
   const [leads, setLeads] = useState<any[]>([])
@@ -4975,7 +4980,7 @@ END:VCARD\n`
                      </span>
                    </div>
                    <p className="text-xs text-slate-500 font-medium mt-0.5">
-                     {selectedLeadIds.length} records selected · {activeBulkTab === 'transfer' ? 'Transfer' : 'Trash'}
+                     {selectedLeadIds.length} records selected · {activeBulkTab === 'transfer' ? 'Transfer' : 'Delete permanently'}
                    </p>
                  </div>
                </div>
@@ -5022,9 +5027,9 @@ END:VCARD\n`
                        >
                          <div className="flex items-center gap-2.5 font-extrabold text-xs">
                            <Trash2 size={16} className={activeBulkTab === 'trash' ? 'text-rose-600' : 'text-slate-400'} />
-                           <span>Trash</span>
+                           <span>Delete permanently</span>
                          </div>
-                         <p className="text-[11px] text-slate-500 font-medium mt-1 ml-6">Move selected records to trash</p>
+                         <p className="text-[11px] text-slate-500 font-medium mt-1 ml-6">Delete selected records permanently (this cannot be undone)</p>
                        </button>
                      )}
                    </div>
@@ -5155,7 +5160,12 @@ END:VCARD\n`
                                onChange={e => setDeleteHistoryOnTransfer(e.target.checked)}
                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                              />
-                             <span>Delete history</span>
+                             <span>
+                                Hide earlier history from the teammate
+                                <span className="block font-medium text-[11px] text-slate-500 leading-snug mt-0.5">
+                                  Nothing is deleted. You and other admins keep the full history, and the lead&apos;s source stays visible to everyone.
+                                </span>
+                              </span>
                            </label>
                            <label className="flex items-center gap-2 cursor-pointer hover:text-slate-900">
                              <input
@@ -5164,7 +5174,12 @@ END:VCARD\n`
                                onChange={e => setTransferWithScheduledActions(e.target.checked)}
                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                              />
-                             <span>Transfer with scheduled actions</span>
+                             <span>
+                                Transfer pending actions to the teammate
+                                <span className="block font-medium text-[11px] text-slate-500 leading-snug mt-0.5">
+                                  Uncheck to keep scheduled follow-ups visible to admins only. They are never deleted.
+                                </span>
+                              </span>
                            </label>
                          </div>
 
@@ -5173,7 +5188,7 @@ END:VCARD\n`
                    </div>
                  ) : (
                    <div className="space-y-4">
-                     <h4 className="text-base font-extrabold text-slate-900 text-rose-600">Trash Selected Leads</h4>
+                     <h4 className="text-base font-extrabold text-slate-900 text-rose-600">Delete Selected Leads Permanently</h4>
                      <p className="text-xs text-slate-500 font-medium">Are you sure you want to delete {selectedLeadIds.length} selected lead(s)? This action cannot be undone.</p>
                    </div>
                  )}

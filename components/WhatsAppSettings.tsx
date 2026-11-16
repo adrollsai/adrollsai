@@ -2228,7 +2228,9 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                         required
                       >
                         <option value="">Select an approved template</option>
-                        {templates.map(t => (
+                        {/* Only APPROVED templates can be sent; Meta rejects
+                            PENDING/REJECTED ones for every recipient (132001). */}
+                        {templates.filter(t => String(t.status).toUpperCase() === 'APPROVED').map(t => (
                           <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
                         ))}
                       </select>

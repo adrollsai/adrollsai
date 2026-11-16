@@ -10,6 +10,7 @@ import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
 import CallFeedbackModal from '@/components/CallFeedbackModal'
 import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
+import { isHistoryRestrictedForViewer, arePendingActionsHiddenFromViewer } from '@/utils/lead-visibility'
 import { normalizeQualifyingQuestion, parseCustomFields } from '@/utils/lead-scoring'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
@@ -162,7 +163,7 @@ function LeadProfilePageContent() {
         }
 
         const cutoff = lead?.custom_fields?.history_visible_from
-        if (cutoff && (currentUserRole === 'agent' || isTeamMember)) {
+        if (cutoff && isHistoryRestrictedForViewer(currentUserRole)) {
             const cutoffDate = new Date(cutoff)
             if (!isNaN(cutoffDate.getTime())) {
                 return base.filter(item => {
@@ -621,6 +622,29 @@ function LeadProfilePageContent() {
 
             const data = leadRes.data
             if (data) {
+                // Explicit workspace check. RLS scopes `leads` to the caller's
+                // tenant tree, so this is defence-in-depth rather than the only
+                // gate — but the page used to render whatever row the URL id
+                // resolved to, with no assertion that it was this workspace's.
+                const ownerId = (data as any).user_id
+                if (ownerId) {
+                    const { data: selfProfile } = await supabase
+                        .from('profiles')
+                        .select('id, role, agency_id, parent_id')
+                        .eq('id', (await supabase.auth.getUser()).data.user?.id || '')
+                        .maybeSingle()
+                    const selfRole = String(selfProfile?.role || '').toLowerCase()
+                    const isOwnWorkspace =
+                        ownerId === selfProfile?.id ||
+                        ownerId === selfProfile?.agency_id ||
+                        ownerId === selfProfile?.parent_id
+                    if (selfRole !== 'super_admin' && !isOwnWorkspace) {
+                        toast.error('This lead is not in your workspace.')
+                        router.push('/dashboard/crm')
+                        return
+                    }
+                }
+
                 const parsedCustomFields = parseCustomFields(data.custom_fields)
                 data.custom_fields = parsedCustomFields
                 setLead(data)
@@ -1292,7 +1316,7 @@ function LeadProfilePageContent() {
 
     const handleNotesChange = async (newNotes: string) => {
         const previousLead = lead
-        const isRestrictedAgent = !!(lead?.custom_fields?.history_visible_from && (currentUserRole === 'agent' || isTeamMember))
+        const isRestrictedAgent = !!(lead?.custom_fields?.history_visible_from && isHistoryRestrictedForViewer(currentUserRole))
         if (isRestrictedAgent) {
             // Restricted agents must never wipe historical notes if they unfocus an empty or untouched textarea
             if (!newNotes.trim()) return
@@ -1589,6 +1613,19 @@ END:VCARD`
 
                             {/* Quick Reminder / Next Action Button */}
                             {(() => {
+                                // Pending actions can be withheld from the receiving
+                                // teammate at transfer time; admins always see them.
+                                if (arePendingActionsHiddenFromViewer(lead, currentUserRole)) {
+                                    return (
+                                        <span
+                                            className="text-[11px] font-bold bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-200 flex items-center gap-1 shrink-0"
+                                            title="A scheduled action exists on this lead but is hidden from you. Ask an admin."
+                                        >
+                                            <Clock size={12} />
+                                            <span>Scheduled action hidden</span>
+                                        </span>
+                                    );
+                                }
                                 const cf = parseCustomFields(lead.custom_fields);
                                 const actionDateStr = lead.next_followup || cf.next_action_date || lead.next_action_date;
                                 let formattedNext = '';

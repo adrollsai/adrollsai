@@ -6,6 +6,7 @@ import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { refundLimit } from '@/utils/subscription-server';
 import { workerSecretHeaders } from '@/lib/worker-auth';
+import { requireUser, canActForUser } from '@/utils/route-auth';
 import sharp from 'sharp';
 
 // IMPORTANT: Prevents Vercel from timing out the request before generation finishes
@@ -19,9 +20,21 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
     try {
         const body = await req.json();
-        console.log("[Worker] Request received:", JSON.stringify(body, null, 2));
         // Accept either payload (from Products) OR existingTaskId (from Creation Chat)
         const { userId, propId, propertyTitle, payload, existingTaskId, existingCaption, batchId } = body;
+
+        // Authenticate the caller and authorise the account the work is billed
+        // and written to. `userId` arrives in the body, and the asset row below
+        // is inserted with the service-role client, so without this check any
+        // anonymous caller could create assets inside — and burn paid
+        // generation on — any tenant.
+        const caller = await requireUser(req)
+        if (!caller) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+        if (!userId || !(await canActForUser(caller.id, String(userId)))) {
+            return NextResponse.json({ error: 'Forbidden: you cannot generate for this account.' }, { status: 403 })
+        }
 
         const host = req.headers.get('host') || 'localhost:3000';
         const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');

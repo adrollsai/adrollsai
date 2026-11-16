@@ -1864,7 +1864,14 @@ export async function POST(request: Request) {
                                     } else {
                                         const updates: any = {
                                             last_message_text: messageText,
-                                            unread_count: (chat as any).flow_completed ? 1 : 0,
+                                            // Increment rather than reset. This wrote
+                                            // `flow_completed ? 1 : 0`, so the unread
+                                            // badge could only ever show "1" (or be
+                                            // cleared) no matter how many messages
+                                            // arrived. Falls back to 1 when the chat
+                                            // row did not select unread_count, which is
+                                            // the previous behaviour.
+                                            unread_count: (((chat as any).unread_count as number) || 0) + 1,
                                             updated_at: new Date().toISOString()
                                         };
                                         if (latestLead) {

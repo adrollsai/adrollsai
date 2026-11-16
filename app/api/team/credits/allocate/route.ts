@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireUser, loadCallerProfile } from '@/utils/route-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,6 +11,24 @@ export async function POST(req: Request) {
   try {
     const { adminId, targetUserId, amount } = await req.json()
     const transferAmount = Number(amount)
+
+    // This route moves credits with the service-role client and previously had
+    // no authentication at all: anyone could name any agency as `adminId` and
+    // move its balance to any account. The caller must now be the account whose
+    // credits are being spent, or a super admin.
+    const caller = await requireUser(req)
+    if (!caller) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (caller.id !== adminId) {
+      const callerProfile = await loadCallerProfile(caller.id)
+      if (String(callerProfile?.role || '').toLowerCase() !== 'super_admin') {
+        return NextResponse.json(
+          { error: 'Forbidden: you cannot allocate credits from this account.' },
+          { status: 403 }
+        )
+      }
+    }
 
     if (!adminId || !targetUserId || isNaN(transferAmount) || transferAmount <= 0) {
       return NextResponse.json(

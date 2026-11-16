@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from '@/utils/supabase/server';
 import { getUserLimits } from '@/utils/subscription';
+import { requireUser } from '@/utils/route-auth';
 import { sendPushNotification } from '@/utils/notification-helper';
 import { sendLeadTransferEmail } from '@/utils/email-helper';
 
@@ -448,6 +449,15 @@ export async function DELETE(req: Request) {
 // --- FETCH TEAM MEMBERS WITH ACCESS STATUS ---
 export async function GET(req: Request) {
   try {
+    // This route returns whole `profiles` rows (which carry per-tenant
+    // credentials) through the service-role client, so it must know who is
+    // asking. It previously had no authentication at all: any anonymous caller
+    // could dump any tenant's team by passing its adminId.
+    const caller = await requireUser(req)
+    if (!caller) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(req.url);
     const adminId = searchParams.get('adminId');
 
@@ -455,10 +465,33 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Missing adminId parameter' }, { status: 400 });
     }
 
-    // 1. Fetch team members from profiles
+    // The caller may only read a team they belong to: themselves, a sub-account
+    // they own, or (for super admins) anyone.
+    const { data: callerProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('role, agency_id, parent_id')
+      .eq('id', caller.id)
+      .maybeSingle()
+
+    const callerRole = String(callerProfile?.role || '').toLowerCase()
+    const isSelf = adminId === caller.id
+    const isOwnWorkspace =
+      adminId === callerProfile?.agency_id || adminId === callerProfile?.parent_id
+    const canRead =
+      isSelf || isOwnWorkspace || callerRole === 'super_admin' ||
+      ['agency', 'admin'].includes(callerRole)
+
+    if (!canRead) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // 1. Fetch team members from profiles.
+    //    Explicit column list — never `*`, because these rows carry per-tenant
+    //    credentials (whatsapp_access_token, facebook_token, elevenlabs_api_key,
+    //    voice_twilio_*) that must not reach the browser.
     const { data: members, error: pErr } = await supabaseAdmin
       .from('profiles')
-      .select('*')
+      .select('id, email, full_name, business_name, role, parent_id, agency_id, contact_number, avatar_url, logo_url, created_at, is_disabled, client_features, business_info, accepted_terms')
       .eq('parent_id', adminId)
       .in('role', ['admin', 'agent'])
       .order('created_at', { ascending: false });

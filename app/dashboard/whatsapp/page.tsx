@@ -435,7 +435,15 @@ export default function AutomationPage() {
           targetId = impersonateId
         }
 
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', targetId).single()
+        // Explicit columns only. `profiles` carries per-tenant credentials
+        // (whatsapp_access_token, facebook_token, elevenlabs_api_key,
+        // voice_twilio_*); selecting `*` shipped them all to the browser. This
+        // screen only needs identity, role and the WhatsApp number for display.
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, business_name, role, parent_id, agency_id, avatar_url, logo_url, whatsapp_phone_number, whatsapp_connected_at, client_features')
+          .eq('id', targetId)
+          .single()
         if (prof) {
           setProfile(prof)
           const adminRoles = ['super_admin', 'agency', 'admin']

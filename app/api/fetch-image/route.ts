@@ -1,6 +1,57 @@
 // app/api/fetch-image/route.ts
 import { NextResponse } from 'next/server';
 
+/**
+ * Image/video proxy for `<img src>` and download links.
+ *
+ * It has to stay callable without a session (public shared pages render through
+ * it), so it must not be a general-purpose URL fetcher. It previously fetched
+ * *any* URL a caller supplied — an open read-SSRF proxy that could be pointed at
+ * internal hosts or cloud metadata and unmetered bandwidth.
+ *
+ * Only hosts this product actually stores or serves media from are allowed.
+ */
+const ALLOWED_HOST_SUFFIXES = [
+  '.r2.dev',
+  '.supabase.co',
+  '.adrolls.in',
+  'adrolls.in',
+  '.nobogent.com',
+  'nobogent.com',
+  '.googleusercontent.com',
+  '.fbcdn.net',
+  '.licdn.com',
+]
+
+function isAllowedMediaUrl(raw: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false
+
+  const host = parsed.hostname.toLowerCase()
+  // Never allow loopback / link-local / private-range targets.
+  if (
+    host === 'localhost' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.local') ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  ) {
+    return false
+  }
+
+  return ALLOWED_HOST_SUFFIXES.some(suffix =>
+    suffix.startsWith('.') ? host.endsWith(suffix) : host === suffix
+  )
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
@@ -9,6 +60,10 @@ export async function GET(request: Request) {
 
   if (!imageUrl) {
     return new NextResponse('Missing URL', { status: 400 });
+  }
+
+  if (!isAllowedMediaUrl(imageUrl)) {
+    return new NextResponse('URL host is not allowed', { status: 400 });
   }
 
   try {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireUser, loadCallerProfile } from '@/utils/route-auth'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,22 @@ export async function POST(req: Request) {
 
     if (!adminId || !targetUserId || !Array.isArray(features)) {
       return NextResponse.json({ error: 'Missing required parameters (adminId, targetUserId, features array)' }, { status: 400 })
+    }
+
+    // Feature flags gate whole tabs. This route had no authentication, so anyone
+    // could toggle them for any account using the service-role client.
+    const caller = await requireUser(req)
+    if (!caller) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (caller.id !== adminId) {
+      const callerProfile = await loadCallerProfile(caller.id)
+      if (String(callerProfile?.role || '').toLowerCase() !== 'super_admin') {
+        return NextResponse.json(
+          { error: 'Forbidden: you cannot change features for this account.' },
+          { status: 403 }
+        )
+      }
     }
 
     // Verify caller authority

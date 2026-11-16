@@ -478,6 +478,19 @@ export default function AdsPage() {
             });
           }
           setLaunchJobId(null);
+        } else if (data.status === 'unknown' || !res.ok) {
+          // The job could not be read (missing row, migration not applied,
+          // permissions). Stop polling and say so — the previous behaviour was
+          // to keep polling forever, and the route used to answer `completed`
+          // for this case, which produced a false "Campaign launched
+          // successfully!" toast.
+          clearInterval(poll);
+          setLaunchJobStatus('failed');
+          toast.error('Could not confirm the campaign launch', {
+            description: data?.message || 'The launch job could not be read. Check Meta Ads Manager before retrying — the campaign may still have been created.',
+            duration: 20000
+          });
+          setLaunchJobId(null);
         } else {
           setLaunchJobStatus(data.status === 'processing' ? 'processing' : 'queued');
         }
@@ -917,9 +930,13 @@ export default function AdsPage() {
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-        if (locationSearchText.length > 2 && facebookToken) {
+        if (locationSearchText.length > 2) {
             setIsSearchingLocation(true)
-            const res = await fetch(`/api/meta-ads/search-locations?q=${locationSearchText}&token=${facebookToken}`)
+            // The Meta token is no longer sent from the browser: the route reads
+            // it server-side from the tenant's profile. Only the acting account
+            // is passed through.
+            const impQs = impersonateId ? `&impersonate=${encodeURIComponent(impersonateId)}` : ''
+            const res = await fetch(`/api/meta-ads/search-locations?q=${encodeURIComponent(locationSearchText)}${impQs}`)
             const data = await res.json()
             setLocationResults(data.data || [])
             setIsSearchingLocation(false)
@@ -946,6 +963,14 @@ export default function AdsPage() {
   }, [adsetSearchText, facebookToken])
   
   const handleToggleStatus = async (id: string, currentStatus: string) => {
+      // Only flip between ACTIVE and PAUSED. Meta also returns ARCHIVED,
+      // DELETED, IN_PROCESS, PENDING_REVIEW and WITH_ISSUES; treating every
+      // non-ACTIVE state as "off" meant clicking the toggle on a campaign that
+      // was pending review or archived would ask Meta to set it ACTIVE.
+      if (currentStatus !== 'ACTIVE' && currentStatus !== 'PAUSED') {
+          toast.error(`This campaign is ${currentStatus.toLowerCase().replace(/_/g, ' ')}, so it cannot be toggled here. Manage it in Meta Ads Manager.`);
+          return;
+      }
       const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
       setTogglingId(id);
       const updatedCampaigns = campaigns.map(c => c.id === id ? { ...c, status: newStatus } : c);
@@ -1349,6 +1374,12 @@ export default function AdsPage() {
   }
 
   const handleToggleNodeStatus = async (nodeId: string, currentStatus: string, type: 'campaign' | 'adset' | 'ad') => {
+    // Same rule as the campaign list: never invent ACTIVE for a node that Meta
+    // has in a review/archived/error state.
+    if (currentStatus !== 'ACTIVE' && currentStatus !== 'PAUSED') {
+      toast.error(`This ${type} is ${currentStatus.toLowerCase().replace(/_/g, ' ')}, so it cannot be toggled here. Manage it in Meta Ads Manager.`)
+      return
+    }
     const newStatus = currentStatus === 'ACTIVE' ? 'PAUSED' : 'ACTIVE'
     
     setExplorerData((prev: any) => {
@@ -1714,7 +1745,10 @@ export default function AdsPage() {
   const handleGenerateManualCopies = async () => {
       if (!orchestrator.campaign) return;
       
-      const selectedCount = orchestrator.variations.length;
+      // Count only the creatives the user actually selected — this used to use
+      // orchestrator.variations.length, so copy was generated (and billed) for
+      // variations that had been deselected.
+      const selectedCount = orchestrator.variations.filter((v: any) => v.selected !== false).length;
       if (selectedCount === 0) {
           toast.error("Please select or upload at least one creative.");
           return;
@@ -1893,7 +1927,11 @@ export default function AdsPage() {
     }
     
     const hasValidLocations = adForm.metaLocations.length > 0 || droppedPins.length > 0;
-    if (!hasValidLocations || adForm.dailyBudgetINR < 100) { alert("Please set a valid location (select cities or drop a pin on the map) and minimum budget."); return }
+    // The floor follows the account currency (₹100 for INR, the equivalent small
+    // minimum elsewhere). It used to be a hardcoded ₹100 for every account,
+    // which made a legitimate $20/day campaign impossible to launch.
+    const minDailyBudget = currency === 'INR' ? 100 : 5;
+    if (!hasValidLocations || adForm.dailyBudgetINR < minDailyBudget) { alert("Please set a valid location (select cities or drop a pin on the map) and minimum budget of " + minDailyBudget + "."); return }
     if (campaignType === 'whatsapp_chat' && !selectedWhatsAppNumber) {
         alert("Please select a connected WhatsApp number for the campaign.");
         return;
@@ -2465,7 +2503,7 @@ export default function AdsPage() {
                       <TrendingUp size={12} className="text-emerald-500 shrink-0" /> Avg CPL
                     </p>
                     <p className="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5 sm:mt-1">
-                      {avgCpl > 0 ? `₹${avgCpl.toFixed(2)}` : '—'}
+                      {avgCpl > 0 ? `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${avgCpl.toFixed(2)}` : '—'}
                     </p>
                   </div>
                   <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200/80 rounded-xl sm:rounded-2xl p-3 sm:p-4 shadow-sm">
@@ -2754,10 +2792,10 @@ export default function AdsPage() {
                           let budgetStr = 'Ad set budget';
                           if (campaign.daily_budget) {
                             const val = parseFloat(campaign.daily_budget);
-                            budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')}/day`;
+                            budgetStr = `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${(val / 100).toLocaleString('en-IN')}/day`;
                           } else if (campaign.lifetime_budget) {
                             const val = parseFloat(campaign.lifetime_budget);
-                            budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')} total`;
+                            budgetStr = `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${(val / 100).toLocaleString('en-IN')} total`;
                           }
 
                           return (
@@ -2869,7 +2907,7 @@ export default function AdsPage() {
 
                               {/* CPC */}
                               <td className="py-3.5 px-4 text-right font-medium text-slate-600">
-                                {cpc > 0 ? `₹${cpc.toFixed(2)}` : '—'}
+                                {cpc > 0 ? `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${cpc.toFixed(2)}` : '—'}
                               </td>
 
                               {/* ACTION BUTTONS (STICKY ON MD+) */}
@@ -3047,10 +3085,10 @@ export default function AdsPage() {
                     let budgetStr = 'Ad set budget';
                     if (campaign.daily_budget) {
                       const val = parseFloat(campaign.daily_budget);
-                      budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')}/day`;
+                      budgetStr = `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${(val / 100).toLocaleString('en-IN')}/day`;
                     } else if (campaign.lifetime_budget) {
                       const val = parseFloat(campaign.lifetime_budget);
-                      budgetStr = `₹${(val > 100 ? val / 100 : val).toLocaleString('en-IN')} total`;
+                      budgetStr = `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${(val / 100).toLocaleString('en-IN')} total`;
                     }
 
                     return (
@@ -3112,7 +3150,7 @@ export default function AdsPage() {
                           </div>
                           <div>
                             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate">CPL</p>
-                            <p className="text-xs sm:text-sm font-black text-emerald-600 mt-0.5">{cpl ? `₹${cpl.toFixed(0)}` : '—'}</p>
+                            <p className="text-xs sm:text-sm font-black text-emerald-600 mt-0.5">{cpl ? `${currency === 'INR' ? '₹' : currency === 'AED' ? 'د.إ' : currency === 'GBP' ? '£' : currency === 'EUR' ? '€' : '$'}${cpl.toFixed(0)}` : '—'}</p>
                           </div>
                         </div>
 
@@ -4947,11 +4985,15 @@ export default function AdsPage() {
             )}
 
             <div className="pt-4 border-t border-slate-100 shrink-0 flex justify-end relative z-10">
+              {/* This is a close button, not a save. It was labelled "Submit
+                  Changes" with a tick icon, which made users believe pending
+                  edits had been committed. Each field inside the explorer saves
+                  through its own action. */}
               <button 
                 onClick={() => { setActiveExplorerCampaign(null); setExplorerData(null); }} 
-                className="bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 px-8 rounded-2xl shadow-md shadow-green-600/20 transition-all text-xs flex items-center gap-1.5"
+                className="bg-slate-800 hover:bg-slate-900 text-white font-bold py-3.5 px-8 rounded-2xl shadow-md transition-all text-xs flex items-center gap-1.5"
               >
-                <CheckCircle size={14} /> Submit Changes
+                <X size={14} /> Close explorer
               </button>
             </div>
           </div>

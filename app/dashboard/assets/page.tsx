@@ -528,8 +528,19 @@ export default function AssetsPage() {
         try {
             const res = await fetch(`/api/assets?id=${id}`, { method: 'DELETE' });
             if (!res.ok) {
-                const { error } = await supabase.from('assets').delete().eq('id', id);
-                if (error) throw error;
+                // Do NOT fall back to a client-side delete here. The previous
+                // version retried `supabase.from('assets').delete()` whenever the
+                // API refused — which treated "authorisation failed" as "try
+                // again without authorisation" and let the browser delete rows
+                // the server had just rejected.
+                let message = 'Could not delete this asset.'
+                try {
+                    const data = await res.json()
+                    if (data?.error) message = data.error
+                } catch {
+                    /* non-JSON error body */
+                }
+                throw new Error(message)
             }
             toast.success('Asset deleted successfully');
             setAssets(prev => prev.filter(a => a.id !== id));
@@ -671,11 +682,19 @@ export default function AssetsPage() {
     };
 
     // Direct Post Finalization
-    const handleDirectPostSubmit = async () => {
+    const handleDirectPostSubmit = async (platformsOverride?: string[]) => {
         if (!directPostData || !directPostData.file) return;
-        
+
+        // `platformsOverride` exists because the "or share manually" button used
+        // to mutate state and then call this function from a setTimeout — the
+        // closure still held the *previous* platform list, so nothing matched
+        // 'whatsapp', the early return below never fired, and the customer's
+        // creative was published publicly to Facebook/Instagram instead of being
+        // handed to WhatsApp.
+        const selectedPlatforms = platformsOverride ?? directPostData.selectedPlatforms;
+
         // Handle WhatsApp separately via Share API if selected
-        if (directPostData.selectedPlatforms.includes('whatsapp')) {
+        if (selectedPlatforms.includes('whatsapp')) {
             try {
                 if (navigator.share && directPostData.file) {
                     await navigator.share({
@@ -693,13 +712,13 @@ export default function AssetsPage() {
             }
             
             // If only WhatsApp was selected, we're done
-            if (directPostData.selectedPlatforms.length === 1) {
+            if (selectedPlatforms.length === 1) {
                 setDirectPostData(null);
                 return;
             }
         }
 
-        const remainingPlatforms = directPostData.selectedPlatforms.filter(p => p !== 'whatsapp');
+        const remainingPlatforms = selectedPlatforms.filter(p => p !== 'whatsapp');
         if (remainingPlatforms.length === 0) return;
 
         setIsPosting(true);
@@ -1985,7 +2004,7 @@ export default function AssetsPage() {
                             {/* Action Buttons */}
                             <div className={`flex flex-col gap-3 transition-opacity ${!directPostData.file || (!directPostData.headline && !directPostData.caption) ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
                                 <button
-                                    onClick={handleDirectPostSubmit}
+                                    onClick={() => handleDirectPostSubmit()}
                                     disabled={isPosting || directPostData.selectedPlatforms.filter(p => p !== 'whatsapp').length === 0}
                                     className="w-full bg-slate-900 text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-slate-900/20 hover:bg-slate-800 transition-all disabled:opacity-50 active:scale-95"
                                 >
@@ -2001,11 +2020,11 @@ export default function AssetsPage() {
 
                                 <button
                                     onClick={() => {
-                                        const originalPlatforms = directPostData.selectedPlatforms;
-                                        setDirectPostData({ ...directPostData, selectedPlatforms: ['whatsapp'] });
-                                        setTimeout(() => {
-                                            handleDirectPostSubmit();
-                                        }, 100);
+                                        // Share only, via the explicit override. No
+                                        // state mutation and no setTimeout: those
+                                        // made this button publish the creative to
+                                        // Facebook/Instagram instead of WhatsApp.
+                                        handleDirectPostSubmit(['whatsapp']);
                                     }}
                                     disabled={isPosting}
                                     className="w-full bg-[#25D366] hover:bg-[#1ebe57] text-white py-4 rounded-[1.25rem] text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/20 transition-all disabled:opacity-50 active:scale-95"

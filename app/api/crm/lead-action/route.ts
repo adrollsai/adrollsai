@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
+import { canActForUser } from '@/utils/route-auth'
 
 export async function POST(request: Request) {
   try {
@@ -29,20 +30,12 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!user && (body.userId || body.impersonateId)) {
-      const targetId = body.userId || body.impersonateId
-      const { data: fallbackProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('id', targetId)
-        .maybeSingle()
-
-      if (fallbackProfile) {
-        user = { id: fallbackProfile.id } as any
-      }
-    }
-
+    // NOTE: this route used to fall back to treating `body.userId` /
+    // `body.impersonateId` as the authenticated identity when there was no
+    // session, which let an anonymous caller act as any tenant. Identity must
+    // come from the session or a Bearer token only.
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
     const { 
       leadId, 
       actionType, 
@@ -57,6 +50,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Lead ID is required' }, { status: 400 })
     }
 
+    // The lead must belong to the caller's workspace: every write below runs on
+    // the service-role client, which bypasses RLS.
+    const { data: leadOwnerRow } = await supabaseAdmin
+      .from('leads')
+      .select('user_id')
+      .eq('id', leadId)
+      .maybeSingle()
+
+    if (!leadOwnerRow) {
+      return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    }
+
+    if (!(await canActForUser(user.id, String((leadOwnerRow as any).user_id)))) {
+      return NextResponse.json({ error: 'Forbidden: lead is not in your workspace.' }, { status: 403 })
+    }
+
     // 1. Fetch current lead data
     const { data: currentLead, error: fetchErr } = await supabase
       .from('leads')
@@ -68,11 +77,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
-    // Prepare updates for lead table
+    // Prepare updates for lead table.
+    //
+    // `last_call_*` is call metadata, so it is only stamped by actions that
+    // actually represent a call attempt. It used to be stamped unconditionally,
+    // which meant a plain stage change or a note made the CRM's "Last Attempt"
+    // column and the "recently attempted" sort claim a call that never happened
+    // (and a STATUS_CHANGE left last_call_status = 'STATUS_CHANGE').
+    const CALL_ACTION_TYPES = new Set(['CALL', 'CALL_FEEDBACK', 'DNP', 'CALL_ATTEMPT', 'VOIP_CALL'])
+    const isCallAction =
+      CALL_ACTION_TYPES.has(String(actionType || '').toUpperCase()) ||
+      CALL_ACTION_TYPES.has(String(outcome || '').toUpperCase())
+
     const updates: Record<string, any> = {
-      last_call_at: new Date().toISOString(),
-      last_call_status: outcome || actionType,
       last_called_by: user.id
+    }
+
+    if (isCallAction) {
+      updates.last_call_at = new Date().toISOString()
+      updates.last_call_status = outcome || actionType
     }
 
     if (nextFollowup !== undefined) {

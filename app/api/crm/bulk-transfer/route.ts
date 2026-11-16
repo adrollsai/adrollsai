@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendLeadTransferEmail } from '@/utils/email-helper'
+import { requireUser, serviceAdmin } from '@/utils/route-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // Max 5 minutes for large bulk operations
@@ -16,45 +17,24 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
 
-    const supabase = await createClient()
-    let { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) user = session.user
-    }
-
-    const authHeader = req.headers.get('Authorization')
-    if (!user && authHeader) {
-      const token = authHeader.replace('Bearer ', '').trim()
-      if (token) {
-        const { data: authUserData } = await supabaseAdmin.auth.getUser(token)
-        if (authUserData?.user) user = authUserData.user
-      }
-    }
-
-    // Handle service/fallback auth or impersonation
-    if (!user && (body.userId || body.impersonateId)) {
-      const targetId = body.impersonateId || body.userId
-      const { data: fallbackProfile } = await supabaseAdmin
-        .from('profiles')
-        .select('id')
-        .eq('id', targetId)
-        .maybeSingle()
-
-      if (fallbackProfile) {
-        user = { id: fallbackProfile.id } as any
-      }
-    }
+    // Authentication: session cookie or Bearer token only. A caller-supplied
+    // `userId`/`impersonateId` is NOT an identity — it is a *scope* request that
+    // must be authorised below.
+    const user = await requireUser(req)
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    // Captured for use inside the async worker closures below (TS cannot narrow
+    // through a closure).
+    const actingUserId: string = user.id
+
     const {
       leadIds,
       targetAgentId,
       deleteHistory,
+      hideHistory,
       transferWithScheduledActions = true,
       fromAgentIds,
       useFilters,
@@ -67,6 +47,43 @@ export async function POST(req: Request) {
       previewOnly,
       impersonateId
     } = body
+
+    // `hideHistory` is the current name; `deleteHistory` is accepted for older
+    // clients but no longer deletes anything (see below).
+    const hideHistoryFromAssignee = Boolean(hideHistory ?? deleteHistory)
+
+    // Authorise the acting scope before touching any data.
+    const effectiveUserId = impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined'
+      ? String(impersonateId)
+      : user.id
+
+    if (effectiveUserId !== user.id) {
+      const authAdmin = serviceAdmin()
+      const { data: callerProfile } = await authAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      const callerRole = String(callerProfile?.role || '').toLowerCase()
+      const { data: targetProfileRow } = await authAdmin
+        .from('profiles')
+        .select('id, agency_id, parent_id')
+        .eq('id', effectiveUserId)
+        .maybeSingle()
+
+      const allowed =
+        callerRole === 'super_admin' ||
+        !!(targetProfileRow && (
+          targetProfileRow.agency_id === user.id || targetProfileRow.parent_id === user.id
+        ))
+
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Forbidden: you cannot transfer leads for this account.' },
+          { status: 403 }
+        )
+      }
+    }
 
     // Validate target agent if not in preview mode
     let targetProfile: any = null
@@ -90,9 +107,6 @@ export async function POST(req: Request) {
       targetProfile = tp
       agentName = tp.business_name || tp.full_name || tp.email || 'Teammate'
     }
-
-    // Determine effective workspace user (handle impersonation)
-    const effectiveUserId = impersonateId || user.id
 
     // Get transferrer profile
     const { data: senderProfile } = await supabaseAdmin
@@ -286,29 +300,14 @@ export async function POST(req: Request) {
 
     const validLeadIds = targetLeads.map(l => l.id)
     const cutoffTimestamp = new Date().toISOString()
-    const BATCH_SIZE = 250
 
     // EXECUTE UPDATES
-    if (!deleteHistory && transferWithScheduledActions) {
-      // Fast parallel batch update: update assigned_to in chunks of 250
-      const updatePromises = []
-      for (let i = 0; i < validLeadIds.length; i += BATCH_SIZE) {
-        const chunk = validLeadIds.slice(i, i + BATCH_SIZE)
-        updatePromises.push(
-          supabaseAdmin
-            .from('leads')
-            .update({ assigned_to: targetAgentId })
-            .in('id', chunk)
-        )
-      }
-      const updateResults = await Promise.all(updatePromises)
-      for (const res of updateResults) {
-        if (res.error) {
-          console.error('[Bulk Transfer Batch Update Error]:', res.error)
-          throw new Error(res.error.message || 'Failed to update lead assignments')
-        }
-      }
-    } else {
+    //
+    // Always go through the worker pool. The old "fast path" (a bare
+    // `assigned_to` bulk update) skipped custom_fields entirely, which meant a
+    // re-transfer could never clear a previous visibility cutoff, and it also
+    // treated hide-history as a normal assignment.
+    {
       // Continuous asynchronous worker pool (CONCURRENCY = 40)
       // Eliminates stop-and-wait batch barriers, achieving 10x-15x throughput speedup
       const CONCURRENCY = 40
@@ -330,33 +329,35 @@ export async function POST(req: Request) {
             assigned_to: targetAgentId
           }
 
-          if (deleteHistory) {
+          // Hide the pre-transfer history from the receiving teammate.
+          //
+          // Nothing is deleted. The lead keeps its remarks, DNP counts, stage and
+          // follow-up totals; we only stamp a visibility cutoff that the client
+          // honours for non-admin viewers (see utils/lead-visibility.ts). Admins
+          // and the transferring workspace keep the complete history, and the
+          // lead's source is always visible to everyone.
+          if (hideHistoryFromAssignee) {
             cf.history_visible_from = cutoffTimestamp
-            delete cf.last_followup_remark
-            delete cf.last_remark
-            delete cf.last_call_remark
-            delete cf.last_followup_at
-            delete cf.last_action_date
-            delete cf.last_followup_by
-            delete cf.last_call_status
-            delete cf.last_call_dnp
-            delete cf.dnp_count
-            delete cf.lead_status
-            cf.pipeline_stage = 'New Lead'
-            cf.status = 'New Lead'
-            cf.followup_count = 0
-            updatePayload.status = 'New Lead'
-            updatePayload.pipeline_stage = 'New Lead'
+            cf.history_hidden_from_assignee = true
+            cf.history_hidden_at = cutoffTimestamp
+            cf.history_hidden_by = actingUserId
+          } else {
+            // Re-transferring without hiding clears any previous cutoff.
+            delete cf.history_visible_from
+            delete cf.history_hidden_from_assignee
+            delete cf.history_hidden_at
+            delete cf.history_hidden_by
           }
 
+          // Pending / scheduled actions: same rule. When the sender chooses not
+          // to hand them over, the data stays on the lead (admins still see and
+          // can action it) but the assignee's views suppress it.
           if (!transferWithScheduledActions) {
-            updatePayload.next_followup = null
-            updatePayload.booked_time = null
-            delete cf.next_action_date
-            delete cf.next_action_type
-            delete cf.next_action_notes
-            delete cf.booked_time
-            delete cf.last_followup_at
+            cf.pending_actions_hidden = true
+            cf.pending_actions_hidden_at = cutoffTimestamp
+          } else {
+            delete cf.pending_actions_hidden
+            delete cf.pending_actions_hidden_at
           }
 
           updatePayload.custom_fields = cf
@@ -397,8 +398,8 @@ export async function POST(req: Request) {
       lead_id: leadId,
       user_id: user.id,
       action_type: 'TRANSFER',
-      description: deleteHistory
-        ? `🔄 Lead transferred from ${senderName} to ${agentName} (History Hidden & Moved to New Lead)`
+      description: hideHistoryFromAssignee
+        ? `🔄 Lead transferred from ${senderName} to ${agentName} (earlier history hidden from assignee — admins still see it)`
         : `🔄 Lead transferred from ${senderName} to ${agentName}`
     }))
 

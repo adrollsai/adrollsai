@@ -360,17 +360,36 @@ export async function POST(req: Request) {
                             const headerComp = templateDef.components.find((c: any) => c.type === 'HEADER')
                             if (headerComp && headerComp.format) {
                                 const fmt = headerComp.format.toUpperCase()
+
+                                // Resolve the header media. A template whose header
+                                // is media CANNOT be sent without it, and the old
+                                // code silently substituted a platform-owned stock
+                                // video / webinar poster / sample-doc.pdf — so
+                                // customers received an unrelated creative. If the
+                                // tenant has not provided media, refuse with a
+                                // clear message instead of sending the wrong asset.
+                                let resolvedMedia: string | null = providedMedia
+                                if (!resolvedMedia && (fmt === 'VIDEO' || fmt === 'IMAGE')) {
+                                    const { data: flow } = await supabaseAdmin
+                                        .from('whatsapp_flows')
+                                        .select('header_media_url')
+                                        .eq('user_id', ownerUserId)
+                                        .eq('template_name', templateName)
+                                        .maybeSingle()
+                                    if (flow?.header_media_url) resolvedMedia = flow.header_media_url
+                                }
+                                if (!resolvedMedia && fmt === 'IMAGE' && ownerProfile?.avatar_url) {
+                                    resolvedMedia = ownerProfile.avatar_url
+                                }
+
+                                if (['VIDEO', 'IMAGE', 'DOCUMENT'].includes(fmt) && !resolvedMedia) {
+                                    return NextResponse.json({
+                                        error: `This template needs ${fmt.toLowerCase()} media in its header, but none was selected. Attach the media (or pick it in the template preview) before sending.`
+                                    }, { status: 400 })
+                                }
+
                                 if (fmt === 'VIDEO') {
-                                    let videoUrl = providedMedia || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
-                                    if (!providedMedia) {
-                                        const { data: flow } = await supabaseAdmin
-                                            .from('whatsapp_flows')
-                                            .select('header_media_url')
-                                            .eq('user_id', ownerUserId)
-                                            .eq('template_name', templateName)
-                                            .maybeSingle()
-                                        if (flow?.header_media_url) videoUrl = flow.header_media_url
-                                    }
+                                    const videoUrl = resolvedMedia as string
 
                                     savedMediaUrl = videoUrl
                                     savedMediaType = 'video'
@@ -385,7 +404,7 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'IMAGE') {
-                                    let imgUrl = providedMedia || (templateName === 'webinar_thursday' ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png' : ownerProfile?.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png')
+                                    let imgUrl = resolvedMedia as string
                                     if (imgUrl.includes('/api/fetch-image?url=')) {
                                         try { imgUrl = decodeURIComponent(imgUrl.split('/api/fetch-image?url=')[1]) } catch (e) {}
                                     }
@@ -403,7 +422,7 @@ export async function POST(req: Request) {
                                         ]
                                     })
                                 } else if (fmt === 'DOCUMENT') {
-                                    const docUrl = providedMedia || 'https://adrolls.in/sample-doc.pdf'
+                                    const docUrl = resolvedMedia as string
 
                                     savedMediaUrl = docUrl
                                     savedMediaType = 'document'

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
+import { requireUser, canActForUser } from '@/utils/route-auth'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,6 +10,12 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
     try {
+        // Each call costs a paid Gemini request, so it may not be anonymous.
+        const caller = await requireUser(req)
+        if (!caller) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
         const { questionId } = await req.json()
         if (!questionId) {
             return NextResponse.json({ error: 'Missing questionId' }, { status: 400 })
@@ -23,6 +30,11 @@ export async function POST(req: Request) {
 
         if (fetchErr || !fq) {
             return NextResponse.json({ error: 'Question not found' }, { status: 404 })
+        }
+
+        // The question must belong to the caller's workspace.
+        if (!(await canActForUser(caller.id, String((fq as any).user_id)))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
         const questionText = fq.question

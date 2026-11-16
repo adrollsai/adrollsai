@@ -206,13 +206,59 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Unauthorized profile update' }, { status: 403 })
     }
 
-    // Remove any fields that should not be updated via profile page
-    const allowedUpdates = { ...updates }
-    delete allowedUpdates.id
-    delete allowedUpdates.created_at
-    delete allowedUpdates.role
-    delete allowedUpdates.agency_id
-    delete allowedUpdates.parent_id
+    // Remove any fields that must never be set through this endpoint.
+    //
+    // This used to be a five-key denylist, which left `credits`,
+    // `subscription_plan`, `subscription_status`, `subscription_valid_until`,
+    // `client_features`, `email` and every usage counter writable by the caller
+    // about themselves — i.e. any signed-in user could grant themselves
+    // unlimited credits, a valid subscription and every gated feature, because
+    // the write runs with the service-role key.
+    //
+    // Anything that confers money, identity, tenancy or feature access is
+    // stripped here regardless of who is calling. Everything else remains
+    // pass-through so existing profile/branding/booking saves keep working.
+    const PROTECTED_PROFILE_FIELDS = [
+      // identity & tenancy
+      'id', 'created_at', 'email', 'role', 'agency_id', 'parent_id', 'organization_id',
+      // billing & entitlement
+      'credits', 'subscription_plan', 'subscription_status', 'subscription_valid_until',
+      'usage_reset_date', 'client_features', 'enable_distribution',
+      // quota counters
+      'ai_creatives_used', 'campaign_launches_used', 'ai_ad_optimizations_used',
+      'remarketing_campaigns_used', 'seo_articles_used', 'storage_bytes_used',
+      // account state
+      'is_disabled', 'onboarding_completed',
+      // verification state (set by the domain/GMB servers, never the client)
+      'whitelabel_verify_status', 'domain_verify_status', 'domain_verify_token',
+      'whitelabel_verify_token',
+    ]
+
+    const SUPER_ADMIN_ONLY_FIELDS = new Set<string>([
+      'timezone', 'gpt_prompt', 'agent_enabled', 'custom_pipeline_stages',
+    ])
+
+    const callerIsSuperAdmin = String(profile?.role || '').toLowerCase() === 'super_admin'
+
+    const allowedUpdates: Record<string, any> = {}
+    const rejectedFields: string[] = []
+    for (const [key, value] of Object.entries(updates || {})) {
+      if (PROTECTED_PROFILE_FIELDS.includes(key)) {
+        rejectedFields.push(key)
+        continue
+      }
+      if (SUPER_ADMIN_ONLY_FIELDS.has(key) && !callerIsSuperAdmin) {
+        rejectedFields.push(key)
+        continue
+      }
+      allowedUpdates[key] = value
+    }
+
+    if (rejectedFields.length > 0) {
+      console.warn(
+        `[Profile Update API] Dropped protected field(s) for ${targetUserId}: ${rejectedFields.join(', ')}`
+      )
+    }
 
     // 3. Perform update using service role client to bypass RLS restrictions
     const supabaseAdmin = createAdminClient(
@@ -359,10 +405,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // CRITICAL: Delete virtual columns that don't exist in the profiles DB schema cache
-    delete allowedUpdates.timezone
-    delete allowedUpdates.notification_email
+    // `selected_pages` is a virtual/derived field — it is mirrored into
+    // business_info rather than stored as its own column.
     delete allowedUpdates.selected_pages
+
+    // `notification_email` is NOT a profiles column (see the business_info
+    // JSON block above, which is where it actually lives) — writing it as a
+    // column makes PostgREST reject the whole update.
+    delete allowedUpdates.notification_email
+
+    // `timezone` IS a real column
+    // (20260814000000_add_timezone_to_profiles.sql). It used to be stripped
+    // here too, which meant the Timezone selector could never be persisted
+    // while other code read the column — the setting silently reverted to
+    // Asia/Kolkata on every save. Only super admins may set it.
 
     // Page Collision Protection: Ensure no unrelated account keeps this selected_page_id
     if (allowedUpdates.selected_page_id) {

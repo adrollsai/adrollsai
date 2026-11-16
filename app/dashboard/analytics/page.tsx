@@ -56,6 +56,7 @@ import LeadScoreBadge from '@/components/LeadScoreBadge'
 import CRMErrorBoundary from '@/components/CRMErrorBoundary'
 import SearchableSelect from '@/components/SearchableSelect'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES, isFreshStageName } from '@/utils/pipeline-stages'
+import { isHistoryRestrictedForViewer } from '@/utils/lead-visibility'
 import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark, parseCustomFields } from '@/utils/lead-helpers'
 
 // Render simple markdown headers, bolding, and lists into JSX
@@ -226,16 +227,35 @@ function normalizeFilterLabel(value: any): string {
 // A lead is won/lost when EITHER of its two stage fields says so. Reading only
 // `status || pipeline_stage` (or only one field) made the same lead count as won on the
 // KPI cards and as in-progress/lost on the leaderboard boards.
-function isWonLead(l: any): boolean {
-  const byPipeline = String(l?.pipeline_stage || '').trim().toLowerCase()
-  const byStatus = String(l?.status || '').trim().toLowerCase()
-  return ['won', 'closed', 'deal/token'].includes(byPipeline) || ['won', 'closed', 'deal/token'].includes(byStatus)
+// A lead is won when either of its two stage fields says so.
+//
+// The old lists were `['won','closed','deal/token']`, compared against the
+// *lowercased* stage name. The canonical win stages are "Deal Won" and
+// "Deal / Token Paid" — neither of which equals "won" or "deal/token" — so every
+// win count, conversion percentage and status board read 0 for every tenant.
+// Hints are matched as substrings so each preset's win stage is covered:
+//   universal   → "Deal Won"
+//   real_estate → "Deal / Token Paid"
+//   automotive  → "Booking Deposit Paid", "Vehicle Delivered"
+const WON_STAGE_HINTS = ['won', 'token', 'deal /', 'deal/', 'closed', 'booking deposit', 'delivered']
+
+function matchesWonHint(value: string): boolean {
+  const v = String(value || '').trim().toLowerCase()
+  if (!v) return false
+  return WON_STAGE_HINTS.some(h => v === h || v.includes(h))
 }
 
+function isWonLead(l: any): boolean {
+  return matchesWonHint(l?.pipeline_stage) || matchesWonHint(l?.status)
+}
+
+// Lost / not-interested / trash are decided by the canonical categoriser, so
+// "Unresponsive", "Lost / Not Interested", "Plan Postponed", "Dealer", "Broker"
+// and "Trash" all land here instead of inflating "Ongoing".
 function isLostLead(l: any): boolean {
-  const byPipeline = String(l?.pipeline_stage || '').trim().toLowerCase()
-  const byStatus = String(l?.status || '').trim().toLowerCase()
-  return ['lost', 'unqualified', 'lost/ni'].includes(byPipeline) || ['lost', 'unqualified', 'lost/ni'].includes(byStatus)
+  if (isWonLead(l)) return false
+  const cat = categorizeLeadStage(l)
+  return cat === 'not_interested' || cat === 'trash'
 }
 
 // Shifts a YYYY-MM-DD calendar day by N days without involving any timezone.
@@ -640,9 +660,13 @@ export default function AnalyticsPage() {
       }
 
       const activeUserId = impersonateId || user.id
+      // Explicit columns only: `profiles` holds per-tenant credentials
+      // (whatsapp_access_token, facebook_token, elevenlabs_api_key, …) and a
+      // `select('*')` here shipped every one of them to the browser. Analytics
+      // only needs identity, role, workspace and timezone.
       const { data: userProfile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, full_name, business_name, role, parent_id, agency_id, timezone, client_features, logo_url, avatar_url')
         .eq('id', activeUserId)
         .single()
 
@@ -653,8 +677,30 @@ export default function AnalyticsPage() {
       const isTeamUser = myRole === 'agent' || myRole === 'team_member' || hasParentWorkspace
 
       let targetOwnerId = user.id
-      if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id) {
-        targetOwnerId = impersonateId
+      const wantsImpersonation = Boolean(
+        impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined' && impersonateId !== user.id
+      )
+
+      // Only an admin-like caller may view another account's analytics.
+      // This page previously trusted any ?impersonate=<uuid> without a role or
+      // relationship check (RLS still scoped the rows, but the screen then
+      // labelled the caller with the target's role and mixed two identities).
+      let canImpersonate = false
+      if (wantsImpersonation) {
+        const { data: selfProfile } = await supabase
+          .from('profiles')
+          .select('role, agency_id, parent_id')
+          .eq('id', user.id)
+          .maybeSingle()
+        const selfRole = String(selfProfile?.role || '').toLowerCase()
+        const targetIsOurs =
+          (userProfile as any)?.agency_id === user.id || (userProfile as any)?.parent_id === user.id
+        canImpersonate =
+          selfRole === 'super_admin' || (['agency', 'admin'].includes(selfRole) && targetIsOurs)
+      }
+
+      if (canImpersonate) {
+        targetOwnerId = impersonateId as string
       } else if (userProfile?.parent_id) {
         targetOwnerId = userProfile.parent_id
       } else if (userProfile?.agency_id && myRole !== 'agency') {
@@ -1539,6 +1585,11 @@ export default function AnalyticsPage() {
         const nextActionDateStr = getLocalDateStr(l.next_followup || cf?.next_action_date || l.booked_time)
 
         if (!nextActionDateStr) return
+
+        // A scheduled action can be withheld from the receiving teammate when a
+        // lead is transferred. It stays on the lead (admins still see and action
+        // it) but must not appear in a restricted viewer's action queue.
+        if (isHistoryRestrictedForViewer(profile?.role) && cf?.pending_actions_hidden === true) return
 
         const rawActType = String(cf?.next_action_type || l.next_action_type || '').trim().toLowerCase()
         let actTypeKey = 'Call'

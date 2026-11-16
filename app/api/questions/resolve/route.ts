@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { triggerOutboundCall } from '@/utils/voice-helper'
+import { requireUser, canActForUser } from '@/utils/route-auth'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,6 +10,15 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
     try {
+        // This route writes into a tenant's AI context and can place a real
+        // outbound phone call, so it must know who is asking. It previously had
+        // no authentication at all: anyone who knew a question id could inject
+        // text into another tenant's context and trigger calls to their leads.
+        const caller = await requireUser(req)
+        if (!caller) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
         const { questionId, answer } = await req.json()
         if (!questionId) {
             return NextResponse.json({ error: 'Missing questionId' }, { status: 400 })
@@ -23,6 +33,11 @@ export async function POST(req: Request) {
 
         if (fetchErr || !fq) {
             return NextResponse.json({ error: 'Flagged question not found' }, { status: 404 })
+        }
+
+        // The question must belong to the caller's workspace.
+        if (!(await canActForUser(caller.id, String(fq.user_id)))) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
         if (answer) {

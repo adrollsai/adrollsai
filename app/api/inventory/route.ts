@@ -319,6 +319,31 @@ export async function GET(request: Request) {
 
     let targetUserId = user.id
     if (impersonateId && impersonateId !== 'null' && impersonateId !== 'undefined') {
+      // Reading another account's catalogue requires that the caller actually
+      // owns that relationship. Previously any authenticated user could append
+      // ?impersonate=<uuid> and receive any tenant's properties, because the
+      // query below runs on the service-role client (which bypasses RLS).
+      if (impersonateId !== user.id) {
+        const canViewAs =
+          role === 'super_admin' ||
+          impersonateId === profile?.agency_id ||
+          impersonateId === profile?.parent_id
+
+        if (!canViewAs) {
+          const { data: targetAccount } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('id', impersonateId)
+            .eq('agency_id', user.id)
+            .maybeSingle()
+          if (!targetAccount) {
+            return NextResponse.json(
+              { error: 'Forbidden: you cannot view this account.' },
+              { status: 403 }
+            )
+          }
+        }
+      }
       targetUserId = impersonateId
     } else if (isTeamUser && (profile?.agency_id || profile?.parent_id)) {
       targetUserId = profile.agency_id || profile.parent_id || user.id

@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireUser, loadCallerProfile } from '@/utils/route-auth'
 
-export async function GET() {
+export async function GET(request: Request) {
+    // This endpoint runs DDL through the service-role client over a plain GET,
+    // so it must not be reachable by anyone who guesses the path.
+    const caller = await requireUser(request)
+    if (!caller) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    const callerProfile = await loadCallerProfile(caller.id)
+    if (String(callerProfile?.role || '').toLowerCase() !== 'super_admin') {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const supabaseAdmin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!

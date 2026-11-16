@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
+import { canActForUser } from '@/utils/route-auth'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // Max 5 minutes for serverless processing
@@ -19,13 +20,20 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing broadcastId' }, { status: 400 })
         }
 
-        // Authorization check: User session OR Cron Secret / QStash
+        // Authorization: a valid cron / QStash secret, or an authenticated user
+        // who may act for the broadcast's owner.
+        //
+        // The previous expression was `!process.env.CRON_SECRET || …`, so when no
+        // secret was configured EVERY request counted as "cron authorized" and no
+        // user check ran at all — anyone could POST a broadcast id and trigger
+        // real, billable Meta sends to another tenant's audience.
         const authHeader = req.headers.get('authorization')
         const upstashAuth = req.headers.get('upstash-forward-authorization')
-        const isCronAuthorized = 
-            !process.env.CRON_SECRET ||
-            authHeader === `Bearer ${process.env.CRON_SECRET}` ||
-            upstashAuth === `Bearer ${process.env.CRON_SECRET}`
+        const cronSecret = process.env.CRON_SECRET
+        const isCronAuthorized = Boolean(
+            cronSecret &&
+            (authHeader === `Bearer ${cronSecret}` || upstashAuth === `Bearer ${cronSecret}`)
+        )
 
         let userId: string | null = null
         if (!isCronAuthorized) {
@@ -46,6 +54,13 @@ export async function POST(req: Request) {
 
         if (bErr || !broadcast) {
             return NextResponse.json({ error: 'Broadcast not found' }, { status: 404 })
+        }
+
+        // A signed-in caller may only drive broadcasts in their own workspace.
+        if (!isCronAuthorized && userId) {
+            if (!(await canActForUser(userId, String((broadcast as any).user_id)))) {
+                return NextResponse.json({ error: 'Forbidden: not your workspace.' }, { status: 403 })
+            }
         }
 
         // Fetch profile credentials
