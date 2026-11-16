@@ -110,6 +110,7 @@
     "verify:render-stalls": "esbuild scripts/verify-render-stalls.ts --bundle --platform=node --format=esm --outfile=.tmp-render-stalls.mjs --log-level=warning && node .tmp-render-stalls.mjs",
     "verify:paywall": "esbuild scripts/verify-paywall.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-paywall.mjs --log-level=warning && node .tmp-paywall.mjs",
     "verify:call-billing": "esbuild scripts/verify-call-billing.ts --bundle --platform=node --format=esm --outfile=.tmp-call-billing.mjs --log-level=warning && node .tmp-call-billing.mjs",
+    "verify:weekly-template": "esbuild scripts/verify-weekly-template.ts --bundle --platform=node --format=esm --outfile=.tmp-weekly-tpl.mjs --log-level=warning && node .tmp-weekly-tpl.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },

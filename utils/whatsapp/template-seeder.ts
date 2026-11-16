@@ -412,6 +412,61 @@ export async function registerDefaultTemplates(
             results.push({ name: 'nobogent_weekly_checkin', success: true, cached: true });
         }
 
+        // H2. nobogent_weekly_checkin_v2 — the variable-free, industry-agnostic weekly re-engagement.
+        //
+        // The owner's requirement: NO body variables, all three quick-reply buttons, and copy that
+        // suits any vertical rather than a property business.
+        //
+        // WHY A NEW NAME RATHER THAN EDITING v1: Meta treats name+language as unique and will not
+        // let a rejected or already-approved template be redefined — the same trap documented below
+        // for nobogent_video_ready. v1 carried {{1}} = lead name and {{2}} = business name and its
+        // body said "our latest options", which reads as property listings. So v2 is a new template
+        // with a STATIC body. Because it has no variables, senders must omit the body component
+        // entirely — passing an empty `parameters` array is rejected.
+        //
+        // THE THREE BUTTONS ARE MANDATORY and their quick-reply text is fixed, because the inbound
+        // webhook routes a tap by matching that text (View Offerings / Talk to Expert / Book an
+        // Appointment, the view_properties / talk_expert / book_appointment actions).
+        if (!existingNames.has('nobogent_weekly_checkin_v2')) {
+            console.log('[TEMPLATE SEEDER] Registering nobogent_weekly_checkin_v2 (no variables)...');
+            const weeklyV2Payload = {
+                name: 'nobogent_weekly_checkin_v2',
+                category: 'MARKETING',
+                language: 'en_US',
+                components: [
+                    {
+                        type: 'BODY',
+                        // No {{n}} anywhere, and nothing that assumes a vertical: no "properties",
+                        // no "listings", no "projects". A film academy, a clinic and a property
+                        // business all read this the same way.
+                        text:
+                            'A quick weekly check-in from our team. We have been working on new things this week ' +
+                            'and would love to show you. Tap one of the buttons below and we will take it from there.',
+                    },
+                    {
+                        type: 'BUTTONS',
+                        buttons: [
+                            { type: 'QUICK_REPLY', text: 'View Offerings' },
+                            { type: 'QUICK_REPLY', text: 'Talk to Expert' },
+                            { type: 'QUICK_REPLY', text: 'Book an Appointment' }
+                        ]
+                    }
+                ]
+            };
+            const w2Res = await fetch(postMetaUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${whatsappToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(weeklyV2Payload)
+            });
+            const w2Data = await w2Res.json();
+            results.push({ name: 'nobogent_weekly_checkin_v2', success: !w2Data.error, error: w2Data.error?.message || null });
+        } else {
+            results.push({ name: 'nobogent_weekly_checkin_v2', success: true, cached: true });
+        }
+
         // I. nobogent_video_ready_v2 — delivery notification for a finished video.
         //    UTILITY: it is a transactional notification about a deliverable the
         //    tenant already subscribes to.

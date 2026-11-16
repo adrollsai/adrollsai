@@ -213,8 +213,14 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 // The previous interactive message is rejected by Meta outside
                 // the 24h service window (131047), so it could only ever reach
                 // a lead who had already replied within the last day — i.e.
-                // essentially nobody. `nobogent_weekly_checkin` is registered by
-                // the template seeder on WhatsApp connect.
+                // essentially nobody.
+                //
+                // `nobogent_weekly_checkin_v2` is the VARIABLE-FREE, industry-agnostic template: a
+                // static body plus the three mandatory quick replies (View Offerings / Talk to
+                // Expert / Book an Appointment). v1 interpolated {{1}} = lead name and {{2}} =
+                // business name and said "our latest options", which reads as a property business.
+                // Because v2 has no variables, the send passes NO components at all — a template
+                // with no variables rejects an empty parameters array, so the key is omitted.
                 const metaUrl = `https://graph.facebook.com/v20.0/${waPhoneId}/messages`
                 const payload = {
                     messaging_product: 'whatsapp',
@@ -222,24 +228,17 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     to: cleanPhone,
                     type: 'template',
                     template: {
-                        name: 'nobogent_weekly_checkin',
-                        language: { code: 'en_US' },
-                        components: [
-                            {
-                                type: 'body',
-                                parameters: [
-                                    { type: 'text', text: leadName },
-                                    { type: 'text', text: businessName }
-                                ]
-                            }
-                        ]
+                        name: 'nobogent_weekly_checkin_v2',
+                        language: { code: 'en_US' }
                     }
                 }
 
-                // Rendered copy for our own chat/inbox log. The message actually
-                // delivered is the approved Meta template above; this mirrors it
-                // so the inbox shows what the lead received.
-                const promptText = `Hi ${leadName}, a quick weekly check-in from ${businessName}. Would you like to see our latest options?`
+                // Rendered copy for our own chat/inbox log. The delivered message is the approved
+                // template, whose body is now fixed text, so this mirrors it exactly rather than
+                // interpolating names the template no longer carries.
+                const promptText =
+                    'A quick weekly check-in from our team. We have been working on new things this week ' +
+                    'and would love to show you. Tap one of the buttons below and we will take it from there.'
 
                 const sendRes = await fetch(metaUrl, {
                     method: 'POST',
