@@ -1,7 +1,7 @@
-'use client'
+﻿'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download, SlidersHorizontal, Clock, Ratio, Check } from 'lucide-react'
+import { Film, Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download, SlidersHorizontal, Clock, Ratio, Check } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner' 
@@ -31,8 +31,6 @@ const getYoutubeEmbedUrl = (url: string): string | null => {
 type Property = {
   id: string
   title: string
-  address: string
-  price: string
   status: string
   image_url: string
   images: string[]
@@ -124,6 +122,10 @@ export default function ProductsPage() {
   const pdfFileInputRef = useRef<HTMLInputElement>(null)
   const editPdfFileInputRef = useRef<HTMLInputElement>(null)
   const [selectedPdfFiles, setSelectedPdfFiles] = useState<File[]>([])
+  // Video is a first-class product asset: a walkthrough clip sells better than any still, and the
+  // agent needs it to make footage-led creative instead of a stock substitute.
+  const [selectedVideoFiles, setSelectedVideoFiles] = useState<File[]>([])
+  const videoFileInputRef = useRef<HTMLInputElement>(null)
   const [existingPdfUrls, setExistingPdfUrls] = useState<string[]>([])
   const [editPdfFiles, setEditPdfFiles] = useState<File[]>([])
 
@@ -415,6 +417,13 @@ export default function ProductsPage() {
         uploadedUrls.push(...results)
       }
 
+      // Upload videos if selected. Same storage path as everything else, so they land in the library
+      // and remain attachable later.
+      const videoUrls: string[] = []
+      if (selectedVideoFiles.length > 0) {
+        const videoPromises = selectedVideoFiles.map(async (file) => uploadToR2(file, 'product_videos'))
+        videoUrls.push(...(await Promise.all(videoPromises)))
+      }
       // Upload PDF files if selected
       const pdfUrls: string[] = []
       if (selectedPdfFiles.length > 0) {
@@ -435,7 +444,7 @@ export default function ProductsPage() {
       }
 
       const newTagsArr = (newProp.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean)
-      const newConfigurations = formatPropertyConfigWithTags(null, newTagsArr, { pdf_urls: pdfUrls })
+      const newConfigurations = formatPropertyConfigWithTags(null, newTagsArr, { pdf_urls: pdfUrls, video_urls: videoUrls })
 
       const apiRes = await fetch('/api/inventory', {
         method: 'POST',
@@ -446,8 +455,6 @@ export default function ProductsPage() {
           propertyData: {
             title: newProp.title,
             description: newProp.description,
-            address: '',
-            price: '',
             property_type: 'Generic',
             status: 'Active',
             image_url: uploadedUrls[0] || "",
@@ -518,7 +525,7 @@ export default function ProductsPage() {
     }
 
     setGeneratingProps(prev => [...prev, prop.id])
-    toast.success("AI Generation Started ✨", { description: `Creating a poster for ${prop.title}. You can safely lock your phone or close the app.` })
+    toast.success("AI Generation Started âœ¨", { description: `Creating a poster for ${prop.title}. You can safely lock your phone or close the app.` })
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -552,7 +559,7 @@ export default function ProductsPage() {
       }).then(async (res) => {
            const data = await res.json();
            if (!res.ok) throw new Error(data.error);
-           toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
+           toast.success(`Creative Ready! ðŸŽ‰`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
       }).catch(err => {
            console.error("Worker error:", err);
       }).finally(() => {
@@ -604,7 +611,7 @@ export default function ProductsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
 
-      toast.success("Daily Auto-Gen Activated! ✨", {
+      toast.success("Daily Auto-Gen Activated! âœ¨", {
         description: `Scheduled daily at ${autoGenTimeOfDay} (${autoGenDimensions}).`
       })
       setAutoGenModalProp(null)
@@ -703,7 +710,7 @@ export default function ProductsPage() {
       : `${origin}/shared/${ownerId}/properties${queryString}`;
     
     navigator.clipboard.writeText(shareUrl)
-    toast.success("✅ Link Copied!")
+    toast.success("âœ… Link Copied!")
   }
 
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
@@ -711,7 +718,7 @@ export default function ProductsPage() {
   
     if (isSharingId) return 
     
-    console.log("🟢 Inventory WhatsApp Share triggered for:", prop.title);
+    console.log("ðŸŸ¢ Inventory WhatsApp Share triggered for:", prop.title);
     const shareTitle = prop.title
     const shareText = `${shareTitle}\n\n${prop.description || ''}`
     let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
@@ -736,16 +743,16 @@ export default function ProductsPage() {
 
         // 2. Try to share actual files
         if (navigator.canShare && navigator.canShare({ files: filesArray })) {
-            console.log("📱 Sharing product files via native share sheet...");
+            console.log("ðŸ“± Sharing product files via native share sheet...");
             await navigator.share({ title: shareTitle, text: shareText, files: filesArray })
             return "Shared successfully!"
         } else {
-            console.warn("⚠️ File sharing not supported. Falling back to link...");
+            console.warn("âš ï¸ File sharing not supported. Falling back to link...");
             window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
             return "Shared via link"
         }
       } catch (error: any) { 
-        console.error("❌ Share failed", error) 
+        console.error("âŒ Share failed", error) 
         if (error.name !== 'AbortError') { 
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}` 
           return "Shared via link due to error"
@@ -773,7 +780,6 @@ export default function ProductsPage() {
     return (
       (p.title || '').toLowerCase().includes(query) ||
       (p.description || '').toLowerCase().includes(query) ||
-      (p.address || '').toLowerCase().includes(query) ||
       (p.property_type || '').toLowerCase().includes(query) ||
       tags.some(tag => tag.toLowerCase().includes(query))
     )
@@ -812,7 +818,7 @@ export default function ProductsPage() {
                 type="text" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={searchTagsOnly ? "Search tags only (e.g. 3BHK, Luxury)..." : "Search products, locations, tags..."} 
+                placeholder={searchTagsOnly ? "Search tags only (e.g. 3BHK, Luxury)..." : "Search products, descriptions, tags..."} 
                 className="w-full bg-transparent py-3.5 pl-12 pr-3 text-sm text-slate-700 font-medium outline-none" 
               />
               {searchQuery && (
@@ -936,7 +942,7 @@ export default function ProductsPage() {
                       if (tags.length === 0) return null;
                       return (
                         <p className="text-[11px] font-bold text-blue-600 mt-0.5 truncate">
-                          🏷️ {tags.join(', ')}
+                          ðŸ·ï¸ {tags.join(', ')}
                         </p>
                       );
                     })()}
@@ -1006,7 +1012,7 @@ export default function ProductsPage() {
                               className="inline-flex items-center gap-1 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80 px-2 py-0.5 rounded-full hover:bg-amber-100 transition-colors"
                             >
                               <span>{dim}</span>
-                              <span className="text-amber-400">•</span>
+                              <span className="text-amber-400">â€¢</span>
                               <span>{time}</span>
                               <SlidersHorizontal size={9} className="ml-0.5 text-amber-600" />
                             </button>
@@ -1101,7 +1107,7 @@ export default function ProductsPage() {
                   <div className="space-y-1">
                     <div className="flex justify-between items-center px-1">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uploaded Photos ({previews.length})</span>
-                      <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Use â† â†’ to reorder</span>
                     </div>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {previews.map((src, i) => (
@@ -1159,6 +1165,58 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Product Video Upload Field â€” a walkthrough clip sells better than any still, and
+                    the agent needs it to make footage-led creative instead of a stock substitute. */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
+                    <span className="flex items-center gap-1"><Film size={12} className="text-indigo-500" /> Upload Product Videos</span>
+                  </label>
+                  <div
+                    onClick={() => videoFileInputRef.current?.click()}
+                    className="w-full bg-slate-50 border border-slate-200 hover:bg-slate-100/50 p-3.5 rounded-xl flex items-center justify-between cursor-pointer border-dashed transition-all"
+                  >
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <Film size={18} className="text-indigo-500" />
+                      <span className="text-xs font-bold text-slate-700">
+                        {selectedVideoFiles.length > 0 ? `${selectedVideoFiles.length} video(s) attached` : 'Upload Videos (MP4, MOV)'}
+                      </span>
+                    </div>
+                    <Upload size={16} className="text-slate-400" />
+                    <input
+                      type="file"
+                      multiple
+                      ref={videoFileInputRef}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          setSelectedVideoFiles(prev => [...prev, ...Array.from(e.target.files!)])
+                        }
+                      }}
+                      accept="video/*"
+                      className="hidden"
+                    />
+                  </div>
+                  {selectedVideoFiles.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {selectedVideoFiles.map((videoFile, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-2.5 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[11px] font-medium text-slate-600">
+                          <div className="flex items-center gap-2 truncate">
+                            <Film size={14} className="text-indigo-500 shrink-0" />
+                            <span className="truncate">{videoFile.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedVideoFiles(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:bg-red-100 p-1 rounded-full shrink-0"
+                            title="Remove Video"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 {/* PDF Document Upload Field */}
                 <div>
@@ -1309,7 +1367,7 @@ export default function ProductsPage() {
                 <div className="space-y-1">
                   <div className="flex justify-between items-center px-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Photos ({existingImages.length + editPreviews.length})</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Use â† â†’ to reorder</span>
                   </div>
                   <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                     {/* Existing Saved Images */}
@@ -1618,7 +1676,7 @@ export default function ProductsPage() {
                            {selectedProperty.youtube_url && getYoutubeEmbedUrl(selectedProperty.youtube_url) && (
                               <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-100">
                                 <h3 className="font-extrabold text-lg text-slate-900 mb-4 flex items-center gap-2">
-                                  <span className="text-red-600 font-bold">▶</span> Product Video
+                                  <span className="text-red-600 font-bold">â–¶</span> Product Video
                                 </h3>
                                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
                                   <iframe
@@ -1642,9 +1700,9 @@ export default function ProductsPage() {
                                      <ImageIcon size={28} className="text-blue-500" />
                                    </div>
                                    <h4 className="text-lg font-bold text-slate-900 mb-2">No creatives yet</h4>
-                                   <p className="text-slate-500 text-sm font-medium mb-6">Use the AI Creator to generate posters or videos linked directly to this product.</p>
-                                   <button onClick={() => { setSelectedProperty(null); router.push('/dashboard/creation'); }} className="w-full bg-blue-600 text-white py-3.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-colors">
-                                     Open AI Creator
+                                   <p className="text-slate-500 text-sm font-medium mb-6">Use the Nobogent agent to generate posters or videos linked directly to this product.</p>
+                                   <button onClick={() => { setSelectedProperty(null); router.push((() => { const imp = new URLSearchParams(window.location.search).get('impersonate'); return imp ? `/dashboard/agent?impersonate=${encodeURIComponent(imp)}` : '/dashboard/agent'; })()); }} className="w-full bg-blue-600 text-white py-3.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-colors">
+                                     Open Nobogent agent
                                    </button>
                                </div>
                            ) : (
