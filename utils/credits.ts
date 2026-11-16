@@ -175,6 +175,17 @@ export async function hasEnoughCredits(
  * jobs against a 100-credit wallet both passed the comparison and both wrote, so
  * the balance went to -20 and the ledger no longer described reality.
  */
+/**
+ * Which wallet a charge comes out of.
+ *
+ *   'calling' — the locked calling pot (`profiles.calling_credits`), 4 credits per started minute
+ *   'ai'      — everything else (`profiles.credits`): images, video, copy, campaign launches
+ *
+ * The two never lend to each other. Before this, a phone call debited `credits`, so the locked pot
+ * was decoration on the profile and a call quietly ate the customer's creative budget.
+ */
+export type CreditPot = 'ai' | 'calling'
+
 export async function deductCredits(
   supabaseAdmin: any,
   userId: string,
@@ -189,7 +200,7 @@ export async function deductCredits(
 
     const { data: profile, error: fetchErr } = await supabaseAdmin
       .from('profiles')
-      .select('credits, business_name, role, email')
+      .select('credits, calling_credits, business_name, role, email')
       .eq('id', primaryUserId)
       .single()
 
@@ -200,19 +211,23 @@ export async function deductCredits(
 
     const isUnlimited = ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(profile.email || '')
 
-    // 1. Atomic guarded decrement. NULL = the wallet could not cover it.
-    let newCredits = await atomicSpend(supabaseAdmin, primaryUserId, amount)
+    // A phone call may only spend locked calling credits. Everything else may only spend AI credits.
+    const pot: CreditPot = category === 'calling' ? 'calling' : 'ai'
+
+    // 1. Atomic guarded decrement against the RIGHT pot. NULL = that pot could not cover it.
+    let newCredits = await atomicSpend(supabaseAdmin, primaryUserId, amount, pot)
 
     if (newCredits === null) {
       if (!isUnlimited) {
         console.warn(
-          `[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} cannot cover ${amount} credits.`
+          `[CREDITS HELPER] Overdraft prevented. User ${primaryUserId} cannot cover ${amount} credits from the ` +
+            `${pot} pot. (AI: ${profile.credits ?? 0}, calling: ${profile.calling_credits ?? 0})`
         )
         return false
       }
       // Unlimited accounts are allowed to go past zero: record the usage without
       // driving the balance negative.
-      newCredits = Number(profile.credits || 0)
+      newCredits = Number((pot === 'calling' ? profile.calling_credits : profile.credits) || 0)
     }
 
     // 2. Ledger row. A missing ledger row is worth shouting about but must not
@@ -228,7 +243,8 @@ export async function deductCredits(
     }
 
     console.log(
-      `[CREDITS HELPER] Deducted ${amount} credits from user ${primaryUserId} for ${category}. New balance: ${newCredits}`
+      `[CREDITS HELPER] Deducted ${amount} credits from user ${primaryUserId} for ${category} (${pot} pot). ` +
+        `New ${pot} balance: ${newCredits}`
     )
     return true
   } catch (e) {
@@ -238,8 +254,16 @@ export async function deductCredits(
 }
 
 /** Atomic decrement via RPC, with a compare-and-swap fallback. NULL = refused. */
-async function atomicSpend(supabaseAdmin: any, userId: string, amount: number): Promise<number | null> {
-  const { data, error } = await supabaseAdmin.rpc('spend_credits', {
+async function atomicSpend(
+  supabaseAdmin: any,
+  userId: string,
+  amount: number,
+  pot: CreditPot = 'ai'
+): Promise<number | null> {
+  const column = pot === 'calling' ? 'calling_credits' : 'credits'
+  const rpcName = pot === 'calling' ? 'spend_calling_credits' : 'spend_credits'
+
+  const { data, error } = await supabaseAdmin.rpc(rpcName, {
     p_user_id: userId,
     p_amount: amount
   })
@@ -247,36 +271,58 @@ async function atomicSpend(supabaseAdmin: any, userId: string, amount: number): 
   if (!error) return data === null || data === undefined ? null : Number(data)
 
   if (!isMissingFunction(error)) {
-    console.warn('[CREDITS HELPER] spend_credits failed:', error.message)
+    console.warn(`[CREDITS HELPER] ${rpcName} failed:`, error.message)
     return null
   }
 
   // Fallback for a database without the RPC: optimistic concurrency on the exact
   // value we read, so a concurrent writer makes us retry instead of losing its
-  // change.
+  // change. It targets the pot's own column, never `credits` by assumption.
   for (let attempt = 0; attempt < 5; attempt++) {
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('credits')
+      .select(column)
       .eq('id', userId)
       .maybeSingle()
     if (!profile) return null
 
-    const current = Number(profile.credits ?? 0)
+    const current = Number((profile as any)[column] ?? 0)
     if (current < amount) return null
 
     const { data: updated, error: updateErr } = await supabaseAdmin
       .from('profiles')
-      .update({ credits: current - amount })
+      .update({ [column]: current - amount })
       .eq('id', userId)
-      .eq('credits', profile.credits)
-      .select('credits')
+      .eq(column, (profile as any)[column])
+      .select(column)
 
     if (!updateErr && Array.isArray(updated) && updated.length > 0) return current - amount
   }
 
-  console.warn('[CREDITS HELPER] compare-and-swap spend gave up')
+  console.warn(`[CREDITS HELPER] compare-and-swap spend on ${column} gave up`)
   return null
+}
+
+/** Spendable CALLING credits. Kept separate from availableCredits so a caller cannot confuse the pots. */
+export async function availableCallingCredits(supabaseAdmin: any, userId: string): Promise<number | null> {
+  try {
+    const primaryUserId = await getPrimaryUserId(supabaseAdmin, userId)
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('calling_credits')
+      .eq('id', primaryUserId)
+      .maybeSingle()
+    if (error) {
+      if (!/does not exist|schema cache/i.test(String(error.message || ''))) {
+        console.warn('[CREDITS HELPER] availableCallingCredits failed:', error.message)
+      }
+      return null
+    }
+    return data ? Number((data as any).calling_credits || 0) : null
+  } catch (e) {
+    console.error('[CREDITS HELPER] availableCallingCredits exception:', e)
+    return null
+  }
 }
 
 /**
