@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { deductCreditsByCost, deductCredits } from '@/utils/credits'
+import { callChargeCredits, failedCallHundredths } from '@/lib/automation/call-billing'
 
 // Bypassing RLS with Admin Key
 const supabaseAdmin = createClient(
@@ -116,17 +117,44 @@ export async function POST(req: Request) {
 
     console.log(`[BILL-CALL] Call Billing Summary: Duration=${durationMinutes} min(s), Total INR Cost=${finalCostInr.toFixed(4)}, Method: ${billingMethod}`);
 
-    // 4. Deduct the credits (5 credits / minute, rounded up to nearest minute)
-    const creditsToDeduct = durationMinutes * 5
+    // 4. Deduct the credits using the ONE billing model (lib/automation/call-billing.ts):
+    //    1 credit per minute block entered + 0.05 credits per second, in integer hundredths.
+    //
+    // This replaced a flat `durationMinutes * 5`. That was a different tariff to the one the owner
+    // specified, and it had a worse fault: `durationSeconds` comes from a TWILIO lookup, so on a
+    // Vobiz call the lookup does not apply, duration stayed 0, and `Math.ceil(0/60) || 1` silently
+    // billed every single Vobiz call as a full minute. Those three cases are now distinguished:
+    //
+    //   duration measured      -> charged by the real model
+    //   Twilio says 0s         -> the call never connected: 0.02 credits, no minute block
+    //   duration NOT measured  -> unknown, not zero. Bill one block as a floor and shout about it,
+    //                             because billing nothing would be a silent give-away.
+    let creditsToDeduct: number
+    let chargeBasis: string
+    if (isLivePrice && durationSeconds > 0) {
+      creditsToDeduct = callChargeCredits(durationSeconds)
+      chargeBasis = `${durationSeconds}s: ${Math.ceil(durationSeconds / 60)} minute block(s) + ${durationSeconds} x 0.05`
+    } else if (isLivePrice && durationSeconds === 0) {
+      creditsToDeduct = failedCallHundredths() / 100
+      chargeBasis = 'never connected — failed-call rate, no minute block'
+    } else {
+      creditsToDeduct = callChargeCredits(60)
+      chargeBasis = 'DURATION UNKNOWN (carrier lookup failed) — billed one minute block as a floor'
+      console.warn(
+        `[BILL-CALL] duration could not be measured for call ${callSid}; billing one minute block ` +
+          'as a floor. Capture the duration from the provider webhook instead of relying on this path.',
+      )
+    }
+
     const success = await deductCredits(
       supabaseAdmin,
       userId,
       creditsToDeduct,
       'calling',
-      `Outbound AI call to ${leadName} (${leadPhone}) - Duration: ${durationMinutes} min(s) (5 credits/min)`
+      `Outbound AI call to ${leadName} (${leadPhone}) - ${chargeBasis}`
     )
 
-    return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod })
+    return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod, creditsToDeduct, chargeBasis })
   } catch (err: any) {
     console.error('[BILL-CALL] Exception during billing:', err)
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
