@@ -526,6 +526,29 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
       execute: async (input: any) => {
         try {
           const built = buildLandingPage(input as LandingPageBrief);
+
+          // QA BEFORE SAVING. `landing_pages` has no draft state - creating the row publishes the page - so a page
+          // that fails the design grade must not be written at all. What this refuses is exactly what shipped last
+          // time: one hero image, a single column of text, no proof block, nothing for the eye to land on.
+          const { gradePageHtml, describeQa } = await import('@/lib/automation/artefact-qa');
+          const pageQa = gradePageHtml(built.html);
+          const blocking = pageQa.findings.filter(
+            (f) => ['real_imagery', 'several_sections', 'proof_or_faq', 'no_placeholder_copy'].includes(f.check) && !f.ok,
+          );
+          if (blocking.length) {
+            return {
+              success: false,
+              error:
+                'Refusing to publish this page: ' +
+                blocking.map((f) => `{f.check} ({f.detail})`).join('; ') +
+                '. A page that is one hero and a column of text is not a landing page. Add at least two images ' +
+                '(a hero plus a gallery or product shot), five or more distinct sections, and a proof block or an ' +
+                'FAQ that answers the questions which stop a purchase, then build it again.',
+              qa: pageQa.findings,
+              sections: built.sections,
+            };
+          }
+
           const { data, error } = await supabase
             .from('landing_pages')
             .upsert(

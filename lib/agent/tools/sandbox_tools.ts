@@ -774,6 +774,98 @@ python3 render_card.py
             throw new Error(`HyperFrames render did not produce ${safeName}/out.mp4: ${cause}`);
           }
 
+          // ============ ARTEFACT QA — the film is measured before anything is claimed about it ============
+          //
+          // Nothing used to check the OUTPUT. A film with one h264 stream and no audio was returned as a success, so a
+          // reel the plan called "narrated" reached the owner silent; type painted through type was returned as a
+          // success because nothing ran the renderer's own layout/contrast audit. Both now run here, and a render that
+          // fails them is refused instead of delivered.
+          let qaReport: any = null;
+          try {
+            const probeCmd = [
+              `ffprobe -v error -show_entries stream=codec_type,codec_name -of json ${safeName}/out.mp4`,
+              `echo "DUR:$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 ${safeName}/out.mp4)"`,
+              `ffmpeg -hide_banner -i ${safeName}/out.mp4 -af volumedetect -f null - 2>&1 | grep -E 'mean_volume|max_volume' || true`,
+              'echo "CHECK-BEGIN"',
+              'npx --yes hyperframes check --json 2>&1 | tail -40 || true',
+              'echo "CHECK-END"',
+            ].join('\n');
+            const probe = await executeInE2BSandbox({ command: probeCmd, userId, timeoutMs: 180_000 });
+            const out = probe.stdout || '';
+
+            let streams: any[] = [];
+            try {
+              streams = JSON.parse(/(\{[\s\S]*?"streams"[\s\S]*?\})/.exec(out)?.[1] ?? '{}')?.streams ?? [];
+            } catch {
+              streams = [];
+            }
+            const durationMatch = /DUR:([\d.]+)/.exec(out);
+            const meanMatch = /mean_volume:\s*(-?[\d.]+)/.exec(out);
+            const maxMatch = /max_volume:\s*(-?[\d.]+)/.exec(out);
+
+            const checkBlock = /CHECK-BEGIN([\s\S]*?)CHECK-END/.exec(out)?.[1] ?? '';
+            let checkVerdict: 'pass' | 'fail' | 'unavailable' = 'unavailable';
+            let checkErrors: any = null;
+            try {
+              const parsed = JSON.parse(/(\{[\s\S]*\})/.exec(checkBlock)?.[0] ?? '');
+              checkVerdict = parsed?.ok === true ? 'pass' : 'fail';
+              checkErrors = parsed?.errors ?? parsed?.findings ?? null;
+            } catch {
+              checkVerdict = /"ok"\s*:\s*true/.test(checkBlock) ? 'pass' : 'unavailable';
+            }
+
+            const { gradeVideoProbe, describeQa } = await import('@/lib/automation/artefact-qa');
+            const graded = gradeVideoProbe({
+              streams,
+              durationSeconds: durationMatch ? Number(durationMatch[1]) : null,
+              meanVolumeDb: meanMatch ? Number(meanMatch[1]) : null,
+              maxVolumeDb: maxMatch ? Number(maxMatch[1]) : null,
+            });
+            qaReport = {
+              ok: graded.ok && checkVerdict !== 'fail',
+              findings: graded.findings,
+              check: checkVerdict,
+              checkErrors,
+              summary: describeQa(graded),
+            };
+
+            // A silent film is the one failure that must never reach the owner again.
+            const fatal = graded.findings.filter(
+              (f) => !f.ok && ['audio_stream', 'audible', 'video_stream'].includes(f.check),
+            );
+            if (fatal.length) {
+              return {
+                success: false,
+                qa: qaReport,
+                videoUrl,
+                partial: true,
+                error:
+                  `The render finished but the FILM fails QA: ${fatal
+                    .map((f) => `${f.check} (${f.detail})`)
+                    .join('; ')}. An MP4 with no audio stream has no narration and no music, whatever the plan said. ` +
+                  'Add the voiceover and the music bed (generate_voiceover for the voice, the ffmpeg bed command in the ' +
+                  'media doctrine for the music, then pass audioUrl or mux them in the sandbox), re-render, and only then ' +
+                  'tell the owner the film is ready.',
+              };
+            }
+            if (quality === 'delivery' && checkVerdict === 'fail') {
+              return {
+                success: false,
+                qa: qaReport,
+                videoUrl,
+                partial: true,
+                error:
+                  "Refusing to deliver: the renderer's own check reports layout, contrast or overlap errors. Fix the " +
+                  'composition and render again. Details: ' +
+                  JSON.stringify(checkErrors ?? {}).slice(0, 600),
+              };
+            }
+            console.log(`[HyperFrames] artefact QA: ${qaReport.summary} (check: ${checkVerdict})`);
+          } catch (qaError: any) {
+            // QA must never break a successful render: it reports, and the caller sees qa: null.
+            console.warn('[HyperFrames] artefact QA could not run:', qaError?.message);
+          }
+
           // The MP4 is safely in R2, so from here the sandbox is only holding
           // project files. Pause it instead of letting it bill compute while the
           // user watches the result; the filesystem survives, so a follow-up
@@ -824,6 +916,7 @@ python3 render_card.py
             ...(renderSecondsTaken ? { renderSeconds: renderSecondsTaken } : {}),
             ...(sizeMB ? { sizeMB } : {}),
             ...(capVerdict ? { sizeCap: capVerdict } : {}),
+            ...(qaReport ? { qa: qaReport } : {}),
             message: `Successfully rendered HyperFrames composition (${dur}s, ${resolution}${renderSecondsTaken ? `, ${renderSecondsTaken}s render` : ''}${effectiveLoopSeconds ? `, repeated from a ${renderSeconds}s render` : ''}${sizeMB ? `, ${sizeMB}MB` : ''}${capVerdict === 'trimmed-to-fit' ? ', trimmed to fit the size cap' : capVerdict === 'over-target' ? ', still over the size target — tell the user' : ''}).`,
             artifact: {
               type: 'video_player',
