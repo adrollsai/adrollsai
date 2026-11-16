@@ -46,7 +46,10 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
       /\b(render|hyperframes|ffmpeg|video|mp4|reel|composition|gsap|animate|animation|matte|composite|montage|subtitles?|captions?|encode|sandbox|python|script|convert|resize|crop|clip|concat|frame|code|html|css|json|csv|zip|file|folder|terminal|bash|install)\b/i,
   },
   media: {
-    with: ['sandbox'],
+    // `research` rides along because the house video doctrine is REFERENCE-FIRST: the agent is told
+    // to find how the format is working before it designs, and it cannot do that without the web
+    // tools. Pulling research in here is cheaper than a creative that was invented from nothing.
+    with: ['sandbox', 'research'],
     // Plain "video" belongs here as well as in `sandbox`. It used to be only a
     // sandbox signal, so "make a 30 second video about our new batch" loaded the
     // rendering toolkit and NOT one video-generating tool — the agent could shell out
