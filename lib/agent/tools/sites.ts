@@ -32,11 +32,88 @@ export function createSiteTools(supabase: SupabaseClient, userId: string) {
   async function profile() {
     const { data, error } = await supabase
       .from('profiles')
-      .select('custom_domain, whitelabel_domain, business_name')
+      .select('custom_domain, whitelabel_domain, domain_verify_status, whitelabel_verify_status, business_name')
       .eq('id', userId)
       .maybeSingle();
     if (error) throw new Error(`Could not read profile: ${error.message}`);
     return data;
+  }
+
+  /**
+   * Does this domain actually serve OUR pages, or is it just a value in a column?
+   *
+   * `domain_verify_status` is a claim, not a fact, and it goes stale: Procolor's row says
+   * "verified" while www.procolorfilmacademy.com is answered by Cloudflare and 301s to an apex
+   * running WordPress, so every page URL the agent handed the owner 404'd — and the same page on
+   * the platform host returned 200. Ten other accounts (bioqueestatesinternational.com,
+   * app.theproestate.in, app.realtynationmohali.com, …) all answer `server: Vercel`, which is the
+   * signal that separates "attached" from "configured once, moved later".
+   *
+   * Fails OPEN on uncertainty on purpose: a timeout or a network blip must not downgrade a domain
+   * that is fine. It only reports `servesNobogent: false` on positive evidence that the host is
+   * somebody else's — a non-Vercel server header, or a redirect away from the domain.
+   */
+  async function probeDomain(domain: string): Promise<{
+    checked: boolean;
+    reachable: boolean;
+    server: string | null;
+    servesNobogent: boolean | null;
+    detail: string;
+  }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    try {
+      const res = await fetch(`https://${domain}/`, {
+        method: 'GET',
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: { 'User-Agent': 'nobogent-domain-check' },
+      });
+      const server = res.headers.get('server');
+      const location = res.headers.get('location');
+
+      // A redirect to a DIFFERENT host means this domain is not serving the page itself.
+      if (res.status >= 300 && res.status < 400 && location) {
+        let target = '';
+        try {
+          target = new URL(location, `https://${domain}/`).host;
+        } catch {
+          target = '';
+        }
+        const normalise = (h: string) => h.replace(/^www\./, '').toLowerCase();
+        if (target && normalise(target) !== normalise(domain)) {
+          return {
+            checked: true,
+            reachable: true,
+            server,
+            servesNobogent: false,
+            detail: `redirects to ${target}, which is a different host`,
+          };
+        }
+      }
+
+      const isVercel = /vercel/i.test(String(server ?? ''));
+      return {
+        checked: true,
+        reachable: true,
+        server,
+        // Vercel is the whole signal: every genuinely attached tenant domain answers with it.
+        servesNobogent: isVercel,
+        detail: isVercel
+          ? 'served by Vercel, like every attached tenant domain'
+          : `answered by ${server || 'an unknown server'}, not Vercel`,
+      };
+    } catch (error: any) {
+      return {
+        checked: false,
+        reachable: false,
+        server: null,
+        servesNobogent: null,
+        detail: `could not be checked (${String(error?.message ?? error).slice(0, 80)}) — not treated as broken`,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -58,7 +135,7 @@ export function createSiteTools(supabase: SupabaseClient, userId: string) {
   return {
     site_domain_status: tool({
       description:
-        'Read-only. Reports which domain this business has already attached to the app and where landing pages are therefore served, plus the exact public URL pattern. Use it to tell the user where a page will live. You cannot attach or change domains — the user does that in dashboard Settings.',
+        'Read-only. Reports where landing pages are served for this business, plus the exact public URL pattern. It CHECKS the configured domain instead of trusting it: a custom domain can be set on the account while the DNS points somewhere else, and then every page URL 404s. When domainCheck.servesNobogent is false, give the owner guaranteedUrlPattern (the platform host, which always works) and say plainly that their custom domain is not currently serving these pages. You cannot attach or change domains — the user does that in dashboard Settings.',
       inputSchema: z.object({}),
       execute: async () => {
         try {
@@ -68,16 +145,38 @@ export function createSiteTools(supabase: SupabaseClient, userId: string) {
             .select('id', { count: 'exact', head: true })
             .eq('user_id', userId);
 
+          // The configured domain is a claim. Check whether it actually answers for us BEFORE
+          // telling the owner to click it — a 404 in a chat message is worse than no URL.
+          const probe = base.customDomain ? await probeDomain(base.customDomain) : null;
+          const servesNobogent = probe ? probe.servesNobogent !== false : false;
+          const workingBase = servesNobogent ? base.baseUrl : appBaseUrl();
+
           return {
             success: true,
-            publicHost: base.baseUrl,
+            publicHost: workingBase,
             customDomain: base.customDomain,
-            onCustomDomain: base.onCustomDomain,
-            urlPattern: `${base.baseUrl}/shared/${userId}/<slug>`,
+            onCustomDomain: servesNobogent && Boolean(base.customDomain),
+            urlPattern: `${workingBase}/shared/${userId}/<slug>`,
+            guaranteedUrlPattern: `${appBaseUrl()}/shared/${userId}/<slug>`,
+            domainCheck: probe
+              ? {
+                  configured: true,
+                  checked: probe.checked,
+                  reachable: probe.reachable,
+                  server: probe.server,
+                  servesNobogent: probe.servesNobogent,
+                  detail: probe.detail,
+                }
+              : null,
             pageCount: count ?? 0,
-            note: base.onCustomDomain
-              ? "Pages are served on the customer's own domain."
-              : 'No domain attached to this account yet, so pages are served on the shared host. If the user wants their own domain, tell them to attach it in dashboard Settings — do not attempt it yourself.',
+            note: !base.customDomain
+              ? 'No domain attached to this account yet, so pages are served on the shared host. If the user wants their own domain, tell them to attach it in dashboard Settings — do not attempt it yourself.'
+              : servesNobogent
+                ? "Pages are served on the customer's own domain."
+                : `The account has ${base.customDomain} configured, but it ${probe?.detail ?? 'was not confirmed'}. ` +
+                  'Give the owner the guaranteed URL on the platform host and say plainly that the custom domain is ' +
+                  'not currently serving these pages, so they can fix the DNS in dashboard Settings. Do NOT present ' +
+                  'the custom-domain URL as working.',
           };
         } catch (err: any) {
           return { success: false, error: err?.message || 'Could not read domain status' };

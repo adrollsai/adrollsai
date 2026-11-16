@@ -99,6 +99,8 @@
     "verify:approval-id-schema": "esbuild scripts/verify-approval-id-schema.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-id-schema.mjs --log-level=warning && node .tmp-id-schema.mjs",
     "verify:page-approval": "esbuild scripts/verify-page-approval.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-page-approval.mjs --log-level=warning && node .tmp-page-approval.mjs",
     "verify:credits-explainer": "esbuild scripts/verify-credits-explainer.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-credits-explainer.mjs --log-level=warning && node .tmp-credits-explainer.mjs",
+    "verify:meta-readiness": "esbuild scripts/verify-meta-readiness.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-meta-ready.mjs --log-level=warning && node .tmp-meta-ready.mjs",
+    "verify:site-domain": "esbuild scripts/verify-site-domain.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-site-domain.mjs --log-level=warning && node .tmp-site-domain.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },

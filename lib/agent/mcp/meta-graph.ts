@@ -44,7 +44,7 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
     if (!adAccountId) throw new Error('No Meta ad account is connected to this profile.');
     if (accountCache.has(adAccountId)) return accountCache.get(adAccountId);
     const res = await fetch(
-      `${GRAPH}/${adAccountId}?fields=name,currency,timezone_name,account_status,amount_spent,spend_cap,balance&access_token=${encodeURIComponent(token)}`
+      `${GRAPH}/${adAccountId}?fields=name,currency,timezone_name,account_status,amount_spent,spend_cap,balance,disable_reason,funding_source_details&access_token=${encodeURIComponent(token)}`
     );
     const json = await res.json();
     if (json.error) throw new Error(`Meta: ${json.error.message}`);
@@ -114,7 +114,8 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
   return {
     meta_graph_account: tool({
       description:
-        'Meta Ads: the connected ad account\'s identity and health — name, currency, timezone, account status, total spent, spend cap, outstanding balance — plus every ad account this user token can reach. Call this first to learn the real currency before talking about budgets.',
+        'Meta Ads: the connected ad account\'s identity and health — name, currency, timezone, account status, total spent, spend cap, outstanding balance — plus every ad account this user token can reach. Call this first to learn the real currency before talking about budgets. ' +
+        'Also reports whether the account can actually SPEND: paymentMethod.present, disableReason and readyToSpend, with a plain-English readinessWarning when something is missing. An ad account with no payment method accepts campaigns and then never delivers them, so check readyToSpend before you promise the owner any budget will run.',
       inputSchema: z.object({
         includeAccessibleAccounts: z.boolean().default(true).describe('Also list all ad accounts the token can access'),
       }),
@@ -130,6 +131,22 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
             accessible = (list.data || []).map((a: any) => ({ id: a.id, name: a.name, currency: a.currency, status: a.account_status }));
           }
 
+          // PAYMENT METHOD — the readiness check that was missing.
+          // A campaign on an ad account with no funding source is accepted by Meta and then never
+          // delivers, so the owner discovers it only after waiting for spend that cannot happen.
+          // `funding_source_details` is the authoritative field; it is absent (or empty) exactly when
+          // no payment method is attached. Reported plainly rather than left for the model to infer
+          // from `account_status`, which stays ACTIVE in that state.
+          const funding = acct.funding_source_details ?? null;
+          const hasPaymentMethod = Boolean(funding && Object.keys(funding).length > 0);
+          const adReady = hasPaymentMethod && Number(acct.account_status) === 1;
+          const readinessWarning = !hasPaymentMethod
+            ? 'NO PAYMENT METHOD on this ad account. Meta will accept a campaign and then not deliver it. ' +
+              'Tell the owner to add a payment method in Meta Ads Manager before any budget is promised.'
+            : Number(acct.account_status) !== 1
+              ? `The ad account is not active (account_status ${acct.account_status}). Nothing will deliver until it is.`
+              : null;
+
           return {
             success: true,
             adAccountId,
@@ -140,6 +157,15 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
             amountSpent: money(acct.amount_spent, currency),
             spendCap: acct.spend_cap && Number(acct.spend_cap) > 0 ? money(acct.spend_cap, currency) : 'none',
             balance: money(acct.balance, currency),
+            paymentMethod: {
+              present: hasPaymentMethod,
+              type: funding?.type ?? null,
+              // Never echo the card digits or the funding id back into a chat transcript.
+              lastFour: funding?.last_4 ?? null,
+            },
+            disableReason: acct.disable_reason ?? null,
+            readyToSpend: adReady,
+            readinessWarning,
             accessibleAccounts: accessible,
           };
         } catch (err: any) {

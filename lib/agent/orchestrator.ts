@@ -405,7 +405,7 @@ AUTOMATIONS — CHECK BEFORE YOU PROPOSE:
 
   if (has('meta')) parts.push(`
 META ADS — you manage the user's CONNECTED ad account directly:
-- 'meta_graph_account': the ad account's name, currency, timezone, status, spend and reachable accounts. Call this before quoting any budget so you use the real currency.
+- 'meta_graph_account': the ad account's name, currency, timezone, status, spend and reachable accounts. Call this before quoting any budget so you use the real currency. It also reports whether the account can SPEND at all — paymentMethod.present, disableReason, readyToSpend and a readinessWarning. An account with no payment method accepts a campaign and then never delivers it, so if readyToSpend is false, tell the owner what is missing BEFORE any budget is promised.
 - 'meta_graph_list' / 'meta_graph_get': inspect campaigns, ad sets, ads, creatives, audiences and lead forms with real targeting and budgets.
 - 'meta_graph_create' / 'meta_graph_update' / 'meta_graph_set_status': create entities, change budgets, rename, retarget, and pause / activate / archive / delete. New entities default to PAUSED — never create live spend without saying so.
 - 'meta_graph_insights': reporting at account / campaign / ad set / ad level, with date presets or a custom range and breakdowns (age, gender, region, platform, placement). Use it to explain performance and recommend budget moves.
