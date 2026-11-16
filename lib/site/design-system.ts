@@ -165,7 +165,7 @@ ul{margin:0;padding-left:1.15em}
 li{margin:var(--s1) 0}
 section,header.hero,footer{padding:var(--s6) var(--s4)}
 .wrap{max-width:var(--wide);margin:0 auto}
-.narrow{max-width:var(--measure);margin:0 auto}
+.narrow{max-width:var(--wide);margin:0 auto}
 .eyebrow{
   margin:0 0 var(--s2);text-transform:uppercase;letter-spacing:.16em;
   font-size:12px;font-weight:700;color:var(--muted)
@@ -216,7 +216,7 @@ section,header.hero,footer{padding:var(--s6) var(--s4)}
   background:var(--surface)
 }
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s2)}
-.grid img{width:100%;height:160px;object-fit:cover;border-radius:var(--radius)}
+.grid img{width:100%;aspect-ratio:4/5;object-fit:cover;object-position:center;border-radius:var(--radius);background:var(--surface)}
 /* Proof chips: real numbers only, so they read as facts rather than as decoration. */
 .proof ul{display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);list-style:none;padding:0}
 .proof li{padding:var(--s1) var(--s3);border:1px solid var(--line);border-radius:999px;font-weight:700}

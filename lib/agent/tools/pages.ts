@@ -178,7 +178,7 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
   section(
     'offerings',
     `<section class="offerings">
-  <div class="wrap split split--trail">
+  <div class="wrap">
     <div class="split__copy">
       <h2>${say(vocabulary.collectionHeading)}</h2>
       ${
@@ -549,7 +549,30 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
                 // which is worse than no gallery: somebody else's offer on our own page.
                 .filter((url: string) => !/grand[-_ ]?opening|diwali|holi|bhai[-_ ]?dooj|festive|christmas|new[-_ ]?year/i.test(url))
                 .slice(0, 4);
-              if (urls.length) inputWithImagery.galleryImages = urls;
+              if (urls.length) {
+                // LOOK AT THEM FIRST. The asset library holds every creative made for this account - other
+                // businesses, festive posters, text posters. Filenames are opaque, so a name filter cannot help:
+                // the only check that works is showing each image to a vision model and asking whether it belongs
+                // on a page selling THIS product. An unrelated image is worse than none: it advertises somebody
+                // else's offer on the client's own page.
+                const { analyzeImageWithGemini } = await import('@/utils/image-analysis');
+                const { filterRelevantImages } = await import('@/lib/site/image-relevance');
+                const checked = await filterRelevantImages({
+                  candidates: urls.map((url) => ({ url, origin: 'asset library' })),
+                  brief: {
+                    productName: String(inputWithImagery.productName ?? ''),
+                    businessName: String(inputWithImagery.businessName ?? ''),
+                    offer: inputWithImagery.offer ? String(inputWithImagery.offer) : undefined,
+                  },
+                  inspect: (url, prompt) => analyzeImageWithGemini(url, prompt),
+                  limit: 4,
+                });
+                if (checked.keep.length) inputWithImagery.galleryImages = checked.keep;
+                (inputWithImagery as any).imageCheck = {
+                  kept: checked.keep.length,
+                  rejected: checked.rejected,
+                };
+              }
             } catch {
               /* the gallery is an enhancement; a page without one is still a page */
             }
