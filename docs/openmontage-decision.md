@@ -17,6 +17,13 @@ Its licence is **AGPL-3.0**. Not MIT, which is what the three skills already ven
 (`scroll-craft`, `ui-ux-pro-max`, `banner-marketing`) use, and which is the only licence
 `scripts/vendor-skills.mjs` accepts.
 
+Re-verified 17 Nov against GitHub's licence API rather than against the repo's own claim, because a
+decision this consequential should not rest on a README: `GET /repos/OpenMontageInc/OpenMontage/license`
+returns `{"key":"agpl-3.0","name":"GNU Affero General Public License v3.0","spdx_id":"AGPL-3.0"}`, and
+the `LICENSE` blob (`be3f7b28e564e7dd05eaf59d64adba1a4065ac0e`) opens with "GNU AFFERO GENERAL PUBLIC
+LICENSE Version 3". The `calesthio/OpenMontage` fork carries the **same blob sha**, so it is the same
+licence, not a permissive escape hatch.
+
 AGPL-3.0 is strong copyleft with a **network clause**: if you modify the Program and let users
 interact with it over a network, you must offer those users the Corresponding Source. Nobogent is a
 closed-source commercial SaaS. Incorporating AGPL code into it — or into the knowledge files we
@@ -61,3 +68,30 @@ Vendoring becomes available if any of these change:
 
 `scripts/vendor-skills.mjs` stays MIT-only until one of those happens. It is the gate that keeps
 this honest.
+
+## The route that needs no licence decision at all
+
+Worth stating because it is the one people forget: **copyright protects the expression, not the
+technique.** Vendoring their files is the thing to avoid; reading their published README, pipeline
+list and public documentation to understand *how* a beat-matched montage is assembled, then writing
+our own knowledge files from that understanding, is ordinary research. The output would be our words,
+our structure, our examples — nothing to attribute because nothing was copied.
+
+That is the option to take if the 12 pipelines and ~700 knowledge files represent craft we are
+missing, and it is the option that costs nothing legally. What it must never become is "paste the
+markdown and change a few words", which is a derivative work with extra steps.
+
+## What we actually give up by not using it
+
+Being honest about the trade, since a licence decision hides one:
+
+- 12 named production pipelines (their packaging of a shoot), against our one media doctrine plus
+  `video-shotcraft`'s 124 shot cards and the HyperFrames registry's ~450 blocks;
+- ~100 tool wrappers, most of which duplicate calls we already make directly to Grok, Gemini TTS,
+  FFmpeg and HyperFrames;
+- ~700 knowledge files, of which a single turn could ever use a handful — which is exactly what
+  `lib/agent/skill-router.ts` exists for, and why the router was worth building whatever we feed it.
+
+The parts we would genuinely want are the pipeline-level recipes: how a testimonial, a product
+launch, a before/after and an explainer are each structured beat by beat. `video-shotcraft` covers
+shot design; pipeline structure is the gap.
