@@ -414,7 +414,9 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
                 phone: decision.phone,
                 why: decision.reason,
                 arrived: formatAge(decision.minutesSinceArrival),
-                dials_from: pickChannel(channels.channels, decision.id)?.number || null,
+                // With no explicitly configured channel the dialler rotates across the shared DID pool, so say that rather
+                // than showing null and implying no line is chosen.
+                dials_from: pickChannel(channels.channels, decision.id)?.number || 'rotated from the shared DID pool',
               })),
             plain_english:
               `${summary.inQueue} lead${summary.inQueue === 1 ? '' : 's'} waiting to be called ` +
