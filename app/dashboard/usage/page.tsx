@@ -217,9 +217,9 @@ export default function UsagePage() {
                                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Top-Up Credit Packages</h3>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         {[
-                                            { id: 'starter', name: 'Starter Pack', basePrice: 2000, totalAmount: 2360, credits: 2000, desc: 'For growing campaigns', color: 'border-slate-200' },
-                                            { id: 'growth', name: 'Growth Pack', basePrice: 5000, totalAmount: 5900, credits: 5000, desc: 'Calling & manual chat combo', color: 'border-indigo-600 ring-2 ring-indigo-600/10 scale-102', recommended: true },
-                                            { id: 'enterprise', name: 'Enterprise Pack', basePrice: 10000, totalAmount: 11800, credits: 10000, desc: 'High volume voice calling', color: 'border-slate-200' }
+                                            { id: 'p500', name: '₹500 Pack', basePrice: 500, totalAmount: 590, credits: 500, desc: '500 credits — one credit per rupee', color: 'slate' },
+                                            { id: 'p1000', name: '₹1,000 Pack', basePrice: 1000, totalAmount: 1180, credits: 1000, desc: '1,000 credits — the popular size', recommended: true, color: 'indigo' },
+                                            { id: 'p2000', name: '₹2,000 Pack', basePrice: 2000, totalAmount: 2360, credits: 2000, desc: '2,000 credits — best value per credit', color: 'blue' },
                                         ].map((pkg, idx) => (
                                             <div 
                                                 key={idx} 

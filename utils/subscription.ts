@@ -2,6 +2,9 @@ export const PLANS = {
     trial: {
         name: "7-Day Trial Pass",
         price: 999,
+        // The trial is bought with credits, not with a feature allowance: ₹999 once, 1,000 credits,
+        // seven days, and only ever once per user.
+        credits: 1000,
         durationDays: 7,
         oncePerUser: true,
         limits: {
@@ -73,37 +76,13 @@ export const PLANS = {
             storage_gb: 10
         }
     },
+    // Six-month and twelve-month plans are deliberately gone: the product sells one monthly plan and
+    // one trial. A plan table nobody sells is a support problem and a pricing inconsistency.
     '1-month': {
         name: "1 Month Plan",
         price: 9999,
-        limits: {
-            videos: 10,
-            images: 50,
-            seo_articles: 30,
-            campaign_launches: 10,
-            campaign_optimizations: 10,
-            team_members: 5,
-            retargeting_campaigns: 0,
-            storage_gb: 10
-        }
-    },
-    '6-months': {
-        name: "6 Months Plan",
-        price: 54999,
-        limits: {
-            videos: 10,
-            images: 50,
-            seo_articles: 30,
-            campaign_launches: 10,
-            campaign_optimizations: 10,
-            team_members: 5,
-            retargeting_campaigns: 0,
-            storage_gb: 10
-        }
-    },
-    '12-months': {
-        name: "12 Months Plan",
-        price: 99999,
+        credits: 5000,
+        durationDays: 30,
         limits: {
             videos: 10,
             images: 50,

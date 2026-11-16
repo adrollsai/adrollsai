@@ -169,29 +169,39 @@ export interface RazorpayCreditPackageConfig {
 }
 
 export const RAZORPAY_CREDIT_PACKAGES: Record<string, RazorpayCreditPackageConfig> = {
-    'starter': {
-        id: 'starter',
-        name: 'Starter Pack',
+    // One credit per rupee, at three sizes. GST is added on top, exactly as the rest of the app
+    // charges it. Custom amounts create the same shape at checkout (see 'custom' below).
+    'p500': {
+        id: 'p500',
+        name: '₹500 Pack',
+        basePrice: 500,
+        amount: Math.round(500 * 1.18),
+        credits: 500,
+        description: '500 Nobo Credits (₹500 + 18% GST)'
+    },
+    'p1000': {
+        id: 'p1000',
+        name: '₹1,000 Pack',
+        basePrice: 1000,
+        amount: Math.round(1000 * 1.18),
+        credits: 1000,
+        description: '1,000 Nobo Credits (₹1,000 + 18% GST)'
+    },
+    'p2000': {
+        id: 'p2000',
+        name: '₹2,000 Pack',
         basePrice: 2000,
-        amount: Math.round(2000 * 1.18), // ₹2,360
+        amount: Math.round(2000 * 1.18),
         credits: 2000,
-        description: '2,000 Nobo Credits Top-Up (₹2,000 + 18% GST)'
+        description: '2,000 Nobo Credits (₹2,000 + 18% GST)'
     },
-    'growth': {
-        id: 'growth',
-        name: 'Growth Pack',
-        basePrice: 5000,
-        amount: Math.round(5000 * 1.18), // ₹5,900
-        credits: 5000,
-        description: '5,000 Nobo Credits Top-Up (₹5,000 + 18% GST)'
-    },
-    'enterprise': {
-        id: 'enterprise',
-        name: 'Enterprise Pack',
-        basePrice: 10000,
-        amount: Math.round(10000 * 1.18), // ₹11,800
-        credits: 10000,
-        description: '10,000 Nobo Credits Top-Up (₹10,000 + 18% GST)'
+    'custom': {
+        id: 'custom',
+        name: 'Custom Amount',
+        basePrice: 0,
+        amount: 0,
+        credits: 0,
+        description: 'Any amount from ₹100 — one credit per rupee, plus 18% GST'
     },
     'test_1inr': {
         id: 'test_1inr',
