@@ -406,8 +406,9 @@ export function applyReviewGate(
             ...blocked,
             message:
               `${blocked.message} If the owner has ALREADY approved this exact step, call "${name}" ` +
-              'again with its `approvalId` and do not re-type the arguments — the approved version ' +
-              'is what runs.',
+              'again with its `approvalId` AND the same arguments you asked about. The approved arguments ' +
+              'are what run, so the ones you repeat cannot change the job — but the tool still requires ' +
+              'its own fields, so a call carrying only the approvalId is rejected before it gets here.',
           };
         }
         // Run the approved payload, not the caller's restatement of it.

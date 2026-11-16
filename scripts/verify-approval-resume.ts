@@ -159,9 +159,11 @@ check(
   'the loop is named and closed',
 );
 check(
-  'it tells the agent to execute by passing the approval id, not by re-typing',
-  resumeFor().includes(`approvalId: act_abc123`) && /do NOT re-type or re-word/i.test(resumeFor()),
-  'the approved payload runs verbatim',
+  'it tells the agent to execute by passing the approval id AND the arguments',
+  resumeFor().includes(`approvalId: act_abc123`) &&
+    /repeat the arguments/i.test(resumeFor()) &&
+    /only the approvalId will fail/i.test(resumeFor()),
+  'the approved payload runs, but the schema still demands the fields',
 );
 check(
   'it says what to do if the gate still refuses',
