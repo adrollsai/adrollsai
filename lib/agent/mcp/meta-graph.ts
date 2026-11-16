@@ -206,7 +206,11 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
             limit: Math.min(Math.max(limit || 25, 1), 100),
             after,
           };
-          if (status !== 'ALL') params.effective_status = [status];
+          // `status: 'ALL'` means "do not filter". A caller that OMITS status entirely (allowed by the schema) used to
+          // send `effective_status: [undefined]`, which Meta rejects with "(#100) effective_status[0] must be one of
+          // the following values" — an error that reads like a permissions problem and is really a missing default.
+          const statusFilter = String(status ?? 'ALL').trim();
+          if (statusFilter && statusFilter.toUpperCase() !== 'ALL') params.effective_status = [statusFilter];
 
           const res = await graphGet(path, params, token);
 
