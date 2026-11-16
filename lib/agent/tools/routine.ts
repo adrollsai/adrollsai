@@ -12,6 +12,42 @@ import {
   type BusinessRoutine,
 } from '@/lib/agent/routines';
 import { enqueueRun } from '@/lib/agent/harness/runs';
+import { availableCredits, hasBalance, CREDIT_COSTS } from '@/utils/credits';
+
+/**
+ * The floor a routine must clear before it is allowed to start.
+ *
+ * A routine immediately begins composing creatives and films, so on an empty balance it queues a
+ * run that spends its whole life failing every billable step — and the owner sees "routine started"
+ * followed by nothing. One generated image is the smallest thing a routine produces, so that is the
+ * floor: below it there is no point starting.
+ */
+const ROUTINE_MIN_CREDITS = CREDIT_COSTS.AI_IMAGE_GENERATION;
+
+/**
+ * Refuse to start a routine this account cannot pay for.
+ *
+ * Returns `null` when it may start. An UNKNOWN balance (`null`) is allowed rather than blocked: a
+ * missing credits row must not read as "no money", which is the mistake `hasBalance(0)` invites.
+ *
+ * Exported so the decision can be checked against a real funded account without starting any work.
+ */
+export async function creditsRefusal(db: any, userId: string) {
+  const credits = await availableCredits(db, userId);
+  if (credits === null) return null;
+  if (hasBalance(credits, ROUTINE_MIN_CREDITS)) return null;
+
+  return {
+    ok: false as const,
+    insufficientCredits: true as const,
+    credits,
+    required: ROUTINE_MIN_CREDITS,
+    error:
+      `This account has ${credits} credit${credits === 1 ? '' : 's'} and a routine needs at least ` +
+      `${ROUTINE_MIN_CREDITS} (one generated image) before it can produce anything. Nothing was ` +
+      'started, so no run was queued and no credit was spent. Top up from Billing, then run it again.',
+  };
+}
 
 /**
  * `run_routine` — start the daily routine on demand.
@@ -64,6 +100,10 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
                 'This business has no daily routine yet. Create one from the CEO tab (Start it), then run it again.',
             };
           }
+
+          // Money first, before anything is claimed or queued.
+          const refused = await creditsRefusal(db, userId);
+          if (refused) return refused;
 
           const now = new Date();
           const period = periodKey(now, routine.timezone, routine.cadence);
@@ -140,6 +180,10 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
         if (!goal) return { ok: false, error: 'task is required' };
 
         try {
+          // Same rule as run_routine: do not queue work this account cannot pay to finish.
+          const refused = await creditsRefusal(db, userId);
+          if (refused) return refused;
+
           const { data: profile } = await db
             .from('profiles')
             .select('business_name, industry')
