@@ -101,6 +101,7 @@
     "verify:credits-explainer": "esbuild scripts/verify-credits-explainer.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-credits-explainer.mjs --log-level=warning && node .tmp-credits-explainer.mjs",
     "verify:meta-readiness": "esbuild scripts/verify-meta-readiness.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-meta-ready.mjs --log-level=warning && node .tmp-meta-ready.mjs",
     "verify:site-domain": "esbuild scripts/verify-site-domain.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-site-domain.mjs --log-level=warning && node .tmp-site-domain.mjs",
+    "verify:publish-verification": "esbuild scripts/verify-publish-verification.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-publish.mjs --log-level=warning && node .tmp-publish.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },

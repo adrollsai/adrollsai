@@ -132,6 +132,38 @@ export function createSiteTools(supabase: SupabaseClient, userId: string) {
     };
   }
 
+  /**
+   * Does the page we just wrote actually answer?
+   *
+   * "Landing page created and live at <url>" was a prediction, not an observation: the row was
+   * written and the URL was composed, and nothing fetched it. With a custom domain that pointed
+   * somewhere else, that sentence was simply false. A publish that cannot be confirmed now says so,
+   * and the agent is told not to call it live.
+   */
+  async function probePage(url: string): Promise<{ ok: boolean; status: number | null; detail: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'nobogent-page-check' },
+      });
+      return {
+        ok: res.ok,
+        status: res.status,
+        detail: res.ok ? 'answered 200' : `answered ${res.status}`,
+      };
+    } catch (error: any) {
+      return {
+        ok: false,
+        status: null,
+        detail: `could not be reached (${String(error?.message ?? error).slice(0, 70)})`,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return {
     site_domain_status: tool({
       description:
@@ -285,23 +317,44 @@ export function createSiteTools(supabase: SupabaseClient, userId: string) {
             pageId = data?.id;
           }
 
-          const url = `${base.baseUrl}/shared/${userId}/${cleanSlug}`;
+          // Advertise a host that actually serves us. A configured but misplaced custom domain
+          // would otherwise be printed into the URL the owner is told to click.
+          const hostProbe = base.customDomain ? await probeDomain(base.customDomain) : null;
+          const useCustom = Boolean(base.customDomain) && hostProbe?.servesNobogent !== false;
+          const workingBase = useCustom ? base.baseUrl : appBaseUrl();
+          const url = `${workingBase}/shared/${userId}/${cleanSlug}`;
+
+          // And then check the page itself. "Live" is a claim we can test.
+          const reach = await probePage(url);
+
           return {
             success: true,
             action: existing ? 'updated' : 'created',
             pageId,
             slug: cleanSlug,
             url,
-            publicHost: base.baseUrl,
-            onCustomDomain: base.onCustomDomain,
-            message: existing
-              ? `Landing page "${cleanSlug}" updated and live at ${url}`
-              : `Landing page "${cleanSlug}" created and live at ${url}`,
-            ...(base.onCustomDomain
+            publicHost: workingBase,
+            onCustomDomain: useCustom,
+            verified: reach.ok,
+            verification: { status: reach.status, detail: reach.detail },
+            message: reach.ok
+              ? existing
+                ? `Landing page "${cleanSlug}" updated and live at ${url} — fetched it, it answered 200.`
+                : `Landing page "${cleanSlug}" created and live at ${url} — fetched it, it answered 200.`
+              : `Landing page "${cleanSlug}" was SAVED, but ${url} ${reach.detail}. Do not tell the owner it is ` +
+                'live: say it is saved, give them this URL to check, and if it does not load, point them at ' +
+                'dashboard Settings.',
+            ...(useCustom
               ? {}
-              : {
-                  note: 'Served on the shared host because no domain is attached to this account. The user can attach their own domain in dashboard Settings.',
-                }),
+              : base.customDomain
+                ? {
+                    note: `This account has ${base.customDomain} configured but it is not serving these pages ` +
+                      `(${hostProbe?.detail ?? 'unconfirmed'}), so the URL above is on the platform host. Tell the ` +
+                      'owner their custom domain is not currently serving pages.',
+                  }
+                : {
+                    note: 'Served on the shared host because no domain is attached to this account. The user can attach their own domain in dashboard Settings.',
+                  }),
           };
         } catch (err: any) {
           return { success: false, error: err?.message || 'Could not publish landing page' };

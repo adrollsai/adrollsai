@@ -60,6 +60,10 @@ const tools = ctx.tools as any;
 console.log(`\ntool groups: ${ctx.toolGroups.join(', ')}`);
 
 console.log('\n▸ each one REFUSES when called without an approval');
+// Each refusal records a real approval card in agent_events. A gate that leaves cards behind puts
+// three stale "Approve: …" rows in the owner's chat every time it runs, so they are collected here
+// and deleted at the end whatever happens.
+const stagedActionIds: string[] = [];
 for (const name of PUBLIC_PAGE_TOOLS) {
   const toolDef = tools[name];
   if (!toolDef?.execute) {
@@ -77,6 +81,7 @@ for (const name of PUBLIC_PAGE_TOOLS) {
   } catch (error: any) {
     result = { threw: String(error?.message ?? error) };
   }
+  if (result?.actionId) stagedActionIds.push(String(result.actionId));
   check(
     `  ${name} refuses without approval`,
     result?.needs_review === true,
@@ -98,6 +103,20 @@ check(
   /no\s+draft\s+state|no\s+draft\s+stage|reachable\s+at\s+its\s+slug/i.test(prompt),
   'the real behaviour is stated',
 );
+
+// Leave the owner's approval queue as we found it: the cards this gate staged are deleted.
+if (stagedActionIds.length) {
+  const { error } = await sb
+    .from('agent_events')
+    .delete()
+    .eq('user_id', ORG)
+    .eq('event_type', 'PENDING_ACTION_APPROVAL')
+    .in('status', ['pending'])
+    .filter('payload->>actionId', 'in', `(${stagedActionIds.map((id) => `"${id}"`).join(',')})`);
+  console.log(
+    `\ncleanup: removed ${stagedActionIds.length} staged card(s)${error ? ` (${error.message})` : ''}`,
+  );
+}
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;
