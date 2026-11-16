@@ -55,7 +55,24 @@ export async function triggerOutboundCall(
     profileId: string,
     isAutoTrigger = false,
     campaignId?: string,
-    options?: { forceBluesquareDid?: boolean; useBluesquareDid?: boolean; allowAfterHours?: boolean }
+    options?: {
+        forceBluesquareDid?: boolean;
+        useBluesquareDid?: boolean;
+        allowAfterHours?: boolean;
+        /**
+         * Which pipeline answers the call.
+         *
+         * The telephony leg is identical for every pipeline: the carrier opens a bidirectional media stream to
+         * whatever the answer webhook returns. The DEFAULT answer route points at the Gemini Live bridge, and that
+         * endpoint was measured accepting the socket and then sending no audio at all — a call that connects, bills,
+         * and is silent. The Gemini TTS-Flash pipeline answers on a different bridge with a different endpoint and
+         * is proven working from the demo page, so a caller that needs to be HEARD has to name it here.
+         */
+        answerPath?: string;
+        answerParams?: Record<string, string | undefined | null>;
+        /** The TTS-Flash bridge does its own prewarm route, so the Live bridge's warmup must be skipped. */
+        skipBridgeWarmup?: boolean;
+    }
 ): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
         // 1. Fetch credentials from user profile & lead details in parallel
@@ -291,7 +308,13 @@ export async function triggerOutboundCall(
                 allowAfterHours: isBluesquareVoip ? true : allowAfterHours,
                 skipCreditCheck: isBluesquareVoip ? true : false,
                 customAuthId: isBluesquareVoip ? BLUESQUARE_VOBIZ_AUTH_ID : undefined,
-                customAuthToken: isBluesquareVoip ? BLUESQUARE_VOBIZ_AUTH_TOKEN : undefined
+                customAuthToken: isBluesquareVoip ? BLUESQUARE_VOBIZ_AUTH_TOKEN : undefined,
+                // Forward the pipeline choice, or every call is answered by the default Live route no matter what
+                // the caller asked for — which is exactly how the agent's calls came to be silent while the demo
+                // worked: the option existed on the dispatcher and stopped at this line.
+                ...(options?.answerPath ? { answerPath: options.answerPath } : {}),
+                ...(options?.answerParams ? { answerParams: options.answerParams } : {}),
+                ...(options?.skipBridgeWarmup ? { skipBridgeWarmup: true } : {}),
             })
             if (vobizRes.success || vobizRes.scheduled) {
                 if (isBluesquareVoip) {

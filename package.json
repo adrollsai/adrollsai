@@ -120,6 +120,7 @@
     "verify:ad-default": "esbuild scripts/verify-ad-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-default.mjs --log-level=warning && node .tmp-ad-default.mjs",
     "verify:video-pipelines": "esbuild scripts/verify-video-pipelines.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-pipelines.mjs --log-level=warning && node .tmp-video-pipelines.mjs",
     "verify:skills-default": "esbuild scripts/verify-skills-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-skills-default.mjs --log-level=warning && node .tmp-skills-default.mjs",
+    "verify:voice-pipeline": "esbuild scripts/verify-voice-pipeline.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-voice-pipeline.mjs --log-level=warning && node .tmp-voice-pipeline.mjs",
     "verify:whatsapp-templates": "esbuild scripts/verify-whatsapp-templates.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-wa-templates.mjs --log-level=warning && node .tmp-wa-templates.mjs",
     "proof:funnel-assets": "esbuild scripts/funnel-nobogent-assets.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-funnel-assets.mjs --log-level=warning && node .tmp-funnel-assets.mjs",
     "proof:funnel-launch": "esbuild scripts/funnel-nobogent-launch.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-funnel-launch.mjs --log-level=warning && node .tmp-funnel-launch.mjs",

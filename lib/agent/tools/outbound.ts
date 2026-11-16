@@ -267,9 +267,44 @@ export async function dispatchVoiceCall(params: {
   }
 
   try {
+    // WHICH PIPELINE ANSWERS — the difference between a call and a silent call.
+    //
+    // The default answer route points at the Gemini Live bridge. Measured on this deployment: that bridge accepts
+    // the media socket, completes its setup handshake, and then sends ZERO audio frames, in L16 and in μ-law. Two
+    // real calls to the owner's phone connected, billed 12 s and 9 s, and nobody heard anything. The Gemini
+    // TTS-Flash pipeline runs on a separate, healthy bridge (its own /tts-flash-health reports gemini-3.8-flash-tts)
+    // and is the pipeline the demo page uses successfully, so an agent call with something to SAY must use it.
+    const { resolveTtsFlashBridgeHttpUrl } = await import('@/utils/app-url');
+    const { DEFAULT_TTS_FLASH_VOICE_ID } = await import('@/utils/tts-flash-config');
+    const ttsBridge = resolveTtsFlashBridgeHttpUrl();
+    const voiceId = DEFAULT_TTS_FLASH_VOICE_ID;
+
+    // Warm the opener so the first thing the person hears is not three seconds of silence. The payload mirrors the
+    // demo's exactly, because the demo is the only call path on this platform that is known to speak.
+    await fetch(`${ttsBridge}/tts-flash-prewarm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leadId,
+        profileId: userId,
+        voiceId,
+        language: 'hinglish',
+        gender: 'female',
+        prospectName: params.leadName || 'the owner',
+        reason: params.objective,
+        instruction: params.objective,
+      }),
+      signal: AbortSignal.timeout(12_000),
+    }).catch((err: any) => console.warn('[Outbound] TTS-Flash prewarm failed (dialling anyway):', err?.message));
+
     const { triggerOutboundCall } = await import('@/utils/voice-helper');
     const result = await triggerOutboundCall(supabase, leadId as string, userId, false, undefined, {
       allowAfterHours: true,
+      answerPath: `${ttsBridge}/tts-flash-xml`,
+      // The voice must be named: the bridge synthesises the opener from these, and the demo passes them for that
+      // reason. Without a voice id the call connects and stays silent even on the working pipeline.
+      answerParams: { voiceId, gender: 'female' },
+      skipBridgeWarmup: true,
       ...(params.useBluesquareDid ? { forceBluesquareDid: true } : {}),
     });
     if (!result?.success) {
