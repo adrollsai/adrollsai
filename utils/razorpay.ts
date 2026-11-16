@@ -169,31 +169,59 @@ export interface RazorpayCreditPackageConfig {
 }
 
 export const RAZORPAY_CREDIT_PACKAGES: Record<string, RazorpayCreditPackageConfig> = {
-    // One credit per rupee, at three sizes. GST is added on top, exactly as the rest of the app
-    // charges it. Custom amounts create the same shape at checkout (see 'custom' below).
+    // ONE credit per rupee, at three sizes, and TWO separate families: AI credits and CALLING credits.
+    // They are not interchangeable — calling credits can only pay for calls and AI credits cannot — so
+    // a single "credits" pack would leave the buyer unsure which wallet was topped up. The id says it,
+    // the name says it, and the description says it.
     'p500': {
         id: 'p500',
-        name: '₹500 Pack',
+        name: '₹500 AI Credits',
         basePrice: 500,
         amount: Math.round(500 * 1.18),
         credits: 500,
-        description: '500 Nobo Credits (₹500 + 18% GST)'
+        description: '500 AI Credits (₹500 + 18% GST) — for images, video, copy and landing pages'
     },
     'p1000': {
         id: 'p1000',
-        name: '₹1,000 Pack',
+        name: '₹1,000 AI Credits',
         basePrice: 1000,
         amount: Math.round(1000 * 1.18),
         credits: 1000,
-        description: '1,000 Nobo Credits (₹1,000 + 18% GST)'
+        description: '1,000 AI Credits (₹1,000 + 18% GST) — for images, video, copy and landing pages'
     },
     'p2000': {
         id: 'p2000',
-        name: '₹2,000 Pack',
+        name: '₹2,000 AI Credits',
         basePrice: 2000,
         amount: Math.round(2000 * 1.18),
         credits: 2000,
-        description: '2,000 Nobo Credits (₹2,000 + 18% GST)'
+        description: '2,000 AI Credits (₹2,000 + 18% GST) — for images, video, copy and landing pages'
+    },
+    // Calling credits. 4 credits buy a started minute, so 500 credits is ~125 minutes, 1,000 is ~250
+    // and 2,000 is the full 500-minute allowance.
+    'call500': {
+        id: 'call500',
+        name: '₹500 Calling Credits',
+        basePrice: 500,
+        amount: Math.round(500 * 1.18),
+        credits: 500,
+        description: '500 Calling Credits (₹500 + 18% GST) — about 125 minutes of AI calling'
+    },
+    'call1000': {
+        id: 'call1000',
+        name: '₹1,000 Calling Credits',
+        basePrice: 1000,
+        amount: Math.round(1000 * 1.18),
+        credits: 1000,
+        description: '1,000 Calling Credits (₹1,000 + 18% GST) — about 250 minutes of AI calling'
+    },
+    'call2000': {
+        id: 'call2000',
+        name: '₹2,000 Calling Credits',
+        basePrice: 2000,
+        amount: Math.round(2000 * 1.18),
+        credits: 2000,
+        description: '2,000 Calling Credits (₹2,000 + 18% GST) — about 500 minutes of AI calling'
     },
     'custom': {
         id: 'custom',
@@ -212,5 +240,15 @@ export const RAZORPAY_CREDIT_PACKAGES: Record<string, RazorpayCreditPackageConfi
         description: '1 Test Credit (Live Gateway Verification)'
     }
 };
+
+/**
+ * Is this credit package a CALLING purchase?
+ *
+ * The checkout has to know which wallet to credit, so the answer lives beside the packages rather than
+ * being re-derived from an id prefix in three different routes.
+ */
+export function isCallingCreditPackage(packageId: string): boolean {
+    return /^call/i.test(String(packageId || '').trim());
+}
 
 

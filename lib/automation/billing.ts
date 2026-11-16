@@ -528,6 +528,90 @@ export async function grantCreditsOnce(
 }
 
 /**
+ * The ₹999 trial is 1,000 credits, deliberately split across the two wallets:
+ * 600 AI credits and 400 calling credits (~100 minutes at 4 credits a started minute).
+ *
+ * Without this the trial funded the AI pot only, so a trialist could not place a single call and the
+ * most expensive thing on the platform — telephony — was either unreachable or had to be given away
+ * outside the split.
+ */
+export const TRIAL_CREDIT_SPLIT = { ai: 600, calling: 400 } as const;
+
+/**
+ * Grant into the LOCKED calling pot, idempotently.
+ *
+ * Same contract as grantCreditsOnce, against calling_credits: NULL from the RPC means this ref was
+ * already applied, so a retried payment or replayed webhook cannot credit the pot twice.
+ */
+export async function grantCallingCreditsOnce(
+  supabaseAdmin: any,
+  opts: GrantOptions
+): Promise<GrantResult> {
+  const amount = Number(opts.amount) || 0;
+  try {
+    const ownerId = await resolveBillingOwner(supabaseAdmin, opts.userId);
+    const { data, error } = await supabaseAdmin.rpc('grant_calling_credits_once', {
+      p_user_id: ownerId,
+      p_amount: amount,
+      p_category: opts.category,
+      p_description: opts.description,
+      p_ref: opts.ref,
+    });
+    if (error) {
+      console.warn(`[billing] grant_calling_credits_once failed: ${error.message}`);
+      return { granted: false, balance: null, duplicate: false };
+    }
+    if (data === null || data === undefined) {
+      return { granted: false, balance: null, duplicate: true };
+    }
+    return { granted: true, balance: Number(data), duplicate: false };
+  } catch (e: any) {
+    console.warn(`[billing] grant_calling_credits_once threw: ${e?.message || e}`);
+    return { granted: false, balance: null, duplicate: false };
+  }
+}
+
+/**
+ * Grant a trial across BOTH pots in one call, splitting `totalCredits` per TRIAL_CREDIT_SPLIT.
+ *
+ * Two idempotent grants with distinct refs (`<ref>:ai` and `<ref>:calling`) rather than one, because
+ * they credit different columns and each must be individually replay-safe. `duplicate` is reported
+ * only when BOTH halves were already applied — a half-applied trial (one pot credited, the other not)
+ * is the one state that must not be mistaken for "already done".
+ */
+export async function grantTrialCreditsOnce(
+  supabaseAdmin: any,
+  opts: { userId: string; totalCredits: number; description: string; ref: string }
+): Promise<GrantResult> {
+  const total = Math.max(0, Math.floor(Number(opts.totalCredits) || 0));
+  const aiAmount = Math.min(TRIAL_CREDIT_SPLIT.ai, total);
+  const callingAmount = Math.min(TRIAL_CREDIT_SPLIT.calling, Math.max(0, total - aiAmount));
+
+  const [aiGrant, callingGrant] = await Promise.all([
+    grantCreditsOnce(supabaseAdmin, {
+      userId: opts.userId,
+      amount: aiAmount,
+      category: 'trial',
+      description: `${opts.description} — ${aiAmount} AI credits`,
+      ref: `${opts.ref}:ai`,
+    }),
+    grantCallingCreditsOnce(supabaseAdmin, {
+      userId: opts.userId,
+      amount: callingAmount,
+      category: 'trial',
+      description: `${opts.description} — ${callingAmount} calling credits`,
+      ref: `${opts.ref}:calling`,
+    }),
+  ]);
+
+  return {
+    granted: aiGrant.granted || callingGrant.granted,
+    balance: aiGrant.balance,
+    duplicate: aiGrant.duplicate && callingGrant.duplicate,
+  };
+}
+
+/**
  * Without the RPC the best we can do is claim the ledger row first (it has the
  * unique index from the same migration) and only then add the balance. Weaker —
  * the two writes are not in one transaction — but still single-grant.

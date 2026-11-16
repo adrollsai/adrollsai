@@ -7,6 +7,27 @@ import { resolveAppUrl, isAbsoluteHttpsUrl, describeUrlProblem } from '@/utils/a
 
 export { VOBIZ_NUMBER_CATALOG, type VobizAvailableNumber }
 
+/**
+ * Pick a caller ID from the shared DID pool, spread deterministically by `seed`.
+ *
+ * PURE, so the distribution can be tested without placing a call. It is a hash rather than a shared
+ * counter on purpose: a counter needs somewhere to live, breaks across serverless instances and can
+ * drift, whereas a hash of the lead id spreads calls the same way every time and is stable for a given
+ * lead (so a retried call does not silently change the number the person just missed a call from).
+ *
+ * Returns null for an empty pool, so the caller can fall back rather than dial from ''.
+ */
+export function pickRotatedDid(pool: readonly string[], seed: string): string | null {
+  const usable = (pool || []).map((n) => String(n || '').trim()).filter(Boolean)
+  if (usable.length === 0) return null
+  let hash = 0
+  const text = String(seed || '')
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0
+  }
+  return usable[hash % usable.length]
+}
+
 export interface VobizCallParams {
     leadId: string
     profileId: string
@@ -217,7 +238,20 @@ export async function triggerVobizOutboundCall(
     // Strictly require an assigned number for the account. NEVER fall back to unverified test numbers.
     const isNobogentMaster = profile.email === 'rchopra489@gmail.com' || profile.role === 'super_admin'
     const masterNumber = process.env.VOBIZ_TEST_NUMBER || null
+
+    // DID ROTATION. All the numbers on the Vobiz account are one shared pool and no DID belongs to any
+    // one tenant, so a call is placed from a number rotated across that pool rather than from a number
+    // "owned" by the caller. That is what makes the outbound traffic look like one marketing department
+    // with many lines instead of the same line every time.
+    //
+    // Order: an explicit caller-supplied number wins (an owner testing a specific line), then the shared
+    // pool, and only then a per-tenant number as a last resort so an account with a claimed DID and an
+    // empty pool still works. The seed is the lead id, so the choice is spread across the pool and
+    // stable for a given lead — no shared counter, and nothing to get out of sync across instances.
+    const sharedPool = VOBIZ_NUMBER_CATALOG.map((n) => n.phoneNumber).filter(Boolean)
+    const rotatedNumber = pickRotatedDid(sharedPool, String(leadId || profileId || ''))
     const assignedNumber = fromPhone 
+        || rotatedNumber
         || profile.voice_vobiz_number 
         || bi.claimed_vobiz_number 
         || bi.voice_vobiz_number 

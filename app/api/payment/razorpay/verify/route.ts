@@ -5,11 +5,12 @@ import {
     verifyRazorpaySignature,
     verifyRazorpaySubscriptionSignature,
     RAZORPAY_PLANS,
-    RAZORPAY_CREDIT_PACKAGES
+    RAZORPAY_CREDIT_PACKAGES,
+    isCallingCreditPackage
 } from '@/utils/razorpay';
 import { ADDONS } from '@/utils/subscription';
 import { resolveRequestUser } from '@/utils/api-auth';
-import { grantCreditsOnce, creditBalance } from '@/lib/automation/billing';
+import { grantCreditsOnce, grantCallingCreditsOnce, grantTrialCreditsOnce, creditBalance } from '@/lib/automation/billing';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -22,7 +23,7 @@ const supabaseAdmin = createAdminClient(
  * Two things this route got wrong and must not regress:
  *
  * 1. IT WAS NOT IDEMPOTENT. Every call with a valid signature added the credits
- *    again. A native app on a flaky network retries — that is normal behaviour,
+ *    again. A native app on a flaky network retries Ã¢â‚¬â€ that is normal behaviour,
  *    and it was free money. The webhook deduped via `processed_webhook_messages`;
  *    this route had nothing. Now the ledger's unique index on `ref` decides the
  *    single winner and every other caller is answered "already applied" without
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
 
             const durationMonths = planConfig?.durationMonths || (orderNotes.durationMonths ? Number(orderNotes.durationMonths) : 1);
             // Every credit figure comes from RAZORPAY_PLANS. The last-resort fallback used to be
-            // `isTrial ? 2500 : 10000` — a third hardcoded table no pricing page had ever shown, so an
+            // `isTrial ? 2500 : 10000` Ã¢â‚¬â€ a third hardcoded table no pricing page had ever shown, so an
             // unrecognised plan silently granted 10,000 credits. A trial falls back to the trial
             // config, and anything unrecognised grants ZERO and says so, because granting a number
             // nobody priced is worse than granting none.
@@ -157,7 +158,7 @@ export async function POST(req: Request) {
                             : 0;
             if (!planConfig && !orderNotes.creditsIncluded && !isTrial) {
                 console.warn(
-                    `[razorpay/verify] unknown plan "${effectivePlanId}" — granting ${creditsToAdd} credits. ` +
+                    `[razorpay/verify] unknown plan "${effectivePlanId}" Ã¢â‚¬â€ granting ${creditsToAdd} credits. ` +
                         'Add it to RAZORPAY_PLANS instead of relying on a fallback.',
                 );
             }
@@ -172,11 +173,23 @@ export async function POST(req: Request) {
             }
 
             // Claim the payment and move the credits in one atomic step. Losing
-            // this race means someone already applied it — say so, charge nothing.
-            const grant = await grantCreditsOnce(supabaseAdmin, {
+            // this race means someone already applied it Ã¢â‚¬â€ say so, charge nothing.
+            //
+            // A TRIAL is split across both wallets (600 AI + 400 calling) rather than credited entirely
+            // to the AI pot: a trialist who cannot place a single call has not seen the product, and
+            // telephony spends the locked calling pot now, so funding only `credits` would make the
+            // trial unable to call at all.
+            const grant = isTrial
+                ? await grantTrialCreditsOnce(supabaseAdmin, {
+                      userId: user.id,
+                      totalCredits: creditsToAdd,
+                      description: `Activated ${planTitle} (Razorpay #${razorpay_payment_id.slice(-6)})`,
+                      ref: paymentRef,
+                  })
+                : await grantCreditsOnce(supabaseAdmin, {
                 userId: user.id,
                 amount: creditsToAdd,
-                category: isTrial ? 'trial' : 'subscription',
+                category: 'subscription',
                 description: `Activated ${planTitle} (${effectivePaymentType === 'recurring' ? 'Recurring' : 'One-Time'}) (Razorpay #${razorpay_payment_id.slice(-6)})`,
                 ref: paymentRef,
             });
@@ -185,7 +198,7 @@ export async function POST(req: Request) {
                 console.log(`[Razorpay Verify] Payment ${razorpay_payment_id} already applied for user ${user.id}; not crediting again.`);
                 return NextResponse.json({
                     success: true,
-                    message: `This payment was already applied — ${planTitle} is active.`,
+                    message: `This payment was already applied Ã¢â‚¬â€ ${planTitle} is active.`,
                     plan: isTrial ? 'trial' : effectivePlanId,
                     credits: await creditBalance(supabaseAdmin, user.id),
                     validUntil: profile.subscription_valid_until || null,
@@ -200,7 +213,7 @@ export async function POST(req: Request) {
                 console.error(`[Razorpay Verify] Could not apply payment ${razorpay_payment_id} for user ${user.id}`);
                 return NextResponse.json({
                     success: false,
-                    error: "Payment verified but could not be applied. Support has been notified — please do not pay again."
+                    error: "Payment verified but could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
                 }, { status: 500 });
             }
 
@@ -235,7 +248,7 @@ export async function POST(req: Request) {
                 console.warn(`[Razorpay Verify] Payment ${razorpay_payment_id} credited but plan metadata failed for ${user.id}. Manual reconciliation needed.`);
             }
 
-            console.log(`✅ [Razorpay Success] Subscription ${effectivePlanId} activated for user ${user.id}. +${creditsToAdd} credits.`);
+            console.log(`Ã¢Å“â€¦ [Razorpay Success] Subscription ${effectivePlanId} activated for user ${user.id}. +${creditsToAdd} credits.`);
 
             return NextResponse.json({
                 success: true,
@@ -255,19 +268,30 @@ export async function POST(req: Request) {
             const creditsToAdd = packageConfig?.credits || effectiveCredits;
             const packageName = packageConfig?.name || `Credits Top-Up (${creditsToAdd} Credits)`;
 
-            const grant = await grantCreditsOnce(supabaseAdmin, {
-                userId: user.id,
-                amount: creditsToAdd,
-                category: 'topup',
-                description: `Recharged ${packageName} (Razorpay #${razorpay_payment_id.slice(-6)})`,
-                ref: paymentRef,
-            });
+            // A CALLING pack tops up the locked calling pot; everything else tops up AI credits. Paid
+            // money must land in the wallet the customer bought Ã¢â‚¬â€ crediting a calling purchase to the
+            // AI pot would silently convert restricted credits into general ones.
+            const grant = isCallingCreditPackage(effectivePackageId)
+                ? await grantCallingCreditsOnce(supabaseAdmin, {
+                      userId: user.id,
+                      amount: creditsToAdd,
+                      category: 'topup',
+                      description: `Recharged ${packageName} (Razorpay #${razorpay_payment_id.slice(-6)})`,
+                      ref: paymentRef,
+                  })
+                : await grantCreditsOnce(supabaseAdmin, {
+                      userId: user.id,
+                      amount: creditsToAdd,
+                      category: 'topup',
+                      description: `Recharged ${packageName} (Razorpay #${razorpay_payment_id.slice(-6)})`,
+                      ref: paymentRef,
+                  });
 
             if (grant.duplicate) {
                 console.log(`[Razorpay Verify] Top-up ${razorpay_payment_id} already applied for user ${user.id}.`);
                 return NextResponse.json({
                     success: true,
-                    message: `This top-up was already applied — ${creditsToAdd.toLocaleString()} credits are in your wallet.`,
+                    message: `This top-up was already applied Ã¢â‚¬â€ ${creditsToAdd.toLocaleString()} credits are in your wallet.`,
                     credits: await creditBalance(supabaseAdmin, user.id),
                     paymentId: razorpay_payment_id,
                     duplicate: true,
@@ -278,11 +302,11 @@ export async function POST(req: Request) {
                 console.error(`[Razorpay Verify] Could not apply top-up ${razorpay_payment_id} for user ${user.id}`);
                 return NextResponse.json({
                     success: false,
-                    error: "Payment verified but the credits could not be applied. Support has been notified — please do not pay again."
+                    error: "Payment verified but the credits could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
                 }, { status: 500 });
             }
 
-            console.log(`✅ [Razorpay Success] Credits recharged (+${creditsToAdd}) for user ${user.id}. New balance: ${grant.balance}.`);
+            console.log(`Ã¢Å“â€¦ [Razorpay Success] Credits recharged (+${creditsToAdd}) for user ${user.id}. New balance: ${grant.balance}.`);
 
             return NextResponse.json({
                 success: true,
@@ -320,7 +344,7 @@ export async function POST(req: Request) {
                 if (!claim.granted) {
                     return NextResponse.json({
                         success: false,
-                        error: "Payment verified but the add-on could not be applied. Support has been notified — please do not pay again."
+                        error: "Payment verified but the add-on could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
                     }, { status: 500 });
                 }
 
@@ -340,7 +364,7 @@ export async function POST(req: Request) {
                     throw new Error("Failed to update addon quota.");
                 }
 
-                console.log(`✅ [Razorpay Success] Add-on ${effectiveAddonId} (+${increment}) added for user ${user.id}.`);
+                console.log(`Ã¢Å“â€¦ [Razorpay Success] Add-on ${effectiveAddonId} (+${increment}) added for user ${user.id}.`);
 
                 return NextResponse.json({
                     success: true,

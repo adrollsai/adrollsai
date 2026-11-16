@@ -2,6 +2,10 @@
   "ignoreCommand": "if [ \"$VERCEL_ENV\" == \"production\" ]; then exit 1; else exit 0; fi",
   "crons": [
     {
+      "path": "/api/cron/ceo-rollups",
+      "schedule": "45 14 * * *"
+    },
+    {
       "path": "/api/cron/sync-meta-leads",
       "schedule": "*/15 * * * *"
     },
