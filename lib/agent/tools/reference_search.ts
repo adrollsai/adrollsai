@@ -106,6 +106,76 @@ export function queryLadders(query: string): string[] {
 }
 
 /**
+ * Real web image search — the corpus that is actually useful for inspiration.
+ *
+ * WHY NOT GOOGLE IMAGES (measured, not assumed): a plain fetch of
+ * `google.com/search?tbm=isch` returns a ~95 KB JavaScript shell with ZERO image URLs in it. Google
+ * Images needs a browser and blocks datacenter IPs, so scraping it from a Vercel function gets an empty
+ * page and scraping it from a sandbox gets a captcha. The official Programmable Search JSON API is the
+ * clean route and needs a key + CX, which this deployment does not have.
+ *
+ * DuckDuckGo's image endpoint returns what we actually want: real ad creatives, course posters, Pinterest
+ * pins — 100 results for "creative ads for cinematography course", including live Facebook ad images.
+ * That is the difference between a public-domain photo of a camera and an actual competitor's ad.
+ *
+ * TWO HONEST CAVEATS, both handled in the output rather than hidden:
+ *   - these are somebody else's copyrighted ads, so they are INSPIRATION: look at them, take the layout
+ *     and the type treatment and the palette, then make your own. They are not deliverables and must
+ *     never be passed as a reference plate to a generator or shown to the owner as our work.
+ *   - some result URLs are HTML wrappers (Facebook's lookaside redirect), so each candidate is validated
+ *     as an image and falls back to its thumbnail before being accepted.
+ */
+async function searchWebImages(query: string, limit: number): Promise<Candidate[]> {
+  const UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+
+  // A vqd token is required, and it only comes from the HTML page.
+  const tokenPage = await fetch(
+    `https://duckduckgo.com/?q=${encodeURIComponent(query)}&iax=images&ia=images`,
+    { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15_000) },
+  );
+  const tokenHtml = await tokenPage.text();
+  const vqd = /vqd=["']?([\d-]+)["']?/.exec(tokenHtml)?.[1];
+  if (!vqd) return [];
+
+  const res = await fetch(
+    `https://duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}&vqd=${vqd}&f=,,,&p=1`,
+    {
+      headers: { 'User-Agent': UA, Referer: 'https://duckduckgo.com/', Accept: 'application/json' },
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  if (!res.ok) return [];
+  const body: any = await res.json().catch(() => ({}));
+
+  return (body?.results ?? [])
+    .map((raw: any) => {
+      const width = Number(raw?.width) || 0;
+      const height = Number(raw?.height) || 0;
+      const image = String(raw?.image ?? '').trim();
+      const thumbnail = String(raw?.thumbnail ?? '').trim();
+      // Prefer the full-size original, keep the thumbnail as a fallback for wrapper URLs.
+      const url = /^https?:\/\//i.test(image) ? image : /^https?:\/\//i.test(thumbnail) ? thumbnail : '';
+      if (!url) return null;
+      // Tiny results and banners are not useful composition references.
+      if (width && height && (width < 400 || height < 400)) return null;
+      return {
+        title: String(raw?.title ?? 'Reference').trim().slice(0, 120) || 'Reference',
+        url,
+        landingUrl: raw?.url ? String(raw.url) : null,
+        licence: 'inspiration',
+        licenceVersion: null,
+        creator: raw?.source ? String(raw.source).slice(0, 60) : null,
+        width: width || null,
+        height: height || null,
+        thumbnail: /^https?:\/\//i.test(thumbnail) ? thumbnail : null,
+      } as Candidate & { thumbnail: string | null };
+    })
+    .filter(Boolean)
+    .slice(0, Math.max(limit * 3, 9)) as (Candidate & { thumbnail: string | null })[];
+}
+
+/**
  * Openverse search. Licence-filtered FIRST, because a beautiful image the tenant cannot legally use is
  * worse than a plain one they can.
  */
@@ -158,8 +228,8 @@ async function searchOpenverse(query: string, limit: number): Promise<Candidate[
  * broken candidate must not fail the whole search, because one of the others is usually good.
  */
 async function persist(candidate: Candidate, userId: string): Promise<{ url: string; bytes: number } | null> {
-  try {
-    const res = await fetch(candidate.url, {
+  const tryFetch = async (target: string): Promise<{ url: string; bytes: number } | null> => {
+    const res = await fetch(target, {
       headers: { 'User-Agent': 'nobogent-reference-search' },
       signal: AbortSignal.timeout(20_000),
     });
@@ -167,7 +237,7 @@ async function persist(candidate: Candidate, userId: string): Promise<{ url: str
     const type = res.headers.get('content-type') ?? '';
     if (!/^image\//i.test(type)) return null;
     const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length < 8_000) return null; // thumbnails and error pages are not references
+    if (buffer.length < 8_000) return null; // thumbnails-sized error pages are not references
     if (buffer.length > 12 * 1024 * 1024) return null;
 
     const ext = /png/i.test(type) ? 'png' : /webp/i.test(type) ? 'webp' : 'jpg';
@@ -175,6 +245,16 @@ async function persist(candidate: Candidate, userId: string): Promise<{ url: str
     const url = await uploadBufferToR2(buffer, `reference-search/${safeName}`, userId);
     if (!url || !/^https?:\/\//i.test(url)) return null;
     return { url, bytes: buffer.length };
+  };
+
+  try {
+    // Many web results point at an HTML wrapper (Facebook's lookaside redirect does exactly this), so a
+    // non-image response is expected rather than exceptional — fall back to the thumbnail.
+    const primary = await tryFetch(candidate.url);
+    if (primary) return primary;
+    const thumbnail = (candidate as any).thumbnail;
+    if (thumbnail && thumbnail !== candidate.url) return await tryFetch(thumbnail);
+    return null;
   } catch {
     return null;
   }
@@ -191,31 +271,39 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
      */
     find_reference_creatives: tool({
       description:
-        'Search the open web for REAL, commercially-usable reference creatives that fit a specific brief ' +
-        '(e.g. "cinematic film school ad", "dark moody product shot", "festive gold diwali greeting"). ' +
-        'Returns reference image URLs already re-hosted on our own storage, each with its licence and ' +
-        'creator, so you can pass them straight to generate_ai_image as referenceImageUrls or to ' +
-        'generate_grok_video as imageUrls. ' +
-        'A reference is a STYLE GUIDE — never an asset you deliver, and never to be described as the ' +
-        'owner\'s own. Say which reference you followed and what you took from it (layout, palette, type ' +
-        'treatment, lighting). Prefer this over inventing a look from nothing when the brief is thin. ' +
-        'For VIDEO references this returns guidance instead of results: use search_24fps_motion_graphics ' +
-        'and web research for moving references.',
+        'Search the web for REAL creative ads and designs that match a brief, and return them as ' +
+        'inspiration you can SEE. Use it for things like "creative ads for a cinematography course", ' +
+        '"festive diwali sale ad", "gym membership instagram post" — it returns actual ads other people ' +
+        'are running (Facebook ads, Pinterest pins, course posters), re-hosted on our own storage. ' +
+        'Then call analyze_image_with_gemini on the ones that fit, take the layout, type treatment, ' +
+        'palette and offer hierarchy, and MAKE YOUR OWN. ' +
+        'THESE ARE SOMEBODY ELSE\'S COPYRIGHTED ADS: they are inspiration only, never a deliverable, ' +
+        'never presented as the owner\'s work, and never passed as a reference plate to a generator. ' +
+        'If you want images you may reuse directly, pass licensedOnly: true for public-domain / CC media ' +
+        'instead. Say which reference you followed and exactly what you took from it. ' +
+        'For VIDEO references this returns guidance: use search_24fps_motion_graphics and web research.',
       inputSchema: z.object({
         query: z
           .string()
           .min(3)
           .describe(
-            'What the reference should look like, in the words a designer would search: subject, mood, ' +
-              'lighting, composition. e.g. "cinematographer filming on rooftop at sunset"',
+            'What to search for, in the words that would find real ads: e.g. "creative ads for ' +
+              'cinematography course", "diwali sale instagram creative", "luxury property ad design"',
           ),
         kind: z
           .enum(['image', 'video'])
           .default('image')
           .describe('image for still references (avoids avatars and unintended people), video for guidance only'),
         limit: z.number().default(4).describe('How many references to return (1-6)'),
+        licensedOnly: z
+          .boolean()
+          .default(false)
+          .describe(
+            'true = only public-domain / Creative-Commons media you may reuse directly (stock photos, not ' +
+              'ad creative). false = real ads for inspiration, which is what you normally want.',
+          ),
       }),
-      execute: async ({ query, kind, limit }) => {
+      execute: async ({ query, kind, limit, licensedOnly }) => {
         const wanted = Math.min(Math.max(Math.round(Number(limit) || 4), 1), 6);
 
         if (kind === 'video') {
@@ -231,8 +319,20 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
         }
 
         try {
-          const candidates = await searchOpenverse(query, wanted);
-          if (!candidates.length) {
+          // Real ads first — that is what "find a good reference for this use case" means. Public-domain
+          // stock is the explicit alternative, and also the fallback when the web search finds nothing
+          // usable (a blocked query should degrade to something rather than to nothing).
+          const candidates = licensedOnly
+            ? await searchOpenverse(query, wanted)
+            : (await searchWebImages(query, wanted)).concat([]);
+
+          const pool = candidates.length
+            ? candidates
+            : licensedOnly
+              ? []
+              : await searchOpenverse(query, wanted);
+
+          if (!pool.length) {
             return {
               success: false,
               error:
@@ -244,11 +344,12 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
           }
 
           const persisted: any[] = [];
-          for (const candidate of candidates) {
+          for (const candidate of pool) {
             if (persisted.length >= wanted) break;
             const stored = await persist(candidate, userId);
             if (!stored) continue;
-            const needsCredit = !LICENCE_NO_ATTRIBUTION.includes(candidate.licence);
+            const isInspiration = candidate.licence === 'inspiration';
+            const needsCredit = !isInspiration && !LICENCE_NO_ATTRIBUTION.includes(candidate.licence);
             persisted.push({
               url: stored.url,
               sourceUrl: candidate.landingUrl ?? candidate.url,
@@ -256,6 +357,9 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
               licence: candidate.licence,
               licenceVersion: candidate.licenceVersion,
               creator: candidate.creator,
+              // A real competitor's ad is INSPIRATION, not a licence: there is no permission to reuse it.
+              purpose: isInspiration ? 'inspiration' : 'licenced-reference',
+              doNotDeliver: isInspiration,
               needsAttribution: needsCredit,
               credit: needsCredit
                 ? `${candidate.title}${candidate.creator ? ` by ${candidate.creator}` : ''} (${candidate.licence.toUpperCase()})`
@@ -274,17 +378,25 @@ export function createReferenceSearchTools(supabaseClient: SupabaseClient, userI
             };
           }
 
+          const anyInspiration = persisted.some((r) => r.purpose === 'inspiration');
           return {
             success: true,
             kind: 'image',
             query,
             count: persisted.length,
             references: persisted,
-            note:
-              'These are STYLE REFERENCES, not the owner\'s assets and not deliverables. Pass a url to ' +
-              'generate_ai_image (referenceImageUrls) or generate_grok_video (imageUrls) to borrow the look, ' +
-              'then tell the owner which reference you followed and what you took from it. Where ' +
-              'needsAttribution is true, credit the creator if the reference itself is ever shown.',
+            note: anyInspiration
+              ? 'THESE ARE OTHER PEOPLE\'S ADS — INSPIRATION ONLY. Look at them with ' +
+                'analyze_image_with_gemini, then take the STRUCTURE: where the headline sits, how the offer ' +
+                'is emphasised, the type treatment, the palette, the CTA placement. Then make your own ' +
+                'creative with generate_ai_image or a HyperFrames composition. Do NOT pass these as ' +
+                'referenceImageUrls, do not deliver them, and never imply the design is the owner\'s. ' +
+                'Say which reference you followed and what you took from it. ' +
+                'If you need images you may reuse directly instead, call again with licensedOnly: true.'
+              : 'These are licenced references (public domain / Creative Commons) re-hosted on our storage. ' +
+                'You may pass a url to generate_ai_image (referenceImageUrls) or generate_grok_video ' +
+                '(imageUrls). Where needsAttribution is true, credit the creator if the reference itself is ' +
+                'ever shown.',
           };
         } catch (err: any) {
           return { success: false, error: String(err?.message || err), references: [] };

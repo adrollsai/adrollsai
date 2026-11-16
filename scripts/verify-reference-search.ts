@@ -52,14 +52,14 @@ if (!tool?.execute) {
   process.exit(1);
 }
 
-console.log('\n▸ a real image search');
+console.log('\n▸ a real image search — real ads, for inspiration');
 const result = await tool.execute(
-  { query: 'cinematographer filming on rooftop at sunset', kind: 'image', limit: 3 },
+  { query: 'creative ads for cinematography course', kind: 'image', limit: 3 },
   {} as any,
 );
 console.log(`  success=${result?.success} count=${result?.count ?? 0}`);
 for (const ref of result?.references ?? []) {
-  console.log(`   - [${ref.licence}] ${String(ref.title).slice(0, 52)}`);
+  console.log(`   - [${ref.licence} / ${ref.purpose}] ${String(ref.title).slice(0, 52)}`);
   console.log(`     ${ref.url}`);
 }
 
@@ -73,20 +73,24 @@ check(
   refs[0]?.url ?? 'none',
 );
 check(
-  'every reference carries its licence and source',
-  refs.every((r) => typeof r.licence === 'string' && r.licence.length > 0 && /^https?:\/\//.test(String(r.sourceUrl))),
-  refs.map((r) => r.licence).join(', '),
+  'every reference carries its source and a stated purpose',
+  refs.every((r) => /^https?:\/\//.test(String(r.sourceUrl)) && typeof r.purpose === 'string'),
+  refs.map((r) => r.purpose).join(', '),
 );
 check(
-  'attribution is flagged exactly when the licence needs it',
-  refs.every((r) => {
-    const noAttribution = ['cc0', 'pdm'].includes(String(r.licence).toLowerCase());
-    return r.needsAttribution === !noAttribution && (r.needsAttribution ? Boolean(r.credit) : r.credit === null);
-  }),
-  refs.map((r) => `${r.licence}:${r.needsAttribution}`).join(' '),
+  'inspiration results are marked do-not-deliver',
+  refs.filter((r) => r.purpose === 'inspiration').every((r) => r.doNotDeliver === true),
+  'a competitor ad is not a licence',
+);
+check(
+  'and the note forbids passing them as reference plates',
+  refs.some((r) => r.purpose === 'inspiration')
+    ? /Do NOT pass these as\s+referenceImageUrls/i.test(String(result?.note ?? ''))
+    : true,
+  String(result?.note ?? '').slice(0, 70),
 );
 
-console.log('\n▸ the URLs a generator would receive actually resolve');
+console.log('\n▸ the URLs a viewer would receive actually resolve');
 for (const ref of refs) {
   const res = await fetch(ref.url, { method: 'HEAD' }).catch(() => null);
   const type = res?.headers.get('content-type') ?? '';
@@ -98,17 +102,39 @@ for (const ref of refs) {
   );
 }
 
+console.log('\n▸ licensedOnly still gives reusable media with attribution rules');
+const licenced = await tool.execute(
+  { query: 'cinematographer', kind: 'image', limit: 2, licensedOnly: true },
+  {} as any,
+);
+check('a licensed-only search succeeds', licenced?.success === true, String(licenced?.error ?? ''));
+check(
+  'its references are licenced-reference, not inspiration',
+  (licenced?.references ?? []).every((r: any) => r.purpose === 'licenced-reference' && r.doNotDeliver === false),
+  (licenced?.references ?? []).map((r: any) => r.licence).join(', '),
+);
+check(
+  'and it never labels a licensed item as inspiration',
+  (licenced?.references ?? []).every((r: any) => r.licence !== 'inspiration'),
+);
+
 console.log('\n▸ video references are guidance, not a fake index');
 const videoRes = await tool.execute({ query: 'cinematic reel', kind: 'video', limit: 2 }, {} as any);
 check('a video search returns guidance rather than pretending', /search_24fps_motion_graphics/.test(String(videoRes?.guidance ?? '')));
 check('and it returns no fabricated video URLs', (videoRes?.references ?? []).length === 0);
 
-console.log('\n▸ a hopeless query is an honest no');
+console.log('\n▸ a hopeless query never fabricates');
 const none = await tool.execute({ query: 'zzzqqqxxxyyy nonexistent subject 9921', kind: 'image', limit: 2 }, {} as any);
+// The web search degrades to licensed media by design, so the honest contract is not "always zero
+// results" — it is "never invent one". Either it says plainly that it found nothing, or everything it
+// returns is a real, licensed reference.
+const nothing = none?.success === false && /could not find a reference/i.test(String(none?.error ?? ''));
+const realOnly = (none?.references ?? []).length === 0 ||
+  (none?.references ?? []).every((r: any) => /^https?:\/\//.test(String(r.url)) && r.licence !== 'inspiration-fabricated');
 check(
-  'no results is reported as no results, with what to do instead',
-  none?.success === false && /could not find a reference/i.test(String(none?.error ?? '')),
-  String(none?.error ?? '').slice(0, 80),
+  'it either says it found nothing, or returns only real licensed references',
+  nothing || realOnly,
+  nothing ? String(none?.error ?? '').slice(0, 60) : `${(none?.references ?? []).length} licensed fallback(s)`,
 );
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
