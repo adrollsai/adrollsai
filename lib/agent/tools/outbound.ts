@@ -221,6 +221,16 @@ export async function dispatchVoiceCall(params: {
   objective: string;
   leadName?: string;
   /**
+   * What the call is ABOUT, in a few words — "your marketing", "the November batch".
+   *
+   * This is not decoration: the voice bridge builds its opening line from it. A first call passed the whole
+   * multi-sentence objective here, the bridge rendered that as a 25.7-second greeting, the callee interrupted at
+   * five seconds, barge-in cut the agent off, and the bridge then dropped its in-flight reply — so the call went
+   * silent for the remaining twelve seconds while we billed for it. The reason is capped below so that cannot
+   * happen again, whatever the caller passes.
+   */
+  reason?: string;
+  /**
    * Call through the Bluesquare Infra Vobiz DID instead of the account's default routing.
    *
    * The dispatcher gives a super-admin account Twilio "for testing unless explicitly
@@ -279,6 +289,36 @@ export async function dispatchVoiceCall(params: {
     const ttsBridge = resolveTtsFlashBridgeHttpUrl();
     const voiceId = DEFAULT_TTS_FLASH_VOICE_ID;
 
+    // The opener: what it says, and how long until it says it. These are two different things, and confusing them
+    // cost a round of wrong fixes, so both are recorded here.
+    //
+    // TIME TO FIRST WORD is already ~0.2 s, because the bridge renders the greeting to PCM during prewarm — while the
+    // phone is still ringing — and plays it the instant the call is answered. Measured from a real call's recording:
+    // speech starts at 0.0 s. Nothing needs doing to make that faster.
+    //
+    // LENGTH OF THE OPENER is what went wrong. The first call passed a multi-sentence objective as the "reason", the
+    // bridge rendered it into a 25.7-second monologue, the callee interrupted at five seconds, barge-in cut the agent
+    // off, and the bridge dropped its in-flight reply — twelve seconds of billable silence.
+    //
+    // The fix is not just a shorter string. The bridge puts the reason into a sentence: "aapne <reason> ke baare mein
+    // enquiry ki thi na?" — so it has to be a SUBJECT ("Nobogent ki marketing service"), not a clause from the brief.
+    // Capping the objective's first eight words produced "...enquiry about you are an automated assistant calling
+    // from Nobogent", which is worse than long: it is wrong. So the reason is supplied, or derived from the business
+    // name, and the objective is never used as a substitute.
+    const businessName = await supabase
+      .from('profiles')
+      .select('business_name')
+      .eq('id', userId)
+      .maybeSingle()
+      .then((res: any) => String(res?.data?.business_name ?? '').trim())
+      .catch(() => '');
+    const givenReason = String(params.reason ?? '').trim();
+    const reason = (givenReason || (businessName ? `${businessName} ki marketing service` : 'hamari service'))
+      .split(/\s+/)
+      .slice(0, 9)
+      .join(' ')
+      .replace(/[,\s]+$/, '');
+
     // Warm the opener so the first thing the person hears is not three seconds of silence. The payload mirrors the
     // demo's exactly, because the demo is the only call path on this platform that is known to speak.
     await fetch(`${ttsBridge}/tts-flash-prewarm`, {
@@ -290,8 +330,12 @@ export async function dispatchVoiceCall(params: {
         voiceId,
         language: 'hinglish',
         gender: 'female',
-        prospectName: params.leadName || 'the owner',
-        reason: params.objective,
+        prospectName: params.leadName || 'ji',
+        reason,
+        // No `greeting` override: the bridge's template builds "Namaste <name> ji, main <agent> bol rahi hoon
+        // <company> se, aapne <reason> ke baare mein enquiry ki thi na?" and ends with a question. Overriding it was
+        // how the opener got clipped to "Namaste ji", which is not a greeting.
+        // The full objective is the agent's context for the conversation, never what it says first.
         instruction: params.objective,
       }),
       signal: AbortSignal.timeout(12_000),

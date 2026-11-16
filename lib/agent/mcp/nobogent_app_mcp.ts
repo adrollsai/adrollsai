@@ -391,14 +391,22 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
       inputSchema: z.object({
         phone: z.string().describe('Phone number to call'),
         objective: z.string().describe('Call goal (e.g. "Follow up on luxury villa inquiry, verify budget and schedule site visit")'),
+        reason: z
+          .string()
+          .optional()
+          .describe(
+            'What the call is about, in a FEW WORDS — "your marketing", "the November batch". This becomes the ' +
+              'opening line, so a sentence here means a long monologue the person interrupts. Omit it and the first ' +
+              'eight words of the objective are used.',
+          ),
         leadName: z.string().optional().describe('Name of the person being called'),
       }),
-      execute: async ({ phone, objective, leadName }) => {
+      execute: async ({ phone, objective, reason, leadName }) => {
         try {
           // This used to insert a "queued" call_logs row and report "call initiated" without
           // dialling anyone. It now places the call through the same dispatcher the cron uses.
           const { dispatchVoiceCall } = await import('@/lib/agent/tools/outbound');
-          const result = await dispatchVoiceCall({ supabase, userId, phone, objective, leadName });
+          const result = await dispatchVoiceCall({ supabase, userId, phone, objective, reason, leadName });
           if (!result.success) {
             return { success: false, error: result.error, attemptedTo: result.to ?? phone };
           }
