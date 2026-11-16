@@ -143,8 +143,19 @@ function fromPlaybook(ctx: PreflightContext, paths: string[]): any {
  * courses, a consultancy sells services, an untagged tenant gets the neutral
  * word. Nothing here may name a vertical.
  */
-export function preflightPromptSection(industry?: string | null): string {
+export function preflightPromptSection(
+  industry?: string | null,
+  opts?: { adTools?: boolean },
+): string {
   const v = industryVocabulary(industry);
+
+  // The ad-account lookup is named ONLY when the Meta suite is actually loaded for this turn.
+  // This section is always on, but `meta_graph_account` is not — naming it unconditionally made
+  // the agent promise a check it had no tool for, on every reporting and creative turn.
+  // verify:toolset fails on exactly that ("prompt mentions unregistered tools").
+  const adAccountStep = opts?.adTools
+    ? "Call 'meta_graph_account' FIRST so the account, its real currency and its status are"
+    : 'Read the connected ad account first so the account, its real currency and its status are';
 
   return `PRE-FLIGHT CONTRACT — GATHER THE MISSING INPUTS BEFORE YOU ACT:
 A big action started without its inputs produces a half-right job the owner has to correct, which costs
@@ -170,7 +181,7 @@ THE FOUR CATEGORIES — never start one of these with a required input missing:
 A. LAUNCHING, PAUSING OR ADJUSTING AN AD CAMPAIGN.
    Required: the objective (leads, traffic, sales, awareness); the budget AND its currency; the
    locations/audience; which creative or asset it runs; the qualifying questions when it is lead-gen; and
-   the start date. Call 'meta_graph_account' FIRST so the account, its real currency and its status are
+   the start date. ${adAccountStep}
    facts, then ask only what is still unknown. Pausing or moving budget on a live campaign needs the
    campaign and the amount from the owner — never infer either from a previous campaign.
 B. PRODUCING MORE THAN A COUPLE OF CREATIVES IN ONE GO (three or more).

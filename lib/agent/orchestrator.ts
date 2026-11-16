@@ -245,7 +245,36 @@ ${skillCatalogue}
   // that starts with "launch the campaign" must be told to collect the budget,
   // the locations and the asset before it spends anything, and the nouns here
   // follow this business's industry rather than assuming a vertical.
-  parts.push(preflightPromptSection(profile?.industry));
+  parts.push(preflightPromptSection(profile?.industry, { adTools: has('meta') }));
+
+  // A tool may only be NAMED in the prompt when the group that registers it is loaded for this
+  // turn. The reverse is the worst case for the agent: it reads an instruction, reaches for a tool
+  // it does not have, and the step dies. BRIEF DISCIPLINE is rendered inside the sandbox block,
+  // but the tools it names live in `media`, `research` and `vision` — which sandbox does NOT
+  // always pull in — so each mention is built from the same group selection as the tools.
+  const referenceTools: string[] = [];
+  if (has('media')) {
+    referenceTools.push("'list_reference_creatives' for the app's own 35 proven ad designs");
+    referenceTools.push("'search_24fps_motion_graphics' for the conventions real editors use");
+  }
+  if (has('research')) referenceTools.push("'scrape_run' to read how competitors run this format");
+  const referenceStep = referenceTools.length
+    ? `1. LOOK AT WHAT ALREADY WORKS BEFORE YOU DESIGN. Fetch references for the task: call
+   ${referenceTools.join(', ')}, plus what you know of the format, to name the conventions real
+   advertisers use for this vertical — hook in the first second, one idea per frame, captions
+   burned in, an end card with the CTA. Say which references you followed.`
+    : `1. LOOK AT WHAT ALREADY WORKS BEFORE YOU DESIGN. Name the conventions real advertisers use for
+   this vertical — hook in the first second, one idea per frame, captions burned in, an end card
+   with the CTA — and follow the brand profile's own colours, type and tone. Say which you followed.`;
+
+  const layoutSources = has('media')
+    ? "call nobogent_brand_get_profile and get_creative_rules before designing, and 'list_reference_creatives' when you want a proven layout"
+    : 'call nobogent_brand_get_profile and get_creative_rules before designing';
+
+  const deliveryCheck = has('vision')
+    ? `6. Before delivering, look at your own output — 'analyze_image_with_gemini' for stills and frames for video — and check the words are spelled correctly, the number matches, and nothing contradicts the brief. Fix it before the owner sees it.`
+    : `6. Before delivering, look at your own output — read the rendered frames back and check the words are spelled correctly, the number matches, and nothing contradicts the brief. Fix it before the owner sees it.`;
+
 
   if (has('sandbox')) parts.push(`
 LINUX SANDBOX (E2B microVM, root access — Node 22, Python 3, FFmpeg, HyperFrames, yt-dlp, pip, npm):
@@ -268,18 +297,14 @@ BRIEF DISCIPLINE — how a thin request still becomes work worth paying for:
    supporting line, the offer or reason to believe, and a visible call to action with the phone
    number. Build that as a composition (HyperFrames / HTML) so the type is real type, not something
    you hope an image model spelled correctly.
-1. LOOK AT WHAT ALREADY WORKS BEFORE YOU DESIGN. Fetch references for the task: call
-   'list_reference_creatives' for the app's own 35 proven ad designs, and use the scraping tools
-   ('scrape_run', 'search_24fps_motion_graphics') plus what you know of the format to name the
-   conventions real advertisers use for this vertical — hook in the first second, one idea per
-   frame, captions burned in, an end card with the CTA. Say which references you followed.
+${referenceStep}
 2. The owner will often say one line ("make me a video about the offer"). That is enough to START, not enough to be relevant, so establish the subject BEFORE you design anything:
    - If the business sells offerings, ask which one this is for — or whether it is brand-level/custom. One question, with the offerings named, is better than a guess; then call product_media to see the photos/footage it already has, and use them.
    - Never invent a price, a percentage, a date, a phone number, an address, a RERA number or a claim. Take them from the brand profile, the catalogue, or the owner's words. If a number is missing and it matters, ask — or design so the missing fact is not needed.
-2. Ground the look in what the business actually is: call nobogent_brand_get_profile and get_creative_rules before designing, and list_reference_creatives when you want a proven layout. Copy their colours, type and tone instead of defaulting to generic dark-navy-plus-gold.
-3. Ask at most two questions in one message, and only questions whose answers change the work (which product, which offer, what should the viewer do next). Everything else, decide and say what you decided.
-4. When you have little to work with, make the honest version: on-brand, factually empty where facts are missing, and then state plainly what you assumed and what you left out. A tasteful piece that admits its gaps is better than a confident one that invents a discount.
-5. Before delivering, look at your own output — 'analyze_image_with_gemini' for stills and frames for video — and check the words are spelled correctly, the number matches, and nothing contradicts the brief. Fix it before the owner sees it.
+3. Ground the look in what the business actually is: ${layoutSources}. Copy their colours, type and tone instead of defaulting to generic dark-navy-plus-gold.
+4. Ask at most two questions in one message, and only questions whose answers change the work (which product, which offer, what should the viewer do next). Everything else, decide and say what you decided.
+5. When you have little to work with, make the honest version: on-brand, factually empty where facts are missing, and then state plainly what you assumed and what you left out. A tasteful piece that admits its gaps is better than a confident one that invents a discount.
+${deliveryCheck}
 
 CHOOSING THE VIDEO PATH — decide this before you build anything:
 1. Any DESIGNED video — reel, promo, ad, explainer, kinetic type, title card with motion, anything with scenes, reveals, transitions or animation — is a HyperFrames composition: call 'sandbox_render_hyperframes' with the HTML. It installs the renderer, encodes the MP4 and publishes it for you, and it stamps the data-composition-id / data-duration attributes you would otherwise forget.
@@ -290,7 +315,7 @@ CHOOSING THE VIDEO PATH — decide this before you build anything:
    - RENDER TIME IS FRAMES x 30 SECONDS OF FILM, so long pieces are expensive: an hour of film is ~108,000 frames. When the content loops or repeats (a held background with moving accents, a repeating lower third, the same promo beat), pass loopSeconds — the tool renders that much and stream-copies it out to the full length, which turns an hour into seconds with an identical result. Only frame-render the whole thing when the content genuinely evolves (a story, a countdown, changing prices). Tell the user which you did.
 2. ffmpeg is for EDITING EXISTING FOOTAGE: trim, concat, crop/reframe, speed, burn captions onto real clips, mix music, overlay on a real recording, audio work, and the matting case below.
 3. The exception: if the user explicitly asks for a plain static card (one colour plus text, no motion), ffmpeg drawtext is correct and cheaper — say so in one sentence.
-4. Generation models (generate_grok_video, generate_ai_image, generate_voiceover) are for photographic/generated footage and narration, not for typographic or motion-graphic work.
+4. Generation models ${has('media') ? '(generate_grok_video, generate_ai_image, generate_voiceover) ' : ''}are for photographic/generated footage and narration, not for typographic or motion-graphic work.
 5. Treat any video request as achievable until a run actually proves otherwise — do not declare something out of scope before trying it, and do not stop because something is slow.
 Compositing that needs a PERSON to occlude graphics (e.g. "text behind the person's head", a title passing behind their body, lower thirds that disappear behind a subject) is a 2D matting problem, NOT a 3D one.
 Never attempt this by putting text in an HTML/CSS layer and expecting the person to hide it: a web page cannot occlude text with video pixels. HTML is only good for rendering text as a transparent PNG sequence to composite against the matte.
@@ -319,7 +344,7 @@ Do NOT ask when the request already implies the format — "reel", "video", "sto
 HOW TO BUILD A STILL IMAGE CREATIVE — pick the right method, never just one by default:
 a) WHOLE IMAGE FROM THE IMAGE MODEL: best for photographic or illustrated scenes. If the picture is mostly photography, generate the whole thing in ONE prompt INCLUDING the intended typography ("festive Bhai Dooj greeting, warm gold serif reading HAPPY BHAI DOOJ across the top third, diyas and marigolds"). A coherent generated image beats a good photo ruined by flat code-drawn text.
 b) ENTIRELY FROM CODE: exact brand typography, precise copy, or when AI imagery looks AI-ish and that is a problem — typography-led layouts, offer cards, price lists, schedule graphics. Render HTML/GSAP in the sandbox at the exact pixel size.
-c) HYBRID: generate the photographic part, then composite precise editable type over it in code. Use when the scene should be photographic but the words must be perfect. Check the image first with analyze_image_with_gemini to find where the empty space actually is.
+c) HYBRID: generate the photographic part, then composite precise editable type over it in code. Use when the scene should be photographic but the words must be perfect. Check the image first with ${has('vision') ? "analyze_image_with_gemini" : 'your own reading of the rendered frames'} to find where the empty space actually is.
 d) REAL IMAGERY FROM THE INTERNET: when it needs an actual place, product, logo or person, fetch a real image rather than inventing one. Never fabricate a real brand's logo or asset.
 Judgement: photographic subject -> (a) or (c); text-led or brand-critical -> (b); real-world reference -> (d).
 ASK FOR FEEDBACK on design — creative taste is the client's, not yours. After delivering, show it and ask one focused question ("more photographic, cleaner, or a different colour?") instead of a vague "how is it?". If they say AI images look AI-ish, switch to (b) or (c) rather than arguing.
