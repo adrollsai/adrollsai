@@ -183,7 +183,25 @@ export default function BillingPage() {
         { name: "WhatsApp Bot Analytics", subtext: null, icon: BarChart3 },
     ];
 
-    const planTiers = [
+    // Explicitly typed: with only one plan left, TypeScript inferred a shape that has no `savings`
+    // or `savingsBoxBg`, and the render below (which still renders a savings badge when one exists)
+    // stopped compiling. The type says what the array may contain, not what this one entry happens
+    // to contain, so adding a promotional plan later cannot break the page again.
+    const planTiers: Array<{
+        id: string;
+        title: string;
+        duration: string;
+        price: number;
+        displayPrice: string;
+        gst: string;
+        badge: string | null;
+        savings: { label: string; amount: string; discount: string } | null;
+        savingsBoxBg?: string;
+        headerBg: string;
+        headerTextColor: string;
+        btnStyle: string;
+        cardBorder: string;
+    }> = [
         {
             id: '1-month',
             title: "1 MONTH PLAN",
@@ -198,44 +216,9 @@ export default function BillingPage() {
             btnStyle: "bg-slate-900 text-white hover:bg-slate-800",
             cardBorder: "border-slate-200"
         },
-        {
-            id: '6-months',
-            title: "6 MONTHS PLAN",
-            duration: "6 Months",
-            price: 54999,
-            displayPrice: "₹54,999",
-            gst: "+ 18% GST",
-            badge: "MOST POPULAR",
-            savings: {
-                label: "You Save",
-                amount: "₹5,001",
-                discount: "(8% OFF)"
-            },
-            headerBg: "bg-gradient-to-r from-[#312E81] via-[#4338CA] to-[#6366F1]",
-            headerTextColor: "text-white",
-            savingsBoxBg: "bg-[#F3E8FF] border border-[#E9D5FF] text-[#6B21A8]",
-            btnStyle: "bg-gradient-to-r from-[#4F46E5] to-[#7C3AED] text-white hover:opacity-95 shadow-lg shadow-indigo-500/20",
-            cardBorder: "border-purple-300 ring-2 ring-purple-500/10 shadow-xl"
-        },
-        {
-            id: '12-months',
-            title: "12 MONTHS PLAN",
-            duration: "12 Months",
-            price: 99999,
-            displayPrice: "₹99,999",
-            gst: "+ 18% GST",
-            badge: "BEST VALUE",
-            savings: {
-                label: "You Save",
-                amount: "₹20,001",
-                discount: "(17% OFF)"
-            },
-            headerBg: "bg-[#0A1128]",
-            headerTextColor: "text-white",
-            savingsBoxBg: "bg-[#DCFCE7] border border-[#BBF7D0] text-[#166534]",
-            btnStyle: "bg-slate-900 text-white hover:bg-slate-800",
-            cardBorder: "border-slate-200"
-        }
+        // The 6 Months and 12 Months plans are retired from sale: the offer is the 7-day trial
+        // and the 1 Month plan. Their configs remain in utils/razorpay.ts so existing
+        // 'enterprise' subscriptions (which map to 12-months) still renew correctly.
     ];
 
     const guaranteeBadges = [

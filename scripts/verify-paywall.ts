@@ -185,5 +185,23 @@ check(
   Boolean(RAZORPAY_PLANS['6-months'] && RAZORPAY_PLANS['12-months']),
 );
 
+// Retired from SALE, not from honouring: 13 accounts are subscription_plan 'enterprise', which the
+// PhonePe callback maps onto '12-months'. Deleting the config would make those renewals grant zero.
+const billing = codeOf(read('app/dashboard/billing/page.tsx'));
+check(
+  'the billing picker no longer offers the 6 or 12 month plan',
+  !/id: '6-months'/.test(billing) && !/id: '12-months'/.test(billing),
+  'the last purchase surface',
+);
+check(
+  'the billing picker still offers the 1 month plan',
+  /id: '1-month'/.test(billing),
+  'the plan that is for sale',
+);
+check(
+  'the retirement is explained in the file, not silent',
+  /retired from sale/i.test(read('app/dashboard/billing/page.tsx')),
+);
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;
