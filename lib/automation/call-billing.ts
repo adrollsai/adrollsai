@@ -28,6 +28,14 @@
 /** Credit hundredths per second of call time. 5 hundredths = 0.05 credits. */
 const HUNDREDTHS_PER_SECOND = 5;
 
+/**
+ * AI IS INCLUDED IN THIS PRICE. There is no separate Gemini Live / token charge, and no provider
+ * rate to add on top: 4 credits for the first 60 seconds IS the whole tariff, with the model cost
+ * baked in. Do not add a per-minute AI overhead to this calculation — an earlier version of
+ * bill-call computed exactly that (Rs 1.25/min Gemini, Rs 12.50/min ElevenLabs) alongside these
+ * credits, and the only thing that stopped it double-charging is that nobody had deducted it yet.
+ */
+
 /** Credit hundredths charged as each minute block begins. 100 hundredths = 1 credit. */
 const HUNDREDTHS_PER_MINUTE_BLOCK = 100;
 

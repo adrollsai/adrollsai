@@ -129,6 +129,18 @@ check(
   /DURATION UNKNOWN/.test(route) && /failedCallHundredths/.test(route),
   'three distinct cases, not one fallback',
 );
+// The AI cost is INSIDE the 4 credits/min. Any second per-minute AI overhead in this route is a
+// double charge waiting to happen.
+check(
+  'no separate AI/token charge sits alongside the credit charge',
+  !/aiCostPerMinute|aiCostInr|AI Voice Overhead/.test(route),
+  'Gemini is baked into the price, not billed on top',
+);
+check(
+  'no rupee-cost figure is computed and left undeducted',
+  !/finalCostInr/.test(route),
+  'dead arithmetic invites a second charge later',
+);
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

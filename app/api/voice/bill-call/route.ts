@@ -97,25 +97,17 @@ export async function POST(req: Request) {
     // We'll calculate the minutes based on duration or default to 1 min if no duration found
     const durationMinutes = Math.ceil(durationSeconds / 60) || 1
 
-    let finalCostInr = 0
-    let billingMethod = ''
+    // NO SEPARATE AI CHARGE. The owner's tariff is one all-in price: 4 credits for the first 60
+    // seconds (1 credit for the minute block + 60 x 0.05), and the Gemini Live token cost is baked
+    // into it. This block used to compute a rupee figure — carrier cost plus a per-minute AI overhead
+    // of Rs 1.25 (Gemini) or Rs 12.50 (ElevenLabs) — which was returned to the caller but never
+    // deducted. Dead arithmetic next to live arithmetic is how a second charge gets added by mistake
+    // later, so it is gone rather than left lying around.
 
-    if (isLivePrice && actualPriceUsd > 0) {
-      // Conversion rule: USD to INR (e.g. 84 INR)
-      const twilioCostInr = actualPriceUsd * 84
-      // Blended AI Voice Engine cost (Kie.ai/Gemini is cheaper, ElevenLabs is standard)
-      const aiCostPerMinute = activeProvider === 'elevenlabs' ? 12.50 : 1.25 // ElevenLabs = Rs.12.50/min, Gemini = Rs.1.25/min
-      const aiCostInr = durationMinutes * aiCostPerMinute
-
-      finalCostInr = twilioCostInr + aiCostInr
-      billingMethod = `Live Twilio Carrier Cost (Rs. ${twilioCostInr.toFixed(2)}) + AI Voice Overhead (Rs. ${aiCostInr.toFixed(2)})`
-    } else {
-      // Fallback cost: Rs. 1.50 per minute (covers Twilio trunking + AI runtime)
-      finalCostInr = durationMinutes * 1.50
-      billingMethod = `Fallback Cost (Rs. 1.50 / minute)`
-    }
-
-    console.log(`[BILL-CALL] Call Billing Summary: Duration=${durationMinutes} min(s), Total INR Cost=${finalCostInr.toFixed(4)}, Method: ${billingMethod}`);
+    console.log(
+      `[BILL-CALL] Call summary: ${durationSeconds}s measured, ${durationMinutes} minute(s) — ` +
+        'charges computed below from lib/automation/call-billing.ts',
+    );
 
     // 4. Deduct the credits using the ONE billing model (lib/automation/call-billing.ts):
     //    1 credit per minute block entered + 0.05 credits per second, in integer hundredths.
@@ -154,7 +146,7 @@ export async function POST(req: Request) {
       `Outbound AI call to ${leadName} (${leadPhone}) - ${chargeBasis}`
     )
 
-    return NextResponse.json({ success, finalCostInr, durationMinutes, billingMethod, creditsToDeduct, chargeBasis })
+    return NextResponse.json({ success, durationMinutes, durationSeconds, creditsToDeduct, chargeBasis })
   } catch (err: any) {
     console.error('[BILL-CALL] Exception during billing:', err)
     return NextResponse.json({ error: err.message || 'Internal server error' }, { status: 500 })
