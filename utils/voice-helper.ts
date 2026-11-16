@@ -6,6 +6,7 @@ import { hasEnoughCredits } from '@/utils/credits'
 import { triggerVobizOutboundCall } from '@/utils/vobiz-helper'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { resolveAppUrl, resolveVoiceBridgeHttpUrl } from '@/utils/app-url'
+import { loadVoiceChannels, channelCapacity, describeCapacity } from '@/lib/automation/voice-channels'
 export { isIndianPhoneNumber }
 
 /**
@@ -158,8 +159,23 @@ export async function triggerOutboundCall(
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
         }
 
-        // Concurrency Check: Limit active calls according to account capacity (default 3 concurrent calls per user)
-        const maxConcurrent = profile.voice_concurrency_limit || 3
+        // Concurrency Check: how many lines we actually pay for, not a number written into the code. The channel
+        // registry sums the configured Vobiz channels, so buying a fourth line raises the cap by one and nothing
+        // here has to change. The old `|| 3` was the whole of "3 channels", which is why a fourth would have been
+        // ignored.
+        const channels = loadVoiceChannels({
+            profileNumber: profile?.voice_vobiz_number,
+            businessInfo: profile?.business_info,
+            concurrencyLimit: profile.voice_concurrency_limit,
+        })
+        const maxConcurrent = Math.max(
+            1,
+            Math.min(
+                channelCapacity(channels.channels),
+                // A tenant that has explicitly lowered its own limit keeps that ceiling.
+                Number(profile.voice_concurrency_limit) || Number.MAX_SAFE_INTEGER,
+            ),
+        )
         const { data: activeLeads } = await supabaseAdmin
             .from('leads')
             .select('id, voice_call_scheduled_at, created_at')
@@ -1138,15 +1154,25 @@ export async function dispatchNextCall(supabaseAdmin: any, userId: string): Prom
         return { dispatched: false, reason: 'Outside calling window (9:00 AM - 7:00 PM IST)' }
     }
 
-    // 1. Check if there is already an active call in progress for this user (respecting 3 concurrent channels by default)
-    let maxConcurrent = 3
-    try {
-        const { data: userProfile } = await supabaseAdmin
-            .from('profiles')
-            .select('id, voice_provider')
-            .eq('id', userId)
-            .single()
-    } catch (e) {}
+    // 1. Check if there is already an active call in progress for this user. The ceiling comes from the channel
+    // registry — the lines we actually pay for — instead of a bare 3 that ignored how many channels exist.
+    const { data: gateProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('business_info, voice_concurrency_limit, voice_vobiz_number')
+        .eq('id', userId)
+        .maybeSingle()
+    const channelsForGate = loadVoiceChannels({
+        profileNumber: gateProfile?.voice_vobiz_number,
+        businessInfo: gateProfile?.business_info,
+        concurrencyLimit: gateProfile?.voice_concurrency_limit,
+    })
+    const maxConcurrent = Math.max(
+        1,
+        Math.min(
+            channelCapacity(channelsForGate.channels),
+            Number(gateProfile?.voice_concurrency_limit) || Number.MAX_SAFE_INTEGER,
+        ),
+    )
 
     const { data: activeLeads } = await supabaseAdmin
         .from('leads')

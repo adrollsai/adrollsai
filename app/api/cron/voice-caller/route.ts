@@ -102,7 +102,56 @@ async function handleDispatcher(request: Request) {
       .rpc('call_cadence_candidates', { p_limit: 2000 })
 
     if (candErr) throw candErr
-    if (!candidates?.length && campaignDispatches === 0) {
+
+    // The RPC returns only leads whose stage is one of the tenant's "fresh" stages. A lead the agent has NEVER
+    // contacted belongs in the queue whatever stage it sits in — the rule is "fresh section, or not called yet" — so
+    // untouched leads are fetched separately and merged, deduplicated by id.
+    let untouched: any[] = []
+    try {
+      const enabledTenantIds = [...policyByTenant.entries()]
+        .filter(([, policy]) => (policy as any)?.master_enabled && (policy as any)?.ai_calling)
+        .map(([tenantId]) => tenantId)
+      if (enabledTenantIds.length) {
+        const { data } = await supabaseAdmin
+          .from('leads')
+          .select('id, user_id, phone, name, created_at, voice_call_retry_count, voice_call_status, pipeline_stage, custom_fields, booked_time, processing_lock_until')
+          .in('user_id', enabledTenantIds)
+          .is('voice_call_status', null)
+          .or('voice_call_retry_count.is.null,voice_call_retry_count.eq.0')
+          .is('booked_time', null)
+          .order('created_at', { ascending: false })
+          .limit(500)
+        untouched = data ?? []
+      }
+    } catch (untouchedErr: any) {
+      // The extra half of the queue must never break the run; the RPC candidates still dispatch.
+      console.warn('[CRON/VOICE-CALLER] Untouched-lead fetch failed:', untouchedErr?.message)
+    }
+
+    const mergedCandidates = [
+      ...(candidates ?? []),
+      ...untouched.filter((row) => !(candidates ?? []).some((c: any) => c.id === row.id)),
+    ]
+
+    // Order by the queue's own priority: a lead that arrived in the last day and has never been touched goes before
+    // the backlog and long before retries. The RPC orders oldest-first, which is the opposite of what converts.
+    const { prioritiseCallQueue, toQueueRow } = await import('@/lib/automation/call-queue')
+    const orderedCandidates = mergedCandidates
+      .map((row: any) => {
+        const policy = policyByTenant.get(row.user_id) as any
+        const [decision] = prioritiseCallQueue([toQueueRow(row)], {
+          freshHours: 24,
+          maxAttempts: Number(policy?.call_max_attempts) || 3,
+          maxAgeDays: Number(policy?.call_max_age_days) || 365,
+          freshStages: null, // stage filtering already happened upstream; this is ordering
+        })
+        return { row, decision }
+      })
+      .filter((entry: any) => entry.decision?.inQueue)
+      .sort((a: any, b: any) => a.decision.priority - b.decision.priority)
+      .map((entry: any) => entry.row)
+
+    if (!orderedCandidates.length && campaignDispatches === 0) {
       return NextResponse.json({ success: true, dispatched: 0, campaignDispatches, message: 'No candidates' })
     }
 
@@ -111,7 +160,7 @@ async function handleDispatcher(request: Request) {
     const perTenant = new Map<string, number>()
     const skippedTenants = new Set<string>()
 
-    for (const row of candidates || []) {
+    for (const row of orderedCandidates) {
       if (dueIds.length >= MAX_CALLS_PER_RUN) break
       const tenantId: string = row.user_id
       if (skippedTenants.has(tenantId)) continue

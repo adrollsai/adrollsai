@@ -305,6 +305,128 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
       },
     }),
 
+    /** What is queued to be called right now, and how many lines are free to call them. */
+    call_queue_status: tool({
+      description:
+        'What the calling queue looks like RIGHT NOW: how many leads are waiting to be called, how many of those ' +
+        'arrived in the last day, how many have never been contacted, how many are retries, and what capacity the ' +
+        'Vobiz channels give. Also says why the other leads are NOT in the queue (already said yes or no, no phone, ' +
+        'called the maximum number of times, asked not to be called). Use this for "what is the state of calling", ' +
+        '"who is next", "how many are queued", "are we using all our lines". The first few leads name the reason ' +
+        'they are queued, so you can explain the order rather than just the count.',
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(4000).default(400).describe('How many leads to examine, newest first'),
+        freshHours: z.number().min(1).max(168).default(24).describe('What counts as "just arrived", in hours'),
+      }),
+      execute: async ({ limit, freshHours }) => {
+        try {
+          const { prioritiseCallQueue, summariseQueue, toQueueRow, formatAge } = await import('@/lib/automation/call-queue');
+          const { loadVoiceChannels, channelCapacity, describeCapacity, pickChannel } = await import('@/lib/automation/voice-channels');
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('business_info, voice_concurrency_limit, voice_vobiz_number, contact_number')
+            .eq('id', userId)
+            .maybeSingle();
+          const { data: policy } = await supabase
+            .from('tenant_automations')
+            .select('master_enabled, ai_calling, call_max_attempts, call_max_age_days, call_fresh_stages, call_window_start, call_window_end')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          const { data: leads } = await supabase
+            .from('leads')
+            .select('id, user_id, phone, name, created_at, voice_call_retry_count, voice_call_status, pipeline_stage, last_call_at, custom_fields, booked_time, processing_lock_until')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+          const decisions = prioritiseCallQueue((leads ?? []).map(toQueueRow), {
+            now: new Date(),
+            freshHours,
+            maxAttempts: Number(policy?.call_max_attempts) || 3,
+            maxAgeDays: Number(policy?.call_max_age_days) || 365,
+          });
+          const summary = summariseQueue(decisions);
+
+          const channels = loadVoiceChannels({
+            profileNumber: profile?.voice_vobiz_number,
+            businessInfo: profile?.business_info,
+            concurrencyLimit: profile?.voice_concurrency_limit,
+          });
+          const capacity = channelCapacity(channels.channels);
+
+          // How many are on the phone right now decides how many lines are actually free.
+          const calling = (leads ?? []).filter((l: any) => String(l.voice_call_status ?? '').toLowerCase() === 'calling').length;
+
+          const skippedSentences: Record<string, string> = {
+            decided: 'already gave a yes or a no',
+            max_attempts: 'called as many times as the policy allows',
+            no_phone: 'no phone number on the lead',
+            not_indian: 'not an Indian mobile number',
+            opted_out: 'asked not to be called',
+            unsubscribed: 'unsubscribed',
+            in_flight: 'on a call right now',
+            booked: 'already booked',
+            too_old: 'older than the policy allows',
+            locked: 'being processed by another job',
+            stage_not_fresh: 'not in a stage that gets called',
+          };
+
+          return {
+            success: true,
+            automation: {
+              calling_enabled: Boolean(policy?.master_enabled && policy?.ai_calling),
+              calling_window: policy ? `${policy.call_window_start ?? 9}:00–${policy.call_window_end ?? 19}:00 IST` : null,
+              attempts_allowed: Number(policy?.call_max_attempts) || 3,
+              note: policy?.master_enabled && policy?.ai_calling
+                ? 'Calling is switched on for this account.'
+                : 'Calling is switched OFF for this account, so nothing in the queue will be dialled until it is switched on.',
+            },
+            queue: {
+              in_queue: summary.inQueue,
+              just_arrived: summary.justArrived,
+              never_contacted: summary.neverContacted,
+              retry: summary.retryDue,
+              examined: summary.total,
+            },
+            skipped: Object.entries(summary.skipped).map(([code, count]) => ({
+              count,
+              why: skippedSentences[code] ?? code,
+            })),
+            lines: {
+              capacity,
+              in_use: calling,
+              free: Math.max(0, capacity - calling),
+              channels: channels.channels.map((channel) => channel.label),
+              summary: describeCapacity(channels.channels, channels.source),
+              note:
+                channels.source === 'fallback'
+                  ? 'These are the default lines, not individually configured channels. Set VOBIZ_CHANNELS to list the ' +
+                    'lines you pay for and capacity follows automatically.'
+                  : 'Capacity is the sum of the configured Vobiz channels.',
+            },
+            next: decisions
+              .filter((decision) => decision.inQueue)
+              .slice(0, 8)
+              .map((decision) => ({
+                name: decision.name ?? '(no name)',
+                phone: decision.phone,
+                why: decision.reason,
+                arrived: formatAge(decision.minutesSinceArrival),
+                dials_from: pickChannel(channels.channels, decision.id)?.number || null,
+              })),
+            plain_english:
+              `${summary.inQueue} lead${summary.inQueue === 1 ? '' : 's'} waiting to be called ` +
+              `(${summary.justArrived} arrived today, ${summary.neverContacted} never contacted, ${summary.retryDue} retries), ` +
+              `across ${capacity} line${capacity === 1 ? '' : 's'} with ${Math.max(0, capacity - calling)} free right now.`,
+          };
+        } catch (err: any) {
+          return { success: false, error: String(err?.message || err) };
+        }
+      },
+    }),
+
     org_call_report: tool({
       description:
         'Counts call attempts for the WHOLE organisation (the account plus every sub-account that rolls up to it) ' +

@@ -4,6 +4,7 @@ import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalo
 import { computeValidCallingSlot } from '@/utils/calling-window'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { resolveAppUrl, isAbsoluteHttpsUrl, describeUrlProblem } from '@/utils/app-url'
+import { loadVoiceChannels, pickChannel, describeCapacity } from '@/lib/automation/voice-channels'
 
 export { VOBIZ_NUMBER_CATALOG, type VobizAvailableNumber }
 
@@ -232,12 +233,29 @@ export async function triggerVobizOutboundCall(
 
     // 5. Auth Credentials & Caller ID
     const bi = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {})
+    // uthId below may be overridden by the picked channel further down, so both come from one decision.
     const authId = params.customAuthId || profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
     const authToken = params.customAuthToken || profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
     
     // Strictly require an assigned number for the account. NEVER fall back to unverified test numbers.
     const isNobogentMaster = profile.email === 'rchopra489@gmail.com' || profile.role === 'super_admin'
     const masterNumber = process.env.VOBIZ_TEST_NUMBER || null
+
+// CHANNELS FIRST. When the deployment (or the tenant) has configured explicit Vobiz channels, the call goes out
+    // on one of THEM — the auth account and caller ID travel together, so billing and the number always agree, and
+    // capacity is the sum of what we pay for. Rotation across the shared DID catalogue stays as the fallback for
+    // accounts that have not been put on channels yet.
+    const channelRegistry = loadVoiceChannels({
+        profileNumber: profile.voice_vobiz_number,
+        businessInfo: bi,
+        concurrencyLimit: profile.voice_concurrency_limit,
+    })
+    const channel = channelRegistry.source === 'fallback'
+        ? null
+        : pickChannel(channelRegistry.channels, String(leadId || profileId || ''))
+    if (channel) {
+        console.log(`[VOBIZ HELPER] Dialling on ${channel.label} (auth ${channel.authId || 'default'}) — ${describeCapacity(channelRegistry.channels, channelRegistry.source)}`)
+    }
 
     // DID ROTATION. All the numbers on the Vobiz account are one shared pool and no DID belongs to any
     // one tenant, so a call is placed from a number rotated across that pool rather than from a number
@@ -250,7 +268,8 @@ export async function triggerVobizOutboundCall(
     // stable for a given lead — no shared counter, and nothing to get out of sync across instances.
     const sharedPool = VOBIZ_NUMBER_CATALOG.map((n) => n.phoneNumber).filter(Boolean)
     const rotatedNumber = pickRotatedDid(sharedPool, String(leadId || profileId || ''))
-    const assignedNumber = fromPhone 
+    const assignedNumber = channel?.number
+        || fromPhone
         || rotatedNumber
         || profile.voice_vobiz_number 
         || bi.claimed_vobiz_number 
@@ -368,11 +387,13 @@ export async function triggerVobizOutboundCall(
     console.log(`[VOBIZ HELPER] Initiating outbound call to ${cleanPhone} from ${callerId} (User: ${profileId})...`)
 
     try {
-        const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/`
+        // The channel's own auth account wins: the number and the account that bills for it must never disagree.
+    const dialAuthId = channel?.authId || authId
+    const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${dialAuthId}/Call/`
         const res = await fetch(vobizUrl, {
             method: 'POST',
             headers: {
-                'X-Auth-ID': authId,
+                'X-Auth-ID': dialAuthId,
                 'X-Auth-Token': authToken,
                 'Content-Type': 'application/json'
             },
