@@ -113,6 +113,7 @@
     "verify:weekly-template": "esbuild scripts/verify-weekly-template.ts --bundle --platform=node --format=esm --outfile=.tmp-weekly-tpl.mjs --log-level=warning && node .tmp-weekly-tpl.mjs",
     "verify:credit-pots": "esbuild scripts/verify-credit-pots.ts --bundle --platform=node --format=esm --packages=external --alias:@/utils/credits=./utils/credits --outfile=.tmp-credit-pots.mjs --log-level=warning && node .tmp-credit-pots.mjs",
     "verify:pending-items": "esbuild scripts/verify-pending-items.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-pending.mjs --log-level=warning && node .tmp-pending.mjs",
+    "verify:automation-wiring": "esbuild scripts/verify-automation-wiring.ts --bundle --platform=node --format=esm --outfile=.tmp-auto-wiring.mjs --log-level=warning && node .tmp-auto-wiring.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs"
   },
