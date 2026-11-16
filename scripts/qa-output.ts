@@ -21,7 +21,7 @@
  *   npx esbuild scripts/qa-output.ts --bundle --platform=node --format=esm --packages=external \
  *     --outfile=.tmp-qa-output.mjs && node .tmp-qa-output.mjs
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import fs from 'node:fs';
 
 let pass = 0;
@@ -37,6 +37,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 };
 
 const run = (cmd: string, args: string[]): string => {
+  // NOTE: ffmpeg writes its analysis to stderr, so a helper that returns only stdout reports NaN loudness.
   try {
     return execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (err: any) {
@@ -76,7 +77,18 @@ export function qaVideo(path: string): { ok: boolean; problems: string[] } {
   if (!(duration > 1)) problems.push('no usable duration');
 
   if (audio) {
-    const loud = run('ffmpeg', ['-hide_banner', '-i', path, '-af', 'volumedetect', '-f', 'null', process.platform === 'win32' ? 'NUL' : '/dev/null']);
+    const loud = (() => {
+      try {
+        return String(
+          execSync(
+            `ffmpeg -hide_banner -i "${path}" -af volumedetect -f null ${process.platform === 'win32' ? 'NUL' : '/dev/null'} 2>&1`,
+            { encoding: 'utf8' },
+          ),
+        );
+      } catch (err: any) {
+        return String(err?.stdout ?? '') + String(err?.stderr ?? '');
+      }
+    })();
     const mean = Number(/mean_volume:\s*(-?[\d.]+)/.exec(loud)?.[1] ?? 'NaN');
     const max = Number(/max_volume:\s*(-?[\d.]+)/.exec(loud)?.[1] ?? 'NaN');
     console.log(`  loudness: mean ${mean} dB, max ${max} dB`);
