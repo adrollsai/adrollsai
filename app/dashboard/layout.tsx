@@ -8,6 +8,7 @@ import PushManager from '@/components/PushManager'
 import { Loader2, XCircle } from 'lucide-react'
 import QuotaManager from '@/components/QuotaManager'
 import { UploadProvider } from '@/utils/UploadContext'
+import { planValidityNotice, type PlanNotice } from '@/lib/automation/plan-validity'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
@@ -44,6 +45,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [acceptedTerms, setAcceptedTerms] = useState(true)
   const [subscriptionExpiredAlert, setSubscriptionExpiredAlert] = useState(false)
   const [dismissExpiredAlert, setDismissExpiredAlert] = useState(false)
+  // Pre-expiry warning. The expired banner above only appears once the plan has ALREADY ended, so an
+  // owner used to discover the problem when a campaign stopped. This one gives them the days before.
+  const [planNotice, setPlanNotice] = useState<PlanNotice | null>(null)
+  const [dismissPlanNotice, setDismissPlanNotice] = useState(false)
 
   useEffect(() => {
     const enforcePaywall = async () => {
@@ -114,6 +119,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (isExpiredChronologically || subscriptionStatus === 'expired') {
           setSubscriptionExpiredAlert(true)
         }
+
+        // Warn BEFORE the date arrives, from the pure decision in lib/automation/plan-validity so the
+        // boundaries (ends today, 3 days, 7 days) are tested rather than discovered by a customer.
+        setPlanNotice(
+          planValidityNotice({
+            status: subscriptionStatus,
+            validUntil: subscriptionValidUntil,
+            now: new Date(),
+          })
+        )
 
         // Dynamic chronological check (non-whitelisted users get set to expired)
         if (isExpiredChronologically && !isWhitelisted) {
@@ -290,6 +305,54 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 onClick={() => setDismissExpiredAlert(true)}
                 className="text-amber-700 hover:text-amber-900 px-2 py-0.5 rounded text-xs font-bold cursor-pointer transition-colors"
                 title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Pre-expiry warning (the banner above only covers a plan that has ALREADY ended) */}
+        {planNotice && planNotice.level !== 'expired' && !dismissPlanNotice && pathname !== '/dashboard/billing' && (
+          <div
+            className={`border-b px-4 py-2.5 text-center flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs animate-in slide-in-from-top duration-300 ${
+              planNotice.level === 'critical'
+                ? 'bg-gradient-to-r from-rose-50 via-rose-100/60 to-orange-50 border-rose-200'
+                : 'bg-gradient-to-r from-sky-50 via-sky-100/50 to-indigo-50 border-sky-200'
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2 text-xs font-semibold mx-auto sm:mx-0 ${
+                planNotice.level === 'critical' ? 'text-rose-900' : 'text-sky-900'
+              }`}
+            >
+              <span
+                className={`flex h-2 w-2 rounded-full animate-pulse shrink-0 ${
+                  planNotice.level === 'critical' ? 'bg-rose-500' : 'bg-sky-500'
+                }`}
+              />
+              <span>{planNotice.message}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 mx-auto sm:mx-0">
+              <button
+                onClick={() => router.push('/dashboard/billing')}
+                className={`px-3.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all active:scale-95 shadow-sm cursor-pointer whitespace-nowrap text-white ${
+                  planNotice.level === 'critical'
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-sky-600 hover:bg-sky-700'
+                }`}
+              >
+                {planNotice.actionLabel}
+              </button>
+              <button
+                onClick={() => setDismissPlanNotice(true)}
+                className={`px-2 py-0.5 rounded text-xs font-bold cursor-pointer transition-colors ${
+                  planNotice.level === 'critical'
+                    ? 'text-rose-700 hover:text-rose-900'
+                    : 'text-sky-700 hover:text-sky-900'
+                }`}
+                title="Dismiss"
+                aria-label="Dismiss plan notice"
               >
                 ✕
               </button>
