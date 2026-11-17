@@ -133,7 +133,8 @@
     "verify:reference-bank": "esbuild scripts/verify-reference-bank.ts --bundle --platform=node --format=esm --packages=external --alias:@=./ --outfile=.tmp-refbank.mjs --log-level=warning && node .tmp-refbank.mjs",
     "ingest:video-ref": "esbuild scripts/ingest-reference-video.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ingest.mjs --log-level=warning && node .tmp-ingest.mjs",
     "backfill:thumbnails": "esbuild scripts/backfill-image-thumbnails.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-thumbs.mjs --log-level=warning && node .tmp-thumbs.mjs",
-    "ingest:image-ref": "esbuild scripts/ingest-reference-images.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ingestimg.mjs --log-level=warning && node .tmp-ingestimg.mjs"
+    "ingest:image-ref": "esbuild scripts/ingest-reference-images.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ingestimg.mjs --log-level=warning && node .tmp-ingestimg.mjs",
+    "verify:flow-safety": "esbuild scripts/verify-flow-safety.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flowsafety.mjs --log-level=warning && node .tmp-flowsafety.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

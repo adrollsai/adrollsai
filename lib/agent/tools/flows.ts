@@ -1,16 +1,16 @@
-/**
+﻿/**
  * Authoring an automation flow, which the agent could not do at all.
  *
  * THE GAP THIS CLOSES
  * `tools/automation.ts` gave the agent `list_automation_flows` and
- * `check_flow_conflicts` — it could SEE flows and never make one. So "create a
+ * `check_flow_conflicts` Ã¢â‚¬â€ it could SEE flows and never make one. So "create a
  * WhatsApp flow: when a lead comes in, send the brochure, then call them" resolved to
  * a truthful "I cannot do that", which is a worse product than one that can.
  *
  * WHAT A FLOW IS (read out of the 15 real rows in `automations`)
  *   title        `Flow: <name>`
  *   description  a JSON STRING: { name, isActive, trigger, nodes[] }
- *   nodes        { id, type, position:{x,y}, data:{…} }
+ *   nodes        { id, type, position:{x,y}, data:{Ã¢â‚¬Â¦} }
  * and `utils/whatsapp/flow-runner.ts` is the only thing that executes them, so this
  * file's vocabulary is copied FROM that runner rather than invented:
  *
@@ -30,6 +30,8 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import { describeConflict, findTriggerConflict, identityKey, type FlowIdentity } from '@/lib/flows/conflicts';
+import { actionsAvailableFor, validateAgainstTrigger } from '@/lib/flows/capabilities';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /** The trigger vocabulary `flow-runner.ts` actually matches on. */
@@ -121,7 +123,7 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
       type: 'triggerNode',
       position: { x: ORIGIN_X, y: ORIGIN_Y },
       data: {
-        title: `${name} — trigger`,
+        title: `${name} Ã¢â‚¬â€ trigger`,
         subtitle: 'Starting step',
         triggerType: input.trigger,
         ...(input.templateName ? { templateName: input.templateName } : {}),
@@ -191,7 +193,7 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
   }
 
   notes.push(
-    `a wait longer than ${MAX_FLOW_DELAY_SECONDS}s is not a delay node — the runner clamps it — so this flow ` +
+    `a wait longer than ${MAX_FLOW_DELAY_SECONDS}s is not a delay node Ã¢â‚¬â€ the runner clamps it Ã¢â‚¬â€ so this flow ` +
       'fires its steps in order as soon as the trigger matches',
   );
 
@@ -223,7 +225,7 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
         'Give it a name, one trigger from the supported list, and an ordered list of steps ' +
         '(message / call / wait). Use a wait of at most 10 seconds: the runner clamps longer delays, so a ' +
         '"wait 2 hours" must be a scheduled follow-up instead, and asking for one here is refused with that ' +
-        'reason. Check list_automation_flows first — a duplicate flow and an existing one both firing is worse ' +
+        'reason. Check list_automation_flows first Ã¢â‚¬â€ a duplicate flow and an existing one both firing is worse ' +
         'than no flow.',
       inputSchema: z.object({
         name: z.string().describe('Short human name, e.g. "Course enquiry follow-up"'),
@@ -251,36 +253,86 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
             ...(input.templateName ? { templateName: input.templateName } : {}),
             steps: (input.steps ?? []) as FlowStep[],
             // Flows start PAUSED. Writing one is authoring; making it live is a decision that reaches
-            // customers, and it belongs to the owner in the UI — not to a model mid-conversation.
+            // customers, and it belongs to the owner in the UI Ã¢â‚¬â€ not to a model mid-conversation.
             isActive: input.isActive === true,
           });
 
-          // Two flows firing on the same trigger is worse than no flow: every matching lead gets
-          // both messages. Refuse a duplicate outright and point at the one that exists.
+          // Static feasibility BEFORE anything is written: an event that cannot yield a phone number
+          // cannot drive a WhatsApp message or a call, however the flow is worded. This is the check
+          // that refuses "send a WhatsApp when someone comments" instead of saving it to fail later.
+          const wantedActions = Array.from(
+            new Set(
+              (input.steps ?? [])
+                .map((s: any) => (s?.kind === 'message' ? 'message' : s?.kind === 'call' ? 'call' : ''))
+                .filter(Boolean)
+            )
+          ) as string[];
+          const impossible = validateAgainstTrigger(String(input.trigger), wantedActions);
+          if (impossible.length) {
+            return {
+              success: false,
+              reason: 'impossible_action',
+              trigger: String(input.trigger),
+              availableActions: actionsAvailableFor(String(input.trigger)),
+              error: impossible.map((b) => b.message).join('\n\n'),
+            };
+          }
+
+          // Two flows firing on the same trigger is worse than no flow: every matching person gets
+          // both messages. The verdict comes from the trigger's IDENTITY Ã¢â‚¬â€ exact, repeatable Ã¢â‚¬â€ not
+          // from matching the trigger's name inside description prose, which both missed real
+          // duplicates and flagged unrelated flows.
           try {
             const { data: existing } = await supabase
               .from('automations')
               .select('id, title, is_active, description')
               .eq('user_id', userId);
-            const wanted = String(built.title || '').toLowerCase();
-            const clash = (existing ?? []).find((row: any) => {
-              const sameTitle = String(row.title || '').toLowerCase() === wanted;
-              const sameTrigger =
-                String(row.description || '').includes(String(input.trigger)) &&
-                String(built.description || '').includes(String(input.trigger));
-              return sameTitle || sameTrigger;
+
+            const candidate: FlowIdentity = {
+              name: input.name,
+              title: built.title,
+              triggerType: String(input.trigger),
+              triggerKey: input.templateName ? String(input.templateName) : null,
+            };
+
+            const described: FlowIdentity[] = (existing ?? []).map((row: any) => {
+              const raw = String(row.description || '');
+              let triggerType = '';
+              let triggerKey: string | null = null;
+              const brace = raw.indexOf('{');
+              if (brace >= 0) {
+                try {
+                  const parsed = JSON.parse(raw.slice(brace));
+                  if (parsed?.trigger?.type) triggerType = String(parsed.trigger.type);
+                  if (parsed?.trigger?.templateName) triggerKey = String(parsed.trigger.templateName);
+                } catch {}
+              }
+              return {
+                id: row.id,
+                name: String(row.title || ''),
+                title: row.title,
+                triggerType,
+                triggerKey,
+                isActive: row.is_active === true,
+              };
             });
+
+            // A row whose description we cannot parse still counts by title, so renaming and
+            // recreating cannot slip a second flow past the check.
+            const byTitle = described.find(
+              (f) => String(f.title || '').toLowerCase() === String(built.title || '').toLowerCase()
+            );
+            const { conflict } = findTriggerConflict(described.filter((f) => f.triggerType), candidate);
+            const clash = conflict ?? byTitle ?? null;
+
             if (clash) {
               return {
                 success: false,
                 reason: 'duplicate_flow',
                 existingFlowId: clash.id,
-                active: clash.is_active === true,
-                error:
-                  `a flow for this already exists ("${clash.title}", id ${clash.id}, ` +
-                  `${clash.is_active ? 'active' : 'paused'}). Two flows firing on the same trigger ` +
-                  'would message every matching lead twice. Edit the existing one in dashboard/flows ' +
-                  'instead of adding a second.',
+                active: clash.isActive === true,
+                trigger: identityKey(candidate),
+                error: describeConflict(candidate, clash),
               };
             }
           } catch {
@@ -318,7 +370,7 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
               `Created "${built.title}" with ${built.nodeCount} node(s)` +
               (built.isActive
                 ? ', active now.'
-                : ', currently PAUSED — the owner turns it on in dashboard/flows when they are ready.'),
+                : ', currently PAUSED Ã¢â‚¬â€ the owner turns it on in dashboard/flows when they are ready.'),
           };
         } catch (error: any) {
           if (error instanceof FlowError) {
