@@ -28,6 +28,10 @@ import { maybeCompact } from './compaction';
 import { startUsageMeter, settleUsage } from '../usage';
 import { AGENT_MODEL } from '../models';
 
+/** Generous output budget: reasoning is billed inside it, so a small default starves the answer. */
+const HARNESS_MAX_OUTPUT_TOKENS = 16000;
+
+
 export interface SliceOptions {
   worker: string;
   /** Wall-clock budget for this slice. Keep below the route's maxDuration. */
@@ -239,6 +243,10 @@ export async function executeRunSlice(
 
     const result = streamText({
       model,
+      // Reasoning tokens count against this budget. Left undeclared it falls back to a provider
+      // default that a long goal exhausts before any answer is emitted, and the SDK reports the
+      // empty result as 'No output generated'. Declare it, generously, per call.
+      maxOutputTokens: HARNESS_MAX_OUTPUT_TOKENS,
       system: systemPrompt,
       messages,
       tools,
