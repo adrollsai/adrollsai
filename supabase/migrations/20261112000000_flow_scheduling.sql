@@ -5,8 +5,8 @@
 -- instead of a 10-second cap that silently fires everything at once.
 --
 -- Two tables, two different jobs:
---   flow_schedules — what is owed and when. One row per action per lead.
---   flow_runs      — what already happened. The unique key here is the idempotency guarantee: a
+--   flow_schedules â€” what is owed and when. One row per action per lead.
+--   flow_runs      â€” what already happened. The unique key here is the idempotency guarantee: a
 --                    retried tick, a redeployed worker or a double-fired webhook cannot send the
 --                    same step to the same person twice.
 
@@ -71,12 +71,12 @@ alter table public.flow_runs      enable row level security;
 alter table public.flow_settings  enable row level security;
 
 -- The service role writes these; owners read their own.
-create policy if not exists flow_schedules_owner_read on public.flow_schedules
-  for select using (auth.uid() = user_id);
-create policy if not exists flow_runs_owner_read on public.flow_runs
-  for select using (auth.uid() = user_id);
-create policy if not exists flow_settings_owner_all on public.flow_settings
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists flow_schedules_owner_read on public.flow_schedules;
+create policy flow_schedules_owner_read on public.flow_schedules for select using (auth.uid() = user_id);
+drop policy if exists flow_runs_owner_read on public.flow_runs;
+create policy flow_runs_owner_read on public.flow_runs for select using (auth.uid() = user_id);
+drop policy if exists flow_settings_owner_all on public.flow_settings;
+create policy flow_settings_owner_all on public.flow_settings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 comment on table public.flow_schedules is
   'Durable waits. A flow never sleeps; it writes a row here and a clock tick executes it.';

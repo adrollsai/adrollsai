@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { runDueSteps } from '@/lib/flows/scheduling';
 import { SCHEDULES, RUNS, quietHoursFor, scheduledStore } from '@/lib/flows/store';
@@ -11,7 +11,7 @@ export const maxDuration = 60;
  * The clock.
  *
  * Every minute this looks for steps that are due and runs them through the five gates in
- * scheduling.ts — kill switch, opt-out, quiet hours, cross-flow freshness, idempotency. A step that
+ * scheduling.ts â€” kill switch, opt-out, quiet hours, cross-flow freshness, idempotency. A step that
  * passes is handed to the delivery queue rather than blasted out inline, so a human still sees it
  * before a customer does.
  *
@@ -110,6 +110,6 @@ export async function POST(request: Request) {
     pending: pending.count ?? 0,
     done: done.count ?? 0,
     runs: runs.count ?? 0,
-    note: tablesReady ? undefined : `scheduler tables missing: ${probe.error?.message} — apply supabase/migrations/20260512_flow_scheduling.sql`,
+    note: tablesReady ? undefined : `scheduler tables missing: ${probe.error?.message} â€” apply supabase/migrations/20261112000000_flow_scheduling.sql`,
   });
 }
