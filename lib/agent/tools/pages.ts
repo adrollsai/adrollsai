@@ -572,6 +572,37 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
             }
           }
 
+          // THE TEMPLATE IS NO LONGER THE PAGE PATH: plan -> author -> screenshot -> critique -> revise -> publish.
+          // Representational imagery is generated when the business has none, and the bar is acceptable work rather
+          // than perfect work, so something ships that the owner can then refine.
+          {
+            const { buildAndPublishPage } = await import('@/lib/agent/creative/page-publish');
+            const piped = await buildAndPublishPage(supabase, userId, input as any);
+            return {
+              success: piped.success,
+              ...(piped.success
+                ? {
+                    slug: piped.slug,
+                    url: `/shared/${userId}/${piped.slug}`,
+                    message:
+                      'Page planned, written, rendered, reviewed and revised before publishing at ' +
+                      `/shared/${userId}/${piped.slug}. Review average ${piped.averageScore}/10: ` +
+                      Object.entries(piped.review?.scores ?? {}).map(([k, v]) => `${k} ${v}`).join(', ') +
+                      '. ' +
+                      (piped.generatedImagery?.length
+                        ? `${piped.generatedImagery.length} representational image(s) were generated because the business had none; the owner can replace them.`
+                        : '') +
+                      ' Tell the owner the scores and anything you assumed.',
+                  }
+                : { error: piped.error }),
+              review: piped.review,
+              qa: piped.qa?.findings,
+              iterations: piped.iterations,
+              screenshots: piped.screenshots,
+              generatedImagery: piped.generatedImagery,
+            };
+          }
+
           const built = buildLandingPage(inputWithImagery as LandingPageBrief);
 
           // QA BEFORE SAVING. `landing_pages` has no draft state - creating the row publishes the page - so a page
@@ -617,7 +648,7 @@ export function createPageAuthoringTools(supabase: SupabaseClient, userId: strin
             .single();
 
           if (error) {
-            return { success: false, error: `the page was built but the database refused it: ${error.message}` };
+            return { success: false, error: `the page was built but the database refused it: ${error?.message ?? "unknown"}` };
           }
 
           return {
