@@ -1,5 +1,5 @@
 /* ==========================================================================
-   EVERLINE REALTY — APP
+   Your Realty REALTY — APP
    --------------------------------------------------------------------------
    Vanilla JS, no dependencies, no build step.
 
@@ -50,10 +50,10 @@
   const currentPage = () => (window.location.pathname.split("/").pop() || "index.html").toLowerCase();
   const store = {
     get() {
-      try { return JSON.parse(localStorage.getItem("everline:saved") || "[]"); } catch (e) { return []; }
+      try { return JSON.parse(localStorage.getItem("your realty:saved") || "[]"); } catch (e) { return []; }
     },
     set(list) {
-      try { localStorage.setItem("everline:saved", JSON.stringify(list)); } catch (e) { /* private mode */ }
+      try { localStorage.setItem("your realty:saved", JSON.stringify(list)); } catch (e) { /* private mode */ }
     },
   };
   const agentById = (id) => DATA.agents.find((a) => a.id === id);
@@ -498,7 +498,7 @@
             if (!res.ok) throw new Error("Request failed: " + res.status);
           } else {
             // Demo mode — no backend wired up yet.
-            console.info("[Everline template] Form captured (demo mode):", payload);
+            console.info("[Your Realty template] Form captured (demo mode):", payload);
             await new Promise((r) => setTimeout(r, 550));
           }
 

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   EVERLINE REALTY — SITE CONFIG
+   Your Realty REALTY — SITE CONFIG
    --------------------------------------------------------------------------
    ⭐ THIS IS THE ONLY FILE YOU NEED TO EDIT TO RE-BRAND THE ENTIRE TEMPLATE.
    The header, footer, top bar, buttons, forms and every contact detail are
@@ -12,27 +12,27 @@
 window.SITE = {
   /* ---------------------------------------------------------------- brand */
   brand: {
-    name: "Everline",           // wordmark line 1
+    name: "Your Realty",           // wordmark line 1
     suffix: "Realty",           // wordmark line 2 (set "" to hide)
     tagline: "Homes with a higher standard",
     mark: "assets/img/logo-mark.svg",
-    license: "CA DRE #02134567",   // shown in the footer
+    license: "Licence on request",   // shown in the footer
     founded: 2009,
   },
 
   /* -------------------------------------------------------------- contact */
   contact: {
     phone: "+1-555-018-2245",
-    phoneDisplay: "(555) 018-2245",
+    phoneDisplay: "000 000 0000",
     sms: "+1-555-018-2245",
     whatsapp: "15550182245",       // digits only, no +
-    email: "hello@everlinerealty.com",
-    emailSales: "sales@everlinerealty.com",
+    email: "hello@example.com",
+    emailSales: "sales@your realty.com",
     address: {
       line1: "2140 Alder Street, Suite 300",
-      line2: "Riverton, CA 94107",
-      street: "2140 Alder Street, Suite 300, Riverton, CA 94107",
-      mapsQuery: "2140 Alder Street Riverton CA",
+      line2: "Harbour City, CA 94107",
+      street: "2140 Alder Street, Suite 300, Harbour City, CA 94107",
+      mapsQuery: "2140 Alder Street Harbour City CA",
     },
     hours: [
       { days: "Monday – Friday", time: "8:30am – 6:30pm" },
@@ -44,10 +44,10 @@ window.SITE = {
 
   /* ---------------------------------------------------------------- market */
   market: {
-    city: "Riverton",
+    city: "Harbour City",
     region: "CA",
-    metro: "Riverton & the Bay Metro",
-    mls: "Riverton MLS",
+    metro: "Harbour City & the Bay Metro",
+    mls: "Harbour City MLS",
     currency: "USD",
     locale: "en-US",
   },

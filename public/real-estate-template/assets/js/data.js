@@ -1,5 +1,5 @@
 /* ==========================================================================
-   EVERLINE REALTY — SITE DATA
+   Your Realty REALTY — SITE DATA
    --------------------------------------------------------------------------
    Everything repeatable lives here. The pages render from these arrays, so a
    client site is "swap the data, not the markup":
@@ -39,7 +39,7 @@ window.DATA = {
       mls: "RV-2451188",
       title: "Sunlit Contemporary with Canyon Views",
       address: "1284 Alder Ridge Road",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94107",
       price: 1895000,
@@ -55,7 +55,7 @@ window.DATA = {
       days: 6,
       featured: true,
       open: "",
-      neighbourhood: "Riverton Heights",
+      neighbourhood: "Marina Heights",
       agentId: "a1",
       images: ["assets/img/prop-01.svg", "assets/img/prop-06.svg", "assets/img/prop-10.svg", "assets/img/prop-03.svg"],
       summary:
@@ -74,7 +74,7 @@ window.DATA = {
       mls: "RV-2450991",
       title: "Restored 1920s Craftsman Bungalow",
       address: "412 Linden Way",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94107",
       price: 985000,
@@ -109,7 +109,7 @@ window.DATA = {
       mls: "RV-2451344",
       title: "Glass-Front Penthouse Over the Marina",
       address: "9 Harbour Row, Residence 1801",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94103",
       price: 2450000,
@@ -144,7 +144,7 @@ window.DATA = {
       mls: "RV-2451402",
       title: "Low-Maintenance Townhome, Walk to Old Town",
       address: "77 Cypress Mews",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94107",
       price: 689000,
@@ -179,7 +179,7 @@ window.DATA = {
       mls: "RV-2450810",
       title: "Family Home on a Quiet Cul-de-Sac",
       address: "1836 Willowbrook Drive",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94109",
       price: 1150000,
@@ -214,7 +214,7 @@ window.DATA = {
       mls: "RV-2450707",
       title: "Mid-Century Ranch with Walled Garden",
       address: "640 Marlow Avenue",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94107",
       price: 1395000,
@@ -230,7 +230,7 @@ window.DATA = {
       days: 32,
       featured: false,
       open: "",
-      neighbourhood: "Riverton Heights",
+      neighbourhood: "Marina Heights",
       agentId: "a2",
       images: ["assets/img/prop-06.svg", "assets/img/prop-11.svg", "assets/img/prop-03.svg", "assets/img/prop-08.svg"],
       summary:
@@ -249,7 +249,7 @@ window.DATA = {
       mls: "RV-2450611",
       title: "Duplex with Two Strong Rental Incomes",
       address: "2214 Juniper Street",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94109",
       price: 1050000,
@@ -284,7 +284,7 @@ window.DATA = {
       mls: "RV-2450455",
       title: "Waterfront Retreat with Private Dock",
       address: "30 Kestrel Point",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94103",
       price: 3150000,
@@ -319,7 +319,7 @@ window.DATA = {
       mls: "RV-2451288",
       title: "Light-Filled Loft in the Arts District",
       address: "1200 Foundry Lane, Unit 402",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94103",
       price: 615000,
@@ -354,7 +354,7 @@ window.DATA = {
       mls: "RV-2451466",
       title: "Hillside Modern with Guest Suite",
       address: "25 Ridgeview Court",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94109",
       price: 2285000,
@@ -370,7 +370,7 @@ window.DATA = {
       days: 2,
       featured: true,
       open: "Sunday 11:00am – 1:00pm",
-      neighbourhood: "Riverton Heights",
+      neighbourhood: "Marina Heights",
       agentId: "a1",
       images: ["assets/img/prop-10.svg", "assets/img/prop-05.svg", "assets/img/prop-08.svg", "assets/img/prop-02.svg"],
       summary:
@@ -389,7 +389,7 @@ window.DATA = {
       mls: "RV-2450120",
       title: "Turnkey Cottage Near the Farmers Market",
       address: "58 Sorrel Street",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94107",
       price: 745000,
@@ -424,7 +424,7 @@ window.DATA = {
       mls: "RV-2451503",
       title: "Panoramic Ridge Lot, Ready to Build",
       address: "Canyon Rim Parcel 4",
-      city: "Riverton",
+      city: "Harbour City",
       state: "CA",
       zip: "94109",
       price: 425000,
@@ -466,8 +466,8 @@ window.DATA = {
       role: "Founder & Principal Broker",
       photo: "assets/img/agent-1.svg",
       phone: "(555) 018-2241",
-      email: "amara@everlinerealty.com",
-      license: "CA DRE #01884521",
+      email: "amara@your realty.com",
+      license: "Licence on request",
       rating: 5.0,
       reviews: 64,
       deals: 412,
@@ -476,14 +476,14 @@ window.DATA = {
       languages: ["English", "Spanish"],
       specialties: ["Luxury homes", "Ridge & view properties", "New construction"],
       bio: [
-        "Amara founded Everline in 2009 after a decade in commercial development, and has since closed more ridge and view-lot transactions in Riverton Heights than any other broker in the metro.",
+        "Amara founded Your Realty in 2009 after a decade in commercial development, and has since closed more ridge and view-lot transactions in Marina Heights than any other broker in the metro.",
         "She works with a deliberately small list of clients — no more than nine active sellers at a time — and is known for pricing conversations that are candid rather than comfortable.",
       ],
       testimonial: {
         quote:
           "Amara told us our first asking price was 8% too high and showed us exactly why. We listed at her number, took four offers in a weekend and closed above the number we'd originally wanted.",
         name: "Priya & Dev Shah",
-        location: "Riverton Heights",
+        location: "Marina Heights",
       },
     },
     {
@@ -492,8 +492,8 @@ window.DATA = {
       role: "Senior Listing Advisor",
       photo: "assets/img/agent-2.svg",
       phone: "(555) 018-2242",
-      email: "julian@everlinerealty.com",
-      license: "CA DRE #01932087",
+      email: "julian@your realty.com",
+      license: "Licence on request",
       rating: 4.9,
       reviews: 58,
       deals: 336,
@@ -502,7 +502,7 @@ window.DATA = {
       languages: ["English", "French"],
       specialties: ["Historic homes", "Pre-1950 restorations", "Old Quarter"],
       bio: [
-        "Julian handles most of Everline's heritage stock — Craftsman bungalows, Victorians and the occasional 1940s cottage that needs a careful hand. He came to real estate from architectural conservation, and it shows in the marketing.",
+        "Julian handles most of Your Realty's heritage stock — Craftsman bungalows, Victorians and the occasional 1940s cottage that needs a careful hand. He came to real estate from architectural conservation, and it shows in the marketing.",
         "His listings average 11 days on market at 102% of asking, largely on the back of the photography, floor plans and building-history dossiers he produces for every home.",
       ],
       testimonial: {
@@ -518,8 +518,8 @@ window.DATA = {
       role: "Buyer's Specialist",
       photo: "assets/img/agent-3.svg",
       phone: "(555) 018-2243",
-      email: "dana@everlinerealty.com",
-      license: "CA DRE #02011964",
+      email: "dana@your realty.com",
+      license: "Licence on request",
       rating: 5.0,
       reviews: 71,
       deals: 289,
@@ -544,8 +544,8 @@ window.DATA = {
       role: "Investment & Multi-family",
       photo: "assets/img/agent-4.svg",
       phone: "(555) 018-2244",
-      email: "samuel@everlinerealty.com",
-      license: "CA DRE #01988730",
+      email: "samuel@your realty.com",
+      license: "Licence on request",
       rating: 4.8,
       reviews: 39,
       deals: 174,
@@ -554,7 +554,7 @@ window.DATA = {
       languages: ["English"],
       specialties: ["Duplexes & triplexes", "1031 exchanges", "Land & development"],
       bio: [
-        "Samuel runs Everline's investment desk: duplexes, small multi-family, land and the occasional value-add building. He underwrites every property he lists and shares the spreadsheet with buyers, which tends to shorten negotiations considerably.",
+        "Samuel runs Your Realty's investment desk: duplexes, small multi-family, land and the occasional value-add building. He underwrites every property he lists and shares the spreadsheet with buyers, which tends to shorten negotiations considerably.",
         "He has completed 41 like-kind exchanges and works closely with two local 1031 intermediaries and a commercial lender.",
       ],
       testimonial: {
@@ -569,9 +569,9 @@ window.DATA = {
       name: "Tessa Nwosu",
       role: "Relocation Lead",
       photo: "assets/img/agent-5.svg",
-      phone: "(555) 018-2245",
-      email: "tessa@everlinerealty.com",
-      license: "CA DRE #02077331",
+      phone: "000 000 0000",
+      email: "tessa@your realty.com",
+      license: "Licence on request",
       rating: 4.9,
       reviews: 46,
       deals: 203,
@@ -580,7 +580,7 @@ window.DATA = {
       languages: ["English", "Igbo"],
       specialties: ["Relocation", "Condos & lofts", "Remote buyers"],
       bio: [
-        "Tessa leads relocation for Everline and has built the process around one problem: most of her clients buy before they have ever stood in the neighbourhood. She runs video walk-throughs, street-by-street orientation calls and a two-week short-let programme so buyers can test a commute before they commit.",
+        "Tessa leads relocation for Your Realty and has built the process around one problem: most of her clients buy before they have ever stood in the neighbourhood. She runs video walk-throughs, street-by-street orientation calls and a two-week short-let programme so buyers can test a commute before they commit.",
         "She has relocated 203 households into the metro, 40% of them from out of state.",
       ],
       testimonial: {
@@ -596,8 +596,8 @@ window.DATA = {
       role: "Luxury Property Advisor",
       photo: "assets/img/agent-6.svg",
       phone: "(555) 018-2246",
-      email: "marco@everlinerealty.com",
-      license: "CA DRE #01945102",
+      email: "marco@your realty.com",
+      license: "Licence on request",
       rating: 5.0,
       reviews: 33,
       deals: 128,
@@ -606,7 +606,7 @@ window.DATA = {
       languages: ["English", "Italian"],
       specialties: ["Waterfront", "Penthouses", "Off-market"],
       bio: [
-        "Marco handles Everline's waterfront and penthouse portfolio, roughly half of which never reaches the public market. He maintains a private list of qualified buyers and matches them to properties before listing.",
+        "Marco handles Your Realty's waterfront and penthouse portfolio, roughly half of which never reaches the public market. He maintains a private list of qualified buyers and matches them to properties before listing.",
         "He is a certified negotiation specialist and, before real estate, spent eight years in hotel development — which is where the service standard comes from.",
       ],
       testimonial: {
@@ -624,9 +624,9 @@ window.DATA = {
   testimonials: [
     {
       quote:
-        "We'd been on the market for four months with another agency and had eleven viewings. Everline relisted with proper photography, held two open houses and we accepted an offer in twelve days.",
+        "We'd been on the market for four months with another agency and had eleven viewings. Your Realty relisted with proper photography, held two open houses and we accepted an offer in twelve days.",
       name: "Priya & Dev Shah",
-      location: "Sold in Riverton Heights",
+      location: "Sold in Marina Heights",
       rating: 5,
       avatar: "assets/img/testimonial-1.svg",
     },
@@ -664,7 +664,7 @@ window.DATA = {
     },
     {
       quote:
-        "Eleven offers on our house in a single weekend. Everline set up a proper bid deadline, presented them on one page, and got us $85,000 over asking with a clean, no-contingency contract.",
+        "Eleven offers on our house in a single weekend. Your Realty set up a proper bid deadline, presented them on one page, and got us $85,000 over asking with a clean, no-contingency contract.",
       name: "Ines & Robert Halliwell",
       location: "Sold in Lakeshore",
       rating: 5,
@@ -677,12 +677,12 @@ window.DATA = {
   /* ------------------------------------------------------------------ */
   neighbourhoods: [
     {
-      name: "Riverton Heights",
+      name: "Marina Heights",
       image: "assets/img/hood-1.svg",
       count: 42,
       blurb: "View lots, mid-century ranches and the metro's strongest school catchment.",
       median: "$1.42M",
-      href: "listings.html?loc=Riverton+Heights",
+      href: "listings.html?loc=Harbour City+Heights",
     },
     {
       name: "The Old Quarter",
@@ -716,8 +716,8 @@ window.DATA = {
   posts: [
     {
       id: "b1",
-      title: "Riverton market report: what the last quarter tells us about pricing into 2025",
-      slug: "riverton-market-report-q3",
+      title: "Harbour City market report: what the last quarter tells us about pricing into 2025",
+      slug: "harbour city-market-report-q3",
       category: "Market report",
       date: "2024-10-14",
       readTime: 7,
@@ -726,7 +726,7 @@ window.DATA = {
       excerpt:
         "Inventory is up 14%, days-on-market is down, and the median barely moved. Here is what that combination actually means if you are buying or selling this winter.",
       body: [
-        { type: "p", text: "Three numbers tell most of the story of the last quarter in Riverton: active listings up 14% year-on-year, median days-on-market down from 27 to 19, and the median sale price up just 0.8%. On the surface those figures argue with each other. In practice they describe a market that has found an equilibrium — and equilibria are good news for anyone who needs to move." },
+        { type: "p", text: "Three numbers tell most of the story of the last quarter in Harbour City: active listings up 14% year-on-year, median days-on-market down from 27 to 19, and the median sale price up just 0.8%. On the surface those figures argue with each other. In practice they describe a market that has found an equilibrium — and equilibria are good news for anyone who needs to move." },
         { type: "h2", text: "Inventory rose, but not where you wanted it to" },
         { type: "p", text: "The 14% increase in active listings is almost entirely in the $900,000 to $1,300,000 band, and mostly in Cedar Hollow and the eastern edge of the Heights. The entry-level band under $750,000 added just nine listings across the whole metro, and waterfront added none." },
         { type: "p", text: "That split explains the flat median. A market can absorb more stock at one price point without moving the overall number, because the mix of what sold shifted down. If you are selling in the middle band you now have real competition and should price accordingly. If you are selling at the top end or under $750,000, you still have a scarcity advantage and should not be talked out of it." },
@@ -792,7 +792,7 @@ window.DATA = {
         { type: "p", text: "A $1,150,000 house costs roughly $11,500 a year to maintain on average across a decade — some years nothing, then a $24,000 roof. Most buyers forget this entirely and then treat the first big repair as a crisis." },
         { type: "ul", items: [
           "Mortgage principal and interest",
-          "Property tax (in Riverton, roughly 1.14% of assessed value)",
+          "Property tax (in Harbour City, roughly 1.14% of assessed value)",
           "Homeowners insurance — higher for older homes and any home with a pool",
           "HOA dues, if applicable",
           "Maintenance reserve, at 1% of value per year",
@@ -920,7 +920,7 @@ window.DATA = {
       a: "Yes. Every one of our listings is syndicated to the local MLS, the major national portals and our own private buyer list, which currently sits at 340 qualified buyers. Off-market placements are available for sellers who require discretion.",
     },
     {
-      q: "What makes Everline different from a bigger franchise?",
+      q: "What makes Your Realty different from a bigger franchise?",
       a: "A small active book, a named agent, and no pressure to hit a corporate volume target. Each of our advisors caps the number of sellers they represent at nine at any one time. It means we can afford to tell you the truth about your price, and we usually do.",
     },
   ],
@@ -930,18 +930,18 @@ window.DATA = {
   /* ------------------------------------------------------------------ */
   offices: [
     {
-      name: "Riverton HQ",
-      address: "2140 Alder Street, Suite 300, Riverton, CA 94107",
-      phone: "(555) 018-2245",
+      name: "Harbour City HQ",
+      address: "2140 Alder Street, Suite 300, Harbour City, CA 94107",
+      phone: "000 000 0000",
       hours: "Mon–Fri 8:30am–6:30pm · Sat 10am–4pm",
-      mapsQuery: "2140 Alder Street Riverton CA",
+      mapsQuery: "2140 Alder Street Harbour City CA",
     },
     {
       name: "Lakeshore Studio",
-      address: "8 Kestrel Point Lane, Riverton, CA 94103",
+      address: "8 Kestrel Point Lane, Harbour City, CA 94103",
       phone: "(555) 018-2246",
       hours: "By appointment only",
-      mapsQuery: "8 Kestrel Point Lane Riverton CA",
+      mapsQuery: "8 Kestrel Point Lane Harbour City CA",
     },
   ],
 };
