@@ -98,14 +98,18 @@ export async function POST(request: Request) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { persistSession: false } }
   );
+  // A count-only query does not reliably error on a missing table, which made this endpoint report
+  // ok:true for tables that were never created. A real select is the honest probe.
+  const probe = await supabase.from(SCHEDULES).select('id').limit(1);
+  const tablesReady = !probe.error;
   const pending = await supabase.from(SCHEDULES).select('id', { count: 'exact', head: true }).eq('status', 'pending');
   const done = await supabase.from(SCHEDULES).select('id', { count: 'exact', head: true }).eq('status', 'done');
   const runs = await supabase.from(RUNS).select('id', { count: 'exact', head: true });
   return NextResponse.json({
-    ok: !pending.error,
+    ok: tablesReady,
     pending: pending.count ?? 0,
     done: done.count ?? 0,
     runs: runs.count ?? 0,
-    note: pending.error ? 'scheduler tables not present yet' : undefined,
+    note: tablesReady ? undefined : `scheduler tables missing: ${probe.error?.message} — apply supabase/migrations/20260512_flow_scheduling.sql`,
   });
 }

@@ -1,4 +1,4 @@
-﻿import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FlowStore, ScheduledStep } from './scheduling';
 
 /**
@@ -175,6 +175,8 @@ export async function enqueueFlowRun(
     .from(SCHEDULES)
     .upsert(rows, { onConflict: 'flow_id,lead_id,step_index', ignoreDuplicates: true })
     .select('id');
-  if (error) return { queued: 0 };
+  // A silent zero is how a scheduler lies: it reads as "nothing to do" when the truth is "the write
+  // failed". Surface it instead.
+  if (error) throw new Error(`could not queue flow steps: ${error.message}${error.code ? ` (${error.code})` : ''}`);
   return { queued: (data ?? []).length };
 }
