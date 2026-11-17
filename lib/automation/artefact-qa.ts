@@ -125,10 +125,18 @@ export function gradePageHtml(html: string): QaResult {
     ),
     finding('no_placeholder_copy', !/lorem ipsum|\[needs:|TODO|XXX/i.test(copy), 'no unfinished copy'),
     finding('no_em_dash', !/—/.test(body), 'an em dash in visible copy is the commonest machine-written tell'),
-    finding('contrast_tokens', /--ink:/.test(source) && /--brand:/.test(source), 'measured palette tokens'),
+    finding(
+      'contrast_tokens',
+      (source.match(/--[a-z-]+\s*:\s*#[0-9a-f]{3,8}/gi) ?? []).length >= 3,
+      `${(source.match(/--[a-z-]+\s*:\s*#[0-9a-f]{3,8}/gi) ?? []).length} colour tokens declared`,
+    ),
     finding('touch_targets', /min-height:\s*44px/.test(source), '44 px minimum action size'),
     finding('reduced_motion', /prefers-reduced-motion/.test(source), 'motion can be switched off'),
-    finding('type_scale', /--step-4:clamp/.test(source), 'a real type scale, not one size'),
+    finding(
+      'type_scale',
+      (source.match(/clamp\(/g) ?? []).length >= 3,
+      `${(source.match(/clamp\(/g) ?? []).length} clamp() sizes, so the type scales`,
+    ),
   ];
 
   return result(findings);

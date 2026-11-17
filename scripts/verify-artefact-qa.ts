@@ -102,7 +102,7 @@ check('the missing imagery is named', thinPage.problems.some((p) => /real_imager
 // ── A designed page passes.
 console.log('\n▸ a properly designed page passes');
 const designed = gradePageHtml(`<!DOCTYPE html><html><head><style>
-  :root{--ink:#fff;--brand:#0f172a;--step-4:clamp(38px,7vw,62px)}
+  :root{--bg:#0b1220;--panel:#101b2e;--text:#f7f6f3;--muted:#a9b6c9;--accent:#7dd3fc}h1{font-size:clamp(38px,7vw,62px)}h2{font-size:clamp(28px,4vw,42px)}p{font-size:clamp(16px,1.9vw,18px)}
   .cta{min-height:44px}@media(prefers-reduced-motion:reduce){*{transition-duration:.001ms}}
 </style></head><body><main>
   <header class="hero"><h1>Monthly Marketing Department</h1>

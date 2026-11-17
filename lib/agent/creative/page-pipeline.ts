@@ -96,6 +96,8 @@ function factsBlock(brief: PageBrief): string {
     .join('\n');
 }
 
+const noDash = (html: string) => html.replace(/ — /g, ', ').replace(/—/g, '-');
+
 const strip = (text: string) =>
   String(text ?? '')
     .replace(/```(?:html|css)?/gi, '')
@@ -232,7 +234,7 @@ export async function authorPage(brief: PageBrief, plan: PagePlan, model: any): 
   });
 
   console.log(`  author: ${String(text ?? '').length} chars (finish=${finishReason}, ${usage?.outputTokens ?? '?'} tokens)`);
-  return strip(text);
+  return noDash(strip(text));
 }
 
 /** Score a rendered screenshot against the rubric. Vision only: the numbers come from looking at the page. */
@@ -291,7 +293,7 @@ export async function revisePage(html: string, critique: Critique, model: any, b
     ].join('\n'),
   });
   console.log(`  revise: ${String(text ?? '').length} chars (finish=${finishReason}, ${usage?.outputTokens ?? '?'} tokens)`);
-  return strip(text);
+  return noDash(strip(text));
 }
 
 /**
@@ -343,8 +345,18 @@ export async function buildPageWithReview(opts: {
 
     console.log('\n▸ revising');
     const revised = await revisePage(html, critique, model, brief);
-    if (revised && revised.length > html.length * 0.5) html = revised;
-    else console.log('  revision discarded: it came back too small to be the same page');
+    // A revision that DELETES the supplied photographs is not an improvement, however it is justified. The critic
+    // demanded a product screenshot, and the model's way of complying was to remove the photographs we supplied -
+    // imagery then scored 3 and the gate refused the page. Keep the previous version when imagery is lost.
+    const supplied = [brief.heroImage, ...(brief.galleryImages ?? [])].filter(Boolean) as string[];
+    const lostImages = supplied.filter((url) => !revised.includes(url));
+    if (!revised || revised.length <= html.length * 0.5) {
+      console.log('  revision discarded: it came back too small to be the same page');
+    } else if (lostImages.length) {
+      console.log(`  revision discarded: it dropped ${lostImages.length} supplied image(s) instead of improving them`);
+    } else {
+      html = revised;
+    }
   }
 
   const named = [brief.businessName, brief.phone.replace(/\s+/g, '')].filter(Boolean);
