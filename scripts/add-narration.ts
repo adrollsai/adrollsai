@@ -11,7 +11,7 @@
  *   npx esbuild scripts/add-narration.ts --bundle --platform=node --format=esm --packages=external \
  *     --outfile=.tmp-add-narration.mjs && node .tmp-add-narration.mjs
  */
-import 'dotenv/config';
+import '../lib/env-local';
 import fs from 'node:fs';
 import dotenv from 'dotenv';
 import { executeInE2BSandbox, uploadBufferToR2 } from '../lib/agent/sandbox';

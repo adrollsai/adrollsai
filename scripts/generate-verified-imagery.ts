@@ -13,7 +13,7 @@
  *     --outfile=.tmp-verified-imagery.mjs && node .tmp-verified-imagery.mjs
  */
 import fs from 'node:fs';
-import 'dotenv/config';
+import '../lib/env-local';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
@@ -88,7 +88,7 @@ if (spec?.success !== false && spec?.imagePrompt) {
       ].join('\n'),
     );
     console.log(`  vision verdict: ${String(verdict).replace(/\s+/g, ' ').slice(0, 300)}`);
-    const passed = /^\s*PASS/i.test(String(verdict));
+    const passed = /^\s*[*#_`\s]*PASS/i.test(String(verdict));
     fs.writeFileSync('.tmp-ad-verified.txt', String(verdict));
     if (passed) {
       adUrl = await host(raw, 'ad-verified');

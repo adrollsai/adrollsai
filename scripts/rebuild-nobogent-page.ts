@@ -11,7 +11,7 @@
  *     --outfile=.tmp-rebuild-page.mjs && node .tmp-rebuild-page.mjs
  */
 import fs from 'node:fs';
-import 'dotenv/config';
+import '../lib/env-local';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createPageAuthoringTools } from '../lib/agent/tools/pages';
@@ -52,8 +52,8 @@ const built = await pages.create_landing_page.execute(
     // OWNED, RELEVANT IMAGERY, supplied explicitly. Leaving the gallery to guess from the asset library made the
     // vision check reject everything (festive posters, other businesses) and the page then correctly refused to
     // publish with a single image. These two are our own Nobogent creatives, so they are supplied, not inferred.
-    heroImage: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/bc63c065-9bcc-4793-bedc-f0960406425b/1794827361451_nobogent-ad-1794827361450.png',
-    galleryImages: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/bc63c065-9bcc-4793-bedc-f0960406425b/1794827361451_nobogent-ad-1794827361450.png'],
+    heroImage: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/bc63c065-9bcc-4793-bedc-f0960406425b/1794885563768_hero-hero-1794885563768.png',
+    galleryImages: ['https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/bc63c065-9bcc-4793-bedc-f0960406425b/1794885630079_hero-detail-1794885630078.png'],
     proofPoints: ['Live campaigns in one week', '5,000 credits a month on the standard plan'],
     faqs: [
       { question: 'Do I need my own ad account?', answer: 'We set it up and run it for you.' },
