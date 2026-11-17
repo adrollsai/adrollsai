@@ -73,7 +73,7 @@ const system = [
 const model = await getAgentModel({});
 
 async function part(name: string, prompt: string): Promise<string> {
-  const { text, finishReason, usage } = await generateText({ model, system, prompt, maxOutputTokens: 2500 });
+  const { text, finishReason, usage } = await generateText({ model, system, prompt, maxOutputTokens: 12000 });
   const out = String(text ?? '')
     .replace(/```(?:html|css)?/gi, '')
     .replace(/```/g, '')
