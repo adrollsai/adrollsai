@@ -36,6 +36,14 @@ export async function POST(req: Request) {
       deleteHistory,
       hideHistory,
       transferWithScheduledActions = true,
+      // Reset the lead to a fresh stage for the receiving agent. Default true when the history is hidden: hiding the
+      // history but leaving the lead sitting in "Requirement Taken" is what made the option feel pointless, because
+      // the new agent's first sight of the lead is somebody else's progress with no history behind it.
+      resetStage,
+      // An explicit stage to land in, instead of the workspace default.
+      targetStage,
+      // Clear the retry/attempt counters so the new agent is not inheriting a call budget already spent.
+      resetAttempts,
       fromAgentIds,
       useFilters,
       filterStage,
@@ -347,6 +355,25 @@ export async function POST(req: Request) {
             delete cf.history_hidden_from_assignee
             delete cf.history_hidden_at
             delete cf.history_hidden_by
+          }
+
+          // STAGE RESET. Hiding the history and keeping the stage was contradictory: the receiving agent sees the lead
+          // parked in "Requirement Taken" or "Visit Planned" with nothing to explain how it got there, and has to move
+          // it back by hand. When the sender resets the history, the lead starts fresh unless they explicitly picked a
+          // stage. Both the stage and the attempt counters move together: a fresh lead that has already used three call
+          // attempts is not fresh.
+          const shouldResetStage = resetStage === undefined ? hideHistoryFromAssignee : Boolean(resetStage)
+          const stageToUse = String(targetStage || '').trim()
+          if (shouldResetStage || stageToUse) {
+            updatePayload.pipeline_stage = stageToUse || 'New Lead'
+            updatePayload.status = stageToUse || 'New Lead'
+            cf.stage_reset_at = cutoffTimestamp
+            cf.stage_reset_by = actingUserId
+            if (resetAttempts === undefined ? hideHistoryFromAssignee : Boolean(resetAttempts)) {
+              updatePayload.voice_call_retry_count = 0
+              updatePayload.next_follow_up_at = null
+              cf.attempts_reset_at = cutoffTimestamp
+            }
           }
 
           // Pending / scheduled actions: same rule. When the sender chooses not

@@ -544,6 +544,9 @@ function CRMPageContent() {
   const [filteredTransferMaxLimit, setFilteredTransferMaxLimit] = useState<string>('')
   const [filteredTransferDeleteHistory, setFilteredTransferDeleteHistory] = useState<boolean>(false)
   const [filteredTransferKeepActions, setFilteredTransferKeepActions] = useState<boolean>(true)
+  // Flexibility: the sender picks where the lead LANDs, and whether a fresh lead also gets a fresh attempt budget.
+  const [filteredTransferTargetStage, setFilteredTransferTargetStage] = useState<string>('New Lead')
+  const [filteredTransferResetAttempts, setFilteredTransferResetAttempts] = useState<boolean>(true)
   const [isExecutingFilteredTransfer, setIsExecutingFilteredTransfer] = useState<boolean>(false)
   const [previewCount, setPreviewCount] = useState<number | null>(null)
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false)
@@ -618,6 +621,10 @@ function CRMPageContent() {
           filterForm: filteredTransferForm,
           maxLimit: filteredTransferMaxLimit ? parseInt(filteredTransferMaxLimit, 10) : 0,
           deleteHistory: filteredTransferDeleteHistory,
+          // Hide the history AND start the lead fresh, at whichever stage the sender chose.
+          resetStage: filteredTransferDeleteHistory,
+          targetStage: filteredTransferDeleteHistory ? filteredTransferTargetStage : undefined,
+          resetAttempts: filteredTransferDeleteHistory ? filteredTransferResetAttempts : false,
           transferWithScheduledActions: filteredTransferKeepActions,
           impersonateId
         })
@@ -5428,8 +5435,37 @@ END:VCARD\n`
                         onChange={(e) => setFilteredTransferDeleteHistory(e.target.checked)}
                         className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                       />
-                      <span>Reset lead history & move to New Lead stage</span>
+                      <span>Reset lead history & start the lead fresh</span>
                     </label>
+
+                    {/* Flexibility the transfer modal was missing: where the lead lands, and whether the receiving
+                        agent inherits someone else'''s spent call budget. Both only apply when the history is reset. */}
+                    {filteredTransferDeleteHistory && (
+                      <>
+                        <label className="flex items-center gap-2">
+                          <span className="text-slate-500">Land in stage</span>
+                          <select
+                            value={filteredTransferTargetStage}
+                            onChange={(e) => setFilteredTransferTargetStage(e.target.value)}
+                            className="bg-white border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                          >
+                            {STAGES.map((stage: string) => (
+                              <option key={stage} value={stage}>{stage}</option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filteredTransferResetAttempts}
+                            onChange={(e) => setFilteredTransferResetAttempts(e.target.checked)}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                          />
+                          <span>Also reset call attempts & follow-up counters</span>
+                        </label>
+                      </>
+                    )}
                   </div>
                 </div>
 
