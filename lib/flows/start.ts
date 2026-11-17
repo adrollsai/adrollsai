@@ -115,9 +115,11 @@ export async function startFlowRun(
     return { ok: false, queued: 0, blockers: [`"${plan.triggerType}" is not an event this system fires on`] };
   }
 
+  // Waits are not actions: they need no identity from the trigger, so they are excluded from the
+  // feasibility check (a flow is otherwise refused for containing a perfectly normal delay).
   const identityBlockers = validateAgainstTrigger(
     plan.triggerType,
-    plan.actions.map((a) => a.kind)
+    plan.actions.filter((a) => a.kind !== 'wait').map((a) => a.kind)
   ).map((b) => b.message);
 
   const blockers = [...plan.problems, ...identityBlockers];
