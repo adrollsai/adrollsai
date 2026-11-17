@@ -21,6 +21,13 @@ import { skill as bannerDesign } from './banner-design';
 import { skill as metaAdsCreative } from './meta-ads-creative';
 import { skill as scrollCraft } from './scroll-craft';
 import { skill as uiUxProMax } from './ui-ux-pro-max';
+import { skill as impeccable } from './impeccable';
+import { skill as impeccableCritique } from './impeccable-critique';
+import { skill as impeccableCraftFloor } from './impeccable-craft-floor';
+import { skill as landingCopywriting } from './landing-copywriting';
+import { skill as landingStructure } from './landing-structure';
+import { skill as landingArtDirection } from './landing-art-direction';
+import { skill as uxGuardrails } from './ux-guardrails';
 import { skill as videoShotcraft } from './video-shotcraft';
 
 export interface VendoredSkill {
@@ -52,6 +59,13 @@ export const VENDORED_SKILLS: readonly VendoredSkill[] = [
   scrollCraft as VendoredSkill,
   uiUxProMax as VendoredSkill,
   bannerDesign as VendoredSkill,
+  landingStructure as VendoredSkill,
+  landingCopywriting as VendoredSkill,
+  landingArtDirection as VendoredSkill,
+  uxGuardrails as VendoredSkill,
+  impeccable as VendoredSkill,
+  impeccableCraftFloor as VendoredSkill,
+  impeccableCritique as VendoredSkill,
   videoShotcraft as VendoredSkill,
 ];
 

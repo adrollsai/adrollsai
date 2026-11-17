@@ -3,7 +3,7 @@
  *
  *   upstream : Vincentwei1021/video-shotcraft
  *   path     : SKILL.md
- *   commit   : 253ae59081cd8f85cee47074eec9ad1121f2e5ad
+ *   commit   : 42f922fe076f6428814d10f6184caf22a8b2adc2
  *   licence  : Apache-2.0
  *
  * Cinematic shot design for product promos — shot recipes, beat sync, sound design and edit structure. Load it before designing any promo or reel; it is what stops the motion looking generic.
@@ -26,8 +26,8 @@ export const skill = {
   attribution: {
     repo: "Vincentwei1021/video-shotcraft",
     path: "SKILL.md",
-    commit: "253ae59081cd8f85cee47074eec9ad1121f2e5ad",
+    commit: "42f922fe076f6428814d10f6184caf22a8b2adc2",
     licence: "Apache-2.0",
-    url: "https://github.com/Vincentwei1021/video-shotcraft/blob/253ae59081cd8f85cee47074eec9ad1121f2e5ad/SKILL.md",
+    url: "https://github.com/Vincentwei1021/video-shotcraft/blob/42f922fe076f6428814d10f6184caf22a8b2adc2/SKILL.md",
   },
 } as const;

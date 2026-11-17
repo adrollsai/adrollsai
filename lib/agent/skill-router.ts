@@ -108,6 +108,21 @@ export function rankSkills(
       if (phrase.length > 8 && requirementText.includes(phrase)) score += 3;
     }
 
+    // THE VERB DECIDES THE TASK CLASS. "change the phone number on the landing page" is an EDIT, not a design job,
+    // and a design skill will out-score the editing skill on the words "landing page" alone — so it gets picked and the
+    // agent starts redesigning when it was asked to change one number. Likewise "review / critique / polish / audit"
+    // is a review job, which belongs to a critique rubric rather than to a style guide.
+    const EDIT_VERBS = /\b(change|update|edit|replace|rename|remove|swap|fix|correct)\b/i;
+    const REVIEW_VERBS = /\b(review|critique|audit|polish|improve|assess|score|judge)\b/i;
+    const haystack = `${skill.name} ${skill.description}`.toLowerCase();
+
+    if (EDIT_VERBS.test(requirementText) && /edit/.test(skill.name.toLowerCase())) {
+      score += 12;
+    }
+    if (REVIEW_VERBS.test(requirementText) && /(critique|review|audit|polish|craft)/.test(haystack)) {
+      score += 12;
+    }
+
     if (skill.source === 'vendor') score -= 1;
 
     return { name: skill.name, score, matched: [...matched].sort(), source: skill.source ?? 'unknown' };

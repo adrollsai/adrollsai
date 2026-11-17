@@ -57,6 +57,71 @@ const SOURCES = [
     licence: 'MIT',
     why: 'Banner and ad-unit composition, for creatives that are not square or vertical.',
   },
+  // ── The design and conversion layer ────────────────────────────────────────────────────────────────────────────
+  // scroll-craft is a layout philosophy and ui-ux-pro-max is a rules table. Neither carries conversion copywriting,
+  // art direction, or a critique rubric, which is why pages came out tidy and commercially empty.
+  {
+    slug: 'impeccable',
+    name: 'impeccable',
+    repo: 'pbakaus/impeccable',
+    filePath: '.claude/skills/impeccable/SKILL.md',
+    licence: 'Apache-2.0',
+    why:
+      'Design-director discipline: a visual point of view, a craft floor with explicit bans, and the instruction to ' +
+      'verify by looking at the rendered result at the size it ships at.',
+  },
+  {
+    slug: 'impeccable-critique',
+    name: 'impeccable-critique',
+    repo: 'pbakaus/impeccable',
+    filePath: '.claude/skills/impeccable/reference/critique-rubric.md',
+    licence: 'Apache-2.0',
+    why:
+      'The review rubric: what separates craft from slop, dimension by dimension. Used as the critique step of the ' +
+      'page pipeline instead of an invented checklist.',
+  },
+  {
+    slug: 'impeccable-craft-floor',
+    name: 'impeccable-craft-floor',
+    repo: 'pbakaus/impeccable',
+    filePath: '.claude/skills/impeccable/reference/craft-floor.md',
+    licence: 'Apache-2.0',
+    why:
+      'The quality floor and the absolute bans. Read before writing any UI: it names what makes output look ' +
+      'machine-made, which is the failure being fixed.',
+  },
+  {
+    slug: 'landing-copywriting',
+    name: 'landing-copywriting',
+    repo: 'Paldom/landing-page-builder-skills',
+    filePath: 'skills/landing-page-copywriting/SKILL.md',
+    licence: 'MIT',
+    why: 'Conversion copy: hooks, offer framing, objection handling and CTA language, which is where generic pages fail.',
+  },
+  {
+    slug: 'landing-structure',
+    name: 'landing-structure',
+    repo: 'Paldom/landing-page-builder-skills',
+    filePath: 'skills/landing-page-structure/SKILL.md',
+    licence: 'MIT',
+    why: 'Section order and architecture that converts, so the plan is ordered by persuasion rather than habit.',
+  },
+  {
+    slug: 'landing-art-direction',
+    name: 'landing-art-direction',
+    repo: 'Paldom/landing-page-builder-skills',
+    filePath: 'skills/landing-page-art-direction/SKILL.md',
+    licence: 'MIT',
+    why: 'Art direction: the visual world, type, imagery and colour, so the page has a point of view.',
+  },
+  {
+    slug: 'ux-guardrails',
+    name: 'ux-guardrails',
+    repo: 'Paldom/landing-page-builder-skills',
+    filePath: 'skills/ux-guardrails/SKILL.md',
+    licence: 'MIT',
+    why: 'Hard UX guardrails the author must satisfy, so legibility, tap targets and motion are not left to taste.',
+  },
   {
     slug: 'video-shotcraft',
     name: 'video-shotcraft',

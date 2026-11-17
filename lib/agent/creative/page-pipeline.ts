@@ -24,7 +24,7 @@ import { vendoredSkill } from '@/lib/agent/skills-vendor';
 import { gradePageHtml, type QaResult } from '@/lib/automation/artefact-qa';
 
 /** Generous by design: the model's own limit is far above this, and truncation is the failure mode we are avoiding. */
-const BUDGET = { plan: 8000, author: 24000, revise: 24000 } as const;
+const BUDGET = { plan: 9000, author: 32000, revise: 32000 } as const;
 
 export interface PageBrief {
   businessName: string;
@@ -119,7 +119,9 @@ export const RUBRIC = [
 ];
 
 export async function planPage(brief: PageBrief, model: any): Promise<PagePlan> {
-  const uiUxForPlan = (vendoredSkill('ui-ux-pro-max')?.content ?? '').slice(0, 6000);
+  const structure = (vendoredSkill('landing-structure')?.content ?? '').slice(0, 6000);
+  const copywriting = (vendoredSkill('landing-copywriting')?.content ?? '').slice(0, 5000);
+  const uiUxForPlan = (vendoredSkill('ui-ux-pro-max')?.content ?? '').slice(0, 3000);
   const scrollCraft = vendoredSkill('scroll-craft')?.content ?? '';
   const { text } = await generateText({
     model,
@@ -127,7 +129,14 @@ export async function planPage(brief: PageBrief, model: any): Promise<PagePlan> 
     system: [
       'You are a direct-response strategist and information architect. You produce a page PLAN, never HTML.',
       'Ground every choice in the facts given. If a fact is missing, say so in the plan rather than inventing it.',
-      scrollCraft.slice(0, 9000),
+      '',
+      'HOW A CONVERTING PAGE IS STRUCTURED:',
+      structure,
+      '',
+      'HOW THE COPY IS WRITTEN:',
+      copywriting,
+      '',
+      scrollCraft.slice(0, 2500),
       uiUxForPlan,
     ].join('\n'),
     prompt: [
@@ -184,6 +193,9 @@ export async function planPage(brief: PageBrief, model: any): Promise<PagePlan> 
 export async function authorPage(brief: PageBrief, plan: PagePlan, model: any): Promise<string> {
   const scrollCraft = vendoredSkill('scroll-craft')?.content ?? '';
   const uiUx = vendoredSkill('ui-ux-pro-max')?.content ?? '';
+  const artDirection = (vendoredSkill('landing-art-direction')?.content ?? '').slice(0, 3500);
+  const guardrails = (vendoredSkill('ux-guardrails')?.content ?? '').slice(0, 3500);
+  const craftFloor = (vendoredSkill('impeccable-craft-floor')?.content ?? '').slice(0, 3500);
   const images = [brief.heroImage, ...(brief.galleryImages ?? [])].filter(Boolean) as string[];
 
   const { text, finishReason, usage } = await generateText({
@@ -193,11 +205,17 @@ export async function authorPage(brief: PageBrief, plan: PagePlan, model: any): 
       'You are a senior product designer and direct-response copywriter. You write production HTML and CSS.',
       '',
       'THE TWO HOUSE SKILLS. Follow them; they are the standard, not a suggestion.',
-      '===== scroll-craft =====',
-      scrollCraft.slice(0, 1800),
+      '===== craft floor: the bans =====',
+      craftFloor,
       '',
-      '===== ui-ux-pro-max =====',
-      uiUx.slice(0, 1200),
+      '===== art direction =====',
+      artDirection,
+      '',
+      '===== ux guardrails =====',
+      guardrails,
+      '',
+      '===== scroll-craft (rhythm) =====',
+      scrollCraft.slice(0, 1500),
       '',
       'THE RUBRIC YOUR WORK IS JUDGED AGAINST:',
       ...RUBRIC.map((r) => `- ${r}`),
@@ -245,7 +263,7 @@ export async function critiquePage(
   const answer = await inspect(
     screenshotUrl,
     [
-      'You are a hard-to-please design director reviewing a landing page screenshot.',
+      `You are a hard-to-please design director reviewing a landing page screenshot. Judge against this rubric:\n${(vendoredSkill('impeccable-critique')?.content ?? '').slice(0, 7000)}`,
       'Score each dimension from 1 to 10 and give ONE specific fix for anything below 8.',
       'Answer in this exact format and nothing else:',
       'HIERARCHY: n', 'ONE_MESSAGE: n', 'CTA: n', 'CONTRAST: n', 'IMAGERY: n', 'DEAD_SPACE: n', 'RHYTHM: n', 'PROOF: n', 'CRAFT: n',

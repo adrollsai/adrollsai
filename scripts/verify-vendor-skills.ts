@@ -87,7 +87,7 @@ const routable: RoutableSkill[] = [
  */
 const CASES: { ask: string; expect: string | null; mode?: 'first' | 'any' }[] = [
   { ask: 'make a vertical video for the course launch', expect: 'nobogent-video-brief', mode: 'first' },
-  { ask: 'design a landing page layout for the webinar', expect: 'scroll-craft', mode: 'any' },
+  { ask: 'design a landing page layout for the webinar', expect: 'landing-structure', mode: 'any' },
   { ask: 'change the phone number on the landing page', expect: 'nobogent-page-editing', mode: 'first' },
   { ask: 'review the spacing and typography of this page', expect: 'ui-ux-pro-max', mode: 'any' },
   { ask: 'make a meta ad creative for a Diwali offer', expect: 'meta-ads-creative', mode: 'first' },
