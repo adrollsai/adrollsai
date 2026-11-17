@@ -293,7 +293,18 @@ export default async function RootLayout({
         <CapacitorBridge />
         <CallTrackingListener />
         {children}
-        <Toaster richColors position="top-right" />
+        <Toaster
+        richColors
+        position="top-right"
+        closeButton
+        visibleToasts={3}
+        expand={false}
+        offset={16}
+        toastOptions={{
+          // A stable, readable width so three stacked toasts do not each have a different shape.
+          style: { maxWidth: '420px' },
+        }}
+      />
       </body>
     </html>
   );
