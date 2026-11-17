@@ -124,6 +124,11 @@ function formatTimeAgo(isoString: string): string {
 }
 
 function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleCopyMessage, copiedIndex, reload }: any) {
+  // The working — reasoning rows and tool rows — starts collapsed. A long agent turn is mostly
+  // feed, and scrolling past it to find your own last message is the worst part of the thread.
+  // The reply itself never hides; only the working does. A turn still in flight stays open so
+  // you can watch it happen.
+  const [feedOpen, setFeedOpen] = useState(false);
   try {
     if (!m || typeof m !== 'object') return null;
     const isUser = m.role === 'user';
@@ -208,11 +213,36 @@ function SafeMessageRenderer({ m, mIdx, messages, isLoading, handleSend, handleC
     } catch (e) {}
     const finalTexts = rawText.replace(/<\/?think>/g, '').trim();
 
+    const isLiveTurn = Boolean(isLoading) && mIdx === messages.length - 1;
+    const feedItemCount = parts.filter((p: any) => {
+      const t = typeof p?.type === 'string' ? p.type : '';
+      return t === 'reasoning' || t === 'thinking' || t === 'tool-call' || t === 'tool-invocation' || t.startsWith('tool-');
+    }).length;
+    const hasFeed = feedItemCount > 0 || Boolean(fallbackReasoning);
+    const feedVisible = feedOpen || isLiveTurn;
+
     return (
       <div key={m.id || mIdx} className="space-y-1 my-3">
-        {fallbackReasoning && <ThinkFeedRow text={fallbackReasoning} />}
+        {hasFeed && !isLiveTurn && (
+          <button
+            type="button"
+            onClick={() => setFeedOpen((v) => !v)}
+            aria-expanded={feedOpen}
+            title={feedOpen ? 'Hide the working' : 'Show the working behind this reply'}
+            className="dsh-interactive dsh-label-caption dsh-t-xs flex items-center gap-1.5 py-1"
+          >
+            {feedOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <span>
+              {feedOpen
+                ? 'Hide working'
+                : `${feedItemCount || 1} step${(feedItemCount || 1) === 1 ? '' : 's'} of working`}
+            </span>
+          </button>
+        )}
 
-        {parts.map((part: any, pIdx: number) => {
+        {feedVisible && fallbackReasoning && <ThinkFeedRow text={fallbackReasoning} />}
+
+        {feedVisible && parts.map((part: any, pIdx: number) => {
           try {
             if (!part || typeof part !== 'object') return null;
             const partType = typeof part.type === 'string' ? part.type : '';
