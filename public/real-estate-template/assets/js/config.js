@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Your Realty REALTY — SITE CONFIG
+   Your Realty — SITE CONFIG
    --------------------------------------------------------------------------
    ⭐ THIS IS THE ONLY FILE YOU NEED TO EDIT TO RE-BRAND THE ENTIRE TEMPLATE.
    The header, footer, top bar, buttons, forms and every contact detail are

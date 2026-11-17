@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Your Realty REALTY — SITE DATA
+   Your Realty — SITE DATA
    --------------------------------------------------------------------------
    Everything repeatable lives here. The pages render from these arrays, so a
    client site is "swap the data, not the markup":
