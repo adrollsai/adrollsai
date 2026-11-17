@@ -332,7 +332,27 @@ export async function executeRunSlice(
     try {
       [response, finishReason] = await Promise.all([result.response, result.finishReason]);
     } catch (emptyErr: any) {
-      console.warn('[Harness runner] this slice produced no text (continuing):', emptyErr?.message);
+      // Log the RAW truth before deciding anything: an empty reply is a symptom, and the finish
+      // reason plus token usage says which cause it is (reasoning-only starvation, a tool-schema
+      // rejection, or a provider hiccup). Guessing here has cost us three passes already.
+      let rawUsage: any = null;
+      let rawReason: string = 'unavailable';
+      try { rawReason = String(await result.finishReason); } catch {}
+      try { rawUsage = await result.usage; } catch {}
+      const diagnostic = {
+        message: emptyErr?.message ?? 'no output',
+        finishReason: rawReason,
+        usage: rawUsage,
+        streamedChars: streamedText.length,
+        steps,
+        tools: Object.keys(tools ?? {}).length,
+      };
+      console.error('[Harness runner] EMPTY SLICE', JSON.stringify(diagnostic));
+      try {
+        await appendEvents(supabase, run.session_id, [
+          createEvent('turn.error', diagnostic),
+        ]);
+      } catch {}
       if (streamedText.trim()) {
         response = { messages: [{ role: 'assistant', content: streamedText }] };
         finishReason = 'text-only';
