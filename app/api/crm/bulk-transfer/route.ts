@@ -364,6 +364,16 @@ export async function POST(req: Request) {
           // attempts is not fresh.
           const shouldResetStage = resetStage === undefined ? hideHistoryFromAssignee : Boolean(resetStage)
           const stageToUse = String(targetStage || '').trim()
+            // Keep what it used to be. pipeline_stage is a real column, so resetting it changes what EVERYONE sees,
+            // admins included - a visibility cutoff could never fake a stage, and nothing was recording where the lead
+            // came from. Without this an admin cannot tell a reset lead from a genuinely new one.
+            const stageBefore = String(lead.pipeline_stage || '').trim()
+            if (stageBefore && stageBefore !== (stageToUse || 'New Lead')) {
+              cf.stage_before_reset = stageBefore
+              cf.stage_before_reset_at = cutoffTimestamp
+            }
+            const attemptsBefore = Number((lead as any).voice_call_retry_count) || 0
+            if (attemptsBefore > 0) cf.attempts_before_reset = attemptsBefore
           if (shouldResetStage || stageToUse) {
             updatePayload.pipeline_stage = stageToUse || 'New Lead'
             updatePayload.status = stageToUse || 'New Lead'
@@ -388,6 +398,23 @@ export async function POST(req: Request) {
           }
 
           updatePayload.custom_fields = cf
+
+          // Audit trail: an admin should be able to see that this lead was moved, from where, and by whom.
+          supabaseAdmin
+            .from('lead_history')
+            .insert({
+              lead_id: lead.id,
+              user_id: targetAgentId,
+              action_type: 'REMARK',
+              description:
+                `Lead transferred by ${actingUserId}.` +
+                ((shouldResetStage || stageToUse)
+                  ? ` Stage reset to ${updatePayload.pipeline_stage}` +
+                    (cf.stage_before_reset ? ` (was ${cf.stage_before_reset}).` : '.')
+                  : '') +
+                (hideHistoryFromAssignee ? ' Earlier history hidden from the new assignee; admins still see all of it.' : ''),
+            })
+            .then(() => {}, () => {})
 
           let res = await supabaseAdmin
             .from('leads')
