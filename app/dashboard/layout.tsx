@@ -9,6 +9,7 @@ import { Loader2, XCircle } from 'lucide-react'
 import QuotaManager from '@/components/QuotaManager'
 import { UploadProvider } from '@/utils/UploadContext'
 import { planValidityNotice, type PlanNotice } from '@/lib/automation/plan-validity'
+import { decidePaywall, isWhitelistedEmail } from '@/lib/entitlements'
 
 function ImpersonationBanner() {
     const searchParams = useSearchParams()
@@ -113,19 +114,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             onboardingCompleted = parentProfile?.onboarding_completed
         }
 
-        // Whitelisted emails that do not get trapped by subscription expiry
-        const whitelistedEmails = [
-          'rchopra489@gmail.com',
-          'infobluesquareinfra@gmail.com',
-          'khushiramrealtor@gmail.com',
-          'rajivkumaraggarwal81@gmail.com',
-          'gnrhomes97@gmail.com',
-          'alpinenesthomes01@gmail.com',
-          'meta-reviewer@nobogent.com',
-          'pawan@pipixel.io'
-        ]
+        // The whitelist used to be spelled out here, and again in utils/subscription.ts and again in
+        // utils/credits.ts, with three different contents. Entitlement is one decision now; see
+        // lib/entitlements.ts.
         const userEmail = userProfile?.email?.toLowerCase() || ''
-        const isWhitelisted = whitelistedEmails.includes(userEmail) || (parentEmail && whitelistedEmails.includes(parentEmail))
+        const isWhitelisted = isWhitelistedEmail(userEmail) || isWhitelistedEmail(parentEmail)
 
         // Check if validity has expired
         const isExpiredChronologically = !!(subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date())
@@ -151,17 +144,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // `client_features.paywall_skipped` used to count as "paid" here, so a new signup could walk
         // past the paywall and use the whole product for free. The onboarding page no longer writes
         // that flag, and it is deliberately not read as entitlement any more.
-        const isPaid = isWhitelisted || 
-                     subscriptionStatus === 'active' || 
-                     subscriptionStatus === 'trialing' || 
-                     subscriptionStatus === 'pro' || 
-                     subscriptionStatus === 'enterprise'
+        //
+        // The decision itself lives in lib/entitlements.ts because the edge middleware makes the same one,
+        // and two copies of a money gate is how they end up disagreeing.
+        const entitlement = decidePaywall(userProfile, parentProfile)
+        const isPaid = !entitlement.mustPay
 
       const isBillingPage = pathname === '/dashboard/billing'
       const isProfilePage = pathname === '/dashboard/profile'
       const isOnboardingPage = pathname === '/dashboard/onboarding'
       const isAdminLike = ['super_admin', 'agency', 'admin', 'client', 'agent'].includes(userProfile?.role || '')
-      const isTeamMemberEarly = !!(userProfile?.parent_id || userProfile?.agency_id)
       if (!userProfile) {
         console.warn('[DashboardLayout] profile row still unreadable after retries — treating as unpaid')
       }
@@ -173,11 +165,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // profile arrived. Payment is the first thing a customer meets, and onboarding (profile,
       // integrations, templates) runs only after they have bought.
       //
-      // Exemptions are narrow and explicit: the platform's own whitelisted accounts, and team members
-      // whose agency pays for them. NOTE there is no role test here at all — a profile with no role set
-      // yet would otherwise satisfy neither branch and slip through, which is the same fail-open shape
-      // as the original bug.
-      const mustPay = !isPaid && !isWhitelisted && !isTeamMemberEarly
+      // The decision comes from lib/entitlements.ts, which contains no role test at all. Exemptions are
+      // narrow and explicit: the platform's own whitelisted accounts, and team members whose agency pays.
+      const mustPay = entitlement.mustPay
       if (mustPay && !isOnboardingPage && !isBillingPage && !isProfilePage) {
         router.replace('/dashboard/onboarding')
         return

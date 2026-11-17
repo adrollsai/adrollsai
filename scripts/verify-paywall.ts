@@ -16,6 +16,7 @@
  */
 import fs from 'node:fs';
 import { RAZORPAY_PLANS } from '../utils/razorpay';
+import { decidePaywall, isPaywallExemptPath } from '../lib/entitlements';
 
 let pass = 0;
 let fail = 0;
@@ -237,6 +238,90 @@ check(
 check(
   'the retirement is explained in the file, not silent',
   /retired from sale/i.test(read('app/dashboard/billing/page.tsx')),
+);
+
+// ---------------------------------------------------------------------------
+// ONE paywall decision, made from one list, enforced on both sides
+//
+// The fail-open bug was a ROLE test: ['super_admin', ...].includes(role) is false when role is null, and
+// null is exactly what a fresh signup has, so the gate waved through its newest and least-entitled
+// account. These cases pin the decision itself, using the real function the layout and the middleware call.
+// ---------------------------------------------------------------------------
+console.log("\n▸ ONE paywall decision");
+
+const freshSignup = decidePaywall({
+  email: 'sbgrealestate7@gmail.com',
+  role: null,
+  parent_id: null,
+  agency_id: null,
+  subscription_status: null,
+  subscription_valid_until: null,
+});
+check(
+  'a brand-new signup must pay',
+  freshSignup.mustPay === true && freshSignup.reason === 'unpaid',
+  'role null, no parent, no subscription',
+);
+check(
+  'the decision contains no role test',
+  !/role/.test(decidePaywall.toString().replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '')),
+  'a role test is what failed open on null',
+);
+check(
+  'a missing profile must pay',
+  decidePaywall(null).mustPay === true && decidePaywall(undefined).reason === 'no-profile',
+  'a money gate may not be decided from data it failed to read',
+);
+check(
+  'a paid status does not pay',
+  decidePaywall({ email: 'a@b.com', role: 'client', subscription_status: 'active' }).mustPay === false,
+);
+check(
+  'an expired subscription must pay again',
+  decidePaywall({
+    email: 'a@b.com',
+    subscription_status: 'active',
+    subscription_valid_until: '2020-01-01T00:00:00Z',
+  }).mustPay === true,
+  'an "active" row whose date has passed is not entitlement',
+);
+check(
+  'a whitelisted account never pays',
+  decidePaywall({ email: 'rchopra489@gmail.com', role: null, subscription_status: null }).mustPay === false,
+);
+check(
+  'a team member is covered by the agency',
+  decidePaywall({ email: 'x@y.com', parent_id: 'p1', subscription_status: null }).mustPay === false,
+);
+check(
+  'onboarding, billing and profile are the only exempt routes',
+  ['/dashboard/onboarding', '/dashboard/billing', '/dashboard/profile'].every(isPaywallExemptPath) &&
+    !isPaywallExemptPath('/dashboard/crm') &&
+    !isPaywallExemptPath('/dashboard/settings/billing'),
+  'prefix matching, not substring matching',
+);
+
+// The gate must be enforced by the SERVER too, not only by a browser effect.
+const middlewareSource = read('middleware.ts');
+check(
+  'the middleware enforces the paywall itself',
+  /decidePaywall\(/.test(middlewareSource) && /isPaywallExemptPath\(/.test(middlewareSource),
+  'a client-only paywall is a screen, not a boundary',
+);
+check(
+  'the middleware redirects an unpaid account to onboarding',
+  /decision\.mustPay[\s\S]{0,200}\/dashboard\/onboarding/.test(middlewareSource),
+);
+check(
+  'a failed entitlement lookup does not bounce paying customers',
+  /entitlement check skipped/.test(middlewareSource),
+  'on a transient error the client gate decides instead',
+);
+check(
+  'there is ONE whitelist',
+  /WHITELISTED_EMAILS/.test(read('lib/entitlements.ts')) &&
+    !/whitelistedEmails\s*=\s*\[/.test(read('app/dashboard/layout.tsx')),
+  'it was copied in three files with three contents',
 );
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);

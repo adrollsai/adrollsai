@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { decideRouting, isPlatformHost, normaliseHost, parseExtraDomains } from '@/lib/routing/host'
+import { decidePaywall, isPaywallExemptPath } from '@/lib/entitlements'
 
 export async function middleware(request: NextRequest) {
   const url = request.nextUrl;
@@ -174,6 +175,52 @@ export async function middleware(request: NextRequest) {
     // Rule C: Standard protection for dashboard routes
     if (!user && isDashboardRoute) {
       return NextResponse.redirect(new URL('/login', request.url))
+    }
+
+    // Rule D: THE PAYWALL, ENFORCED SERVER-SIDE.
+    //
+    // This rule exists because everything above only proves WHO the caller is. The paywall lived entirely in
+    // a client-side effect in app/dashboard/layout.tsx, which means it was a screen rather than a boundary:
+    // an account that had never paid could still load dashboard pages, and the redirect was whatever the
+    // browser chose to do with them. A new signup has no role and no subscription, so this is the exact
+    // request shape the gate has to stop.
+    //
+    // Deliberately narrow, so a paywall bug can never take the site down:
+    //   - dashboard PAGE routes only (the matcher already excludes /api, so webhooks and machine callers are
+    //     untouched and cannot be broken by it)
+    //   - never onboarding/billing/profile, because that is where the paywall itself lives
+    //   - only redirects on a profile we actually READ. If the entitlement lookup fails or throws, the rule
+    //     stands aside and lets the client gate decide, because bouncing a paying customer to onboarding on a
+    //     transient database error is worse than a free user reaching a page the client gate will take away.
+    if (user && isDashboardRoute && !isPaywallExemptPath(url.pathname)) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, email, role, parent_id, agency_id, subscription_status, subscription_valid_until')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (profile) {
+          let parent: any = null
+          const parentId = (profile as any).parent_id || (profile as any).agency_id
+          if (parentId) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('email, subscription_status, subscription_valid_until')
+              .eq('id', parentId)
+              .maybeSingle()
+            parent = data ?? null
+          }
+
+          const decision = decidePaywall(profile as any, parent)
+          if (decision.mustPay) {
+            const paywall = new URL('/dashboard/onboarding', request.url)
+            return NextResponse.redirect(paywall)
+          }
+        }
+      } catch (paywallError: any) {
+        console.warn('[Middleware] entitlement check skipped:', paywallError?.message)
+      }
     }
   } catch (err: any) {
     console.error('[Middleware Error]:', err.message);
