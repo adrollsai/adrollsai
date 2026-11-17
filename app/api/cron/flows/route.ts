@@ -58,14 +58,40 @@ export async function GET(request: Request) {
       quietHours,
       limit: 25,
       execute: async (step) => {
-        // Hand the work to the delivery queue. The step is only marked done afterwards, so a crash
-        // here leaves it retryable rather than silently dropped.
+        // Hand the work over as a COMPLETE approval row: real text, real phone, real template.
+        // It is not sent here - a person says yes in the approvals queue, and the existing delivery
+        // path dispatches it. A placeholder row would look like work and do nothing.
+        const { data: row } = await supabase
+          .from(SCHEDULES)
+          .select('payload')
+          .eq('id', step.id)
+          .maybeSingle();
+        const payload: any = (row as any)?.payload ?? {};
+
+        const { data: lead } = await supabase
+          .from('leads')
+          .select('id, name, phone')
+          .eq('id', step.leadId)
+          .maybeSingle();
+        const phone = String((lead as any)?.phone ?? '').replace(/[^\d+]/g, '');
+        if (!phone) throw new Error('no phone number on lead ' + step.leadId + '; cannot queue the step');
+
+        const text = String(payload.text ?? '').trim();
+        if (step.kind === 'message' && !text) {
+          throw new Error('step ' + step.stepIndex + ' has no message text in its payload');
+        }
+
         const { error: qErr } = await supabase.from('agent_pending_deliveries').insert({
           user_id: userId,
           lead_id: step.leadId,
           channel: step.kind === 'call' ? 'call' : 'whatsapp',
-          body: `Flow ${step.flowId} step ${step.stepIndex} due at ${step.runAt}`,
-          status: 'pending',
+          to_phone: phone,
+          body: step.kind === 'call' ? (text || 'Flow follow-up call') : text,
+          template_name: payload.templateName ?? null,
+          flow_id: step.flowId,
+          flow_step_index: step.stepIndex,
+          trigger: payload.trigger ?? null,
+          status: 'pending_approval',
         });
         if (qErr) {
           // No queue table or no row shape for this channel yet: fail loudly so the scheduler
