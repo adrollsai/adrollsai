@@ -1254,7 +1254,7 @@ export default function AssetsPage() {
                                                 onClick={() => toggleSelection(asset.id)}
                                                 className={`relative aspect-square rounded-[1.5rem] overflow-hidden bg-slate-50 border group cursor-pointer active:scale-95 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 ${selectedIds.has(asset.id) ? 'ring-4 ring-blue-500 border-transparent' : 'border-slate-200/40'}`}
                                             >
-                                                <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                <img src={fixR2Url(asset.metadata?.thumbnailUrl || asset.url)} alt="Asset" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                                 
                                                 {/* Selection Checkbox */}
                                                 <div className={`absolute top-3 left-3 z-20 w-6 h-6 rounded-full flex items-center justify-center transition-all ${selectedIds.has(asset.id) ? 'bg-blue-600 scale-110 shadow-lg' : 'bg-white/40 backdrop-blur-md opacity-0 group-hover:opacity-100 border border-white/50'}`}>
@@ -1444,7 +1444,7 @@ export default function AssetsPage() {
                                             </div>
                                         </div>
                                     ) : (
-                                        <img src={fixR2Url(asset.url)} alt="Asset" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        <img src={fixR2Url(asset.metadata?.thumbnailUrl || asset.url)} alt="Asset" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                     )}
 
                                     {/* Overlay Actions */}

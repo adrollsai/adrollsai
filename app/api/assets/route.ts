@@ -98,6 +98,10 @@ export async function GET(request: Request) {
             }
         }
 
+        // Bounded: the grid loads newest-first and paginates in the UI, so an unbounded
+        // SELECT * would eventually ship every asset the tenant has ever made.
+        const MAX_ASSETS = 300;
+
         let query = supabaseAdmin
             .from('assets')
             .select('*')
@@ -107,7 +111,9 @@ export async function GET(request: Request) {
             query = query.or(`created_at.gt.${since},status.eq.Processing,status.eq.Rendering`);
         }
 
-        const { data: initialAssetData, error: assetError } = await query.order('created_at', { ascending: false });
+        const { data: initialAssetData, error: assetError } = await query
+            .order('created_at', { ascending: false })
+            .limit(MAX_ASSETS);
 
         if (assetError) {
             throw assetError;
@@ -132,7 +138,7 @@ export async function GET(request: Request) {
                     baseUrl = requestOrigin;
                 }
                 await syncVideoTasksForUser(effectiveUserIds, baseUrl);
-                const { data: refreshedData } = await query.order('created_at', { ascending: false });
+                const { data: refreshedData } = await query.order('created_at', { ascending: false }).limit(MAX_ASSETS);
                 if (refreshedData) {
                     assetData = refreshedData;
                 }

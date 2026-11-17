@@ -52,6 +52,18 @@ export async function GET(request: Request) {
                     });
                 }
             }
+
+            // Backoff: if poster extraction already failed for this asset (usually because the
+            // file is too large to pull through a function), do not retry it on every page load.
+            const failedAt = asset?.metadata?.thumbnailFailedAt
+                ? Date.parse(asset.metadata.thumbnailFailedAt)
+                : 0;
+            if (!asset?.metadata?.thumbnailUrl && failedAt && Date.now() - failedAt < 6 * 60 * 60 * 1000) {
+                return new NextResponse('Poster unavailable for this video', {
+                    status: 404,
+                    headers: { 'Cache-Control': 'public, max-age=600' }
+                });
+            }
         }
 
         // 2. Format source video URL (handling R2 path variations)
@@ -78,7 +90,7 @@ export async function GET(request: Request) {
 
         let success = false;
         try {
-            await execPromise(streamCommand);
+            await execPromise(streamCommand, { timeout: 12000 });
             if (fs.existsSync(tempThumbPath) && fs.statSync(tempThumbPath).size > 0) {
                 success = true;
             }
@@ -88,6 +100,19 @@ export async function GET(request: Request) {
 
         // Fallback path: Download buffer to disk if remote stream failed
         if (!success) {
+            // Never pull a huge file through a serverless function just to make a poster.
+            const MAX_POSTER_SOURCE_BYTES = 30 * 1024 * 1024;
+            let sourceBytes = 0;
+            try {
+                const headRes = await fetch(targetVideoUrl, { method: 'HEAD' });
+                sourceBytes = Number(headRes.headers.get('content-length') || 0);
+            } catch (sizeErr) {
+                console.warn('[VideoThumbnail API] Could not read source size:', sizeErr);
+            }
+            if (sourceBytes > MAX_POSTER_SOURCE_BYTES) {
+                throw new Error(`Video is ${(sourceBytes / 1048576).toFixed(1)} MB — too large for on-demand poster extraction`);
+            }
+
             let videoRes = await fetch(targetVideoUrl);
             if (!videoRes.ok && targetVideoUrl !== videoUrl) {
                 videoRes = await fetch(videoUrl);
@@ -102,7 +127,7 @@ export async function GET(request: Request) {
             fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer));
 
             const fallbackCommand = `"${ffmpeg}" -y -ss 00:00:00.500 -i "${tempVideoPath}" -vf "scale=360:-1" -vframes 1 "${tempThumbPath}"`;
-            await execPromise(fallbackCommand);
+            await execPromise(fallbackCommand, { timeout: 20000 });
             try { fs.unlinkSync(tempVideoPath); } catch (e) {}
         }
 
@@ -143,6 +168,25 @@ export async function GET(request: Request) {
 
     } catch (error: any) {
         console.error('[VideoThumbnail API] Error generating thumbnail:', error);
+
+        // Remember the failure so the next page load does not repeat an expensive extraction.
+        try {
+            const failedAssetId = new URL(request.url).searchParams.get('assetId');
+            if (failedAssetId) {
+                const { data: failedAsset } = await supabaseAdmin
+                    .from('assets')
+                    .select('metadata')
+                    .eq('id', failedAssetId)
+                    .single();
+                await supabaseAdmin
+                    .from('assets')
+                    .update({ metadata: { ...(failedAsset?.metadata || {}), thumbnailFailedAt: new Date().toISOString() } })
+                    .eq('id', failedAssetId);
+            }
+        } catch (memoErr) {
+            console.warn('[VideoThumbnail API] Could not record poster failure:', memoErr);
+        }
+
         return new NextResponse('Error generating thumbnail', { status: 500 });
     }
 }
