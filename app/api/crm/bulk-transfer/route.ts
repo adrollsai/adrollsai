@@ -308,6 +308,12 @@ export async function POST(req: Request) {
 
     const validLeadIds = targetLeads.map(l => l.id)
     const cutoffTimestamp = new Date().toISOString()
+    // Declared out here, not inside the worker block below: that block is a bare `{ ... }` scope, so counters declared
+    // in it are invisible to the response at the bottom of the handler.
+    let updatedCount = 0
+    let stageResetCount = 0
+    let actionsClearedCount = 0
+    const updateErrors: string[] = []
 
     // EXECUTE UPDATES
     //
@@ -320,7 +326,6 @@ export async function POST(req: Request) {
       // Eliminates stop-and-wait batch barriers, achieving 10x-15x throughput speedup
       const CONCURRENCY = 40
       let currentIndex = 0
-      let updateErrors: string[] = []
 
       async function worker() {
         while (currentIndex < targetLeads.length) {
@@ -379,10 +384,29 @@ export async function POST(req: Request) {
             updatePayload.status = stageToUse || 'New Lead'
             cf.stage_reset_at = cutoffTimestamp
             cf.stage_reset_by = actingUserId
+            // A reset stage alone does not make a lead look fresh. categorizeLeadStage() reads a shadow stage out of
+            // custom_fields (cf.pipeline_stage / cf.status / cf.lead_status / cf.client_status), and it treats ANY lead
+            // carrying a scheduled next action as Ongoing - so a lead reset to "New Lead" whose custom fields still said
+            // "Warm", or that still had cf.next_action_date, silently stayed out of the Fresh bucket. That is why a
+            // 200-lead reset only showed a fraction of them as fresh. Archive the old values, then drop the keys the
+            // categoriser keys off.
+            const shadowKeys = ['pipeline_stage', 'status', 'lead_status', 'client_status'].filter((k) => {
+              const v = typeof cf[k] === 'string' ? cf[k].trim() : ''
+              return v && !/^(new lead|fresh|new|unprocessed|uncontacted)$/i.test(v)
+            })
+            if (shadowKeys.length) {
+              cf.stage_before_reset_fields = Object.fromEntries(shadowKeys.map((k) => [k, cf[k]]))
+              for (const k of shadowKeys) delete cf[k]
+            }
             if (resetAttempts === undefined ? hideHistoryFromAssignee : Boolean(resetAttempts)) {
               updatePayload.voice_call_retry_count = 0
               updatePayload.next_followup = null
               cf.attempts_reset_at = cutoffTimestamp
+              // Same trap one level down: cf.next_action_date keeps a reset lead in Ongoing on its own, even with the
+              // next_followup column cleared.
+              const hadNextAction = Boolean(cf.next_action_date || cf.next_action_type || cf.next_action_remark)
+              for (const k of ['next_action_date', 'next_action_type', 'next_action_remark']) delete cf[k]
+              if (hadNextAction) cf.next_action_cleared_at = cutoffTimestamp
             }
           }
 
@@ -432,6 +456,11 @@ export async function POST(req: Request) {
               console.error('[Bulk Transfer Row Update Error]:', res.error)
               updateErrors.push(res.error.message || 'Row update failed')
             }
+          }
+          if (!res.error) {
+            updatedCount++
+            if (shouldResetStage || stageToUse) stageResetCount++
+            if (cf.next_action_cleared_at === cutoffTimestamp) actionsClearedCount++
           }
         }
       }
@@ -503,7 +532,14 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       transferredCount: validLeadIds.length,
-      targetAgentName: agentName
+      // Counts, not a claim. The UI can now say "200 sent, 197 updated, 3 failed" instead of implying every id moved.
+      updatedCount,
+      failedCount: updateErrors.length,
+      skippedCount: Math.max(0, validLeadIds.length - updatedCount - updateErrors.length),
+      stageResetCount,
+      scheduledActionsClearedCount: actionsClearedCount,
+      targetAgentName: agentName,
+      ...(updateErrors.length ? { updateErrors: updateErrors.slice(0, 5) } : {}),
     })
 
   } catch (error: any) {

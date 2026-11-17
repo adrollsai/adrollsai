@@ -64,11 +64,14 @@ check(
 check("`next_followup` is the real column name (not next_follow_up_at)", columns.has('next_followup') && !source.includes('next_follow_up_at'));
 
 // 3. The custom_fields stamps are the audit trail; a typo there loses the record silently.
+//    `stage_before_reset_fields` and `next_action_cleared_at` are part of the same reset story: the categoriser reads a
+//    shadow stage and a scheduled action out of custom_fields, so a reset has to archive and clear those too or the lead
+//    never actually reaches the Fresh bucket.
 const stamps = [...new Set([...source.matchAll(/\bcf\.([a-z_][a-z0-9_]*)\s*=/gi)].map((m) => m[1]))];
 console.log(`  custom_fields stamps: ${stamps.join(', ')}`);
 check(
   'the audit stamps are namespaced and consistent',
-  stamps.every((s) => /^(history_|pending_actions_|stage_(before_)?reset|attempts_(before_)?reset)/.test(s)),
+  stamps.every((s) => /^(history_|pending_actions_|stage_(before_)?reset|attempts_(before_)?reset|next_action_cleared)/.test(s)),
   stamps.join(', '),
 );
 check(
@@ -81,7 +84,26 @@ check(
   stamps.includes('attempts_before_reset'),
 );
 
-// 4. The timeline entry exists, so the transfer is auditable.
+// 4. A reset lead must actually reach the Fresh bucket. categorizeLeadStage() reads a shadow stage out of custom_fields
+//    and treats any scheduled action as Ongoing, so clearing only the pipeline_stage column is not enough - the lead
+//    looks reset in the database and still shows up under Ongoing in the CRM. That was a real, reported bug.
+check(
+  'a reset clears the shadow stage keys the categoriser reads',
+  /shadowKeys/.test(source) && /delete cf\[k\]/.test(source),
+  'cf.pipeline_stage / cf.status / cf.lead_status / cf.client_status override the column',
+);
+check(
+  'a reset clears the scheduled-action keys that force Ongoing',
+  /delete cf\[k\]/.test(source) && /next_action_date/.test(source),
+  'cf.next_action_date alone keeps a New Lead in Ongoing',
+);
+check(
+  'the transfer reports what actually happened, not just what was asked',
+  /updatedCount/.test(source) && /failedCount/.test(source),
+  'a partial transfer must be visible in the response',
+);
+
+// 5. The timeline entry exists, so the transfer is auditable.
 check('the transfer writes a lead_history entry', /from\('lead_history'\)/.test(source));
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);

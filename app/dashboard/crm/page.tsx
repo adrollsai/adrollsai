@@ -632,7 +632,17 @@ function CRMPageContent() {
 
       const data = await res.json()
       if (res.ok && data.success) {
-        toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}!`)
+        const moved = typeof data.updatedCount === 'number' ? data.updatedCount : data.transferredCount
+        const parts = [`Transferred ${moved} lead(s) to ${data.targetAgentName}`]
+        if (data.stageResetCount) parts.push(`${data.stageResetCount} reset to a fresh stage`)
+        if (data.scheduledActionsClearedCount) parts.push(`${data.scheduledActionsClearedCount} had a stale scheduled action cleared`)
+        toast.success(parts.join(' · '))
+        if (data.failedCount || data.skippedCount) {
+          toast.warning(
+            `${data.failedCount || 0} failed and ${data.skippedCount || 0} were skipped out of ${data.transferredCount} selected.` +
+              (data.updateErrors?.length ? ` First error: ${data.updateErrors[0]}` : '')
+          )
+        }
         setIsFilteredBulkTransferModalOpen(false)
         fetchLeads(true)
       } else {
@@ -853,7 +863,19 @@ function CRMPageContent() {
 
       const data = await res.json()
       if (res.ok && data.success) {
-        toast.success(`Successfully transferred ${data.transferredCount} lead(s) to ${data.targetAgentName}! 🎉`)
+        // Report what actually landed, not what was requested. "Transferred 200" while 12 failed and 40 never reached the
+        // Fresh bucket is how a partial transfer stays invisible until someone counts the list by hand.
+        const moved = typeof data.updatedCount === 'number' ? data.updatedCount : data.transferredCount
+        const parts = [`Transferred ${moved} lead(s) to ${data.targetAgentName}`]
+        if (data.stageResetCount) parts.push(`${data.stageResetCount} reset to a fresh stage`)
+        if (data.scheduledActionsClearedCount) parts.push(`${data.scheduledActionsClearedCount} had a stale scheduled action cleared`)
+        toast.success(parts.join(' · ') + ' 🎉')
+        if (data.failedCount || data.skippedCount) {
+          toast.warning(
+            `${data.failedCount || 0} failed and ${data.skippedCount || 0} were skipped out of ${data.transferredCount} selected.` +
+              (data.updateErrors?.length ? ` First error: ${data.updateErrors[0]}` : '')
+          )
+        }
         setIsBulkActionsModalOpen(false)
         setSelectedLeadIds([])
         setSelectedFromOwnerIds([])
