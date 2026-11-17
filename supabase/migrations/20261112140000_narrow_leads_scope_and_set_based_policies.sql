@@ -109,6 +109,7 @@ $$;
 -- 3. leads: original scope, set-based (no widening, no per-row profiles read)
 -- ---------------------------------------------------------------------------
 drop policy if exists "Users and staff can view leads" on public.leads;
+drop policy if exists "Users and staff can view leads" on public.leads;
 create policy "Users and staff can view leads" on public.leads
   for select to authenticated
   using (
@@ -116,6 +117,7 @@ create policy "Users and staff can view leads" on public.leads
     or user_id in (select * from public.lead_owner_ids())
   );
 
+drop policy if exists "Users and staff can update leads" on public.leads;
 drop policy if exists "Users and staff can update leads" on public.leads;
 create policy "Users and staff can update leads" on public.leads
   for update to authenticated
@@ -129,11 +131,13 @@ create policy "Users and staff can update leads" on public.leads
 --    (these are the two large tables where the scalar helper dominated)
 -- ---------------------------------------------------------------------------
 drop policy if exists "tenant_isolation" on public.lead_history;
+drop policy if exists "tenant_isolation" on public.lead_history;
 create policy "tenant_isolation" on public.lead_history
   for all to authenticated
   using (user_id in (select * from public.my_tenant_ids()))
   with check (user_id in (select * from public.my_tenant_ids()));
 
+drop policy if exists "tenant_isolation" on public.notifications;
 drop policy if exists "tenant_isolation" on public.notifications;
 create policy "tenant_isolation" on public.notifications
   for all to authenticated

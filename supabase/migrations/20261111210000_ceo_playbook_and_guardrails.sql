@@ -45,6 +45,7 @@ create unique index if not exists business_playbooks_one_active_idx
 alter table public.business_playbooks enable row level security;
 
 drop policy if exists "business_playbooks_owner" on public.business_playbooks;
+drop policy if exists "business_playbooks_owner" on public.business_playbooks;
 create policy "business_playbooks_owner" on public.business_playbooks
   for all to authenticated
   using (user_id = auth.uid() or public.is_same_tenant(user_id))
@@ -57,8 +58,7 @@ grant select, insert, update on public.business_playbooks to authenticated, serv
 -- credits overnight, so these are enforced in code before every paid or
 -- customer-facing action.
 -- ---------------------------------------------------------------------------
-alter table public.tenant_automations
-  add column if not exists daily_credit_cap        numeric not null default 500,
+alter table public.tenant_automations add column if not exists daily_credit_cap        numeric not null default 500,
   add column if not exists daily_message_cap       int     not null default 200,
   add column if not exists daily_call_cap          int     not null default 50,
   add column if not exists require_approval        boolean not null default false,
@@ -82,6 +82,7 @@ create index if not exists automation_spend_user_day_idx
   on public.automation_spend (user_id, day, kind);
 
 alter table public.automation_spend enable row level security;
+drop policy if exists "automation_spend_owner_read" on public.automation_spend;
 drop policy if exists "automation_spend_owner_read" on public.automation_spend;
 create policy "automation_spend_owner_read" on public.automation_spend
   for select to authenticated

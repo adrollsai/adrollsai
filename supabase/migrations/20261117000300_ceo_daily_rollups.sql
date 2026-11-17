@@ -32,8 +32,8 @@ alter table public.ceo_daily_rollups enable row level security;
 -- insert/update policy is granted to authenticated users on purpose: this table is a record, not a
 -- user-editable surface.
 drop policy if exists ceo_daily_rollups_select_own on public.ceo_daily_rollups;
-create policy ceo_daily_rollups_select_own
-  on public.ceo_daily_rollups
+drop policy if exists "ceo_daily_rollups_select_own" on public.ceo_daily_rollups;
+create policy "ceo_daily_rollups_select_own" on public.ceo_daily_rollups
   for select
   to authenticated
   using (auth.uid() = user_id);

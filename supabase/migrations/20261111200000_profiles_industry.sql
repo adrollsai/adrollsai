@@ -15,8 +15,7 @@
 
 begin;
 
-alter table public.profiles
-  add column if not exists industry text;
+alter table public.profiles add column if not exists industry text;
 
 comment on column public.profiles.industry is
   'Detected/declared business vertical, e.g. real_estate, education, immigration, healthcare. Drives website, script and template vocabulary. NULL is treated as real_estate for backwards compatibility.';

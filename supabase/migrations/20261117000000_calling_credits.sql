@@ -18,7 +18,7 @@
 -- from that table (statement at the bottom), not a guess.
 
 -- â”€â”€ 0. Snapshot everything first. Nothing is written until this exists. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-CREATE TABLE IF NOT EXISTS public.credit_balance_backup_20261117 AS
+create table if not exists public.credit_balance_backup_20261117 AS
 SELECT id,
        business_name,
        COALESCE(credits, 0)         AS credits_before,
@@ -26,13 +26,12 @@ SELECT id,
        NOW()                        AS snapshot_at
 FROM public.profiles;
 
-CREATE UNIQUE INDEX IF NOT EXISTS credit_balance_backup_20261117_id_idx
+create UNIQUE index if not exists credit_balance_backup_20261117_id_idx
   ON public.credit_balance_backup_20261117 (id);
 
 -- â”€â”€ 1. The column. Default 0 so an account created before this migration cannot spend a calling â”€â”€
 --       balance it does not have.
-ALTER TABLE public.profiles
-  ADD COLUMN IF NOT EXISTS calling_credits NUMERIC NOT NULL DEFAULT 0;
+alter table public.profiles add column if not exists calling_credits NUMERIC NOT NULL DEFAULT 0;
 
 COMMENT ON COLUMN public.profiles.calling_credits IS
   'Credits locked to AI calling only, at 4 credits per started minute. Cannot pay for images, video or copy.';

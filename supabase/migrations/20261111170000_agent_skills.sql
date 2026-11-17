@@ -32,13 +32,13 @@ create index if not exists agent_skills_user_idx
 alter table public.agent_skills enable row level security;
 
 drop policy if exists "owners read own skills" on public.agent_skills;
-create policy "owners read own skills"
-  on public.agent_skills for select
+drop policy if exists "owners read own skills" on public.agent_skills;
+create policy "owners read own skills" on public.agent_skills for select
   using (auth.uid() = user_id);
 
 drop policy if exists "owners write own skills" on public.agent_skills;
-create policy "owners write own skills"
-  on public.agent_skills for all
+drop policy if exists "owners write own skills" on public.agent_skills;
+create policy "owners write own skills" on public.agent_skills for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 

@@ -36,8 +36,7 @@
 -- 0. A reference column on the ledger, so one external event can only ever be
 --    applied once. Existing rows stay NULL and are unaffected by the index.
 -- ----------------------------------------------------------------------------
-alter table public.credit_transactions
-  add column if not exists ref text;
+alter table public.credit_transactions add column if not exists ref text;
 
 comment on column public.credit_transactions.ref is
   'Idempotency key for the event that caused this row, e.g. razorpay:<payment_id>. Unique when present.';
@@ -80,6 +79,7 @@ alter table public.credit_holds enable row level security;
 -- Tenants may read their own holds (so the dashboard can explain "Rs 300 is
 -- reserved for tonight's video"). Only the service role writes.
 drop policy if exists credit_holds_select_own on public.credit_holds;
-create policy credit_holds_select_own on public.credit_holds
+drop policy if exists "credit_holds_select_own" on public.credit_holds;
+create policy "credit_holds_select_own" on public.credit_holds
   for select using (auth.uid() = user_id);
 

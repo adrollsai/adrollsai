@@ -68,14 +68,14 @@ alter table public.business_routines enable row level security;
 alter table public.routine_runs enable row level security;
 
 drop policy if exists "owners manage their routines" on public.business_routines;
-create policy "owners manage their routines"
-  on public.business_routines for all
+drop policy if exists "owners manage their routines" on public.business_routines;
+create policy "owners manage their routines" on public.business_routines for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
 drop policy if exists "owners read their routine runs" on public.routine_runs;
-create policy "owners read their routine runs"
-  on public.routine_runs for select
+drop policy if exists "owners read their routine runs" on public.routine_runs;
+create policy "owners read their routine runs" on public.routine_runs for select
   using (auth.uid() = user_id);
 
 -- Keep updated_at honest without trusting the caller.

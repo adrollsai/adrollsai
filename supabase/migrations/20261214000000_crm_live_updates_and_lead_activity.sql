@@ -47,8 +47,7 @@ alter table public.notifications replica identity full;
 -- ----------------------------------------------------------------------------
 -- 2. Last activity, maintained by trigger so no writer has to remember.
 -- ----------------------------------------------------------------------------
-alter table public.leads
-  add column if not exists last_activity_at timestamptz;
+alter table public.leads add column if not exists last_activity_at timestamptz;
 
 -- Existing rows keep their true age: a lead that has not moved since it arrived
 -- is exactly as old as its created_at, and must not jump to the top on deploy.

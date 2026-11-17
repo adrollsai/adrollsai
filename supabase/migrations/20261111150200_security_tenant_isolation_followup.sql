@@ -24,6 +24,7 @@ begin;
 drop policy if exists "fractions_all_policy" on public.fractions;
 drop policy if exists "fractions_select_policy" on public.fractions;
 drop policy if exists "fractions_tenant" on public.fractions;
+drop policy if exists "fractions_tenant" on public.fractions;
 create policy "fractions_tenant" on public.fractions
   for all to authenticated
   using (exists (select 1 from public.properties p where p.id = fractions.property_id))
@@ -32,6 +33,7 @@ create policy "fractions_tenant" on public.fractions
 -- creative_prompts
 drop policy if exists "creative_prompts_all_policy" on public.creative_prompts;
 drop policy if exists "creative_prompts_select_policy" on public.creative_prompts;
+drop policy if exists "creative_prompts_tenant" on public.creative_prompts;
 drop policy if exists "creative_prompts_tenant" on public.creative_prompts;
 create policy "creative_prompts_tenant" on public.creative_prompts
   for all to authenticated

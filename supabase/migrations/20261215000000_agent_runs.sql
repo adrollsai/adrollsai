@@ -74,7 +74,8 @@ create index if not exists agent_runs_status_updated_idx
 alter table public.agent_runs enable row level security;
 
 drop policy if exists agent_runs_select_own on public.agent_runs;
-create policy agent_runs_select_own on public.agent_runs
+drop policy if exists "agent_runs_select_own" on public.agent_runs;
+create policy "agent_runs_select_own" on public.agent_runs
   for select using (auth.uid() = user_id);
 
 revoke all on public.agent_runs from anon, authenticated;

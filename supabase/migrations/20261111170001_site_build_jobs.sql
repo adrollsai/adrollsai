@@ -39,6 +39,7 @@ alter table public.site_build_jobs enable row level security;
 
 -- Dashboards may read their own job state; only the service role writes.
 drop policy if exists "site_build_jobs_owner_read" on public.site_build_jobs;
+drop policy if exists "site_build_jobs_owner_read" on public.site_build_jobs;
 create policy "site_build_jobs_owner_read" on public.site_build_jobs
   for select to authenticated
   using (user_id = auth.uid() or public.is_same_tenant(user_id));

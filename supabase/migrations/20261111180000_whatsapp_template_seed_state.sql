@@ -26,6 +26,7 @@ create table if not exists public.whatsapp_template_seed_state (
 alter table public.whatsapp_template_seed_state enable row level security;
 
 drop policy if exists "template_seed_state_owner_read" on public.whatsapp_template_seed_state;
+drop policy if exists "template_seed_state_owner_read" on public.whatsapp_template_seed_state;
 create policy "template_seed_state_owner_read" on public.whatsapp_template_seed_state
   for select to authenticated
   using (user_id = auth.uid() or public.is_same_tenant(user_id));

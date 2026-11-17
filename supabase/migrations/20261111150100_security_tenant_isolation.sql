@@ -85,6 +85,7 @@ $$;
 --    including whatsapp_access_token / facebook_token / elevenlabs_api_key.
 -- ---------------------------------------------------------------------------
 drop policy if exists "profiles_select_policy" on public.profiles;
+drop policy if exists "profiles_select_policy" on public.profiles;
 create policy "profiles_select_policy" on public.profiles
   for select to authenticated
   using (id = auth.uid() or public.is_same_tenant(id));
@@ -164,6 +165,7 @@ end $$;
 -- organizations: no user_id column; scope by the caller's org.
 drop policy if exists "organizations_all_policy" on public.organizations;
 drop policy if exists "organizations_select_policy" on public.organizations;
+drop policy if exists "organizations_tenant" on public.organizations;
 create policy "organizations_tenant" on public.organizations
   for all to authenticated
   using (id = public.auth_org_id() or public.is_super_admin())
@@ -173,9 +175,11 @@ create policy "organizations_tenant" on public.organizations
 -- (app/dashboard/reference-library reads `user_id IS NULL OR user_id = me`).
 drop policy if exists "reference_creatives_select_policy" on public.reference_creatives;
 drop policy if exists "reference_creatives_all_policy" on public.reference_creatives;
+drop policy if exists "reference_creatives_read" on public.reference_creatives;
 create policy "reference_creatives_read" on public.reference_creatives
   for select to authenticated
   using (user_id is null or public.is_same_tenant(user_id));
+drop policy if exists "reference_creatives_write" on public.reference_creatives;
 create policy "reference_creatives_write" on public.reference_creatives
   for all to authenticated
   using (public.is_same_tenant(user_id))
@@ -185,8 +189,10 @@ create policy "reference_creatives_write" on public.reference_creatives
 -- (the anonymous catalogue page shows published posts).
 drop policy if exists "posts_all_policy" on public.posts;
 drop policy if exists "posts_select_policy" on public.posts;
+drop policy if exists "posts_published_public" on public.posts;
 create policy "posts_published_public" on public.posts
   for select using (status = 'published');
+drop policy if exists "tenant_isolation" on public.posts;
 create policy "tenant_isolation" on public.posts
   for all to authenticated
   using (public.is_same_tenant(user_id))
@@ -196,8 +202,8 @@ create policy "tenant_isolation" on public.posts
 -- PUBLIC-wide read and keep it to signed-in users only.
 drop policy if exists "Allow all authenticated users to read image cache"
   on public.image_analysis_cache;
-create policy "Allow all authenticated users to read image cache"
-  on public.image_analysis_cache
+drop policy if exists "Allow all authenticated users to read image cache" on public.image_analysis_cache;
+create policy "Allow all authenticated users to read image cache" on public.image_analysis_cache
   for select to authenticated using (true);
 
 -- Service-role-only tables: remove the policy entirely.

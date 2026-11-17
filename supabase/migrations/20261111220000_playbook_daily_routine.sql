@@ -9,8 +9,7 @@
 
 begin;
 
-alter table public.business_playbooks
-  add column if not exists daily_routine jsonb not null default '{}'::jsonb;
+alter table public.business_playbooks add column if not exists daily_routine jsonb not null default '{}'::jsonb;
 
 comment on column public.business_playbooks.daily_routine is
   'Agent-authored daily schedule, e.g. {"jobs":[{"kind":"creative","at":"09:00"},{"kind":"video","every_days":3}]}';

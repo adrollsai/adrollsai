@@ -27,8 +27,7 @@
 -- already succeeded — see recordRunArtefact().
 -- ============================================================================
 
-alter table public.agent_runs
-  add column if not exists artefact_key  text,
+alter table public.agent_runs add column if not exists artefact_key  text,
   add column if not exists artefact_url  text,
   add column if not exists artefact_meta jsonb;
 

@@ -92,6 +92,7 @@ $$;
 -- 2. leads: one helper call per row instead of two RLS-filtered EXISTS
 -- ---------------------------------------------------------------------------
 drop policy if exists "Users and staff can view leads" on public.leads;
+drop policy if exists "Users and staff can view leads" on public.leads;
 create policy "Users and staff can view leads" on public.leads
   for select to authenticated
   using (
@@ -100,6 +101,7 @@ create policy "Users and staff can view leads" on public.leads
     or public.is_same_tenant(user_id)
   );
 
+drop policy if exists "Users and staff can update leads" on public.leads;
 drop policy if exists "Users and staff can update leads" on public.leads;
 create policy "Users and staff can update leads" on public.leads
   for update to authenticated
