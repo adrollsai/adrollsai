@@ -17,6 +17,7 @@ import {
   productAssets,
   type TenantAsset,
 } from '../lib/agent/creative/media-strategy';
+import { createReferenceBankTools } from '../lib/agent/tools/reference_bank';
 
 let passed = 0;
 let failed = 0;
@@ -115,6 +116,41 @@ const videoOnly = decideMediaPlan({
   propertyId: PRODUCT,
 });
 check('an existing product clip alone is enough to skip generation', videoOnly.approach === 'tenant_product_assets' && videoOnly.generate.count === 0);
+
+// A supabase stub that answers every query with an empty result, so the tool logic runs for real.
+const emptyResult = { data: [], error: null };
+const chain: any = new Proxy(function () {}, {
+  get: (_t, prop) => {
+    if (prop === 'then') return (resolve: any) => Promise.resolve(emptyResult).then(resolve);
+    return () => chain;
+  },
+  apply: () => chain,
+});
+
+console.log('\nagent tools');
+const tools = createReferenceBankTools(chain, 'tenant-test') as any;
+check('list_reference_bank is registered', typeof tools.list_reference_bank?.execute === 'function');
+check('use_reference is registered', typeof tools.use_reference?.execute === 'function');
+
+const listed = await tools.list_reference_bank.execute({ kind: 'video', industry: 'real estate' }, {} as any);
+check('listing returns the banked video', String(listed.menu).includes(chosen.id));
+check('listing carries the summary so the agent can choose', String(listed.menu).includes(chosen.summary.slice(0, 40)));
+check('listing hands back the media rules', String(listed.rules).includes('Never invent product information'));
+check('listing tells the agent the next move', String(listed.next).includes('use_reference'));
+
+const emptyKind = await tools.list_reference_bank.execute({ kind: 'page' }, {} as any);
+check('an empty shelf says the bank is empty rather than pretending', String(emptyKind.menu).toLowerCase().includes('no page references'));
+
+const unknown = await tools.use_reference.execute({ kind: 'video', id: 'does-not-exist' }, {} as any);
+check('an unknown id fails with the menu instead of throwing', unknown.success === false && String(unknown.menu).includes(chosen.id));
+
+const used = await tools.use_reference.execute({ kind: 'video', id: chosen.id }, {} as any);
+check('using a real reference returns its brief', used.success === true && String(used.brief).includes(chosen.assets.proxyUrl));
+check('using a real reference returns a media plan', !!used.mediaPlan?.approach);
+check('with no tenant media the plan generates representational footage', used.mediaPlan.approach === 'representational');
+check('that generated footage is capped', used.mediaPlan.generate.maxSeconds <= GENERATED_FOOTAGE_CAP_SEC);
+check('the rules travel with the reference', String(used.rules).includes(`${GENERATED_FOOTAGE_CAP_SEC} seconds`));
+check('the agent is told to compare before delivering', String(used.beforeDelivering).includes('compare'));
 
 console.log(`\n${'='.repeat(64)}`);
 console.log(`${passed} passed, ${failed} failed`);

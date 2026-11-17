@@ -130,7 +130,7 @@
     "proof:funnel-launch": "esbuild scripts/funnel-nobogent-launch.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-funnel-launch.mjs --log-level=warning && node .tmp-funnel-launch.mjs",
     "proof:ad": "esbuild scripts/procolor-ad-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-live.mjs --log-level=warning && node .tmp-ad-live.mjs",
     "proof:video": "esbuild scripts/procolor-video-live.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-live.mjs --log-level=warning && node .tmp-video-live.mjs",
-    "verify:reference-bank": "esbuild scripts/verify-reference-bank.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-refbank.mjs --log-level=warning && node .tmp-refbank.mjs",
+    "verify:reference-bank": "esbuild scripts/verify-reference-bank.ts --bundle --platform=node --format=esm --packages=external --alias:@=./ --outfile=.tmp-refbank.mjs --log-level=warning && node .tmp-refbank.mjs",
     "ingest:video-ref": "esbuild scripts/ingest-reference-video.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ingest.mjs --log-level=warning && node .tmp-ingest.mjs",
     "backfill:thumbnails": "esbuild scripts/backfill-image-thumbnails.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-thumbs.mjs --log-level=warning && node .tmp-thumbs.mjs",
     "ingest:image-ref": "esbuild scripts/ingest-reference-images.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ingestimg.mjs --log-level=warning && node .tmp-ingestimg.mjs"

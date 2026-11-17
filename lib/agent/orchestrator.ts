@@ -18,6 +18,7 @@ import { createMediaStudioTools } from './tools/media_studio';
 import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
+import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
 import { createAdCreativeTools } from './tools/ad_creative';
 import { createBusinessPlanTools } from './tools/business_plan';
@@ -128,6 +129,9 @@ export async function createAgentContext(
     // ideal is not achievable) so the agent composes rather than being sequenced.
     ...(has('media') ? createCompositionTools(supabase, userId) : {}),
     ...(has('media') ? createReferenceCreativeTools(supabase, userId) : {}),
+    // The curated bank: measured videos and creatives we trust, with the media rules attached.
+    // It is the standard the artefact is judged against, not a menu of styles.
+    ...(has('media') ? createReferenceBankTools(supabase, userId) : {}),
     // Real, licensed reference creatives from the open web — re-hosted on our own storage so a
     // generator receives a URL that cannot 404.
     ...(has('media') ? createReferenceSearchTools(supabase, userId) : {}),
@@ -276,6 +280,10 @@ ${skillCatalogue}
   // always pull in â€” so each mention is built from the same group selection as the tools.
   const referenceTools: string[] = [];
   if (has('media')) {
+    referenceTools.push(
+      "'list_reference_bank' for the curated, measured references we hold — a finished vertical promo and a set " +
+        'of proven creatives, each with a summary and its real shape — then \'use_reference\' to get its build and the media rules',
+    );
     referenceTools.push("'list_reference_creatives' for the app's own 35 proven ad designs");
     referenceTools.push(
       "'find_reference_creatives' to look at what this kind of ad actually looks like on the open web — it " +
