@@ -1,0 +1,138 @@
+{
+  "videos": [
+    {
+      "id": "homcom-mohali-vertical",
+      "kind": "video",
+      "title": "Homcom Realtors, Mohali — vertical site-visit promo",
+      "industry": "real estate",
+      "goal": "site visit bookings",
+      "summary": "64.8s 9:16 real-estate promo. ~16 bold uppercase white text beats over stills of towers and aerials, one beat every ~4s, brand mark top-centre on every beat, slow push on each still, slow dissolves rather than hard cuts (only 1 detected cut, at 58.4s). Ends with a 6.4s end card: circular logo, 'book your site visit', phone, Instagram handle and address. Continuous music/VO bed at -17 dB mean.",
+      "measured": {
+        "durationSec": 64.754,
+        "width": 1080,
+        "height": 1920,
+        "aspect": "1080x1920",
+        "orientation": "vertical",
+        "fps": 30,
+        "bitrateMbps": 23.01,
+        "originalBytes": 186230240,
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "audioChannels": 2,
+        "audioSampleRate": 48000,
+        "loudness": {
+          "meanDb": -17.1,
+          "maxDb": -2.1
+        },
+        "cutCount": 1,
+        "shots": [
+          58.37,
+          6.39
+        ],
+        "avgShotSec": 32.38
+      },
+      "assets": {
+        "proxyUrl": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/references/1794914229392_ref-homcom-mohali-vertical.mp4",
+        "sheetUrl": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/agent_sandbox/references/1794914234409_ref-homcom-mohali-vertical-sheet.png"
+      },
+      "source": {
+        "localPath": "C:\\Users\\Adrolls\\Desktop\\Himanshu video\\homcom\\out\\Homcom_Realtors_Mohali_ITCity_MASTER.mp4",
+        "ingestedAt": "2026-11-17T11:17:14.885Z"
+      }
+    }
+  ],
+  "images": [
+    {
+      "id": "img-f89cbad6",
+      "kind": "image",
+      "title": "Reference 1 (real estate)",
+      "industry": "real estate",
+      "summary": "This portrait-oriented layout uses a high-angle, over-the-shoulder crop focused on a wooden tabletop. The main subject is a person positioned on the right side, pointing down at a paper document angled across the center, flanked by a coffee mug and eyeglasses on the left. Text occupies the upper-left quadrant, featuring a small logo icon above a large, heavy serif headline and a lighter sans-serif subheadline. A solid, dark horizontal strip anchors the bottom edge to house clean sans-serif call-to-action text. Warm golden-brown wood tones dominate the palette, illuminated by soft, dappled natu",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784630397258_f89cbad6-dd84-4e28-9a41-405a3125a351.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "f89cbad6-dd84-4e28-9a41-405a3125a351",
+        "ingestedAt": "2026-11-17T11:18:46.003Z"
+      }
+    },
+    {
+      "id": "img-9c8e47bd",
+      "kind": "image",
+      "title": "Reference 2 (real estate)",
+      "industry": "real estate",
+      "summary": "This vertical portrait layout uses a photographic background framed by a thin metallic line with a solid footer bar at the bottom. The foreground features a sharp close-up of hands holding a key tag at the center, while a blurred couple embracing in a sunlit room fills the right background. The text hierarchy places a prominent, elegant serif headline centered near the top, followed by a smaller, clean sans-serif subheadline. A small logo occupies the upper right corner. The bottom footer hosts horizontally aligned contact text alongside an icon. Warm golden daylight and rich neutral tones del",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784630331153_9c8e47bd-14fe-40a6-868b-1d9071b56337.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "9c8e47bd-14fe-40a6-868b-1d9071b56337",
+        "ingestedAt": "2026-11-17T11:18:58.166Z"
+      }
+    },
+    {
+      "id": "img-f764b172",
+      "kind": "image",
+      "title": "Reference 3 (real estate)",
+      "industry": "real estate",
+      "summary": "This portrait design uses a vertical split layout dividing the frame roughly 60/40. The left side features a full-length photograph of a family walking forward down a tree-lined street, illuminated by warm sunlight filtering through the canopy. The right panel is a clean, off-white column containing a top-aligned logo, a large, heavy serif headline, a thin horizontal separator, and a stacked list of feature descriptions paired with fine-line icons. At the bottom right sits a solid, earthy-gold rectangular call-to-action block with bold text. The overall aesthetic is aspirational, warm, and sop",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784630313716_f764b172-71ef-4b46-ab8b-e38ba49e2bc7.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "f764b172-71ef-4b46-ab8b-e38ba49e2bc7",
+        "ingestedAt": "2026-11-17T11:19:07.610Z"
+      }
+    },
+    {
+      "id": "img-a2d4b7d6",
+      "kind": "image",
+      "title": "Reference 4 (real estate)",
+      "industry": "real estate",
+      "summary": "This vertical ad uses a low-angle, perspective crop of a detailed architectural grid model resting on a dark wooden desk. The main subject is a textured metallic board filling the lower frame, anchored by a glowing golden location pin in the center. Out-of-focus executive desk items sit in the upper-right background. Headline text is positioned top-left in heavy, elegant serif typography, supported by lighter sans-serif text below. A brand logo balances the top-right corner, while a dark horizontal bar spans the very bottom for contact information. The image uses warm, moody lighting with deep",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784629981266_a2d4b7d6-9922-41af-8012-3104b5018d84.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "a2d4b7d6-9922-41af-8012-3104b5018d84",
+        "ingestedAt": "2026-11-17T11:19:17.549Z"
+      }
+    },
+    {
+      "id": "img-cb8110c4",
+      "kind": "image",
+      "title": "Reference 5 (real estate)",
+      "industry": "real estate",
+      "summary": "This vertical portrait creative uses a full-bleed image topped with centered typography and anchored by a dark bottom banner. The main subject, a walking couple, sits in the lower-left midground along a low-angle cobblestone path, balanced by a tall decorative gate along the right frame edge. Text is centered in the upper sky region, starting with a top logo, followed by a high-weight serif main headline framed by subtle line dividers, and a lighter sans-serif subheadline below. Lighting relies on warm, backlit golden-hour sunshine filtering through lush green trees, casting soft ground shadow",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784629979682_cb8110c4-f88d-4fa3-9984-a463612baa24.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "cb8110c4-f88d-4fa3-9984-a463612baa24",
+        "ingestedAt": "2026-11-17T11:19:30.333Z"
+      }
+    },
+    {
+      "id": "img-045273c3",
+      "kind": "image",
+      "title": "Reference 6 (real estate)",
+      "industry": "real estate",
+      "summary": "This vertical overhead flat-lay creative features a warm, neutral stone backdrop bathed in soft, dappled sunlight and organic leaf shadows. The main visual subject occupies the center and lower two-thirds, showing a hand reaching toward metal keys over a paper blueprint, framed by lifestyle accessories like sunglasses, a wristwatch, and delicate white flowers. Heavyweight centered text dominates the upper third, led by a dark, prominent serif headline and a lighter, smaller secondary subtitle below a subtle ornamental line. A small logo mark is positioned in the top right corner. The bottom ed",
+      "assets": {
+        "url": "https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/adrolls-storage/generated/29937131-1975-4c5f-9b78-e5b28f918d32/creative_1784629977849_045273c3-0657-490f-9155-8c25f7d2df29.png"
+      },
+      "source": {
+        "tenantId": "29937131-1975-4c5f-9b78-e5b28f918d32",
+        "assetId": "045273c3-0657-490f-9155-8c25f7d2df29",
+        "ingestedAt": "2026-11-17T11:19:42.921Z"
+      }
+    }
+  ],
+  "pages": [],
+  "updatedAt": "2026-11-17T11:19:42.921Z"
+}
