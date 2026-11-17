@@ -157,20 +157,14 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
   section(
     'hero',
     `<header class="hero">
-  <div class="wrap split">
-    <div class="split__copy">
-      ${eyebrow(businessName)}
-      <h1>${say(productName)}</h1>
-      ${brief.audience ? `<p class="lede">For ${say(brief.audience)}.</p>` : ''}
-      ${brief.offer ? `<p class="offer">${say(brief.offer)}</p>` : ''}
-      <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
-      <p class="note">${esc(phone)}</p>
-    </div>
-    ${
-      heroImage
-        ? `<div class="hero__media"><img src="${esc(heroImage)}" alt="${say(businessName)}" width="1120" height="720" loading="eager" fetchpriority="high"><div class="hero__scrim"></div></div>`
-        : ''
-    }
+  ${heroImage ? `<div class="hero__media"><img src="${esc(heroImage)}" alt="${say(businessName)}" width="1600" height="1000" loading="eager" fetchpriority="high"><div class="hero__scrim"></div></div>` : ''}
+  <div class="hero__content">
+    ${eyebrow(businessName)}
+    <h1>${say(productName)}</h1>
+    ${brief.audience ? `<p class="lede">For ${say(brief.audience)}.</p>` : ''}
+    ${brief.offer ? `<p class="offer">${say(brief.offer)}</p>` : ''}
+    <a class="cta" href="${esc(wa)}">${say(vocabulary.enquiryCta)}</a>
+    <p class="note">${esc(phone)}</p>
   </div>
 </header>`,
   );
@@ -184,7 +178,7 @@ export function buildLandingPage(brief: LandingPageBrief): { html: string; slug:
       ${
         highlights.length
           ? `<div class="cards">${highlights
-              .map((line) => `<div class="card"><p>${say(line)}</p></div>`)
+              .map((line, index) => `<div class="card"><span class="card__index">${String(index + 1).padStart(2, '0')}</span><p>${say(line)}</p></div>`)
               .join('')}</div>`
           : `<p>${say(productName)}. Details on request.</p>`
       }
