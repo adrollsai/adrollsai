@@ -20,6 +20,8 @@ import { createRoutineTools } from './tools/routine';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceSearchTools } from './tools/reference_search';
 import { createAdCreativeTools } from './tools/ad_creative';
+import { createBusinessPlanTools } from './tools/business_plan';
+import { getAgentModel } from './deepseek';
 import { renderSkillMandate, requiredSkillsFor } from './creative/skill-routing';
 import { createSkillTools, formatSkillCatalogue } from './tools/skills';
 import { createScrapeTools } from './tools/skills/scrape';
@@ -129,6 +131,9 @@ export async function createAgentContext(
     // Real, licensed reference creatives from the open web — re-hosted on our own storage so a
     // generator receives a URL that cannot 404.
     ...(has('media') ? createReferenceSearchTools(supabase, userId) : {}),
+    // The planner: reads the business's real state and decides what work is worth doing. Present on every turn,
+    // because a request that needs it must never fail because a group was not selected.
+    ...createBusinessPlanTools(supabase, userId, await getAgentModel({})),
     // The default ad system: a brief becomes an angle, copy, a complete image prompt, a pixel layout and a
     // checklist. It is what makes an ad convert when no reference was passed AND when a search came back empty.
     ...(has('media') ? createAdCreativeTools(supabase, userId) : {}),
@@ -546,6 +551,26 @@ NOTIFICATIONS & SCHEDULING:
   // that the generators ALSO apply the design rules in code so the output carries them regardless.
   const { requirements: requiredSkills } = requiredSkillsFor(opts.intentText || '');
   if (requiredSkills.length) parts.push(renderSkillMandate(requiredSkills));
+
+  // THE PHILOSOPHY, as an instruction rather than an aspiration: read the business, decide, then execute.
+  parts.push(`
+PLAN BEFORE YOU MAKE ANYTHING.
+The owner will not describe the plan. They will say "get me more leads" or "make an ad" and expect you to work out the
+rest from the business you can see. So for ANY marketing request — an ad, a poster, a landing page, a website, a video,
+a campaign, a WhatsApp or calling sequence, a follow-up flow — call 'plan_business_work' FIRST, before you build
+anything. It reads this business as it actually is: who they are, their industry, their catalogue and prices, the
+imagery they own, the last 30 days of leads calls and bookings, what is running right now, their credits, and any
+standing instructions the owner has written. It then decides the objective, the audience, the offer, the thesis, which
+artefacts are worth making and in what order, each with a one-line brief.
+- EXECUTE THE PLAN with your own tools, in the order it gives. The plan is the spine; the tools are the hands.
+- IF IT LISTS QUESTIONS, ask them before building. Never invent an answer to make progress.
+- IF IT LISTS ASSUMPTIONS, state them when you deliver, so the owner can correct you.
+- IF IT NAMES A GAP (no imagery, empty catalogue, calling off), fix the gap or plan around it, and say which you did.
+- DO NOT SUBSTITUTE a different artefact than the plan names without saying why. "They asked for an ad, so I made a
+  poster and a website and a video" is not initiative, it is noise.
+Everything else in these instructions still applies: use the craft skills for quality, verify every artefact before
+showing it, and never claim a result you did not measure.
+`);
 
   parts.push(`
 OPERATING GUIDELINES:

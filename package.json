@@ -120,6 +120,7 @@
     "verify:ad-default": "esbuild scripts/verify-ad-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-default.mjs --log-level=warning && node .tmp-ad-default.mjs",
     "verify:video-pipelines": "esbuild scripts/verify-video-pipelines.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-pipelines.mjs --log-level=warning && node .tmp-video-pipelines.mjs",
     "verify:skills-default": "esbuild scripts/verify-skills-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-skills-default.mjs --log-level=warning && node .tmp-skills-default.mjs",
+    "verify:business-plan": "esbuild scripts/verify-business-plan.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-business-plan.mjs --log-level=warning && node .tmp-business-plan.mjs",
     "verify:artefact-qa": "esbuild scripts/verify-artefact-qa.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-artefact-qa.mjs --log-level=warning && node .tmp-artefact-qa.mjs",
     "verify:call-queue": "esbuild scripts/verify-call-queue.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-call-queue.mjs --log-level=warning && node .tmp-call-queue.mjs",
     "verify:voice-pipeline": "esbuild scripts/verify-voice-pipeline.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-voice-pipeline.mjs --log-level=warning && node .tmp-voice-pipeline.mjs",
