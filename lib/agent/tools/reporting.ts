@@ -305,6 +305,109 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
       },
     }),
 
+    /** The CEO's own report, for any period the owner asks about. */
+    ceo_report: tool({
+      description:
+        'The daily CEO report, for any period the owner names: yesterday, today, the last 7 or 30 days, or all time. ' +
+        'For a single day it returns ranked findings - each with the claim, what it means, a recommendation and the ' +
+        'numbers it came from - ordered by what costs the owner most if ignored. For a longer period it sums the stored ' +
+        'daily rollups into totals plus a day-by-day trend, so a direction is visible rather than a single day. ' +
+        'Use this for "how did yesterday go", "how was last week", "what has the agent done this month", "is it getting ' +
+        'better". It reports and recommends; it never acts, and anything that would spend money or message a customer is ' +
+        'flagged for approval.',
+      inputSchema: z.object({
+        period: z
+          .enum(['today', 'yesterday', 'last_7_days', 'last_30_days', 'all_time'])
+          .default('yesterday')
+          .describe('Which window to report on'),
+        timezone: z.string().optional().describe('IANA timezone. Defaults to Asia/Kolkata.'),
+      }),
+      execute: async ({ period, timezone }) => {
+        const tz = timezone || 'Asia/Kolkata';
+        try {
+          const { windowFor, gatherDayMetrics, supabaseMetricsReader } = await import('@/lib/agent/ceo-metrics');
+          const { analyseDay, renderReport } = await import('@/lib/agent/ceo-findings');
+
+          if (period === 'today' || period === 'yesterday') {
+            const when = period === 'today' ? new Date() : new Date(Date.now() - 86_400_000);
+            const window = windowFor(when, tz);
+            const { metrics, missing } = await gatherDayMetrics(supabaseMetricsReader(supabase, userId), window);
+            const findings = analyseDay(metrics, { quiet: false });
+            return {
+              success: true,
+              period,
+              report: renderReport(metrics, findings),
+              findings: findings.slice(0, 8).map((f: any) => ({
+                severity: f.severity,
+                claim: f.claim ?? f.headline,
+                means: f.meaning,
+                recommendation: f.recommendation,
+                evidence: f.evidence,
+                needsReview: Boolean(f.needsReview),
+              })),
+              // Null means "we could not source it". Never zero.
+              missing,
+              note: missing.length
+                ? `Some figures could not be sourced (${missing.join(', ')}), so the report says nothing about them rather than reporting a false zero.`
+                : 'Every figure in this report comes from a column that exists.',
+            };
+          }
+
+          // Longer periods come from the bounded daily rollups: 365 rows a year per tenant, whatever the activity.
+          const days = period === 'last_7_days' ? 7 : period === 'last_30_days' ? 30 : 3650;
+          const since = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+          const { data: rollups, error } = await supabase
+            .from('ceo_daily_rollups')
+            .select('day, payload')
+            .eq('user_id', userId)
+            .gte('day', since)
+            .order('day', { ascending: true });
+          if (error) return { success: false, error: error.message };
+
+          const rows = (rollups ?? []).map((r: any) => ({ day: r.day, ...(r.payload ?? {}) }));
+          const sum = (key: string) => rows.reduce((total: number, row: any) => total + (Number(row[key]) || 0), 0);
+          const series = rows.map((row: any) => ({
+            day: row.day,
+            events: row.agentEvents ?? 0,
+            routines: row.routineRuns ?? 0,
+            failed: row.failedRuns ?? 0,
+            artefacts: row.artifacts ?? 0,
+            credits: row.creditsSpent ?? 0,
+          }));
+          const first = series.slice(0, Math.max(1, Math.floor(series.length / 2)));
+          const second = series.slice(Math.max(1, Math.floor(series.length / 2)));
+          const avg = (list: any[], key: string) => (list.length ? list.reduce((t, r) => t + (Number(r[key]) || 0), 0) / list.length : 0);
+          const trend = series.length >= 4
+            ? {
+                artefacts: { firstHalfAvg: Number(avg(first, 'artefacts').toFixed(1)), secondHalfAvg: Number(avg(second, 'artefacts').toFixed(1)) },
+                failed: { firstHalfAvg: Number(avg(first, 'failed').toFixed(1)), secondHalfAvg: Number(avg(second, 'failed').toFixed(1)) },
+                direction: avg(second, 'artefacts') > avg(first, 'artefacts') ? 'more output' : avg(second, 'artefacts') < avg(first, 'artefacts') ? 'less output' : 'flat',
+              }
+            : null;
+
+          return {
+            success: true,
+            period,
+            days_covered: series.length,
+            totals: {
+              agent_events: sum('agentEvents'),
+              routine_runs: sum('routineRuns'),
+              failed_runs: sum('failedRuns'),
+              artefacts: sum('artifacts'),
+              credits_spent: sum('creditsSpent'),
+            },
+            trend,
+            series,
+            note: series.length
+              ? 'Totals come from the stored daily rollups, so they are bounded and cheap to read at any range.'
+              : 'No rollups stored yet for this range, so there is no history to report. A single day still reports in full.',
+          };
+        } catch (err: any) {
+          return { success: false, error: String(err?.message || err) };
+        }
+      },
+    }),
+
     /** What is queued to be called right now, and how many lines are free to call them. */
     call_queue_status: tool({
       description:
