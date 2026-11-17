@@ -261,8 +261,45 @@ export async function authorPage(brief: PageBrief, plan: PagePlan, model: any): 
       .join('\n'),
   });
 
-  console.log(`  author: ${String(text ?? '').length} chars (finish=${finishReason}, ${usage?.outputTokens ?? '?'} tokens)`);
-  return noDash(strip(text));
+  let authored = noDash(strip(text));
+  console.log(`  author: ${authored.length} chars (finish=${finishReason}, ${usage?.outputTokens ?? '?'} tokens)`);
+
+  // MEASURED CONSTRAINTS, so this is handled rather than rediscovered: as the prompt grows this model spends its
+  // ENTIRE output budget on reasoning and returns an empty string with finish=length. It happened at 24k and again at
+  // 32k as requirements were added. A blank page is not a failure to report; it is a second, leaner attempt.
+  if (authored.length < 500) {
+    console.log('  author came back empty — retrying with a lean prompt (facts, plan and rules only)');
+    const lean = await generateText({
+      model,
+      maxOutputTokens: BUDGET.author,
+      system: [
+        'You are a senior designer and direct-response copywriter. Write one complete HTML document.',
+        'Rules: one <style> block, no frameworks, no external JS, clamp() type scale, 44px touch targets,',
+        'a prefers-reduced-motion block, lazy images with alt text, no em dashes, nothing invented.',
+      ].join('\n'),
+      prompt: [
+        factsBlock(brief),
+        '',
+        'PLAN:',
+        `Promise: ${plan.positioning.promise}`,
+        `Sections, in order: ${plan.sections.map((s, i) => `${i + 1}. ${s.kind} (${s.purpose})`).join(' | ')}`,
+        `Peak: ${plan.peak}`,
+        '',
+        brief.faqs?.length
+          ? `Use these FAQ pairs verbatim, each in <details><summary>Q</summary><p>A</p></details>: ${brief.faqs.map((f) => `${f.question} => ${f.answer}`).join(' | ')}`
+          : '',
+        brief.proofPoints?.length ? `Proof strip with: ${brief.proofPoints.join(' | ')}` : '',
+        '',
+        'Return the complete HTML document and nothing else.',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+    authored = noDash(strip(lean.text));
+    console.log(`  lean author: ${authored.length} chars (finish=${lean.finishReason}, ${lean.usage?.outputTokens ?? '?'} tokens)`);
+  }
+
+  return authored;
 }
 
 /** Score a rendered screenshot against the rubric. Vision only: the numbers come from looking at the page. */

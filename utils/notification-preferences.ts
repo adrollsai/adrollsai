@@ -9,6 +9,10 @@ export type NotificationTypeKey =
   | 'expert_escalation'  // Hot lead, expert assistance needed, callback request
   | 'crm_reminder'        // Follow-up reminders, task due alarms
   | 'system_update'       // EOD report, broadcast completed, system announcements
+  | 'approval_request'   // Something waiting on the owner's decision
+  | 'call_outcome'       // AI call finished, missed, or a human was requested
+  | 'credits_low'        // AI or calling credits nearly exhausted
+  | 'automation_failure' // A flow, job or publish attempt failed
 
 export interface NotificationChannelSetting {
   push: boolean
@@ -23,6 +27,10 @@ export interface UserNotificationPreferences {
   expert_escalation: NotificationChannelSetting
   crm_reminder: NotificationChannelSetting
   system_update: NotificationChannelSetting
+  approval_request: NotificationChannelSetting
+  call_outcome: NotificationChannelSetting
+  credits_low: NotificationChannelSetting
+  automation_failure: NotificationChannelSetting
 }
 
 export const NOTIFICATION_CATEGORIES: {
@@ -80,6 +88,38 @@ export const NOTIFICATION_CATEGORIES: {
     iconName: 'Sparkles',
     badgeText: 'Reports',
     accentColor: 'purple'
+  },
+  {
+    key: 'approval_request',
+    title: 'Approval Requests',
+    description: 'Something is waiting on your decision before it can run: ad spend, a broadcast, a published page.',
+    iconName: 'ShieldCheck',
+    badgeText: 'Approval',
+    accentColor: 'violet'
+  },
+  {
+    key: 'call_outcome',
+    title: 'Call Outcomes',
+    description: 'An AI call finished, was missed, or a lead asked for a human, with the outcome and the next step.',
+    iconName: 'PhoneCall',
+    badgeText: 'Call',
+    accentColor: 'sky'
+  },
+  {
+    key: 'credits_low',
+    title: 'Credits Running Low',
+    description: 'AI or calling credits are nearly exhausted, so work stops until they are topped up.',
+    iconName: 'Wallet',
+    badgeText: 'Credits',
+    accentColor: 'orange'
+  },
+  {
+    key: 'automation_failure',
+    title: 'Automation & Publish Failures',
+    description: 'A flow, a scheduled job or a publish attempt failed and needs a person to look at it.',
+    iconName: 'AlertTriangle',
+    badgeText: 'Failure',
+    accentColor: 'red'
   }
 ]
 
@@ -89,7 +129,11 @@ export const DEFAULT_ADMIN_PREFERENCES: UserNotificationPreferences = {
   meeting_booked: { push: true, email: true, whatsapp: true },
   expert_escalation: { push: true, email: true, whatsapp: true },
   crm_reminder: { push: true, email: false, whatsapp: false },
-  system_update: { push: true, email: false, whatsapp: false }
+  system_update: { push: true, email: false, whatsapp: false },
+  approval_request: { push: true, email: true, whatsapp: true },
+  call_outcome: { push: true, email: false, whatsapp: false },
+  credits_low: { push: true, email: true, whatsapp: false },
+  automation_failure: { push: true, email: true, whatsapp: false },
 }
 
 export const DEFAULT_AGENT_PREFERENCES: UserNotificationPreferences = {
@@ -98,7 +142,11 @@ export const DEFAULT_AGENT_PREFERENCES: UserNotificationPreferences = {
   meeting_booked: { push: true, email: true, whatsapp: false },
   expert_escalation: { push: true, email: true, whatsapp: false },
   crm_reminder: { push: true, email: false, whatsapp: false },
-  system_update: { push: true, email: false, whatsapp: false }
+  system_update: { push: true, email: false, whatsapp: false },
+  approval_request: { push: true, email: true, whatsapp: false },
+  call_outcome: { push: true, email: true, whatsapp: false },
+  credits_low: { push: false, email: false, whatsapp: false },
+  automation_failure: { push: true, email: false, whatsapp: false },
 }
 
 export function isUserAdminRole(role?: string | null): boolean {
