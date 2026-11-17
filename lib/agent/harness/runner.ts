@@ -15,7 +15,7 @@
  *   * backoff + attempts + dead-letter stop a broken run from spinning forever
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { streamText, stepCountIs } from 'ai';
+import { streamText, stepCountIs, generateText } from 'ai';
 import { getAgentModel } from '../deepseek';
 import { createAgentContext } from '../orchestrator';
 import { appendEvents, loadEvents } from './store';
@@ -356,6 +356,31 @@ export async function executeRunSlice(
       if (streamedText.trim()) {
         response = { messages: [{ role: 'assistant', content: streamedText }] };
         finishReason = 'text-only';
+      } else {
+        // FALLBACK ANSWER. The tool loop returned nothing usable, so ask once more with the tools
+        // taken away. A person asked a question; an obscure internal error is not an answer. It also
+        // isolates the cause: if the plain call works, the tool surface was the problem.
+        try {
+          const plain = await generateText({
+            model,
+            system: systemPrompt + '\n\nAnswer the user directly in plain text. Do not call any tools.',
+            messages,
+            maxOutputTokens: 2000,
+          });
+          const answer = String(plain.text || '').trim();
+          if (answer) {
+            streamedText = answer;
+            response = { messages: [{ role: 'assistant', content: answer }] };
+            finishReason = 'no-tools-fallback';
+            try {
+              await appendEvents(supabase, run.session_id, [
+                createEvent('assistant.text', { id: 'a_' + run.id.slice(0, 8) + '_p' + sliceNumber, text: answer }),
+              ]);
+            } catch {}
+          }
+        } catch (fbErr: any) {
+          console.error('[Harness runner] fallback answer failed too:', fbErr && fbErr.message);
+        }
       }
     }
     // Log EVERY slice, not only the ones that throw. A slice can end with no text and no error,
