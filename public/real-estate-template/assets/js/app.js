@@ -169,7 +169,7 @@
         <ul class="topbar__list">
           <li class="topbar__item">${icon("phone")}<a href="tel:${esc(c.phone)}">${esc(c.phoneDisplay)}</a></li>
           <li class="topbar__item topbar__list--hide-sm">${icon("mail")}<a href="mailto:${esc(c.email)}">${esc(c.email)}</a></li>
-          <li class="topbar__item topbar__list--hide-sm">${icon("star")}<span>${SITE.rating.score}/5 from ${SITE.rating.count} ${esc(SITE.rating.source)} reviews</span></li>
+          ${SITE.rating && SITE.rating.count ? `<li class="topbar__item topbar__list--hide-sm">${icon("star")}<span>${SITE.rating.score}/5 from ${SITE.rating.count} ${esc(SITE.rating.source)} reviews</span></li>` : ""}
         </ul>
         <div class="topbar__socials">${socials}</div>
       </div>

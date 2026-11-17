@@ -13,7 +13,7 @@ window.SITE = {
   /* ---------------------------------------------------------------- brand */
   brand: {
     name: "Your Realty",           // wordmark line 1
-    suffix: "Realty",           // wordmark line 2 (set "" to hide)
+    suffix: "",           // wordmark line 2 (set "" to hide)
     tagline: "Homes with a higher standard",
     mark: "assets/img/logo-mark.svg",
     license: "Licence on request",   // shown in the footer
@@ -53,7 +53,7 @@ window.SITE = {
   },
 
   /* ------------------------------------------------------------ proof/trust */
-  rating: { score: 4.9, count: 218, source: "Google" },
+  rating: { score: null, count: null, source: "" },
 
   stats: [
     { value: 1450, suffix: "+", label: "Homes sold" },
