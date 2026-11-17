@@ -1,17 +1,17 @@
-/**
+﻿/**
  * Durable waiting, safe sending.
  *
  * A flow cannot sleep for an hour: the thing executing it has to finish. So a wait is not a pause,
- * it is a row in a ledger — "do step 3 for lead 812 at 09:25" — and a clock tick picks up whatever
+ * it is a row in a ledger â€” "do step 3 for lead 812 at 09:25" â€” and a clock tick picks up whatever
  * is due. That is the difference between a flow that can follow up tomorrow and a flow that robocalls
  * someone at 9:15pm because its 10-second cap clamped the wait.
  *
  * Every send passes five gates in order, and each one exists because of a real failure mode:
- *   1. kill switch        — the owner can stop every flow at once
- *   2. opt-out            — someone who said stop never gets another message
- *   3. quiet hours        — a due step at 23:40 waits until morning instead of calling
- *   4. cross-flow freshness — another flow messaging this lead minutes ago means this one holds
- *   5. idempotency        — a retried tick cannot send the same step twice
+ *   1. kill switch        â€” the owner can stop every flow at once
+ *   2. opt-out            â€” someone who said stop never gets another message
+ *   3. quiet hours        â€” a due step at 23:40 waits until morning instead of calling
+ *   4. cross-flow freshness â€” another flow messaging this lead minutes ago means this one holds
+ *   5. idempotency        â€” a retried tick cannot send the same step twice
  */
 
 export type StepStatus = 'pending' | 'claimed' | 'done' | 'skipped';
@@ -22,6 +22,8 @@ export interface ScheduledStep {
   leadId: string;
   /** Index of the action inside the flow, so a step is identifiable independent of time. */
   stepIndex: number;
+  /** What the step does when it fires. */
+  kind?: 'message' | 'call' | 'email' | 'dm_reply';
   /** When it should run, ISO string. */
   runAt: string;
   status: StepStatus;
@@ -29,9 +31,9 @@ export interface ScheduledStep {
 }
 
 export interface QuietHours {
-  /** 0–23, inclusive start. */
+  /** 0â€“23, inclusive start. */
   startHour: number;
-  /** 0–23, exclusive end. A window of 21 → 9 means "do not send between 21:00 and 09:00". */
+  /** 0â€“23, exclusive end. A window of 21 â†’ 9 means "do not send between 21:00 and 09:00". */
   endHour: number;
   timeZone?: string;
 }
@@ -44,7 +46,7 @@ export const CROSS_FLOW_WINDOW_MS = 60 * 60 * 1000;
 export interface FlowStore {
   /** Steps whose time has come, oldest first. */
   dueSteps(now: Date, limit: number): Promise<ScheduledStep[]>;
-  /** Atomic claim. False means somebody else got it — the whole point of the ledger. */
+  /** Atomic claim. False means somebody else got it â€” the whole point of the ledger. */
   claim(stepId: string, now: Date): Promise<boolean>;
   complete(stepId: string): Promise<void>;
   skip(stepId: string, reason: string): Promise<void>;
@@ -109,7 +111,7 @@ export function addSeconds(at: Date, seconds: number): Date {
 }
 
 /**
- * One clock tick. Claims, gates, executes, records — in that order, so a crash mid-way leaves a
+ * One clock tick. Claims, gates, executes, records â€” in that order, so a crash mid-way leaves a
  * claimed row that can be reclaimed after the claim expires rather than a silently lost message.
  */
 export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions): Promise<TickReport> {
@@ -171,7 +173,7 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
 
 /**
  * Planning a wait: given a flow's actions and a start time, produce the ledger rows it implies.
- * Every `wait` becomes a scheduled step at an absolute time — never an inline sleep — and the time
+ * Every `wait` becomes a scheduled step at an absolute time â€” never an inline sleep â€” and the time
  * is pushed past quiet hours so nobody is called at midnight.
  */
 export interface PlannedAction {
