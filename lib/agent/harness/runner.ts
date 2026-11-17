@@ -323,7 +323,21 @@ export async function executeRunSlice(
     }
 
     // streamText exposes these as promises (generateText resolved them inline).
-    const [response, finishReason] = await Promise.all([result.response, result.finishReason]);
+    //
+    // NEVER fatal. A slice that ends on a tool call has no text part, and the SDK surfaces that as
+    // "No output generated" — in a tool loop that is ordinary, not an error, and treating it as one
+    // is what killed runs after three attempts. Keep the messages we have and let the loop continue.
+    let response: any = { messages: [] };
+    let finishReason: any = 'no-content';
+    try {
+      [response, finishReason] = await Promise.all([result.response, result.finishReason]);
+    } catch (emptyErr: any) {
+      console.warn('[Harness runner] this slice produced no text (continuing):', emptyErr?.message);
+      if (streamedText.trim()) {
+        response = { messages: [{ role: 'assistant', content: streamedText }] };
+        finishReason = 'text-only';
+      }
+    }
     const nextMessages = [...messages, ...((response as any)?.messages ?? [])];
 
     if (cancelled) {
