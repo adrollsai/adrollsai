@@ -381,7 +381,7 @@ export async function POST(req: Request) {
             cf.stage_reset_by = actingUserId
             if (resetAttempts === undefined ? hideHistoryFromAssignee : Boolean(resetAttempts)) {
               updatePayload.voice_call_retry_count = 0
-              updatePayload.next_follow_up_at = null
+              updatePayload.next_followup = null
               cf.attempts_reset_at = cutoffTimestamp
             }
           }

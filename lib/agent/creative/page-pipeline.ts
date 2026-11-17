@@ -226,6 +226,16 @@ export async function authorPage(brief: PageBrief, plan: PagePlan, model: any): 
       '- A clamp() type scale, 17-18px body, tight heading letter-spacing, generous spacing rhythm.',
       '- 44px minimum touch targets, visible focus rings, a prefers-reduced-motion block, lazy images with alt text.',
       '- No em dashes. No lorem ipsum. No invented price, date, statistic or testimonial.',
+      '',
+      'STRUCTURE THAT MUST EXIST IN THE MARKUP, not just in the copy:',
+      brief.faqs?.length
+        ? `- An FAQ built from <details><summary>…</summary><p>…</p></details>, one per real pair below. Do not paraphrase them.`
+        : '',
+      brief.proofPoints?.length
+        ? `- A visible proof strip carrying these exact claims: ${brief.proofPoints.join(' | ')}. Each as its own element with a number in it.`
+        : '',
+      '- A <footer> with the business name and the phone number.',
+      '- At least five sections with DIFFERENT shapes: hero, cards, proof, a wide photograph, FAQ, closing band.',
       `- Use ONLY these images, and make sure each fills its frame: ${images.join(' , ') || '(none supplied)'}`,
       `- Every call to action dials or messages ${brief.phone}.`,
     ].join('\n'),
@@ -295,6 +305,7 @@ export async function revisePage(html: string, critique: Critique, model: any, b
     system: [
       'You are a senior designer revising your own work after a design review.',
       'Change only what the review asks for, keep everything that works, and return the ENTIRE updated document.',
+      'You may not remove the FAQ, the proof strip, any supplied image, or the footer phone number: those are requirements.',
       'No commentary, no markdown fences.',
       ...RUBRIC.map((r) => `- ${r}`),
     ].join('\n'),
