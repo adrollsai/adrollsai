@@ -12,6 +12,7 @@ import {
   type ScheduledStep,
 } from '../lib/flows/scheduling';
 import { describeDryRun, dryRun } from '../lib/flows/dry-run';
+import { planFromFlowDescription } from '../lib/flows/start';
 import {
   ACTION_REQUIRES,
   TRIGGER_CAPABILITIES,
@@ -28,7 +29,7 @@ const check = (label: string, ok: boolean, detail?: string) => {
     console.log(`  ok   ${label}`);
   } else {
     failed++;
-    console.log(`  FAIL ${label}${detail ? ` — ${detail}` : ''}`);
+    console.log(`  FAIL ${label}${detail ? ` â€” ${detail}` : ''}`);
   }
 };
 
@@ -45,14 +46,14 @@ check('the same trigger is the same key', triggerKey('trigger_meta_ad') === trig
 check('a different template is a different key', triggerKey('trigger_whatsapp_template_button', 'offer-a') !== triggerKey('trigger_whatsapp_template_button', 'offer-b'));
 check('template casing does not create a second key', triggerKey('trigger_whatsapp_template_button', 'Offer-A') === triggerKey('trigger_whatsapp_template_button', 'offer-a'));
 
-console.log('\nconflicts — no false negatives');
+console.log('\nconflicts â€” no false negatives');
 const metaFlow = flow({ name: 'Meta ad welcome', triggerType: 'trigger_meta_ad' });
 const same = findTriggerConflict([metaFlow], flow({ name: 'Meta ad second', triggerType: 'trigger_meta_ad' }));
 check('a second flow on the same trigger is refused', same.conflict?.name === 'Meta ad welcome');
 check('the refusal names the flow to edit', describeConflict(flow({ name: 'x', triggerType: 'trigger_meta_ad' }), metaFlow).includes('Meta ad welcome'));
 check('the refusal explains the double-message risk', /twice/.test(describeConflict(flow({ name: 'x', triggerType: 'trigger_meta_ad' }), metaFlow)));
 
-console.log('\nconflicts — no false positives (the old string-matching bug)');
+console.log('\nconflicts â€” no false positives (the old string-matching bug)');
 const talky = flow({ name: 'Ad enquiry follow-up', triggerType: 'trigger_crm_lead' });
 const other = findTriggerConflict([talky], flow({ name: 'Meta ad welcome', triggerType: 'trigger_meta_ad' }));
 check('two flows whose prose mentions the same event do not collide', other.conflict === null);
@@ -85,7 +86,7 @@ check('step indexes are distinct', new Set(plan.map((p) => p.stepIndex)).size ==
 const night = scheduleFor('f1', 'lead-2', [{ kind: 'wait', seconds: 60 }, { kind: 'call' }], at(23, 30));
 check('a call due at 23:31 waits until morning', night[0].runAt.getHours() === 9);
 
-console.log('\ndry run — what would happen, and what cannot');
+console.log('\ndry run â€” what would happen, and what cannot');
 const facts = { approvedTemplates: ['welcome_offer'], hasPhone: true, permissionGranted: true };
 const good = dryRun([{ kind: 'message', text: 'Hi', templateName: 'welcome_offer' }, { kind: 'wait', seconds: 600 }, { kind: 'call' }], facts, at(10, 0));
 check('a workable flow has no blockers', good.ok);
@@ -158,7 +159,7 @@ const step = (over: Partial<ScheduledStep>): ScheduledStep => ({
   id: 's1', flowId: 'f1', leadId: 'lead-1', stepIndex: 0, runAt: at(10, 0).toISOString(), status: 'pending', attempts: 0, ...over,
 });
 
-console.log('\nscheduler — once and only once');
+console.log('\nscheduler â€” once and only once');
 {
   const { store, steps } = memoryStore([step({})]);
   let sent = 0;
@@ -223,7 +224,7 @@ console.log('\nscheduler — once and only once');
 }
 
 // ---------------------------------------------------------------- capabilities
-console.log('\ncapability foundation — what an event can actually give you');
+console.log('\ncapability foundation â€” what an event can actually give you');
 const RUNNER_TRIGGERS = ['trigger_meta_ad', 'trigger_whatsapp_ctwa', 'trigger_whatsapp_inbound', 'trigger_crm_lead', 'trigger_ig_comment', 'trigger_fb_comment', 'trigger_ig_dm', 'trigger_fb_messenger', 'trigger_whatsapp_template_button'];
 check(
   'every trigger the runner fires on has a capability entry',
@@ -268,6 +269,33 @@ const chained = dryRun(
 );
 check('comment flow: the message is blocked for want of a number', chained.blockers.some((b) => b.code === 'no_phone_number'));
 check('comment flow: the hour-long wait still schedules correctly', chained.effects.length === 0);
+
+
+// ---------------------------------------------------------------- starting a flow
+console.log('\nstarting a flow: stored shape -> ledger rows');
+const goodFlow = JSON.stringify({
+  name: 'Meta welcome',
+  trigger: { type: 'trigger_meta_ad' },
+  nodes: [
+    { type: 'triggerNode', data: {} },
+    { type: 'whatsappMessageNode', data: { message: 'Thanks for your enquiry', templateName: 'welcome' } },
+    { type: 'delayNode', data: { seconds: 600 } },
+    { type: 'aiCallNode', data: { description: 'qualify budget' } },
+  ],
+});
+const storedPlan = planFromFlowDescription('Flow: Meta welcome\n' + goodFlow);
+check('the trigger is recovered from the stored flow', storedPlan.triggerType === 'trigger_meta_ad');
+check('message, wait and call are recovered in order', storedPlan.actions.map((a) => a.kind).join(',') === 'message,wait,call');
+check('the wait keeps its real length', storedPlan.actions[1].seconds === 600);
+check('message text survives', storedPlan.actions[0].text === 'Thanks for your enquiry');
+check('a readable flow has no problems', storedPlan.problems.length === 0);
+
+const igFlow = planFromFlowDescription(JSON.stringify({ trigger: { type: 'trigger_ig_comment' }, nodes: [{ type: 'whatsappMessageNode', data: { message: 'hi' } }] }));
+check('an unreadable description is reported, not guessed', planFromFlowDescription('not json').problems.length > 0);
+check('a flow with no trigger is refused', planFromFlowDescription('{}').triggerType === null);
+const waitsOnly = planFromFlowDescription(JSON.stringify({ trigger: { type: 'trigger_meta_ad' }, nodes: [{ type: 'delayNode', data: { seconds: 60 } }] }));
+check('a flow of only waits is refused', waitsOnly.problems.some((p) => /no message or call/i.test(p)));
+check('the comment flow still plans (refusal happens at validation)', igFlow.actions.length === 1);
 
 console.log(`\n${'='.repeat(64)}`);
 console.log(`${passed} passed, ${failed} failed`);
