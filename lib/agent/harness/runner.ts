@@ -380,7 +380,7 @@ export async function executeRunSlice(
         empty: streamedText.length === 0 && toolCalls === 0,
       };
       console.error('[Harness runner] SLICE RESULT ' + JSON.stringify(diagnostic));
-      await appendEvents(supabase, run.session_id, [createEvent('turn.error', { message: 'slice result', ...diagnostic })]).catch(() => {});
+      await appendEvents(supabase, run.session_id, [createEvent('turn.error', { message: 'SLICE ' + JSON.stringify(diagnostic) })]).catch(() => {});
     } catch (logErr: any) {
       console.warn('[Harness runner] could not log slice result:', logErr?.message);
     }
