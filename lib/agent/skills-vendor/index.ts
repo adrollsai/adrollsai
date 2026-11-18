@@ -69,6 +69,46 @@ export const VENDORED_SKILLS: readonly VendoredSkill[] = [
   videoShotcraft as VendoredSkill,
 ];
 
+/**
+ * Non-English (CJK) characters, as a SOURCE pattern rather than one shared regex.
+ *
+ * A `/g` regex carries `lastIndex`, so calling `.test()` on a shared instance makes
+ * the next call start mid-string — a real bug waiting to be written. Every user of
+ * this pattern builds its own.
+ */
+const CJK_PATTERN = '[\u3000-\u303f\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]';
+/** True when the text contains any CJK character. */
+export function hasCjk(text: string): boolean {
+  return new RegExp(CJK_PATTERN).test(String(text ?? ''));
+}
+
+/**
+ * Strip non-English characters from text that goes into the prompt.
+ *
+ * `video-shotcraft` comes from a Chinese-language upstream and its description ends
+ * with a Chinese fragment. Every prompt carries these catalogue lines, and a
+ * Chinese-trained model handed Chinese text readily answers in Chinese — which is
+ * the one thing an owner reading English should never get.
+ *
+ * Only the CATALOGUE is cleaned; the skill's own body stays exactly as upstream
+ * wrote it (see skillContentFor below).
+ */
+export function englishOnly(text: string): string {
+  return String(text ?? '')
+    .replace(new RegExp(CJK_PATTERN, 'g'), ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,.;:])/g, '$1')
+    .trim();
+}
+
+/** True when a skill body is largely written in another script. */
+export function isForeignLanguageBody(content: string): boolean {
+  const body = String(content ?? '');
+  if (!body) return false;
+  const cjk = (body.match(new RegExp(CJK_PATTERN, 'g')) || []).length;
+  return cjk >= 200;
+}
+
 /** By name, for `get_skill`. */
 export function vendoredSkill(name: string): VendoredSkill | null {
   const wanted = String(name ?? '').trim().toLowerCase();
@@ -80,13 +120,33 @@ export function vendoredSkill(name: string): VendoredSkill | null {
  *
  * `useFor` is folded into the description HERE rather than in the skill body, so the router
  * and the prompt see a line that names the job, while the skill's own content stays exactly
- * as upstream wrote it.
+ * as upstream wrote it. The line is English-only: see englishOnly().
  */
 export function vendoredSkillCatalogue(): { name: string; description: string }[] {
   return VENDORED_SKILLS.map((skill) => ({
     name: skill.name,
-    description: skill.useFor ? `${skill.description} Use for: ${skill.useFor}` : skill.description,
+    description: englishOnly(
+      skill.useFor ? `${skill.description} Use for: ${skill.useFor}` : skill.description
+    ),
   }));
+}
+
+/**
+ * The body to hand the model when it loads a skill.
+ *
+ * A skill whose reference text is written in another language is still usable for
+ * its technique, but it must not change the language the owner is answered in, so
+ * such a body is prefixed with that instruction. Upstream text is never rewritten:
+ * the note sits above it.
+ */
+export function skillContentFor(skill: VendoredSkill): string {
+  const body = String(skill.content ?? '');
+  if (!isForeignLanguageBody(body)) return body;
+  return (
+    `[NOTE: this skill's reference text is written in another language. Read it for the ` +
+    `technique and the numbers, but answer the owner in THEIR language — never switch to ` +
+    `Chinese unless they wrote to you in Chinese.]\n\n${body}`
+  );
 }
 
 /** Where a vendored skill came from, as one line for the log or an admin view. */

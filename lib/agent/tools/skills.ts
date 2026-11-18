@@ -2,7 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { houseSkill, houseSkillCatalogue } from '../house-skills';
-import { vendoredSkill, vendoredSkillCatalogue } from '../skills-vendor';
+import { vendoredSkill, vendoredSkillCatalogue, englishOnly, skillContentFor } from '../skills-vendor';
 import { describeRoute, rankSkills, type RoutableSkill } from '../skill-router';
 
 /**
@@ -99,10 +99,15 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
           return {
             success: true,
             name: vendored.name,
-            description: vendored.description,
+            description: englishOnly(vendored.description),
             source: 'vendor',
             attribution: vendored.attribution,
-            content: vendored.content,
+            // Most vendored bodies are English. `video-shotcraft` comes from a
+            // Chinese-language upstream, and a Chinese document in context is enough
+            // to pull a Chinese-trained model into answering in Chinese — so a
+            // foreign-language body is handed over with an instruction to keep
+            // answering the owner in their own language.
+            content: skillContentFor(vendored),
             message:
               `Vendored from ${vendored.attribution.repo} (${vendored.attribution.licence}). ` +
               'Follow it where it applies; our own platform rules win where they disagree.',
