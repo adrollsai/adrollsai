@@ -63,6 +63,28 @@ export async function createAgentContext(
       : operatorUserIdOrOpts || {};
   const operatorUserId = opts.operatorUserId;
 
+  // The business's own skills: names and when-to-use only. Bodies are fetched by
+  // get_skill on demand, so twenty uploaded skills cost twenty lines, not twenty
+  // documents. A failed read must never break context building.
+  //
+  // Started here, next to the profile read, because it does not depend on the
+  // profile: two independent reads in series were two round trips before the
+  // model could even be asked anything. Awaited where the text is used.
+  const skillCataloguePromise = (async () => {
+    try {
+      const { data: skillRows } = await supabase
+        .from('agent_skills')
+        .select('name, description')
+        .eq('user_id', userId)
+        .eq('enabled', true)
+        .order('updated_at', { ascending: false })
+        .limit(40);
+      return skillRows?.length ? formatSkillCatalogue(skillRows as any) : '';
+    } catch {
+      return ''; /* skills are optional */
+    }
+  })();
+
   // Fetch user profile and business context for the target business
   const { data: profile } = await supabase
     .from('profiles')
@@ -94,7 +116,11 @@ export async function createAgentContext(
   // launcher; its list/insights/create tools are superseded by the fuller
   // meta_graph_* suite, and registering both would make the agent choose
   // between duplicate tools with different behaviour.
-  const metaLegacy = createMetaAdsMcpTools(supabase, userId) as Record<string, any>;
+  //
+  // Built only when this turn actually got the meta group (below): it used to be
+  // constructed on every single turn and then have one tool taken out of it,
+  // which is a whole MCP suite's worth of schemas built and thrown away before
+  // the first token.
 
   // Which capability groups this turn actually needs. `core` is always in.
   const selection = opts.forceGroups
@@ -102,6 +128,10 @@ export async function createAgentContext(
     : (() => { const picked = selectToolGroups(opts.intentText || ''); const LEAN_GROUPS = ['core','sandbox','media','sites']; if (!opts.lean) return picked; const kept = picked.groups.filter((g) => LEAN_GROUPS.includes(String(g))); return { groups: kept, reasons: [...picked.reasons, 'lean: ' + kept.join(',')] }; })();
   const active = new Set<ToolGroup>(selection.groups);
   const has = (g: ToolGroup) => active.has(g);
+
+  const metaLegacy: Record<string, any> | null = has('meta')
+    ? (createMetaAdsMcpTools(supabase, userId) as Record<string, any>)
+    : null;
 
   // Registered Modular MCP Tool Suites â€” only the selected groups are built, so
   // a turn never pays for schemas it cannot use.
@@ -171,7 +201,7 @@ export async function createAgentContext(
     ...(has('recipes') ? createRecipeTools() : {}),
     ...(has('meta') ? createMetaOfficialMcpTools(supabase, userId) : {}),
     ...(has('meta') ? createMetaGraphTools(supabase, userId) : {}),
-    ...(has('meta') ? { meta_mcp_launch_leadgen_campaign: metaLegacy.meta_mcp_launch_leadgen_campaign } : {}),
+    ...(has('meta') && metaLegacy ? { meta_mcp_launch_leadgen_campaign: metaLegacy.meta_mcp_launch_leadgen_campaign } : {}),
     ...(has('research') ? createDeepSeekSearchTools() : {}),
     ...(has('research') ? createWebFetchMcpTools() : {}),
     // The scrape skill: a stored, versioned definition -> rows, with robots.txt,
@@ -181,22 +211,8 @@ export async function createAgentContext(
     ...(has('vision') ? createVideoVisionTools() : {}),
   };
 
-  // The business's own skills: names and when-to-use only. Bodies are fetched by
-  // get_skill on demand, so twenty uploaded skills cost twenty lines, not twenty
-  // documents. A failed read must never break context building.
-  let skillCatalogue = '';
-  try {
-    const { data: skillRows } = await supabase
-      .from('agent_skills')
-      .select('name, description')
-      .eq('user_id', userId)
-      .eq('enabled', true)
-      .order('updated_at', { ascending: false })
-      .limit(40);
-    if (skillRows?.length) skillCatalogue = formatSkillCatalogue(skillRows as any);
-  } catch {
-    /* skills are optional */
-  }
+  // The read started above, alongside the profile — this only collects it.
+  const skillCatalogue = await skillCataloguePromise;
 
   const impersonationNotice = isImpersonating ? `
 CLIENT ACCOUNT IMPERSONATION ACTIVE:

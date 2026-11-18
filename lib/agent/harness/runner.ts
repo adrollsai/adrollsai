@@ -60,6 +60,12 @@ export interface SliceOptions {
    * Only the streaming route passes one; the worker is never aborted by a client.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Called as each setup stage completes. Time-to-first-token is dominated by
+   * what happens BEFORE the model is asked anything, so the route records these
+   * and logs them; without that, "it feels slow" is the only diagnosis available.
+   */
+  onStage?: (stage: string) => void;
 }
 
 export interface SliceResult {
@@ -159,6 +165,7 @@ export async function openRunTurn(
 ): Promise<TurnOpening> {
   const startedAt = Date.now();
   const sliceNumber = (run.checkpoint?.slices ?? 0) + 1;
+  const stage = (name: string) => opts.onStage?.(name);
 
   if (run.continuations >= run.max_continuations) {
     const error = `Run exceeded its continuation limit (${run.max_continuations} slices).`;
@@ -166,12 +173,24 @@ export async function openRunTurn(
     return { kind: 'settled', result: { status: 'dead', steps: 0, error } };
   }
 
-  await appendRunStatus(supabase, run.session_id, 'running', run.goal ?? undefined, sliceNumber);
+  // The "running" marker is for the transcript's status strip, nothing else reads
+  // it before the answer arrives. Firing it without awaiting keeps a round trip
+  // off the path to the first token.
+  void appendRunStatus(supabase, run.session_id, 'running', run.goal ?? undefined, sliceNumber);
+
+  // Provider probe AND provider construction start here, not after the prompt is
+  // built: `getAgentModel()` makes a network round trip to check the key, and it
+  // has nothing to do with reading the conversation. On the critical path it was
+  // pure added latency before the first token.
+  const modelPromise = getAgentModel();
 
   // ── restore or build the model conversation ───────────────────────────────
   // NOTE: `generateText` wants ModelMessage[] ({ role, content }), not
   // UIMessage[] ({ role, parts }).
   let messages: any[];
+  /** Highest event sequence folded into `messages` — derived, not queried, when we
+   *  have just read the whole log. */
+  let loadedMaxSeq = 0;
   if (run.checkpoint?.messages?.length) {
     messages = run.checkpoint.messages as any[];
     console.log(
@@ -180,6 +199,7 @@ export async function openRunTurn(
     );
   } else {
     const events = await loadEvents(supabase, run.session_id);
+    for (const ev of events) loadedMaxSeq = Math.max(loadedMaxSeq, Number(ev.seq) || 0);
     const state = project(run.session_id, events);
     // Faithful reconstruction: keeps tool calls, results AND reasoning. The
     // display-oriented `itemsToUIMessages` drops all three of the first two,
@@ -192,6 +212,7 @@ export async function openRunTurn(
         `${messages.filter((m) => Array.isArray(m.content) && m.content.some((c: any) => c.type === 'reasoning')).length} with reasoning)`
     );
   }
+  stage('history');
 
   if (!messages.length) {
     const error = 'Nothing to run: the session has no user message.';
@@ -224,6 +245,7 @@ export async function openRunTurn(
     operatorUserId: run.user_id,
     intentText,
   });
+  stage('context');
 
   // Seed occurrence counters from the conversation we are resuming, so a
   // re-issued call maps to the same ledger row it did before a crash, while a
@@ -260,8 +282,11 @@ export async function openRunTurn(
       })
   );
   const fullSystemPrompt = systemPrompt + '\n\n' + discoveryPromptSection();
+  stage('tools');
 
-  const model = await getAgentModel();
+  // Started at the top of this function — by now the round trip is usually done.
+  const model = await modelPromise;
+  stage('model');
 
   let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
   if (opts.onHeartbeat) {
@@ -382,8 +407,15 @@ export async function openRunTurn(
   // harness hands it to the running agent so it can adapt mid-flight. We remember
   // the highest event sequence already folded into `messages`, and anything newer
   // arrives as an extra user turn before the next model call.
-  let steerCursor = Math.max(0, ...messages.map((m: any) => Number(m?.__seq) || 0));
-  {
+  // `loadedMaxSeq` is the newest sequence we already folded in — free, because the
+  // whole log was just read. Only a resumed checkpoint needs to ask, and asking
+  // cost every fresh turn an extra round trip before it could speak.
+  let steerCursor = Math.max(
+    Number(loadedMaxSeq) || 0,
+    ...messages.map((m: any) => Number(m?.__seq) || 0)
+  );
+  if (!Number.isFinite(steerCursor)) steerCursor = 0;
+  if (run.checkpoint?.messages?.length) {
     const { data: newest } = await supabase
       .from('harness_events')
       .select('seq')
@@ -394,6 +426,7 @@ export async function openRunTurn(
     const latestSeq = Number(newest?.seq) || 0;
     if (latestSeq > steerCursor) steerCursor = latestSeq;
   }
+  stage('steering');
 
   const pullSteering = async (): Promise<string[]> => {
     try {
@@ -511,6 +544,10 @@ export async function openRunTurn(
       await settleFailure(error);
     },
   });
+
+  // Everything before this point was setup. From here the only remaining wait is
+  // the provider's own time-to-first-token.
+  stage('ask');
 
   return {
     kind: 'open',

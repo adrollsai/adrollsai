@@ -245,13 +245,20 @@ export async function claimRunById(
   const row = data as HarnessRun | null;
   if (!row?.id) return null;
 
-  // started_at is "first time this run ever ran", so it is set once.
+  // `started_at` is "when this run first ran", so it is only written while it is
+  // still empty. It is not awaited: it is bookkeeping nobody reads on the way to
+  // the first token, and every new turn used to spend a round trip on it before
+  // the model was asked anything.
   if (!row.started_at) {
-    await db(supabase)
+    void db(supabase)
       .from('harness_runs')
       .update({ started_at: new Date(now).toISOString() })
       .eq('id', runId)
-      .is('started_at', null);
+      .is('started_at', null)
+      .then(
+        () => {},
+        () => {}
+      );
   }
   return row;
 }

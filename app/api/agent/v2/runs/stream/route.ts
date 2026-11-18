@@ -84,6 +84,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
 }
 
 export async function POST(req: Request) {
+  const requestStartedAt = Date.now();
+  const stages: Array<[string, number]> = [];
+  const stage = (name: string) => stages.push([name, Date.now() - requestStartedAt]);
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -91,39 +95,50 @@ export async function POST(req: Request) {
   if (!user) {
     return jsonOutcome('refused', { error: 'Unauthorized' }, 401);
   }
+  stage('auth');
 
-  if (!(await isAvailable(supabase)) || !(await runsAvailableCheck(supabase))) {
+  // Both are schema probes and both are cached per process, but on a cold
+  // instance that is the first thing that happens — so they go together rather
+  // than one after the other.
+  const [storeReady, runsReady] = await Promise.all([
+    isAvailable(supabase),
+    runsAvailableCheck(supabase),
+  ]);
+  if (!storeReady || !runsReady) {
     return jsonOutcome(
       'refused',
       { error: 'Durable runs are not initialized. Apply the harness migrations.' },
       503
     );
   }
+  stage('schema');
 
   const body = await req.json().catch(() => ({} as any));
   const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
   if (!sessionId) return jsonOutcome('refused', { error: 'sessionId is required' }, 400);
 
-  // Confirm the session belongs to this user before spending a model call on it.
-  const { data: session } = await supabase
-    .from('harness_sessions')
-    .select('id')
-    .eq('id', sessionId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-  if (!session) return jsonOutcome('refused', { error: 'Session not found' }, 404);
+  // These two are independent, so they go together. Sequentially they were the
+  // two cheapest seconds on the way to the first token, spent one after the other.
+  const [sessionLookup, affordable] = await Promise.all([
+    supabase
+      .from('harness_sessions')
+      .select('id')
+      .eq('id', sessionId)
+      .eq('user_id', user.id)
+      .maybeSingle(),
+    // An empty wallet must not start work we then fail to bill.
+    import('@/lib/agent/usage').then(({ canStartTurn }) => canStartTurn(user.id)),
+  ]);
+  stage('preflight');
 
-  // An empty wallet must not start work we then fail to bill.
-  {
-    const { canStartTurn } = await import('@/lib/agent/usage');
-    const affordable = await canStartTurn(user.id);
-    if (!affordable.ok) {
-      return jsonOutcome(
-        'refused',
-        { error: 'insufficient_credits', message: affordable.reason },
-        402
-      );
-    }
+  // Confirm the session belongs to this user before spending a model call on it.
+  if (!sessionLookup.data) return jsonOutcome('refused', { error: 'Session not found' }, 404);
+  if (!affordable.ok) {
+    return jsonOutcome(
+      'refused',
+      { error: 'insufficient_credits', message: affordable.reason },
+      402
+    );
   }
 
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
@@ -184,6 +199,7 @@ export async function POST(req: Request) {
     priority: 1,
   });
   if (!run) return jsonOutcome('refused', { error: 'Could not queue the run' }, 500);
+  stage('enqueue');
 
   const worker = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const claimed = await claimRunById(supabase, run.id, worker, LEASE_SECONDS);
@@ -196,8 +212,11 @@ export async function POST(req: Request) {
       message: 'A worker picked this up — the reply will appear in the transcript.',
     });
   }
+  stage('claim');
 
-  await setSessionStatus(supabase, sessionId, 'running');
+  // The sidebar dot, not the answer. Waiting for it put an UPDATE in front of the
+  // first token for no reason the reader can see.
+  void setSessionStatus(supabase, sessionId, 'running');
 
   let opening;
   try {
@@ -214,6 +233,7 @@ export async function POST(req: Request) {
       // the model stream, which fires `onAbort` in the runner — and `onAbort`
       // is what re-queues the unfinished work.
       onHeartbeat: () => heartbeatRun(supabase, claimed.id, worker, LEASE_SECONDS),
+      onStage: stage,
     });
   } catch (err: any) {
     const reason = String(err?.message || err).slice(0, 500);
@@ -222,6 +242,7 @@ export async function POST(req: Request) {
     await setSessionStatus(supabase, sessionId, 'error');
     return jsonOutcome('refused', { error: reason }, 500);
   }
+  stage('turn-open');
 
   if (opening.kind === 'settled') {
     // Never got as far as generating (continuation cap, past deadline, empty log).
@@ -288,6 +309,10 @@ export async function POST(req: Request) {
     const elapsed = Date.now() - turn.startedAt;
     const outputTokens = Number(usageSeen?.outputTokens ?? 0);
     const ttft = turn.ttftMs();
+    // Where the wait actually went. `firstDeltaMs` is the whole distance from the
+    // POST arriving to the first token reaching the client's socket; the stages
+    // before it are setup, and `ask` is the provider's own latency.
+    const firstDeltaMs = ttft === null ? null : Date.now() - requestStartedAt - (elapsed - ttft);
     console.log(
       '[Harness stream] METRICS ' +
         JSON.stringify({
@@ -296,6 +321,10 @@ export async function POST(req: Request) {
           status: finalStatus,
           steps: settled.steps,
           ttftMs: ttft,
+          firstDeltaMs,
+          setupMs: stages.length ? stages[stages.length - 1][1] : null,
+          stages: Object.fromEntries(stages),
+          uptimeMs: Math.round(process.uptime() * 1000),
           elapsedMs: elapsed,
           outputTokens,
           tokensPerSec: elapsed > 0 && outputTokens > 0 ? Math.round((outputTokens / elapsed) * 1000) : null,

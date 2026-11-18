@@ -158,19 +158,34 @@ export function getDeepseekProvider() {
 
 /**
  * Checks if the configured DEEPSEEK_API_KEY is active and authorized.
+ *
+ * This is a network round trip, and it sits in front of the first token, so it is
+ * cached far longer than a single turn: a healthy key does not need re-proving
+ * every minute, and a busy serverless instance serves many turns per minute.
+ *
+ * A probe that FAILS (as opposed to being rejected) must not downgrade the model:
+ * a blip reaching DeepSeek would otherwise silently switch the agent to Gemini
+ * mid-conversation. Only an explicit non-200 answer marks the key bad.
  */
+const KEY_CHECK_TTL_MS = 5 * 60_000;
+
 export async function isDeepseekAuthorized(): Promise<boolean> {
   const key = getDeepseekApiKey();
   if (!key) return false;
 
-  if (key === lastCheckedKey && Date.now() - lastCheckTimestamp < 60_000) {
+  if (key === lastCheckedKey && Date.now() - lastCheckTimestamp < KEY_CHECK_TTL_MS) {
     return isKeyValidCache;
   }
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    // A slow probe is worse than no probe: cap it and let the request decide.
+    const controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), 2_500);
     const res = await fetch(`${DEEPSEEK_BASE_URL}/models`, {
       method: 'GET',
       headers: { Authorization: `Bearer ${key}` },
+      signal: controller.signal,
     });
 
     isKeyValidCache = res.status === 200;
@@ -181,8 +196,13 @@ export async function isDeepseekAuthorized(): Promise<boolean> {
     lastCheckTimestamp = Date.now();
     return isKeyValidCache;
   } catch (e) {
+    // Unreachable / timed out. Keep whatever we knew; with no history at all,
+    // assume the key works and let the real call be the judge.
     console.error('[Agent Model] DeepSeek /models unreachable:', e instanceof Error ? e.message : e);
-    return false;
+    if (lastCheckedKey === key) return isKeyValidCache;
+    return true;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
