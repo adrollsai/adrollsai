@@ -229,6 +229,159 @@ async function main() {
     check(`safe on ${JSON.stringify(bad) ?? 'undefined'}`, !threw);
   }
 
+  /* ==================================================================== */
+  /* call_tool must validate and apply defaults                            */
+  /* ==================================================================== */
+  //
+  // It called target.execute(args) directly, so the tool's own zod schema never
+  // ran: declared defaults were silently dropped. `call_queue_status` lost its
+  // limit and reported a 1,000-row window as the whole queue (848 of 1,532
+  // leads); `lead_conversations` lost onlyWithSummary entirely.
+  console.log('\n▸ call_tool validates and applies schema defaults');
+  {
+    let seen: any = null;
+    const surface = buildDiscoverableTools({
+      probe_defaults: tool({
+        description: 'captures what it was given',
+        inputSchema: z.object({
+          limit: z.number().int().min(1).max(4000).default(400),
+          mode: z.enum(['fast', 'thorough']).default('fast'),
+          label: z.string().optional(),
+        }),
+        execute: async (input: any) => {
+          seen = input;
+          return { success: true, got: input };
+        },
+      }),
+    } as any);
+    const viaProxy = await (surface.tools.call_tool as any).execute({
+      name: 'probe_defaults',
+      arguments: { label: 'x' },
+    });
+    check('the tool ran', viaProxy?.ok === true, viaProxy?.error);
+    check('a declared default reached execute (limit)', seen?.limit === 400, String(seen?.limit));
+    check('an enum default reached execute (mode)', seen?.mode === 'fast', String(seen?.mode));
+
+    const bad = await (surface.tools.call_tool as any).execute({
+      name: 'probe_defaults',
+      arguments: { limit: 99999 },
+    });
+    check('an out-of-range argument is refused, not passed through', bad?.ok === false, bad?.error ?? 'ran anyway');
+    check('…and the agent is told how to fix it', Array.isArray(bad?.problems) && bad.problems.length > 0, bad?.problems);
+
+    const wrongEnum = await (surface.tools.call_tool as any).execute({
+      name: 'probe_defaults',
+      arguments: { mode: 'sideways' },
+    });
+    check('an invalid enum is refused', wrongEnum?.ok === false, wrongEnum?.error ?? 'ran anyway');
+  }
+
+  /* ==================================================================== */
+  /* the machinery needs the owner's eyes, ordinary work does not          */
+  /* ==================================================================== */
+  //
+  // An owner asked for a call recording; the agent could not find one and went
+  // looking INSIDE the infrastructure — `env | grep` for supabase / R2 / API keys,
+  // a raw curl at the REST endpoint, twenty guesses at table names, and a read of
+  // the deployment's env vars. These are the handles it used.
+  console.log('\n▸ infrastructure handles are gated, real work is not');
+  {
+    const store = memoryStore();
+    const registry: Record<string, any> = {
+      supabase_mcp_inspect_table: tool({
+        description: 'reads raw table rows',
+        inputSchema: z.object({ tableName: z.string() }),
+        execute: async () => ({ success: true }),
+      }),
+      vercel_mcp_list_env_vars: tool({
+        description: 'reads env vars',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+      sandbox_bash_run: tool({
+        description: 'runs a shell command',
+        inputSchema: z.object({ command: z.string() }),
+        execute: async () => ({ success: true }),
+      }),
+    };
+    const gated = applyReviewGate(registry, store as any) as Record<string, any>;
+
+    const inspect = await gated.supabase_mcp_inspect_table.execute({ tableName: 'leads' }, {});
+    check('raw table inspection is gated', inspect?.needs_review === true, inspect?.why);
+
+    const envVars = await gated.vercel_mcp_list_env_vars.execute({}, {});
+    check('reading deployment env vars is gated', envVars?.needs_review === true, envVars?.why);
+
+    const envProbe = await gated.sandbox_bash_run.execute(
+      { command: 'env | grep -i -E "supa|r2|api|key|token"' },
+      {}
+    );
+    check('a shell command that chases credentials is gated', envProbe?.needs_review === true, envProbe?.why);
+
+    for (const command of [
+      'ffmpeg -i in.mp4 -vf scale=720:1280 out.mp4',
+      'node render.js',
+      'python3 build.py --out ./dist',
+      'ls -la /home/user',
+    ]) {
+      const ran = await gated.sandbox_bash_run.execute({ command }, {});
+      check(`ordinary sandbox work still runs: ${command.slice(0, 32)}…`, ran?.success === true && !ran?.needs_review);
+    }
+  }
+
+  //
+  // With ~100 tools behind a search box, "look again" feels productive. An owner
+  // asked for a call recording, the agent could not find one, and it made ~100
+  // lookups over seven and a half minutes — 20 guesses at table names, `env | grep`
+  // for keys — then was cancelled without answering. The capability did not exist.
+  console.log('\n▸ a fruitless search ends the search');
+  {
+    const surface = buildDiscoverableTools({
+      plain_reader: tool({
+        description: 'returns rows',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+    } as any);
+    const find = surface.tools.find_tools as any;
+    const first = await find.execute({ query: 'zippityzoo recording mp3' });
+    const second = await find.execute({ query: 'another impossible capability' });
+    const third = await find.execute({ query: 'and one more for luck' });
+    check('the first miss invites a broader phrase', first?.found === 0 && !first?.stop, first?.note?.slice(0, 60));
+    check('the second miss warns it is the last', second?.found === 0 && /next one/i.test(String(second?.warning || '')), second?.warning?.slice(0, 60));
+    check('the third miss stops the search', third?.stop === true, third?.note?.slice(0, 70));
+    check('…and says plainly that the capability is not there', /not available in this account/i.test(String(third?.note || '')));
+    check(
+      '…and tells it not to go looking in the database or env',
+      /database|environment/i.test(String(third?.next || '')),
+      String(third?.next).slice(0, 70)
+    );
+
+    const guessed = buildDiscoverableTools({
+      plain_reader: tool({
+        description: 'returns rows',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+    } as any);
+    const call = guessed.tools.call_tool as any;
+    await call.execute({ name: 'calls', arguments: {} });
+    await call.execute({ name: 'call_transcripts', arguments: {} });
+    const thirdGuess = await call.execute({ name: 'voice_call_logs', arguments: {} });
+    check('guessing tool names also ends the search', thirdGuess?.stop === true, thirdGuess?.note?.slice(0, 60));
+
+    // A session that finds what it needs is never cut off.
+    const healthy = buildDiscoverableTools({
+      lead_conversations: tool({
+        description: 'reads call summaries, transcripts and recordings for leads',
+        inputSchema: z.object({}),
+        execute: async () => ({ success: true }),
+      }),
+    } as any);
+    const hit = await (healthy.tools.find_tools as any).execute({ query: 'lead call recording' });
+    check('a search that finds something is untouched', hit?.found > 0 && !hit?.stop, `${hit?.found} match(es)`);
+  }
+
   console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} checks passed\n`);
   process.exit(fail === 0 ? 0 : 1);
 }

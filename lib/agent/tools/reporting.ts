@@ -683,12 +683,33 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             const type = String(r.action_type || '').toUpperCase();
             const isDnp =
               type === 'DNP' || desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick');
-            const key = desc.includes('whatsapp') ? 'whatsapp followup' : isDnp ? 'dnp (not picked)' : 'connected';
+
+            // WHAT EACH ROW ACTUALLY EVIDENCES.
+            //
+            // This used to bucket everything that was not a DNP as "connected", so a
+            // CRM stage edit that merely mentioned "(Call)" counted as a call that
+            // connected. An owner asking "how many connected" was told 10 when the
+            // rows were: 7 stage/remark edits, 2 "outbound call initiated" remarks and
+            // 1 "the number is out of service". Nothing had connected.
+            //
+            // The buckets below only claim what the text supports.
+            let key: string;
+            if (desc.includes('whatsapp')) key = 'whatsapp followup';
+            else if (isDnp) key = 'dnp (not picked)';
+            else if (/\b(initiated|dialling|dialing|outbound call started)\b/.test(desc)) key = 'call started (outcome unknown)';
+            else if (
+              /\b(connected|talk time|talked|spoke|conversation lasted|call completed|called and)\b/.test(desc) ||
+              /\bduration\b/.test(desc)
+            ) {
+              key = 'connected';
+            } else key = 'call noted (no outcome recorded)';
+
             byStatus[key] = (byStatus[key] || 0) + 1;
             byMember[r.user_id] = (byMember[r.user_id] || 0) + 1;
             if (r.lead_id) leads.add(r.lead_id);
           }
 
+          // Only rows whose own text says a call connected.
           const connected = byStatus.connected || 0;
           // "Call attempts" is what the team did; connected is how many landed.
           const attempts = total;
@@ -735,13 +756,23 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             .slice(0, 8)
             .map(([id, count]) => ({ account: names[id] || id.slice(0, 8), calls: count }));
 
+          // Say what the rows prove, and be explicit when they prove nothing about
+          // the outcome — a "0 connected" that is explained is far better than a
+          // confident "10 connected" that no row supports.
+          const notOutcome = (byStatus['call noted (no outcome recorded)'] || 0) + (byStatus['call started (outcome unknown)'] || 0);
           const headline =
             total === 0
               ? `No calls were made ${periodLabel}${datePart}${timezoneLabel(tz)}.`
-              : `${total} call${total === 1 ? '' : 's'} ${periodLabel}${datePart}${timezoneLabel(tz)}` +
-                (connected > 0 ? `, ${connected} connected (${mins} min total talk time)` : '') +
+              : `${total} call-related entr${total === 1 ? 'y' : 'ies'} ${periodLabel}${datePart}${timezoneLabel(tz)}` +
+                (connected > 0 ? `, ${connected} recorded as connected (${mins} min total talk time)` : '') +
                 (leads.size > 0 ? `, across ${leads.size} distinct lead${leads.size === 1 ? '' : 's'}` : '') +
                 '.';
+
+          const caveat =
+            connected === 0 && notOutcome > 0
+              ? `${notOutcome} of those ${total} rows record no outcome at all (CRM notes and dial attempts), so ` +
+                'this data cannot tell you how many calls actually connected. Do not describe any of them as connected.'
+              : undefined;
 
           return {
             success: true,
@@ -758,6 +789,7 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             distinctLeads: leads.size,
             byAccount: memberBreakdown,
             accountsInScope: ids.length,
+            ...(caveat ? { outcomeUnknown: caveat } : {}),
             ...(lastCallNote ? { note: lastCallNote } : {}),
           };
         } catch (err: any) {

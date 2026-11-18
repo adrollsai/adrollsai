@@ -132,6 +132,48 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   check('status breakdown sums to the total', statusSum === today.totalCalls, `${statusSum} vs ${today.totalCalls}`);
 
   /* ====================================================================== */
+  /* "connected" must mean connected                                        */
+  /* ====================================================================== */
+  //
+  // The bucket used to be a catch-all: anything that was not a DNP counted as a
+  // connected call, so an owner was told "10 connected" on a day whose rows were
+  // seven CRM stage edits, two "outbound call initiated" remarks and one "number
+  // out of service". Nothing had connected.
+  console.log('\n— connected means connected —');
+  {
+    const buckets = Object.keys(today.byStatus || {});
+    check(
+      'no bucket claims "connected" without the word in the row',
+      (today.byStatus?.connected || 0) === 0 || buckets.includes('connected'),
+      JSON.stringify(today.byStatus)
+    );
+    check(
+      'non-committal rows get a non-committal bucket',
+      today.connectedCalls > 0 ||
+        buckets.some((b) => /call noted|call started|dnp|whatsapp/i.test(b)),
+      buckets.join(', ')
+    );
+
+    if ((today.connectedCalls || 0) === 0) {
+      check(
+        'the answer does not claim a connected count it cannot support',
+        !/\d+\s+connected/i.test(String(today.answer || '')),
+        today.answer
+      );
+      const unresolved =
+        (today.byStatus?.['call noted (no outcome recorded)'] || 0) +
+        (today.byStatus?.['call started (outcome unknown)'] || 0);
+      check(
+        'when no call is evidenced as connected, the answer says so',
+        unresolved === 0 || Boolean(today.outcomeUnknown),
+        today.outcomeUnknown || '(no caveat)'
+      );
+    } else {
+      check('a real connected count is stated', /\d+\s+recorded as connected/i.test(String(today.answer || '')), today.answer);
+    }
+  }
+
+  /* ====================================================================== */
   /* lead_conversations: "pull the conversation and the audio too"           */
   /* ====================================================================== */
   //

@@ -100,7 +100,60 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
 
   // ── irreversible
   delete_data: { actionType: 'delete_data', why: 'deleting cannot be undone' },
+
+  // ── the machinery, reached through the sandbox or a raw database handle
+  //
+  // These exist for super-admin debugging. In production one owner asked for a
+  // call recording, the agent could not find one, and it went looking INSIDE the
+  // infrastructure to fetch the file itself: `env | grep` for supabase / R2 / API
+  // keys, a raw curl at the REST endpoint, twenty guesses at table names, and a
+  // read of the deployment's environment variables. Nothing leaked — the values
+  // were masked and it was the owner's own account — but an agent should never go
+  // hunting for credentials to satisfy a data request.
+  //
+  // `sandbox_bash_run` is NOT gated wholesale: the media and video skills run
+  // ffmpeg and friends through it every day, and asking permission for each of
+  // those would break the work rather than protect it. The condition below gates
+  // only the commands that are after secrets.
+  sandbox_bash_run: {
+    actionType: 'custom',
+    why: 'this command reads credentials or the environment',
+    when: (input: any) => looksLikeSecretProbe(String(input?.command ?? '')),
+  },
+  sandbox_write_file: {
+    actionType: 'custom',
+    why: 'this writes a file that looks like it holds credentials',
+    when: (input: any) =>
+      /(^|\/)\.env(\.|$)|credentials|service_role|id_rsa|\.pem$/i.test(String(input?.path ?? '')),
+  },
+  supabase_mcp_inspect_table: {
+    actionType: 'custom',
+    why: 'it reads rows straight out of the database, outside the product’s own reporting',
+  },
+  vercel_mcp_list_env_vars: {
+    actionType: 'custom',
+    why: 'it reads the deployment’s environment variables',
+  },
 };
+
+/**
+ * Does this shell command look like it is chasing secrets?
+ *
+ * Deliberately narrow. A false positive costs one approval tap on a legitimate
+ * debugging command; a false negative hands the agent the keys.
+ */
+export function looksLikeSecretProbe(command: string): boolean {
+  const cmd = String(command || '').toLowerCase();
+  if (!cmd.trim()) return false;
+  // Reading the environment, or grepping it for credential-shaped words.
+  if (/(^|[|;&(\s])(env|printenv|set|export)\s*($|[|;&)])/.test(cmd)) return true;
+  if (/(^|[|;&(\s])env$/.test(cmd.trim())) return true;
+  if (/\/proc\/self\/environ|\.env\b/.test(cmd)) return true;
+  // Looking for key/token/secret material by name.
+  const secretWord = /(secret|token|api[_-]?key|apikey|password|passwd|credential|service[_-]?role|private[_-]?key|access[_-]?key)/;
+  const readerish = /\b(grep|cat|head|tail|printenv|echo|awk|sed|strings|less|more|jq)\b/;
+  return secretWord.test(cmd) && readerish.test(cmd);
+}
 
 /** Stable fingerprint of a tool's input, so "what you saw" can be compared to "what runs". */
 export function approveFingerprint(input: unknown): string {
@@ -126,6 +179,45 @@ export function approveFingerprint(input: unknown): string {
 /** The policy for a tool, or null when it may run freely. */
 export function reviewPolicyFor(toolName: string): ReviewPolicy | null {
   return REVIEW_POLICY[toolName] ?? null;
+}
+
+/**
+ * Close the approval requests nobody can act on any more.
+ *
+ * While the approval card was invisible, every refusal wrote a fresh pending row
+ * and nothing could ever approve one. That left 42 pending approvals on this
+ * account, 40 of them image requests from two days earlier. They are not merely
+ * clutter: each is a staged action with the exact arguments attached, so an old
+ * card is an old decision waiting to be tapped by mistake.
+ *
+ * The decision itself cannot be undone — an expired row simply stops being
+ * offered. Anything already `approved` or `used` is untouched.
+ */
+export async function expireStaleApprovals(
+  supabaseAdmin: any,
+  olderThanHours = 24
+): Promise<number> {
+  const hours = Number.isFinite(olderThanHours) && olderThanHours > 0 ? olderThanHours : 24;
+  const cutoff = new Date(Date.now() - hours * 60 * 60_000).toISOString();
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('agent_events')
+      .update({ status: 'expired', updated_at: new Date().toISOString() })
+      .eq('event_type', 'PENDING_ACTION_APPROVAL')
+      .eq('status', 'pending')
+      .lt('created_at', cutoff)
+      .select('id');
+    if (error) {
+      console.warn('[Review gate] could not expire stale approvals:', error.message);
+      return 0;
+    }
+    const count = Array.isArray(data) ? data.length : 0;
+    if (count) console.log(`[Review gate] expired ${count} stale approval(s) older than ${hours}h`);
+    return count;
+  } catch (err: any) {
+    console.warn('[Review gate] expiring stale approvals threw:', err?.message || err);
+    return 0;
+  }
 }
 
 /** What a blocked tool returns: an explanation plus exactly what to ask the owner. */

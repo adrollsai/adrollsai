@@ -46,6 +46,18 @@ export const HOT_TOOLS: readonly string[] = [
 /** How much of each description find_tools returns — enough to choose, not enough to bloat. */
 const SUMMARY_CHARS = 180;
 
+/**
+ * After this many fruitless searches, stop searching and say so.
+ *
+ * A tool surface this large makes "look again" feel productive. In production an
+ * owner asked for a call recording and the agent made ~100 lookups over seven and
+ * a half minutes — twenty of them guesses at table names through the raw SQL
+ * inspector, plus `env | grep` for credentials — before being cancelled without
+ * ever answering. The capability genuinely did not exist. Saying so IS the answer;
+ * hunting is a way of not saying it.
+ */
+const SEARCH_MISS_LIMIT = 3;
+
 function schemaOf(tool: ToolDef): unknown {
   return (tool as any)?.inputSchema ?? (tool as any)?.parameters ?? null;
 }
@@ -81,6 +93,26 @@ export function buildDiscoverableTools(
 
   const names = Object.keys(registry);
 
+  // Counted across the life of this discovery surface, i.e. one turn/slice.
+  let misses = 0;
+
+  /** The answer when searching has stopped being research and become thrashing. */
+  const giveUpNotice = (query: string, count: number) => ({
+    found: 0,
+    stop: true,
+    note:
+      `STOP SEARCHING. ${count} searches have found nothing for this. The capability you are looking for ` +
+      `is not available in this account (last query: "${query}").`,
+    next:
+      'Do not search again and do not go looking for it in the database, the sandbox or environment ' +
+      'variables. Answer the owner now: say what you CAN provide from the tools you already used, and ' +
+      'name precisely what you cannot, so they can decide whether to have it built.',
+    // A reminder of the families that do exist, so a real capability is not missed.
+    available_families: names
+      .filter((n) => !n.startsWith('sandbox_'))
+      .slice(0, 24),
+  });
+
   inline.find_tools = {
     description:
       'Find tools by describing what you want to do, e.g. "create an automation", "render a video", ' +
@@ -113,10 +145,22 @@ export function buildDiscoverableTools(
         .slice(0, limit);
 
       if (!scored.length) {
+        // A search that finds nothing is the moment the model starts guessing — at
+        // table names, at env vars, at anything. Count them, and after a few, stop
+        // being a search engine and say the capability is not there.
+        misses += 1;
+        if (misses >= SEARCH_MISS_LIMIT) return giveUpNotice(query, misses);
         return {
           found: 0,
           note: `nothing matched "${query}". Try a broader phrase like "video", "leads", "page" or "automation".`,
           available: names.slice(0, 40),
+          ...(misses >= 2
+            ? {
+                warning:
+                  `That is ${misses} searches with no match. If the next one also finds nothing, this ` +
+                  'capability does not exist here — say so and answer with what you do have.',
+              }
+            : {}),
         };
       }
 
@@ -152,6 +196,11 @@ export function buildDiscoverableTools(
       const args = (input?.arguments ?? {}) as Record<string, unknown>;
       const target = registry[name];
       if (!target) {
+        // A guessed name is the same failure as a fruitless search: the model is
+        // feeling around for a capability. Count it, and eventually refuse to keep
+        // guessing.
+        misses += 1;
+        if (misses >= SEARCH_MISS_LIMIT) return { tool: name, ok: false, ...giveUpNotice(name, misses) };
         return {
           error: `no tool named "${name}"`,
           hint: 'call find_tools first to get an exact name',
@@ -164,8 +213,49 @@ export function buildDiscoverableTools(
         }
         return { error: `"${name}" is not executable in this context` };
       }
+
+      // VALIDATE AND APPLY DEFAULTS, like every inline tool gets for free.
+      //
+      // This called `target.execute(args)` directly, so the tool's own zod schema
+      // never ran: declared defaults were lost and bad arguments were passed
+      // through. The cost was real — `call_queue_status` without its `limit` fell
+      // back to PostgREST's 1000-row ceiling and reported a truncated queue (848 of
+      // 1532 leads) as if it were the whole book, and `onlyWithSummary` was skipped
+      // entirely on `lead_conversations`.
+      let parsedArgs: any = args;
+      const schema: any = (target as any)?.inputSchema;
+      if (schema && typeof schema.safeParse === 'function') {
+        const parsed = schema.safeParse(args ?? {});
+        if (!parsed.success) {
+          const issues = (parsed.error?.issues ?? [])
+            .slice(0, 6)
+            .map((issue: any) => `${(issue.path ?? []).join('.') || '(root)'}: ${issue.message}`);
+          return {
+            tool: name,
+            ok: false,
+            error: `arguments did not match "${name}"'s schema`,
+            problems: issues,
+            parameters: schemaOf(target),
+            hint: 'Send the arguments again matching the schema exactly.',
+          };
+        }
+        parsedArgs = parsed.data;
+      } else if (schema && typeof schema.parse === 'function') {
+        try {
+          parsedArgs = schema.parse(args ?? {});
+        } catch (err: any) {
+          return {
+            tool: name,
+            ok: false,
+            error: `arguments did not match "${name}"'s schema`,
+            problems: [String(err?.message ?? err).slice(0, 300)],
+            parameters: schemaOf(target),
+          };
+        }
+      }
+
       try {
-        const result = await target.execute(args, options);
+        const result = await target.execute(parsedArgs, options);
         return { tool: name, ok: true, result };
       } catch (err: any) {
         return { tool: name, ok: false, error: String(err?.message ?? err) };

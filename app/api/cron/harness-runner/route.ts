@@ -84,6 +84,12 @@ async function handle(req: Request) {
     );
   }
 
+  // Stale approval requests become 'expired' here rather than piling up as cards
+  // nobody can act on. Cheap (a handful of rows) and it rides a cron that already
+  // runs every minute.
+  const { expireStaleApprovals } = await import('@/lib/agent/review-gate');
+  await expireStaleApprovals(admin, 24);
+
   while (Date.now() < deadline) {
     const run = await claimRun(admin, worker, LEASE_SECONDS, maxPerUser, maxTotal);
     if (!run) break; // queue is empty or at the concurrency ceiling
