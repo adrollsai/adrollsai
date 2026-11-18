@@ -248,14 +248,25 @@ export async function dispatchVoiceCall(params: {
   if (!to) return { success: false, error: 'Test mode is on but no test number is configured, so no call was placed.' };
 
   // Find the lead for this number, or make one so the dispatcher has a record to call.
+  //
+  // A number can legitimately have SEVERAL leads (the owner's own test number
+  // accumulates one per experiment). Taking an arbitrary one meant the call could
+  // attach to a stale record — one whose voice_call_status was already `failed` —
+  // and the dial would be refused or reported against the wrong person. Prefer the
+  // lead that was worked most recently, and never attach to one that is on a call
+  // right now.
   const digits = to.replace(/\D/g, '').slice(-10);
-  const { data: existing } = await supabase
+  const { data: candidates } = await supabase
     .from('leads')
-    .select('id, name, phone')
+    .select('id, name, phone, voice_call_status, updated_at')
     .eq('user_id', userId)
     .like('phone', `%${digits}`)
-    .limit(1)
-    .maybeSingle();
+    .order('updated_at', { ascending: false })
+    .limit(5);
+
+  const existing = (candidates ?? []).find(
+    (lead: any) => String(lead?.voice_call_status ?? '').toLowerCase() !== 'calling'
+  );
 
   let leadId = existing?.id as string | undefined;
   if (!leadId) {
