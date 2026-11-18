@@ -299,7 +299,7 @@ export async function executeRunSlice(
         streamedText += delta;
         const now = Date.now();
         // ~4 flushes a second is enough to look live without hammering Realtime.
-        if (now - lastFlushAt < 250) continue;
+        if (now - lastFlushAt < 90) continue;
         lastFlushAt = now;
         if (streamedText.length <= flushedLength) continue;
         flushedLength = streamedText.length;
