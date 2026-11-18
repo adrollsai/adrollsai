@@ -206,6 +206,77 @@ export async function claimRun(
 }
 
 /**
+ * Create a run and take its lease in ONE write.
+ *
+ * The streaming route does not need a queued run that it then immediately
+ * claims; it needs a row that says "this request owns this run". Inserting it
+ * directly in the `running` state with the lease already held does that in a
+ * single round trip instead of an INSERT followed by an UPDATE — and a round trip
+ * here is on the path to the first token.
+ *
+ * `claimRun` still cannot steal it: it only takes `queued` runs, or `running`
+ * ones whose lease has expired (which is exactly what should happen if this
+ * request dies mid-turn).
+ *
+ * Falls back to the two-step path when an idempotency key collides, because then
+ * the row already exists and has to be claimed conditionally.
+ */
+export async function createClaimedRun(
+  supabase: SupabaseClient,
+  input: {
+    sessionId: string;
+    userId: string;
+    goal: string;
+    worker: string;
+    leaseSeconds?: number;
+    idempotencyKey?: string;
+    priority?: number;
+    deadlineAt?: string;
+  }
+): Promise<HarnessRun | null> {
+  const leaseSeconds = input.leaseSeconds ?? 300;
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const deadline = input.deadlineAt ?? new Date(now + 6 * 60 * 60_000).toISOString();
+
+  const { data, error } = await db(supabase)
+    .from('harness_runs')
+    .insert({
+      session_id: input.sessionId,
+      user_id: input.userId,
+      goal: input.goal,
+      status: 'running',
+      priority: input.priority ?? 0,
+      deadline_at: deadline,
+      idempotency_key: input.idempotencyKey ?? null,
+      lease_owner: input.worker,
+      lease_expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
+      last_heartbeat_at: nowIso,
+      started_at: nowIso,
+      updated_at: nowIso,
+    })
+    .select('*')
+    .single();
+
+  if (!error) return data as HarnessRun;
+
+  if (error.code === '23505' && input.idempotencyKey) {
+    // Same key, same session: the run exists. Claim it properly.
+    const { data: existing } = await db(supabase)
+      .from('harness_runs')
+      .select('id')
+      .eq('session_id', input.sessionId)
+      .eq('idempotency_key', input.idempotencyKey)
+      .maybeSingle();
+    if (existing?.id) return claimRunById(supabase, existing.id as string, input.worker, leaseSeconds);
+    return null;
+  }
+
+  if (!isMissing(error)) console.error('[Harness] createClaimedRun failed:', error.message);
+  return null;
+}
+
+/**
  * Claim ONE specific run, by id.
  *
  * `claimRun` hands out whatever the queue says is next, which is right for a

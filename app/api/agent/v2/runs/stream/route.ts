@@ -27,9 +27,8 @@ import { createClient } from '@/utils/supabase/server';
 import { isAvailable, appendEvents, setSessionStatus, loadEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
 import {
-  enqueueRun,
   runsAvailableCheck,
-  claimRunById,
+  createClaimedRun,
   finishRun,
   heartbeatRun,
   hasLiveRun,
@@ -196,29 +195,24 @@ export async function POST(req: Request) {
   // needed to read a session's log.
   const eventsPromise = loadEvents(supabase, sessionId).catch(() => []);
 
-  const run = await enqueueRun(supabase, {
+  // One write, not two: the row is created already owned by this request. See
+  // createClaimedRun — a queued row followed by an UPDATE was a round trip on the
+  // path to the first token for no benefit.
+  const worker = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const claimed = await createClaimedRun(supabase, {
     sessionId,
     userId: user.id,
     goal: goal || 'Continue the conversation.',
+    worker,
+    leaseSeconds: LEASE_SECONDS,
     idempotencyKey,
     priority: 1,
   });
-  if (!run) return jsonOutcome('refused', { error: 'Could not queue the run' }, 500);
-  stage('enqueue');
-
-  const worker = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const claimed = await claimRunById(supabase, run.id, worker, LEASE_SECONDS);
   if (!claimed) {
-    // The worker won the race for this run — let it do the work and tell the
-    // client to watch the log instead of a stream. Two runners on one event log
-    // is exactly the interleaving this guard exists to prevent.
     void eventsPromise;
-    return jsonOutcome('queued', {
-      run: { id: run.id, sessionId, status: 'queued' },
-      message: 'A worker picked this up — the reply will appear in the transcript.',
-    });
+    return jsonOutcome('refused', { error: 'Could not queue the run' }, 500);
   }
-  stage('claim');
+  stage('claimed');
 
   // ── the affordability gate, immediately before anything that costs money ──
   // Same rule as before — an empty wallet must not start work we then fail to
