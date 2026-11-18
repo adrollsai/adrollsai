@@ -218,6 +218,11 @@ export function useHarnessSession(): UseHarnessSession {
         setState(null);
         lastSeqRef.current = 0;
         await openSession(summary.id);
+        // A session only exists if the store does. The availability probe is a
+        // separate round trip that may still be in flight, and until it lands the
+        // UI treats the conversation as log-less — which meant the first turn of a
+        // freshly loaded tab could render through the legacy path.
+        setAvailable(true);
         setError(null);
         return summary.id;
       } catch (err: any) {

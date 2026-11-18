@@ -126,10 +126,11 @@ function main() {
     // Reasoning is subtracted the same way, and must not eat the prose.
     const withThinking = uiMessage([{ type: 'reasoning', text: 'I should check.' }, { type: 'text', text: 'Checked.' }]);
     const both = stripPersistedPrefix(withThinking, { reasoning: ['I should check.'], text: [] });
+    const bothParts: any[] = (both as any)?.parts ?? [];
     check(
       'persisted reasoning is subtracted without touching the reply',
-      textOf(both).trim() === 'Checked.' && both.parts.some((p: any) => p.type === 'reasoning') === false,
-      JSON.stringify(both.parts.map((p: any) => p.type))
+      textOf(both).trim() === 'Checked.' && bothParts.some((p: any) => p.type === 'reasoning') === false,
+      JSON.stringify(bothParts.map((p: any) => p.type))
     );
 
     // An unrelated older reply must never be subtracted from a new one.

@@ -990,9 +990,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // ── durable log ──────────────────────────────────────────────────────
     // Ensure a real session exists BEFORE the request so the turn has somewhere
     // to land, then pass its id explicitly: React state will not have flushed
-    // by the time we call sendMessage in this same tick.
+    // by the time we send in this same tick.
+    //
+    // `!== false`, not `=== true`. The availability probe is its own round trip;
+    // while it is still in flight `available` is null, and requiring `true` made
+    // the first message of a freshly loaded tab silently take the legacy path —
+    // which is not the streaming transport at all. Asking the server settles it:
+    // a real session comes back only when the store exists.
     let sid = logSessionId;
-    if (harness.available === true && !sid) {
+    if (harness.available !== false && !sid) {
       sid = await harness.createSession({ workspaceId: activeWorkspaceId });
       if (sid) {
         setActiveSessionId(sid);
@@ -1033,7 +1039,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // re-queued and the cron worker carries the task on. The event log is
     // written once per finished step — never per token — so the wire speed is
     // the model's, not Postgres's.
-    if (harness.available === true && sid) {
+    if (harness.available !== false && sid) {
       // The client owns the id its bubble is rendered with, so the optimistic
       // row and the persisted row are the same row. Without that the bubble
       // appears twice the moment Realtime echoes the insert back.
