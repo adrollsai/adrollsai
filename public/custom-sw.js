@@ -5,22 +5,30 @@ self.addEventListener('install', (event) => {
 })
 
 self.addEventListener('activate', (event) => {
-  // Clear stale Next.js chunk caches so PWAs immediately load the latest deployed code
+  // Clear EVERY runtime cache a previous version of this app left behind.
+  //
+  // This used to look for 'next-static-js', 'pages-rsc' and 'next-data'. Two
+  // problems: the real asset cache is called 'next-static-js-assets' (so it was
+  // never matched), and it never touched 'pages', 'pages-rsc-prefetch' or
+  // 'apis' — exactly the caches that keep a stale HTML shell and stale API
+  // answers alive across deploys.
+  //
+  // Keeping only the workbox precache means a service worker update always
+  // starts from a clean slate; everything else is refilled on demand, and
+  // whatever it refills is either content-hashed or freshly fetched.
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (
-            cacheName.includes('next-static-js') ||
-            cacheName.includes('pages-rsc') ||
-            cacheName.includes('next-data')
-          ) {
-            console.log('[SW] Clearing stale Next.js cache:', cacheName)
+    caches
+      .keys()
+      .then((cacheNames) =>
+        Promise.all(
+          cacheNames.map((cacheName) => {
+            if (/^workbox-precache/i.test(cacheName)) return undefined
+            console.log('[SW] Clearing cache from a previous version:', cacheName)
             return caches.delete(cacheName)
-          }
-        })
+          })
+        )
       )
-    }).then(() => clients.claim())
+      .then(() => clients.claim())
   )
 })
 

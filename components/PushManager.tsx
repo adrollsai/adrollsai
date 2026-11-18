@@ -21,6 +21,58 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray
 }
 
+/**
+ * Resolve to a registration that actually has an ACTIVE worker.
+ *
+ * `navigator.serviceWorker.ready` only resolves once a worker is active, and on a
+ * first install that is after the whole precache has downloaded — so racing it
+ * against a short timeout reports "no service worker" on a device that is simply
+ * still setting up. Watching the installing/waiting worker's state is the honest
+ * way to wait, and it also covers the update case (a new worker takes over after
+ * skipWaiting).
+ */
+function waitForActiveWorker(
+  registration: ServiceWorkerRegistration | undefined,
+  timeoutMs: number
+): Promise<ServiceWorkerRegistration | null> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (reg: ServiceWorkerRegistration | null) => {
+      if (settled) return
+      settled = true
+      resolve(reg)
+    }
+
+    if (registration?.active?.state === 'activated') {
+      finish(registration)
+      return
+    }
+
+    // ready resolves when a worker is active for this scope; the timeout only
+    // exists so the UI can say something instead of hanging forever.
+    navigator.serviceWorker.ready.then((reg) => {
+      if (reg?.active?.state === 'activated') finish(reg)
+    }).catch(() => {})
+
+    const watch = (worker: ServiceWorker | null | undefined) => {
+      if (!worker) return
+      const onState = () => {
+        if (worker.state === 'activated') {
+          worker.removeEventListener('statechange', onState)
+          finish(registration ?? null)
+        }
+      }
+      worker.addEventListener('statechange', onState)
+    }
+    watch(registration?.installing)
+    watch(registration?.waiting)
+
+    setTimeout(() => finish(null), timeoutMs)
+  })
+}
+
 interface PushManagerProps {
   variant?: 'banner' | 'inline';
   ownerId?: string;
@@ -151,15 +203,26 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
   }
 
   // --- WEB / PWA PUSH HANDLERS ---
-  async function syncSubscriptionWithBackend(sub: PushSubscription) {
+  async function syncSubscriptionWithBackend(sub: PushSubscription): Promise<{ ok: boolean; error?: string }> {
     try {
-      await fetch('/api/web-push/subscribe', {
+      const res = await fetch('/api/web-push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: sub, ownerId }),
       })
-    } catch (e) {
+      if (!res.ok) {
+        // A rejected subscription used to look exactly like a successful one: the
+        // response was never inspected, so the device was told "enabled" while the
+        // server had stored nothing and no alert would ever arrive.
+        const body = await res.json().catch(() => ({}))
+        const message = String(body?.error || `Could not save this device (${res.status})`)
+        console.error('[Push] subscribe rejected:', res.status, message)
+        return { ok: false, error: message }
+      }
+      return { ok: true }
+    } catch (e: any) {
       console.warn('Failed to auto-sync push subscription:', e)
+      return { ok: false, error: e?.message || 'Network error while saving this device' }
     }
   }
 
@@ -276,32 +339,22 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
         })
       }
       
-      const readyReg = await Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise<ServiceWorkerRegistration | null>((resolve) => setTimeout(() => resolve(registration || null), 4000))
-      ]) || registration
-
-      if (!readyReg) {
-        throw new Error('Service Worker registration not found. Please reload and try again.')
+      // Wait for the worker to be ACTIVE, not merely registered.
+      //
+      // On a first run (and after every update) the service worker is still
+      // installing: it is downloading the precache, and until that finishes
+      // `navigator.serviceWorker.ready` does not resolve and
+      // `pushManager.subscribe()` throws InvalidStateError. The old code gave up
+      // after 4 seconds and reported "Service Worker registration not found",
+      // which is what an owner saw when they tapped Enable on a fresh install.
+      const activeReg = await waitForActiveWorker(registration, 20000)
+      if (!activeReg) {
+        throw new Error(
+          'Nobo is still finishing its first-time setup on this device. Give it a few seconds and tap Enable again.'
+        )
       }
 
-      if (!readyReg.active) {
-        const worker = readyReg.installing || readyReg.waiting
-        if (worker) {
-          await new Promise<void>((resolve) => {
-            const onState = () => {
-              if (worker.state === 'activated' || worker.state === 'redundant') {
-                worker.removeEventListener('statechange', onState)
-                resolve()
-              }
-            }
-            worker.addEventListener('statechange', onState)
-            setTimeout(resolve, 3000)
-          })
-        }
-      }
-
-      const pm = readyReg.pushManager || registration.pushManager
+      const pm = activeReg.pushManager || registration.pushManager
       if (!pm) {
         throw new Error('Push manager is not available on this browser.')
       }
@@ -324,11 +377,20 @@ export default function PushManager({ variant = 'inline', ownerId }: PushManager
 
       setSubscription(sub)
       setPermissionState('granted')
-      await syncSubscriptionWithBackend(sub)
 
-      toast.success("Notifications Enabled!", {
-        description: "You are now subscribed to real-time updates on this device."
-      })
+      // Tell the truth about whether the server accepted this device. Subscribing
+      // only makes the browser willing; the alert arrives because the server has
+      // this endpoint on file.
+      const synced = await syncSubscriptionWithBackend(sub)
+      if (synced.ok) {
+        toast.success("Notifications Enabled!", {
+          description: "You are now subscribed to real-time updates on this device."
+        })
+      } else {
+        toast.error("Could not save this device", {
+          description: `${synced.error}. Alerts will not arrive until this succeeds — try disabling and enabling again.`
+        })
+      }
 
     } catch (error: any) {
       console.error('Failed to subscribe:', error)
