@@ -147,6 +147,7 @@ export async function executeRunSlice(
   const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, {
     operatorUserId: run.user_id,
     intentText,
+    lean: true,
   });
 
   // Seed occurrence counters from the conversation we are resuming, so a

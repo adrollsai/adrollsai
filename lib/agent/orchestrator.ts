@@ -43,6 +43,8 @@ import { preflightPromptSection } from './preflight';
 import { applyReviewGate, supabaseApprovalStore } from './review-gate';
 
 export interface AgentContextOptions {
+  /** Harness runs: offer only the groups common work needs, so the prompt is not 27k tokens. */
+  lean?: boolean;
   operatorUserId?: string;
   /** Recent conversation text, used to pick which tool groups a turn needs. */
   intentText?: string;
@@ -97,7 +99,7 @@ export async function createAgentContext(
   // Which capability groups this turn actually needs. `core` is always in.
   const selection = opts.forceGroups
     ? { groups: opts.forceGroups, reasons: ['forced'] }
-    : selectToolGroups(opts.intentText || '');
+    : (() => { const picked = selectToolGroups(opts.intentText || ''); const LEAN_GROUPS = ['core','sandbox','media','sites']; if (!opts.lean) return picked; const kept = picked.groups.filter((g) => LEAN_GROUPS.includes(String(g))); return { groups: kept, reasons: [...picked.reasons, 'lean: ' + kept.join(',')] }; })();
   const active = new Set<ToolGroup>(selection.groups);
   const has = (g: ToolGroup) => active.has(g);
 
