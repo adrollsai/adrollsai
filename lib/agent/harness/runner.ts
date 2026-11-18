@@ -460,8 +460,12 @@ export async function openRunTurn(
       // THE ONLY WRITE PER STEP. The partial-text pump that used to run four
       // times a second is gone: it is what made the reply type at ~1 token/sec
       // and what filled the log with hundreds of rows per answer.
+      //
+      // The scope keeps this step's ids unique to this run and slice. Step
+      // numbers restart at 0 in every slice and every turn, so an unscoped id
+      // let a later reply overwrite an earlier one in the projection.
       try {
-        await persistStep(supabase, run.session_id, step);
+        await persistStep(supabase, run.session_id, step, `${run.id.slice(0, 8)}_s${sliceNumber}_`);
       } catch (err: any) {
         console.warn('[Harness runner] persistStep failed:', err?.message);
       }

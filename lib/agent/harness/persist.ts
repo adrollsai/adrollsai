@@ -39,14 +39,30 @@ function isFailedResult(output: unknown): boolean {
   return o.success === false || typeof o.error === 'string';
 }
 
-/** Convert one finished step into the events that reproduce it. */
-export function stepToEvents(step: StreamedStep): Array<{
+/**
+ * Convert one finished step into the events that reproduce it.
+ *
+ * `scope` makes the ids unique to the run and slice that produced them. Without
+ * it every step was `st0_t`, `st1_t`, … which is stable WITHIN a slice but
+ * collides between them: the projection upserts by id, so the second turn of a
+ * conversation silently overwrote the first turn's reply, and a long run kept
+ * only its last slice's prose. The transcript looked like "one reply" because
+ * the earlier ones had been replaced.
+ *
+ * The scope is per RUN and per SLICE, so a crash-and-retry of the same slice
+ * still lands on the same ids (a retry must not duplicate), while a new turn —
+ * a new run — gets its own.
+ */
+export function stepToEvents(
+  step: StreamedStep,
+  scope = ''
+): Array<{
   type: HarnessEventType;
   data: Record<string, unknown>;
 }> {
   const events: Array<{ type: HarnessEventType; data: Record<string, unknown> }> = [];
   // Unique per step so replaying the same step twice cannot duplicate rows.
-  const tag = `st${step.stepNumber ?? 0}`;
+  const tag = `${scope}st${step.stepNumber ?? 0}`;
 
   const reasoning = typeof step.reasoningText === 'string' ? step.reasoningText.trim() : '';
   if (reasoning) {
@@ -88,10 +104,11 @@ export function stepToEvents(step: StreamedStep): Array<{
 export async function persistStep(
   supabase: SupabaseClient,
   sessionId: string,
-  step: StreamedStep
+  step: StreamedStep,
+  scope = ''
 ): Promise<void> {
   try {
-    const events = stepToEvents(step);
+    const events = stepToEvents(step, scope);
     if (!events.length) return;
     await appendEvents(supabase, sessionId, events);
   } catch (err: any) {

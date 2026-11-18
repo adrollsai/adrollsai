@@ -94,6 +94,40 @@ function main() {
     check('a step with no text, reasoning or tools writes no rows', events.length === 0, `${events.length} rows`);
   }
 
+  console.log('\n▸ a second turn does not erase the first');
+  {
+    // Step numbers restart at 0 in every turn, so unscoped ids made turn 3's
+    // reply overwrite turn 1's in the projection. The scope is the run id, so
+    // turns never collide.
+    const first = stepToEvents({ stepNumber: 0, text: 'First answer.' } as any, 'runA_s1_');
+    const second = stepToEvents({ stepNumber: 0, text: 'Second answer.' } as any, 'runB_s1_');
+    const log = project('s', [
+      { seq: 1, type: 'user.message', data: { id: 'u1', text: 'hi' } },
+      ...first.map((e, i) => ({ seq: i + 2, type: e.type, data: e.data })) as any,
+      { seq: 20, type: 'user.message', data: { id: 'u2', text: 'and again' } },
+      ...second.map((e, i) => ({ seq: i + 21, type: e.type, data: e.data })) as any,
+    ]);
+    const replies = log.items.filter((i) => i.kind === 'assistant').map((i: any) => i.text);
+    check(
+      'both replies survive a conversation with two turns',
+      replies.length === 2 && replies[0] === 'First answer.' && replies[1] === 'Second answer.',
+      JSON.stringify(replies)
+    );
+
+    // Retrying the SAME slice must still be idempotent.
+    const retry = stepToEvents({ stepNumber: 0, text: 'First answer.' } as any, 'runA_s1_');
+    const withRetry = project('s', [
+      { seq: 1, type: 'user.message', data: { id: 'u1', text: 'hi' } },
+      ...first.map((e, i) => ({ seq: i + 2, type: e.type, data: e.data })) as any,
+      ...retry.map((e, i) => ({ seq: i + 30, type: e.type, data: e.data })) as any,
+    ]);
+    check(
+      'a retried slice does not duplicate the reply',
+      withRetry.items.filter((i) => i.kind === 'assistant').length === 1,
+      `${withRetry.items.filter((i) => i.kind === 'assistant').length} replies`
+    );
+  }
+
   console.log('\n▸ the live overlay never repeats the committed transcript');
   {
     // Nothing committed yet: the whole live turn shows.
