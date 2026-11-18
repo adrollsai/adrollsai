@@ -346,33 +346,6 @@ export async function executeRunSlice(
         finishReason = 'text-only';
       }
     }
-    // Log EVERY slice, not only the ones that throw. A slice can end with no text and no error,
-    // which reaches the UI as "completed" with nothing in it - the failure mode with no signal.
-    try {
-      let usage: any = null;
-      try { usage = await result.usage; } catch {}
-      const responseMessages: any[] = (response as any)?.messages ?? [];
-      const toolCalls = responseMessages.reduce(
-        (n, m: any) => n + (Array.isArray(m?.content) ? m.content.filter((c: any) => String(c?.type || '').includes('tool')).length : 0),
-        0
-      );
-      const diagnostic = {
-        finishReason: String(finishReason),
-        promptTokens: usage?.promptTokens ?? usage?.inputTokens ?? null,
-        completionTokens: usage?.completionTokens ?? usage?.outputTokens ?? null,
-        reasoningTokens: usage?.reasoningTokens ?? null,
-        textChars: streamedText.length,
-        toolCalls,
-        steps,
-        toolsOffered: Object.keys((tools as any) ?? {}).length,
-        empty: streamedText.length === 0 && toolCalls === 0,
-      };
-      console.error('[Harness runner] SLICE RESULT ' + JSON.stringify(diagnostic));
-      await appendEvents(supabase, run.session_id, [createEvent('turn.error', { message: 'slice result', ...diagnostic })]).catch(() => {});
-    } catch (logErr: any) {
-      console.warn('[Harness runner] could not log slice result:', logErr?.message);
-    }
-
     const nextMessages = [...messages, ...((response as any)?.messages ?? [])];
 
     if (cancelled) {
