@@ -460,6 +460,36 @@ function CRMPageContent() {
   const [formFilterSearch, setFormFilterSearch] = useState('')
   const formFilterRef = useRef<HTMLDivElement>(null)
 
+  /**
+   * Which uploaded CSV a lead came from.
+   *
+   * `leads.csv_audience` holds the audience name the import stamped on the row
+   * (CsvImportModal writes the file/audience name there), and it can carry MORE
+   * THAN ONE tag — "ALL Leads 6001-12000, All Plots campaigns" — because the
+   * audiences screen merges a lead into another list. So a match is "any tag in
+   * that comma-separated list equals the chosen file", never string equality.
+   *
+   * Deliberately NOT persisted to storage. A previous version of this filter was
+   * removed for exactly that reason: it was applied to the list with no UI, so a
+   * stale persisted value silently hid leads with no way to clear it. It lives in
+   * component state and shows as a chip in the active-filters bar.
+   */
+  const [selectedCsvAudience, setSelectedCsvAudience] = useState('')
+
+  /** Split a lead's csv_audience into its tags, trimmed and de-duplicated. */
+  const csvAudienceTags = (lead: any): string[] => {
+    const raw = lead?.csv_audience
+    if (!raw || typeof raw !== 'string') return []
+    return Array.from(
+      new Set(
+        raw
+          .split(',')
+          .map((tag: string) => tag.trim())
+          .filter(Boolean)
+      )
+    )
+  }
+
   // Click outside listener to close form dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -2291,6 +2321,25 @@ END:VCARD\n`
     })
   }, [leads, forms, activeFormSet])
 
+  /**
+   * The CSV files this account has imported, newest-tag-count first.
+   *
+   * Built from the loaded leads rather than a separate endpoint so the numbers in
+   * the dropdown are the leads actually in view, and a tag that no longer exists
+   * cannot be offered. A lead tagged "A, B" counts once under A and once under B,
+   * which is what the filter does when you pick either.
+   */
+  const uniqueCsvAudiences = useMemo(() => {
+    const counts = new Map<string, number>()
+    leads.forEach((l: any) => {
+      csvAudienceTags(l).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1))
+    })
+    return Array.from(counts.entries())
+      .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]))
+      .map(([name, count]) => ({ name, count }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads])
+
   // Options for the "bulk transfer by filter" modal. These feed an API that matches
   // campaigns on campaign_id OR ad_name, and forms on form_id OR form_name - so live
   // records are offered by id (exact) and lead-only labels are offered by name.
@@ -2525,11 +2574,17 @@ END:VCARD\n`
         const f4 = normalizeFilterLabel(l.form_id)
         return f1 === cleanSelectedForm || f2 === cleanSelectedForm || f3 === cleanSelectedForm || f4 === cleanSelectedForm
       })()
-      const matchCsvAudience = true
-      
+      // CSV FILE FILTER — which uploaded list this lead came from.
+      // A lead can carry several tags, so this matches any one of them.
+      const matchCsvAudience =
+        !selectedCsvAudience ||
+        csvAudienceTags(l).some(
+          (tag) => tag.toLowerCase() === selectedCsvAudience.toLowerCase()
+        )
+
       return matchAgent && matchDate && matchDnp && matchNextAction && matchSearch && matchCampaign && matchForm && matchCsvAudience
     })
-  }, [leads, campaigns, searchQuery, selectedCampaigns, selectedForm, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
+  }, [leads, campaigns, searchQuery, selectedCampaigns, selectedForm, selectedCsvAudience, selectedAgentFilter, selectedDateRange, crmCustomDate, crmStartDate, crmEndDate, selectedDnpFilter, selectedNextActionFilter, selectedNextActionType, role, userId, parentAdminId])
 
   const matchLeadToStage = (l: any, stageName: string): boolean => {
     if (!stageName || stageName === 'All Leads' || stageName === 'ALL') return true
@@ -3052,6 +3107,7 @@ END:VCARD\n`
                 const activeCount = [
                     selectedCampaigns.length > 0,
                     Boolean(selectedForm),
+                    Boolean(selectedCsvAudience),
                     selectedAgentFilter !== 'ALL',
                     selectedDateRange !== 'ALL' || Boolean(crmCustomDate) || Boolean(crmStartDate && crmEndDate),
                     selectedDnpFilter !== 'ALL',
@@ -3063,6 +3119,7 @@ END:VCARD\n`
                 const clearAll = () => {
                     setSelectedCampaigns([]);
                     setSelectedForm('');
+                    setSelectedCsvAudience('');
                     setSelectedAgentFilter('ALL');
                     setSelectedDateRange('ALL');
                     setCrmCustomDate('');
@@ -3092,6 +3149,12 @@ END:VCARD\n`
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 text-xs font-bold shadow-2xs">
                                 <span className="max-w-[150px] truncate">Form: {selectedForm}</span>
                                 <button type="button" onClick={() => setSelectedForm('')} className="hover:text-purple-900 cursor-pointer"><X size={12} /></button>
+                            </span>
+                        )}
+                        {selectedCsvAudience && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 text-teal-800 border border-teal-200 text-xs font-bold shadow-2xs">
+                                <span className="max-w-[200px] truncate">CSV: {selectedCsvAudience}</span>
+                                <button type="button" onClick={() => setSelectedCsvAudience('')} className="hover:text-teal-900 cursor-pointer"><X size={12} /></button>
                             </span>
                         )}
                         {selectedAgentFilter !== 'ALL' && (
@@ -3506,6 +3569,35 @@ END:VCARD\n`
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* CSV file / imported-audience filter.
+                                        Only rendered when this account actually has CSV-imported
+                                        leads — an empty dropdown on every other account is noise. */}
+                                    {uniqueCsvAudiences.length > 0 && (
+                                        <div className="relative flex-1">
+                                            <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">
+                                                CSV File / Imported List
+                                            </label>
+                                            <SearchableSelect
+                                                value={selectedCsvAudience}
+                                                onChange={(next) => { setSelectedCsvAudience(next); setCurrentPage(1) }}
+                                                allLabel={`All CSV files (${uniqueCsvAudiences.length})`}
+                                                // "" is this filter's "no filter"; the component's default
+                                                // reset value is 'ALL', which would be read as a literal file name.
+                                                allValue=""
+                                                searchPlaceholder="Search CSV files..."
+                                                placeholder="All CSV files"
+                                                emptyText="No CSV file found"
+                                                options={uniqueCsvAudiences.map((aud) => ({
+                                                    value: aud.name,
+                                                    label: `${aud.name} (${aud.count})`,
+                                                }))}
+                                                buttonClassName={`bg-slate-50 hover:bg-slate-100/80 border ${
+                                                    selectedCsvAudience ? 'border-blue-500 bg-blue-50/40 text-blue-900' : 'border-slate-200 text-slate-700'
+                                                }`}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
