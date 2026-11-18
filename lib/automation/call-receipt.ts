@@ -55,6 +55,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 
 import { resolveAppUrl } from '../../utils/app-url'
 import { isOutboundTestMode, outboundEmail, outboundRecipient, testBanner } from './test-mode'
+import { isOurRecording } from './recording-link'
 
 /* ------------------------------------------------------------------ */
 /* Outcomes                                                            */
@@ -108,10 +109,19 @@ const AUTH_PROTECTED_RECORDING_HOSTS = [
 export const WHATSAPP_MAX_DOCUMENT_BYTES = 100 * 1024 * 1024 // 100 MB
 export const WHATSAPP_MAX_AUDIO_BYTES = 16 * 1024 * 1024 // 16 MB
 
-/** True when the URL is already absolute https and needs no credentials. */
+/**
+ * True when the URL is already absolute https and needs no credentials.
+ *
+ * A URL into OUR OWN recording bucket is explicitly NOT directly fetchable any
+ * more. That bucket is private: a stored `…/object/public/lead-voice-recordings/…`
+ * string looks public and returns 400 to everyone, so handing it to a human or to
+ * Meta produces a broken link. Those go through the signed stream route instead —
+ * see lib/automation/recording-link.ts.
+ */
 export function isDirectlyFetchableRecordingUrl(raw?: string | null): boolean {
   const value = String(raw || '').trim()
   if (!/^https:\/\//i.test(value)) return false
+  if (isOurRecording(value)) return false
   let host = ''
   try {
     host = new URL(value).hostname.toLowerCase()

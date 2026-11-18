@@ -2,11 +2,28 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
 import { resolveRecordingLinkSecret, verifyRecordingToken } from '@/lib/automation/call-receipt'
+import { isOurRecording, signedRecordingUrl, RECORDING_BUCKET } from '@/lib/automation/recording-link'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+/** Hosts we are willing to fetch a recording from on the caller's behalf. */
+function isCarrierMediaUrl(raw: string): boolean {
+    try {
+        const host = new URL(raw).hostname.toLowerCase()
+        return (
+            host === 'media.vobiz.ai' ||
+            host.endsWith('.vobiz.ai') ||
+            host === 'api.twilio.com' ||
+            host.endsWith('.twilio.com') ||
+            host.endsWith('.exotel.com')
+        )
+    } catch {
+        return false
+    }
+}
 
 export async function GET(req: Request) {
     try {
@@ -73,12 +90,29 @@ export async function GET(req: Request) {
             return new NextResponse('Recording not found', { status: 404 })
         }
 
-        // If already a public Supabase URL or other public URL, redirect directly
-        if (!rawUrl.includes('media.vobiz.ai')) {
-            return NextResponse.redirect(rawUrl)
+        // Our own bucket is PRIVATE, so the stored `.../object/public/...` string is
+        // not playable for anyone. Redirect to a short-lived signed URL instead of
+        // the public one; that is what makes this route the way to reach a recording
+        // without the bucket being open to the world.
+        if (isOurRecording(rawUrl)) {
+            const signed = await signedRecordingUrl(supabaseAdmin, rawUrl)
+            if (!signed) {
+                return new NextResponse('Recording could not be signed', { status: 500 })
+            }
+            return NextResponse.redirect(signed, {
+                headers: { 'Cache-Control': 'private, no-store' }
+            })
         }
 
-        // Vobiz URL requires X-Auth-ID and X-Auth-Token headers
+        // Anything that is not a carrier media URL and not ours has no business being
+        // proxied: this route takes a `url` from the query string, and without this it
+        // would fetch whatever it was handed (an open proxy / SSRF handle).
+        if (!isCarrierMediaUrl(rawUrl)) {
+            return new NextResponse('Unsupported recording source', { status: 400 })
+        }
+
+        // Carrier media URL: it requires X-Auth-ID and X-Auth-Token headers, which is
+        // why it cannot simply be handed to a browser or to Meta.
         const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
         const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
 
@@ -102,20 +136,17 @@ export async function GET(req: Request) {
                 try {
                     const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`
                     const { error: upErr } = await supabaseAdmin.storage
-                        .from('lead-voice-recordings')
+                        .from(RECORDING_BUCKET)
                         .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
 
                     if (!upErr) {
-                        const { data: pubData } = supabaseAdmin.storage
-                            .from('lead-voice-recordings')
-                            .getPublicUrl(storagePath)
-
-                        if (pubData?.publicUrl) {
-                            await supabaseAdmin
-                                .from('leads')
-                                .update({ voice_recording_url: pubData.publicUrl })
-                                .eq('id', leadId)
-                        }
+                        // Store the OBJECT PATH, not a public URL. The bucket is
+                        // private now, so a public URL would be a dead link; callers
+                        // turn this path into a short-lived signed URL.
+                        await supabaseAdmin
+                            .from('leads')
+                            .update({ voice_recording_url: storagePath })
+                            .eq('id', leadId)
                     }
                 } catch (bErr) {
                     console.warn('[RECORDING STREAM] Background upload to Supabase failed:', bErr)

@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { signedRecordingUrl, RECORDING_LINK_TTL_SECONDS } from '@/lib/automation/recording-link';
 
 /**
  * Reporting the agent can actually trust.
@@ -229,23 +230,35 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
         leadId: z.string().optional().describe('A specific lead id'),
         leadNameContains: z.string().optional().describe('Find leads whose name contains this text'),
         onlyWithSummary: z.boolean().default(true).describe('Only leads that have a call summary'),
+        phone: z
+          .string()
+          .optional()
+          .describe(
+            'A phone number to look up directly, e.g. "+918288835235". Use this whenever the owner names a number — ' +
+              'it is exact, where a name search over a test account returns dozens of look-alike leads.',
+          ),
         limit: z.number().default(5).describe('How many leads to return (1-15)'),
       }),
       // Defaults are applied here, not just in the schema: zod defaults only run
       // when the model's args are parsed, so a direct call would otherwise skip
       // the summary filter entirely.
-      execute: async ({ leadId, leadNameContains, onlyWithSummary = true, limit = 5 }) => {
+      execute: async ({ leadId, leadNameContains, phone, onlyWithSummary = true, limit = 5 }) => {
         const { ids } = await orgMemberIds();
         const take = Math.min(Math.max(limit || 5, 1), 15);
         try {
+          // An exact filter (id or number) means one row is wanted, so the wide scan
+          // below is wasted work. It exists only for the fuzzy cases.
+          const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+
           // A `not null` filter is not enough here: many rows hold an EMPTY
           // STRING rather than NULL, so they pass the filter and then get
           // dropped in JS, returning fewer results than asked for. Fetch a wider
           // window and filter honestly against real text.
-          const wantSummary = onlyWithSummary && !leadId && !leadNameContains;
+          const exact = Boolean(leadId || digits);
+          const wantSummary = onlyWithSummary && !leadId && !leadNameContains && !digits;
           // Scan a wide window: summaries sit on a minority of leads, so a
           // small recent slice would report 'none found' while 25 exist.
-          const fetchLimit = wantSummary ? 500 : take;
+          const fetchLimit = wantSummary ? 500 : exact ? Math.max(take, 5) : take;
 
           let q = supabase
             .from('leads')
@@ -256,6 +269,7 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
           if (leadId) q = q.eq('id', leadId);
           if (leadNameContains) q = q.ilike('name', `%${leadNameContains}%`);
+          if (digits) q = q.like('phone', `%${digits}`);
 
           const { data, error } = await q;
           if (error) throw new Error(error.message);
@@ -269,38 +283,52 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
           }
           const selected = source.slice(0, take);
 
-          const rows = selected.map((l) => ({
-            leadId: l.id,
-            name: l.name,
-            phone: l.phone,
-            stage: l.pipeline_stage,
-            lastCallAt: l.last_call_at,
-            lastCallStatus: l.voice_call_status,
-            callSummary: l.voice_call_summary || null,
-            // The conversation, in words.
-            //
-            // `voice_call_transcript` is an ARRAY of { role, message } turns, and this
-            // used to do `String(transcript).slice(...)` — which reached the model as
-            // "[object Object],[object Object],…". So "pull the conversation" was
-            // unanswerable even though the transcript was right there: the agent got
-            // gibberish, re-asked with different parameters seven times, and eventually
-            // went hunting through table names for a readable copy.
-            transcriptExcerpt: formatTranscript(l.voice_call_transcript),
-            transcriptTurns: countTranscriptTurns(l.voice_call_transcript),
-            // The audio, which this tool used to omit even though the column holds it.
-            //
-            // An owner asking "pull the conversation and the audio too" could not be
-            // answered: the transcript was here, the recording was not, and no other
-            // tool returns one. The agent spent seven minutes guessing table names and
-            // then looking for credentials in the sandbox to fetch the file itself,
-            // produced no answer at all, and was cancelled. The recording was in the
-            // row the whole time.
-            recordingUrl: l.voice_recording_url || null,
-            hasRecording: Boolean(l.voice_recording_url),
-            notes: l.notes ? String(l.notes).slice(0, 400) : null,
-            agentThought: l.last_agent_thought ? String(l.last_agent_thought).slice(0, 300) : null,
-            campaign: l.ad_name || null,
-          }));
+          // Sign every link at once rather than one per row: signing is a storage
+          // round trip, and a sequential loop turned a 10-lead answer into ten of
+          // them.
+          const signedLinks = await Promise.all(
+            selected.map((l: any) =>
+              l.voice_recording_url
+                ? signedRecordingUrl(supabase, l.voice_recording_url, RECORDING_LINK_TTL_SECONDS)
+                : Promise.resolve(null)
+            )
+          );
+
+          const rows = [];
+          for (let index = 0; index < selected.length; index++) {
+            const l: any = selected[index];
+            // The recording link is SIGNED and short-lived now that the bucket is
+            // private: the stored value is a storage path, not a playable URL, and
+            // handing the old public URL over would give the owner a dead link.
+            const recordingUrl = signedLinks[index];
+            rows.push({
+              leadId: l.id,
+              name: l.name,
+              phone: l.phone,
+              stage: l.pipeline_stage,
+              lastCallAt: l.last_call_at,
+              lastCallStatus: l.voice_call_status,
+              callSummary: l.voice_call_summary || null,
+              // The conversation, in words.
+              //
+              // `voice_call_transcript` is an ARRAY of { role, message } turns, and this
+              // used to do `String(transcript).slice(...)` — which reached the model as
+              // "[object Object],[object Object],…". So "pull the conversation" was
+              // unanswerable even though the transcript was right there: the agent got
+              // gibberish, re-asked with different parameters seven times, and eventually
+              // went hunting through table names for a readable copy.
+              transcriptExcerpt: formatTranscript(l.voice_call_transcript),
+              transcriptTurns: countTranscriptTurns(l.voice_call_transcript),
+              // The audio, which this tool used to omit even though the column holds it.
+              recordingUrl,
+              hasRecording: Boolean(l.voice_recording_url),
+              // A signed link expires, and the owner needs to know that.
+              recordingLinkMinutes: recordingUrl ? Math.round(RECORDING_LINK_TTL_SECONDS / 60) : undefined,
+              notes: l.notes ? String(l.notes).slice(0, 400) : null,
+              agentThought: l.last_agent_thought ? String(l.last_agent_thought).slice(0, 300) : null,
+              campaign: l.ad_name || null,
+            });
+          }
 
           const withSummary = rows.filter((r) => r.callSummary);
           const recordings = rows.filter((r) => r.hasRecording).length;

@@ -214,8 +214,28 @@ function testLinks() {
   check('the link carries an expiry', !!proxied && /[?&]exp=\d+/.test(proxied), String(proxied))
   check('the link is signed', !!proxied && /[?&]sig=[0-9a-f]+/.test(proxied), String(proxied))
 
-  const redirect = buildRecordingUrl({ leadId: LEAD_ID, rawUrl: PUBLIC_RECORDING, appUrl: APP_URL, secret: SECRET, now: NOW })
-  check('an already-public recording is linked directly', redirect === PUBLIC_RECORDING, String(redirect))
+  // Our own bucket is PRIVATE. A stored `.../object/public/lead-voice-recordings/...`
+  // string looks public and returns "Bucket not found" to everyone, so it must go
+  // through the signed stream route like a provider URL does. Handing it over raw
+  // would deliver a dead link to the owner — and, before the bucket was closed, it
+  // handed out an open handle on a customer's phone call.
+  const ourBucket = buildRecordingUrl({ leadId: LEAD_ID, rawUrl: PUBLIC_RECORDING, appUrl: APP_URL, secret: SECRET, now: NOW })
+  check(
+    'a URL into our own private bucket is NOT handed over raw',
+    !!ourBucket && ourBucket !== PUBLIC_RECORDING,
+    String(ourBucket)
+  )
+  check(
+    '…it becomes a signed link into the stream route instead',
+    !!ourBucket && ourBucket.includes('/api/voice/recording/stream?') && /[?&]sig=[0-9a-f]+/.test(ourBucket),
+    String(ourBucket)
+  )
+
+  // A genuinely third-party public URL (someone else's CDN, no credentials) is still
+  // passed through: proxying it would add nothing and could break.
+  const externalPublic = 'https://cdn.example.com/public/call-123.mp3'
+  const passthrough = buildRecordingUrl({ leadId: LEAD_ID, rawUrl: externalPublic, appUrl: APP_URL, secret: SECRET, now: NOW })
+  check('an unrelated public recording is still linked directly', passthrough === externalPublic, String(passthrough))
 
   const relative = buildRecordingUrl({ leadId: LEAD_ID, rawUrl: '/audio/call.mp3', appUrl: APP_URL, secret: SECRET, now: NOW })
   check('a relative path never leaves the server', !!relative && relative.startsWith(`${APP_URL}/api/voice/recording/stream?`), String(relative))

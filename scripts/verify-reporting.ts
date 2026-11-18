@@ -172,6 +172,39 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
         String(lead?.recordingUrl).slice(0, 64)
       );
       check('…and flagged as present', lead?.hasRecording === true);
+      // The bucket is private now, so a link must be a SIGNED, expiring URL and must
+      // never be the bare public path that returns "Bucket not found".
+      check(
+        '…and it is a signed, expiring link rather than a public bucket URL',
+        typeof lead?.recordingUrl === 'string' &&
+          lead.recordingUrl.includes('/object/sign/') &&
+          /token=/.test(lead.recordingUrl) &&
+          !lead.recordingUrl.includes('/object/public/'),
+        String(lead?.recordingUrl).slice(0, 72)
+      );
+      check('…with a stated expiry for the owner', Number(lead?.recordingLinkMinutes) > 0, `${lead?.recordingLinkMinutes} min`);
+
+      if (typeof lead?.recordingUrl === 'string') {
+        // It has to actually play, otherwise "private" has simply broken the feature.
+        const audio = await fetch(lead.recordingUrl, { headers: { Range: 'bytes=0-1023' } });
+        check(
+          '…and the signed link actually serves audio',
+          (audio.status === 200 || audio.status === 206) &&
+            String(audio.headers.get('content-type') || '').includes('audio'),
+          `HTTP ${audio.status} ${audio.headers.get('content-type') || ''}`
+        );
+        if (audio.body) await audio.arrayBuffer();
+
+        // And the old public form must be closed at the origin.
+        const publicForm = lead.recordingUrl.replace('/object/sign/', '/object/public/').split('?')[0];
+        const open = await fetch(`${publicForm}?cb=${Date.now()}`);
+        check(
+          '…while the public bucket URL is refused at the origin',
+          open.status >= 400,
+          `HTTP ${open.status} (a CDN HIT can still replay for up to an hour)`
+        );
+      }
+
       check(
         'the transcript is readable prose, not [object Object]',
         typeof lead?.transcriptExcerpt === 'string' &&
