@@ -21,6 +21,7 @@ import { createAgentContext } from '../orchestrator';
 import { appendEvents, loadEvents } from './store';
 import { createEvent } from './events';
 import { persistStep } from './persist';
+import { buildDiscoverableTools, discoveryPromptSection } from './tool-proxy';
 import { project, itemsToModelMessages } from './projection';
 import { isCancelRequested, nextBackoffMs, saveCheckpoint, type HarnessRun } from './runs';
 import { wrapToolsWithIdempotency, countToolOccurrences, UnsafeToRetryError } from './idempotency';
@@ -147,8 +148,8 @@ export async function executeRunSlice(
   const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, {
     operatorUserId: run.user_id,
     intentText,
-    lean: true,
   });
+
 
   // Seed occurrence counters from the conversation we are resuming, so a
   // re-issued call maps to the same ledger row it did before a crash, while a
@@ -156,7 +157,7 @@ export async function executeRunSlice(
   const occurrences = countToolOccurrences(messages);
 
   // Side-effecting tools go through the ledger: at most once per occurrence.
-  const tools = wrapToolsWithIdempotency(baseTools as Record<string, any>, {
+  const wrappedTools = wrapToolsWithIdempotency(baseTools as Record<string, any>, {
     supabase,
     runId: run.id,
     sessionId: run.session_id,
@@ -171,6 +172,12 @@ export async function executeRunSlice(
       ]);
     },
   });
+
+  // Only a handful of schemas travel with each request; the rest are found on demand.
+  const discovery = buildDiscoverableTools(wrappedTools as Record<string, any>);
+  const tools = discovery.tools;
+  console.error('[Harness runner] TOOL SURFACE ' + JSON.stringify({ exposed: discovery.exposed.length, discoverable: discovery.discoverable, inlineSchemaChars: discovery.inlineSchemaChars, fullSchemaChars: discovery.fullSchemaChars }));
+  const fullSystemPrompt = systemPrompt + '\n\n' + discoveryPromptSection();
 
   const model = await getAgentModel();
 
@@ -248,7 +255,7 @@ export async function executeRunSlice(
       // default that a long goal exhausts before any answer is emitted, and the SDK reports the
       // empty result as 'No output generated'. Declare it, generously, per call.
       maxOutputTokens: HARNESS_MAX_OUTPUT_TOKENS,
-      system: systemPrompt,
+      system: fullSystemPrompt,
       messages,
       tools,
       stopWhen: [
