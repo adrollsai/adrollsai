@@ -367,6 +367,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /**
+   * A "New session" that has been started but has not answered yet.
+   *
+   * Creating a session is a POST plus a projection fetch. A message typed during
+   * that window used to create a SECOND session beside it — an empty tile left
+   * behind, and the reply in a thread nobody was looking at.
+   */
+  const sessionCreationRef = useRef<Promise<string | null> | null>(null);
+
   const sessionStorageKey = useMemo(() => {
     return impersonateId ? `nobo_harness_sessions_${impersonateId}` : 'nobo_harness_sessions';
   }, [impersonateId]);
@@ -1007,6 +1016,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // which is not the streaming transport at all. Asking the server settles it:
     // a real session comes back only when the store exists.
     let sid = logSessionId;
+    if (!sid && sessionCreationRef.current) {
+      // "New session" was clicked a moment ago and is still resolving. Use THAT
+      // session rather than creating another one beside it.
+      sid = await sessionCreationRef.current;
+      if (sid) {
+        setActiveSessionId(sid);
+        setLogSessionId(sid);
+      }
+    }
     if (harness.available !== false && !sid) {
       sid = await harness.createSession({ workspaceId: activeWorkspaceId });
       if (sid) {
@@ -1201,7 +1219,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // — which then lost the argument with the effect that adopts the most recent
     // thread, so the click looked like it did nothing.
     if (harness.available !== false) {
-      const serverId = await harness.createSession({ workspaceId: wsId });
+      // The creation is a POST plus a projection fetch. A message typed in that
+      // window used to see `logSessionId` still null and create a SECOND session,
+      // leaving an empty tile behind and putting the reply in a thread the user
+      // was not looking at. Handing the in-flight promise to the send path makes
+      // it wait for this session instead of starting another.
+      const creation = harness.createSession({ workspaceId: wsId });
+      sessionCreationRef.current = creation;
+      const serverId = await creation;
+      if (sessionCreationRef.current === creation) sessionCreationRef.current = null;
       if (serverId) {
         setActiveSessionId(serverId);
         setLogSessionId(serverId);
