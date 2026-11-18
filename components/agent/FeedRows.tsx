@@ -12,6 +12,7 @@ import { memo, useState } from 'react';
 import { BrainCircuit, Film, Image as ImageIcon, Loader2, MessageSquare, Mic } from 'lucide-react';
 import ActionConfirmationCard from './ActionConfirmationCard';
 import { resolveToolPresentation, summarizeToolInput } from '@/lib/agent/presentation';
+import { artifactFrom, isFailedToolOutput, realToolName, realToolOutput } from '@/lib/agent/tool-output';
 
 // DeepSeek Harness Feed Row for Thinking
 function ThinkFeedRowInner({ text }: { text: string }) {
@@ -74,28 +75,33 @@ function ToolFeedRowInner({ tool, isLoading, onOptionSelect, onResume }: { tool:
   const inputArgs =
     invocation.args !== undefined ? invocation.args : tool.input !== undefined ? tool.input : tool.args;
 
+  // The model reaches most tools through the discovery proxy, so the real result
+  // is one level down and the row's name is `call_tool`. Both have to be resolved
+  // before anything is rendered: the approval card in particular lives inside that
+  // envelope, and looking for it at the top level is why approvals never appeared.
+  const shownToolName = realToolName(safeToolName, output);
+  const resolved = realToolOutput(output);
+
   // Tool is only pending if it is in call state or output is undefined while stream is loading
   const isPending =
     invocation.state === 'call' ||
     invocation.state === 'partial-call' ||
     (output === undefined && isLoading);
-  const isError = Boolean(output && (output.error || output.success === false));
+  const isError = isFailedToolOutput(output);
 
   // Presentation is data, not a chain of if/else — see lib/agent/presentation.tsx.
   // Unknown tools degrade to a generic row that still shows their real name.
-  const { presentation } = resolveToolPresentation(safeToolName);
+  const { presentation } = resolveToolPresentation(shownToolName);
   const Icon = presentation.icon;
   const prefix = presentation.label;
-  const summary = summarizeToolInput(presentation, inputArgs);
+  // The proxied target's own arguments are what describe the step ("auto_drip_…"),
+  // not `{ name, arguments }`.
+  const summary = summarizeToolInput(
+    presentation,
+    shownToolName === safeToolName ? inputArgs : (inputArgs?.arguments ?? resolved?.input ?? resolved?.args)
+  );
 
-  const artifact = output?.artifact || (output?.actionPayload && output?.requiresApproval ? {
-    type: 'action_confirmation',
-    actionType: output.actionPayload.actionType,
-    title: output.actionPayload.title,
-    description: output.actionPayload.description,
-    estimatedCost: output.actionPayload.estimatedCost,
-    payload: output.actionPayload.payload,
-  } : null);
+  const artifact = artifactFrom(output);
 
   return (
     <div className="space-y-1">

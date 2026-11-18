@@ -76,6 +76,7 @@ import { useRunStream, stripPersistedPrefix, logStreamMetrics } from '@/lib/agen
 import { itemsToUIMessages, type HarnessState } from '@/lib/agent/harness/projection';
 import { AGENT_MODEL, displayNameFor } from '@/lib/agent/models';
 import { resolveToolPresentation, summarizeToolInput } from '@/lib/agent/presentation';
+import { artifactFrom } from '@/lib/agent/tool-output';
 import { createClient } from '@/utils/supabase/client';
 import { toast } from 'sonner';
 
@@ -1407,7 +1408,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       if (item?.kind === 'user') return null;
       if (item?.kind !== 'tool') continue;
 
-      const artifact = item?.output?.artifact;
+      // `artifactFrom` unwraps the discovery proxy: a question asked through
+      // `call_tool` keeps its artifact one level down, and reading only the top
+      // level meant that question never reached the panel.
+      const artifact: any = artifactFrom(item?.output);
       if (artifact?.type !== 'user_input_prompt') continue;
 
       const payload = normalizeQuestions(artifact);

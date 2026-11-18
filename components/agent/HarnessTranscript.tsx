@@ -14,6 +14,7 @@ import AgentMarkdown from './AgentMarkdown';
 import { NoboOrb } from './NoboMascot';
 import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
 import type { HarnessItem } from '@/lib/agent/harness/projection';
+import { artifactFrom } from '@/lib/agent/tool-output';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -145,6 +146,23 @@ const ErrorItem = React.memo(function ErrorItem({ item }: { item: Extract<Harnes
  * in the parent created a new object every render and defeated memoisation, so
  * it is built here instead and the component only re-renders when the item does.
  */
+/**
+ * Identity of a staged approval, so a run of retries can be collapsed to the last
+ * one. Two cards with the same tool and the same arguments are the same decision.
+ */
+function approvalFingerprint(output: unknown): string | null {
+  const artifact: any = artifactFrom(output);
+  if (!artifact || artifact.type !== 'action_confirmation') return null;
+  const kind = String(artifact.actionType ?? 'custom');
+  let payload = '';
+  try {
+    payload = JSON.stringify(artifact.payload ?? artifact.spec ?? null);
+  } catch {
+    payload = '';
+  }
+  return `${kind}|${payload}`;
+}
+
 const ToolItem = React.memo(function ToolItem({
   item,
   onOptionSelect,
@@ -218,9 +236,30 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
     return prevText !== ownText;
   });
 
+  /**
+   * One card per distinct staged action, not one per retry.
+   *
+   * The gate refuses a gated tool by writing a NEW approval row and returns a new
+   * actionId each time, so an agent that retries piles up identical pending cards
+   * in the transcript. They are indistinguishable to the owner and only one of
+   * them needs a tap, so keep the LAST of a run of identical ones. Actions with a
+   * different payload are untouched — those really are different work.
+   */
+  const deduped = visible.filter((item, i) => {
+    if (item.kind !== 'tool') return true;
+    const own = approvalFingerprint((item as any).output);
+    if (!own) return true;
+    for (let j = i + 1; j < visible.length; j++) {
+      const next = visible[j];
+      if (next.kind !== 'tool') continue;
+      if (approvalFingerprint((next as any).output) === own) return false;
+    }
+    return true;
+  });
+
   return (
     <>
-      {visible.map((item, idx) => {
+      {deduped.map((item, idx) => {
         switch (item.kind) {
           case 'user':
             return <UserItem key={item.id} item={item} />;
