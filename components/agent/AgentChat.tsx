@@ -1153,7 +1153,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // Any overlay belongs to the session we are leaving.
     resetRunStream();
 
-    if (harness.available === true) {
+    if (harness.available !== false) {
       setLogSessionId(sessionId);
       const nextState = await harness.openSession(sessionId);
       // Rebuild the model context from the log, otherwise the next follow-up
@@ -1179,7 +1179,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     isAutoScrollEnabled.current = true;
     resetRunStream();
 
-    if (harness.available === true) {
+    // `!== false`, not `=== true`: on a freshly loaded tab the availability probe
+    // is still in flight when the first click lands, and requiring `true` made
+    // "New session" quietly create a browser-local session instead of a real one
+    // — which then lost the argument with the effect that adopts the most recent
+    // thread, so the click looked like it did nothing.
+    if (harness.available !== false) {
       const serverId = await harness.createSession({ workspaceId: wsId });
       if (serverId) {
         setActiveSessionId(serverId);

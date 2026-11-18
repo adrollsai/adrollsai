@@ -314,10 +314,30 @@ async function main() {
           return 'clicked';
         })()
       `);
-      await sleep(1800);
+      // Wait for the server-side session to exist, not just for a fixed delay:
+      // clicking straight after a page load races the availability probe, and a
+      // "new session" that only exists in localStorage is not a new session.
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        if (netLog.some((n) => n.url.includes('/api/agent/v2/sessions') && n.method === 'POST' && n.status === 200)) break;
+        await sleep(200);
+      }
+      await sleep(1200);
+    } else {
+      // Reusing a thread only means anything once the previous transcript is on
+      // screen; sending earlier would silently start a new session instead and
+      // the second-turn case would go untested.
+      const deadline = Date.now() + 25_000;
+      while (Date.now() < deadline) {
+        const cards = JSON.parse(await evaluate(SNAPSHOT_JS).catch(() => '{"cards":[]}')).cards.length;
+        if (cards > 0) break;
+        await sleep(300);
+      }
     }
     const logSessionId = await evaluate(`(() => { try { return localStorage.getItem('nobo_harness_last_sess'); } catch { return null; } })()`);
-    const blocksBefore = JSON.parse(await evaluate(SNAPSHOT_JS)).cards.length;
+    const beforeSnap = JSON.parse(await evaluate(SNAPSHOT_JS));
+    const beforeCards = beforeSnap.cards;
+    const blocksBefore = beforeCards.length;
 
     // Focus the composer, type, send.
     await evaluate(`document.querySelector('textarea[aria-label="Message the agent"]').focus()`);
@@ -399,55 +419,65 @@ async function main() {
     // ── what actually happened ────────────────────────────────────────────
     // The page's own timeline: [msSinceSend, visibleChars] at every commit.
     const firstTextAt = observed.length ? observed[0][0] : null;
-    const lastGrowth = observed.length ? observed[observed.length - 1][0] : null;
-    const typingWindowMs = firstTextAt !== null && lastGrowth !== null ? lastGrowth - firstTextAt : null;
     const finalChars = finalSnap.len;
-    // Words a person actually reads arrive at a usable rate; that is the metric
-    // the complaint was about.
-    const charsPerSec =
-      typingWindowMs && typingWindowMs > 0
-        ? Math.round((finalChars / (typingWindowMs / 1000)) * 10) / 10
-        : null;
 
-    // The authoritative copy: what the log and the run say.
-    const { data: freshSessions } = await admin
-      .from('harness_sessions')
-      .select('id, title, created_at, updated_at')
+    // Typing rate over the LONGEST CONTIGUOUS BURST of growth.
+    //
+    // A multi-step turn is quiet while a tool runs, so "first paint to last paint"
+    // measures tool latency, not typing. Splitting the timeline wherever growth
+    // pauses for more than 1.5s leaves runs of pure text arrival; the biggest of
+    // those is the honest characters-per-second of the wire.
+    let burst = { ms: 0, chars: 0, paints: 0 };
+    let runStart = null;
+    let runChars = 0;
+    let runPaints = 0;
+    let previous = null;
+    for (const [t, len] of observed) {
+      if (previous === null || t - previous > 1500) {
+        runStart = t;
+        runChars = len;
+        runPaints = 1;
+      } else {
+        runChars = len;
+        runPaints += 1;
+      }
+      const ms = t - (runStart ?? t);
+      if (runPaints >= 2 && runChars > burst.chars) burst = { ms, chars: runChars, paints: runPaints };
+      previous = t;
+    }
+    const charsPerSec = burst.ms > 0 ? Math.round((burst.chars / (burst.ms / 1000)) * 10) / 10 : null;
+
+    // The authoritative copy: the RUN this turn created names the session, so the
+    // accounting cannot be confused by whichever thread the tab happened to adopt.
+    const { data: newRuns } = await admin
+      .from('harness_runs')
+      .select('id, session_id, status, attempts, error, created_at')
       .eq('user_id', userId)
-      .order('updated_at', { ascending: false })
-      .limit(5);
-    // Prefer a session that did not exist before this run; fall back to whatever
-    // the page says it was working in.
-    const session =
-      (freshSessions || []).find((s) => !baselineSessions.has(s.id)) ||
-      (freshSessions || []).find((s) => s.id === logSessionId) ||
-      (freshSessions || [])[0] ||
-      null;
+      .gte('created_at', new Date(startedAtMs - 15_000).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(3);
+    const run = newRuns?.[0] ?? null;
+    const sessionId = run?.session_id ?? null;
+
     let rows = [];
-    let run = null;
-    if (session) {
+    if (sessionId) {
       const { data: events } = await admin
         .from('harness_events')
         .select('seq, type, data')
-        .eq('session_id', session.id)
+        .eq('session_id', sessionId)
         .order('seq', { ascending: true });
       rows = events || [];
-      const { data: runs } = await admin
-        .from('harness_runs')
-        .select('id, status, attempts, error, created_at')
-        .eq('session_id', session.id)
-        .order('created_at', { ascending: false })
-        .limit(3);
-      run = runs?.[0] || null;
     }
     const assistantTexts = rows.filter((r) => r.type === 'assistant.text').map((r) => String(r.data?.text || ''));
     const errorEvents = rows.filter((r) => r.type === 'turn.error').map((r) => String(r.data?.message || ''));
     const toolCalls = rows.filter((r) => r.type === 'tool.call').map((r) => String(r.data?.name || ''));
 
     const replyBlocks = [...finalSnap.cards, ...finalSnap.liveBubbles].filter((t) => t.length > 0);
-    // "One reply only" for THIS turn: the transcript grew by exactly one block,
-    // and no two blocks carry the same opening words.
-    const addedBlocks = finalSnap.cards.length - blocksBefore;
+    // "One reply only" for THIS turn. Two independent guards:
+    //   * exactly one reply block appeared that was not already on screen
+    //   * no two blocks in the transcript share the same opening words
+    const addedCards = finalSnap.cards.filter((text) => !beforeCards.includes(text));
+    const addedBlocks = addedCards.length;
     const openings = replyBlocks.map((t) => t.replace(/\s+/g, ' ').slice(0, 60).toLowerCase());
     const duplicated = openings.length !== new Set(openings).size;
     const errorBanners = [
@@ -459,7 +489,7 @@ async function main() {
     const report = {
       url: `${BASE}${AGENT_PATH}`,
       prompt: PROMPT,
-      sessionId: session?.id ?? null,
+      sessionId,
       newSessionClick,
       logSessionId,
       // Did the browser actually use the new transport?
@@ -468,10 +498,12 @@ async function main() {
       usedLegacyEndpoint: netLog.some((n) => n.url.includes('/agent/v2/chat')),
       // speed
       timeToFirstVisibleCharacterMs: firstTextAt,
-      typingWindowMs,
+      typingBurstMs: burst.ms || null,
+      typingBurstChars: burst.chars || null,
+      paintsWhileTyping: burst.paints || observed.length,
       finalChars,
-      updatesWhileTyping: observed.length,
       charsPerSecObserved: charsPerSec,
+      allVisibleCommits: observed.length,
       // one reply only
       replyBlocksInDom: replyBlocks.length,
       blocksAddedThisTurn: addedBlocks,
@@ -508,10 +540,10 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
 
     // Leave the tenant as we found it: the session this created is ours.
-    if (session && arg('keepSession', 'false') !== 'true') {
-      await admin.from('harness_runs').delete().eq('session_id', session.id);
-      await admin.from('harness_events').delete().eq('session_id', session.id);
-      await admin.from('harness_sessions').delete().eq('id', session.id);
+    if (sessionId && arg('keepSession', 'false') !== 'true') {
+      await admin.from('harness_runs').delete().eq('session_id', sessionId);
+      await admin.from('harness_events').delete().eq('session_id', sessionId);
+      await admin.from('harness_sessions').delete().eq('id', sessionId);
     }
 
     console.log(`\n${ok ? 'PASS' : 'FAIL'} — browser acceptance\n`);
