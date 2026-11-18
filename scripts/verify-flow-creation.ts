@@ -215,6 +215,86 @@ async function main() {
       (strays || []).length === 1,
       (strays || []).map((s: any) => s.title)
     );
+    // ── 6. the two things an inbound flow needs to be genuinely useful ──────
+    // A keyword filter, so an active inbound flow does not answer every message the account
+    // receives; and a handoff step, so a flow can end by handing over to a person instead of
+    // stopping dead. Both are written by the agent through this same tool.
+    const narrowed = await create.execute({
+      name: `${marker} brochure`,
+      trigger: 'trigger_whatsapp_inbound',
+      keywords: ['Brochure', 'price list', 'brochure'],
+      steps: [
+        { kind: 'message', text: 'Here is our brochure — reply with a time and we will call you.' },
+        { kind: 'handoff', text: 'Someone asked for pricing, follow up personally.' },
+      ],
+    });
+    check('a keyword-filtered inbound flow is accepted', narrowed?.success === true, narrowed?.error);
+    if (narrowed?.flowId) createdIds.push(narrowed.flowId);
+    check('it reports 3 nodes (trigger + message + handoff)', narrowed?.nodeCount === 3, narrowed?.nodeCount);
+    check(
+      'the note says what the flow fires on',
+      (narrowed?.notes ?? []).some((n: string) => /only fires when the message contains/i.test(n)),
+      narrowed?.notes
+    );
+
+    const { data: narrowedRow } = await sb
+      .from('automations')
+      .select('description')
+      .eq('id', narrowed?.flowId)
+      .maybeSingle();
+    let narrowedGraph: any = null;
+    try {
+      narrowedGraph = JSON.parse(String(narrowedRow?.description || ''));
+    } catch {
+      /* reported below */
+    }
+    check(
+      'the keywords are stored on the trigger',
+      JSON.stringify(narrowedGraph?.trigger?.keywords) === JSON.stringify(['Brochure', 'price list']),
+      narrowedGraph?.trigger?.keywords
+    );
+    check(
+      'duplicates in the keywords are collapsed (case-insensitively)',
+      (narrowedGraph?.trigger?.keywords ?? []).length === 2,
+      narrowedGraph?.trigger?.keywords
+    );
+    check(
+      'the trigger node carries them too, so the editor can show the filter',
+      Array.isArray(narrowedGraph?.nodes?.[0]?.data?.keywords) && narrowedGraph.nodes[0].data.keywords.length === 2,
+      narrowedGraph?.nodes?.[0]?.data?.keywords
+    );
+
+    const narrowedPlan = planFromFlowDescription(String(narrowedRow?.description || ''));
+    check(
+      'the runner reads message then handoff',
+      JSON.stringify((narrowedPlan?.actions ?? []).map((a: any) => a.kind)) === JSON.stringify(['message', 'handoff']),
+      (narrowedPlan?.actions ?? []).map((a: any) => a.kind)
+    );
+    check(
+      'the handoff carries its note',
+      String((narrowedPlan?.actions ?? []).find((a: any) => a.kind === 'handoff')?.internal?.value ?? '').includes('pricing'),
+      (narrowedPlan?.actions ?? []).find((a: any) => a.kind === 'handoff')?.internal
+    );
+    check('a keyworded flow with a handoff has no planner problems', (narrowedPlan?.problems ?? []).length === 0, narrowedPlan?.problems);
+    check(
+      'it passes the publish gate',
+      validateFlow(narrowedGraph ?? {}).ok === true,
+      validateFlow(narrowedGraph ?? {}).issues
+    );
+
+    const keywordsOnButton = await create.execute({
+      name: `${marker} button keywords`,
+      trigger: 'trigger_whatsapp_template_button',
+      templateName: 'some_template',
+      keywords: ['brochure'],
+      steps: [{ kind: 'message', text: 'hi' }],
+    });
+    check(
+      'keywords on a trigger that carries no text are refused, not silently dropped',
+      keywordsOnButton?.success === false && keywordsOnButton?.reason === 'keywords_not_supported',
+      { reason: keywordsOnButton?.reason }
+    );
+
   } finally {
     await cleanup();
     const { data: left } = await sb

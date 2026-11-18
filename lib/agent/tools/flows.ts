@@ -57,8 +57,8 @@ export const FLOW_NODE_TYPES = ['triggerNode', 'whatsappMessageNode', 'aiCallNod
 export const MAX_FLOW_DELAY_SECONDS = 10;
 
 export interface FlowStep {
-  kind: 'message' | 'call' | 'wait';
-  /** `message`: what to send. `call`: optional note for the caller. */
+  kind: 'message' | 'call' | 'wait' | 'handoff';
+  /** `message`: what to send. `call`: optional note for the caller. `handoff`: why a human takes over. */
   text?: string;
   /** `wait`: seconds, at most MAX_FLOW_DELAY_SECONDS. */
   seconds?: number;
@@ -69,8 +69,36 @@ export interface BuildFlowInput {
   trigger: FlowTrigger;
   /** Optional template whose button click starts the flow. */
   templateName?: string;
+  /**
+   * Words that must appear in the inbound message for the flow to fire.
+   *
+   * Only meaningful on message-ish triggers. Without them an active inbound flow answers EVERY
+   * message the business receives, which is almost never what an owner means by "when someone asks
+   * about the brochure" — so the tool says so rather than pretending the flow is narrow.
+   */
+  keywords?: string[];
   steps: FlowStep[];
   isActive?: boolean;
+}
+
+/** How many keywords are honoured, and how long each may be. */
+export const MAX_FLOW_KEYWORDS = 10;
+const MAX_KEYWORD_CHARS = 40;
+
+function normaliseKeywords(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of list) {
+    const keyword = String(entry ?? '').trim().slice(0, MAX_KEYWORD_CHARS);
+    if (!keyword) continue;
+    const key = keyword.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(keyword);
+    if (out.length >= MAX_FLOW_KEYWORDS) break;
+  }
+  return out;
 }
 
 export interface BuiltFlow {
@@ -84,7 +112,7 @@ export interface BuiltFlow {
 }
 
 export class FlowError extends Error {
-  readonly reason: 'unknown_trigger' | 'no_steps' | 'delay_too_long' | 'empty_message' | 'unknown_step';
+  readonly reason: 'unknown_trigger' | 'no_steps' | 'delay_too_long' | 'empty_message' | 'unknown_step' | 'keywords_not_supported';
   constructor(reason: FlowError['reason'], message: string) {
     super(message);
     this.name = 'FlowError';
@@ -118,17 +146,36 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
     throw new FlowError('no_steps', 'a flow needs at least one step after the trigger');
   }
 
+  const keywords = normaliseKeywords(input.keywords);
+  if (keywords.length) {
+    // Keywords only narrow an event that carries text. A template button does not, so silently
+    // storing them there would make the flow look filtered while it fired on every tap.
+    const textTriggers = ['trigger_whatsapp_inbound', 'trigger_whatsapp_ctwa', 'trigger_crm_lead', 'trigger_meta_ad'];
+    if (!textTriggers.includes(input.trigger)) {
+      throw new FlowError(
+        'keywords_not_supported',
+        `keywords only apply to a message-shaped trigger (${textTriggers.join(', ')}), not ${input.trigger}`,
+      );
+    }
+    notes.push(`this flow only fires when the message contains: ${keywords.join(', ')}`);
+  } else if (input.trigger === 'trigger_whatsapp_inbound' || input.trigger === 'trigger_whatsapp_ctwa') {
+    notes.push(
+      'no keywords were given, so this flow fires on EVERY inbound WhatsApp message for the account once it is active',
+    );
+  }
+
   const nodes: Record<string, unknown>[] = [
     {
       id: 'node_trigger',
       type: 'triggerNode',
       position: { x: ORIGIN_X, y: ORIGIN_Y },
       data: {
-        title: `${name} Ã¢â‚¬â€ trigger`,
+        title: `${name} — trigger`,
         subtitle: 'Starting step',
         triggerType: input.trigger,
         ...(input.templateName ? { templateName: input.templateName } : {}),
-        description: `Fires on ${input.trigger}`,
+        ...(keywords.length ? { keywords } : {}),
+        description: keywords.length ? `Fires on ${input.trigger} matching ${keywords.join(', ')}` : `Fires on ${input.trigger}`,
       },
     },
   ];
@@ -164,6 +211,20 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
           // shape has always looked like from outside.
           ...(step.text ? { description: String(step.text), script: String(step.text) } : {}),
         },
+      });
+      return;
+    }
+
+    if (step.kind === 'handoff') {
+      // "Transfer to a human" used to be a node type nothing executed. It is a CRM handoff now:
+      // no dial, no message, no approval needed — so a flow can end by handing over instead of
+      // pretending to.
+      const note = String(step.text ?? '').trim() || 'A human needs to take this conversation over.';
+      nodes.push({
+        id,
+        type: 'action_ai_call_transfer',
+        position: { x, y: ORIGIN_Y },
+        data: { title: 'Transfer to a human', note },
       });
       return;
     }
@@ -213,7 +274,8 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
       trigger: {
         type: input.trigger,
         ...(input.templateName ? { templateName: input.templateName } : {}),
-        config: {},
+        ...(keywords.length ? { keywords } : {}),
+        config: keywords.length ? { keywords } : {},
       },
       nodes,
     }),
@@ -230,9 +292,12 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
       description:
         'Create a WhatsApp or calling automation flow that the flow runner will actually execute. ' +
         'Give it a name, one trigger from the supported list, and an ordered list of steps ' +
-        '(message / call / wait). Use a wait of at most 10 seconds: the runner clamps longer delays, so a ' +
+        '(message / call / wait / handoff). Use a wait of at most 10 seconds: the runner clamps longer delays, so a ' +
         '"wait 2 hours" must be a scheduled follow-up instead, and asking for one here is refused with that ' +
-        'reason. Check list_automation_flows first Ã¢â‚¬â€ a duplicate flow and an existing one both firing is worse ' +
+        'reason. For an inbound-message trigger, pass keywords so the flow only answers the messages it is for; ' +
+        'without them an active flow replies to EVERY inbound message. End with a handoff step when a person ' +
+        'should take over — it records the handoff in the CRM and messages nobody. ' +
+        'Check list_automation_flows first — a duplicate flow and an existing one both firing is worse ' +
         'than no flow.',
       inputSchema: z.object({
         name: z.string().describe('Short human name, e.g. "Course enquiry follow-up"'),
@@ -240,11 +305,21 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
           .enum(FLOW_TRIGGERS as unknown as [string, ...string[]])
           .describe('What starts the flow. Must be a trigger the runner matches on.'),
         templateName: z.string().optional().describe('For a button/template trigger, the template name'),
+        keywords: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Words that must appear in the message for the flow to fire (inbound/CTWA/CRM/ad triggers). ' +
+              'Leave empty only if the flow really should answer every message.'
+          ),
         steps: z
           .array(
             z.object({
-              kind: z.enum(['message', 'call', 'wait']).describe('message | call | wait'),
-              text: z.string().optional().describe('message text, or a note for the AI caller'),
+              kind: z.enum(['message', 'call', 'wait', 'handoff']).describe('message | call | wait | handoff'),
+              text: z
+                .string()
+                .optional()
+                .describe('message text, a note for the AI caller, or why a human takes over (handoff)'),
               seconds: z.number().optional().describe('wait length in seconds, at most 10'),
             }),
           )
@@ -258,9 +333,10 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
             name: input.name,
             trigger: input.trigger as FlowTrigger,
             ...(input.templateName ? { templateName: input.templateName } : {}),
+            ...(input.keywords ? { keywords: input.keywords } : {}),
             steps: (input.steps ?? []) as FlowStep[],
             // Flows start PAUSED. Writing one is authoring; making it live is a decision that reaches
-            // customers, and it belongs to the owner in the UI Ã¢â‚¬â€ not to a model mid-conversation.
+            // customers, and it belongs to the owner in the UI — not to a model mid-conversation.
             isActive: input.isActive === true,
           });
 

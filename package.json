@@ -144,6 +144,7 @@
     "probe:flow-delivery": "esbuild scripts/probe-flow-delivery.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probe-flow-delivery.mjs --log-level=warning && node .tmp-probe-flow-delivery.mjs",
     "repair:flow-triggers": "esbuild scripts/repair-flow-trigger-nodes.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-repair-flow-triggers.mjs --log-level=warning && node .tmp-repair-flow-triggers.mjs",
     "accept:flow-approvals": "node scripts/accept-flow-approvals-ui.mjs",
+    "accept:flow-via-agent": "esbuild scripts/accept-flow-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-flow-agent.mjs --log-level=warning && node .tmp-accept-flow-agent.mjs",
     "verify:tool-artifacts": "esbuild scripts/verify-tool-artifacts.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-tool-artifacts.mjs --log-level=warning && node .tmp-tool-artifacts.mjs",
     "verify:approval-card-ui": "node scripts/verify-approval-card-ui.mjs",
     "verify:crm-csv-filter": "node scripts/verify-crm-csv-filter.mjs",
