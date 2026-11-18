@@ -14,9 +14,57 @@ interface ActionConfirmationCardProps {
   onResume?: (prompt: string) => void;
 }
 
+/** "templateName" / "template_name" -> "Template name". */
+function humanise(key: string): string {
+  const spaced = key
+    .replace(/[_-]+/g, ' ')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1).toLowerCase();
+}
+
+/** One readable line for any staged value. */
+function showValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(showValue).filter(Boolean).join(', ');
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+/**
+ * The exact arguments being approved, as rows.
+ *
+ * An approval card that says "a real customer receives it" without naming the
+ * recipient is not an approval — the owner cannot check the one thing that
+ * matters. The gate stages the tool's real arguments in `payload`; show those
+ * whenever the artifact does not already carry a curated `spec`.
+ */
+function payloadRows(payload: unknown): Array<{ label: string; value: string }> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const rows: Array<{ label: string; value: string }> = [];
+  for (const [key, raw] of Object.entries(payload as Record<string, unknown>)) {
+    // Internal bookkeeping the owner should never have to read.
+    if (key === 'approvalId') continue;
+    const value = showValue(raw);
+    if (!value.trim()) continue;
+    rows.push({ label: humanise(key), value });
+    if (rows.length >= 8) break;
+  }
+  return rows;
+}
+
 export default function ActionConfirmationCard({ artifact, onDecision, onResume }: ActionConfirmationCardProps) {
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>(artifact.status || 'pending');
   const [loading, setLoading] = useState(false);
+
+  // Either the artifact's curated spec, or its raw staged arguments.
+  const detailRows = artifact.spec && artifact.spec.length > 0 ? artifact.spec : payloadRows(artifact.payload);
 
   const handleDecision = async (decision: 'approved' | 'rejected') => {
     setLoading(true);
@@ -111,12 +159,12 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume 
             {artifact.description}
           </p>
 
-          {artifact.spec && artifact.spec.length > 0 && (
+          {detailRows.length > 0 && (
             <div
               className="mb-3 overflow-hidden"
               style={{ border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 'var(--dsh-radius-sm)' }}
             >
-              {artifact.spec.map((row, i) => (
+              {detailRows.map((row, i) => (
                 <div
                   key={i}
                   className="flex items-start gap-3 px-3 py-1.5 dsh-t-xs"
@@ -128,7 +176,7 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume 
                   <span className="dsh-label-caption uppercase dsh-t-xxxs dsh-strong shrink-0 w-24 pt-0.5">
                     {row.label}
                   </span>
-                  <span className="dsh-label-primary dsh-mono whitespace-pre-wrap flex-1">{row.value}</span>
+                  <span className="dsh-label-primary dsh-mono whitespace-pre-wrap flex-1 break-words">{row.value}</span>
                 </div>
               ))}
             </div>
