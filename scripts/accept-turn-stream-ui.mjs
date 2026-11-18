@@ -411,9 +411,24 @@ async function main() {
       (await evaluate(`JSON.stringify(window.__nobo ? window.__nobo.events : [])`).catch(() => '[]')) || '[]'
     );
 
+    // Let the transcript settle before judging it.
+    //
+    // When the stream ends the live overlay is replaced by the projection, which
+    // arrives on a separate request. Sampling during that handover sees the reply
+    // once in the overlay and then once in the projection — or, worse, in neither
+    // — so wait until the overlay has gone and the projection carries the answer.
+    const settleBy = Date.now() + 15_000;
+    while (Date.now() < settleBy) {
+      const s = JSON.parse(await evaluate(SNAPSHOT_JS).catch(() => '{"cards":[],"liveBubbles":[]}'));
+      if (s.cards.length > blocksBefore) break;
+      if (s.liveBubbles.length === 0 && s.cards.length > 0 && blocksBefore === 0) break;
+      await sleep(300);
+    }
+
     const finalSnap = JSON.parse(await evaluate(SNAPSHOT_JS));
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
-    const shotPath = path.join(process.cwd(), 'accept-stream-ui.png');
+    const shotPath = path.join(process.cwd(), '.work', 'accept-stream-ui.png');
+    fs.mkdirSync(path.dirname(shotPath), { recursive: true });
     fs.writeFileSync(shotPath, Buffer.from(shot.data, 'base64'));
 
     // ── what actually happened ────────────────────────────────────────────
@@ -494,6 +509,7 @@ async function main() {
       logSessionId,
       // Did the browser actually use the new transport?
       agentApiCalls: netLog.filter((n) => n.method === 'POST'),
+      allAgentApiCalls: netLog.map((n) => `${n.method} ${n.url} -> ${n.status}`),
       usedStreamingEndpoint: netLog.some((n) => n.url.includes('/runs/stream') && n.status === 200),
       usedLegacyEndpoint: netLog.some((n) => n.url.includes('/agent/v2/chat')),
       // speed

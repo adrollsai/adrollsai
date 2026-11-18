@@ -121,3 +121,6 @@ pm run build.
 # Python bytecode from helper scripts (scripts/render-spec.py etc.)
 __pycache__/
 *.pyc
+
+# Chrome screenshot from npm run accept:stream-ui
+.work/accept-stream-ui.png
