@@ -271,23 +271,32 @@ async function main() {
       .maybeSingle();
     check('the database agrees: approved then blocked, with the reason on record', approvedRow?.status === 'blocked' && /24 hours/i.test(approvedRow?.error_message ?? ''), approvedRow);
 
-    // Reject the second row.
-    await evaluate(`(() => {
-      const rows = Array.from(document.querySelectorAll('li'));
-      const target = rows.find(r => /Reject me/i.test(r.innerText));
-      const btn = target && Array.from(target.querySelectorAll('button')).find(b => /Reject/i.test(b.innerText));
-      if (btn) btn.click();
-      return !!btn;
-    })()`);
+    // Reject the second row. Clicking is retried until the database agrees: the queue is being
+    // reloaded right after the approval, so a single click can land on a button that is still
+    // disabled — which is a race in the test, not in the screen.
+    const clickReject = () =>
+      evaluate(`(() => {
+        const rows = Array.from(document.querySelectorAll('li'));
+        const target = rows.find(r => /Reject me/i.test(r.innerText));
+        if (!target) return 'missing';
+        const btn = Array.from(target.querySelectorAll('button')).find(b => /Reject/i.test(b.innerText));
+        if (!btn) return 'missing';
+        if (btn.disabled) return 'disabled';
+        btn.click();
+        return 'clicked';
+      })()`).catch(() => 'error');
+
     let rejected = null;
-    const rejectDeadline = Date.now() + 45_000;
+    const rejectDeadline = Date.now() + 60_000;
+    let lastClick = '';
     while (Date.now() < rejectDeadline) {
-      await sleep(800);
+      lastClick = await clickReject();
+      await sleep(700);
       const { data } = await admin.from('agent_pending_deliveries').select('status').eq('id', rejectId).maybeSingle();
       rejected = data?.status ?? null;
       if (rejected === 'rejected') break;
     }
-    check('rejecting writes rejected, and sends nothing', rejected === 'rejected', rejected);
+    check('rejecting writes rejected, and sends nothing', rejected === 'rejected', `${rejected} (last click: ${lastClick})`);
     console.log(`\nscreenshot: ${shotPath}`);
   } finally {
     try {

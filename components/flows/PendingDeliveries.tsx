@@ -150,7 +150,7 @@ export function PendingDeliveries() {
         </ul>
       )}
 
-      {loading ? (
+      {loading && rows.length === 0 ? (
         <div className="mt-10 flex items-center justify-center gap-2 text-sm text-slate-500">
           <Loader2 className="animate-spin" size={16} /> Reading the queue…
         </div>
