@@ -39,6 +39,15 @@ export function PendingDeliveries() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
+  /**
+   * Rows this person just decided.
+   *
+   * They leave the pending queue the moment they are decided, and that is the one moment the answer
+   * matters most — "approved, but not sent because…" is the sentence somebody needs to read. Keeping
+   * them on screen until the page is refreshed is the difference between a screen that reports and a
+   * screen where a row simply disappears.
+   */
+  const [decided, setDecided] = useState<{ delivery: Delivery; outcome: Outcome }[]>([]);
   const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async () => {
@@ -73,8 +82,11 @@ export function PendingDeliveries() {
         const json = await res.json();
         if (!res.ok && !json?.status) throw new Error(json?.error || `HTTP ${res.status}`);
         const tone: Outcome['tone'] = json.status === 'delivered' ? 'ok' : json.status === 'blocked' ? 'warn' : json.status === 'rejected' ? 'warn' : 'bad';
-        setOutcomes((prev) => ({ ...prev, [delivery.id]: { tone, message: String(json.message || json.status || 'Done.') } }));
-        // A decided row leaves the pending list; a failed one stays visible in "all".
+        const outcome: Outcome = { tone, message: String(json.message || json.status || 'Done.') };
+        setOutcomes((prev) => ({ ...prev, [delivery.id]: outcome }));
+        setDecided((prev) => [{ delivery, outcome }, ...prev].slice(0, 8));
+        // A decided row leaves the pending list; it stays visible in "Just decided" above, because
+        // the reason it did not send is the most useful thing on this screen.
         await load();
       } catch (e: any) {
         setOutcomes((prev) => ({ ...prev, [delivery.id]: { tone: 'bad', message: String(e?.message || e) } }));
@@ -116,6 +128,26 @@ export function PendingDeliveries() {
         <div className="mt-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {error}
         </div>
+      )}
+
+      {decided.length > 0 && (
+        <ul className="mt-5 space-y-2">
+          {decided.map(({ delivery, outcome }) => (
+            <li
+              key={`decided-${delivery.id}`}
+              className={`rounded-2xl border p-3 text-xs ${
+                outcome.tone === 'ok'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : outcome.tone === 'warn'
+                    ? 'border-amber-200 bg-amber-50 text-amber-800'
+                    : 'border-rose-200 bg-rose-50 text-rose-800'
+              }`}
+            >
+              <p className="font-bold">{delivery.summary}</p>
+              <p className="mt-0.5">{outcome.message}</p>
+            </li>
+          ))}
+        </ul>
       )}
 
       {loading ? (
