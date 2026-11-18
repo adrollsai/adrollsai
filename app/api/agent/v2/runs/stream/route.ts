@@ -35,6 +35,7 @@ import {
   isCancelRequested,
 } from '@/lib/agent/harness/runs';
 import { openRunTurn, type SliceResult } from '@/lib/agent/harness/runner';
+import { loadTenantContext } from '@/lib/agent/orchestrator';
 
 /**
  * Must stay a literal: Next reads route segment config by static analysis.
@@ -96,6 +97,21 @@ export async function POST(req: Request) {
   }
   stage('auth');
 
+  // Everything below needs only `user.id`, and all of it is independent, so all
+  // of it starts now and is awaited where it is actually needed:
+  //
+  //   * the tenant context (profile + skills) is the data half of building the
+  //     agent — it does NOT depend on the conversation, so it must not queue
+  //     behind the queue writes. Note this is a PREFETCH, not a cache: nothing
+  //     is kept between requests, because the tool closures capture this
+  //     request's Supabase client and its JWT.
+  //   * the affordability check walks the credit pots, and only the model call
+  //     costs money, so it is enforced later, not first.
+  const tenantPromise = loadTenantContext(supabase, user.id).catch(() => undefined);
+  const affordablePromise = import('@/lib/agent/usage')
+    .then(({ canStartTurn }) => canStartTurn(user.id))
+    .catch(() => ({ ok: true }) as { ok: boolean; reason?: string });
+
   // Both are schema probes and both are cached per process, but on a cold
   // instance that is the first thing that happens — so they go together rather
   // than one after the other.
@@ -115,29 +131,6 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({} as any));
   const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
   if (!sessionId) return jsonOutcome('refused', { error: 'sessionId is required' }, 400);
-
-  // Ownership first: it is one query and it decides whether we do anything at
-  // all. The affordability check is started NOW but not awaited — it is the
-  // slowest of the pre-flight reads (it walks the credit pots), and the only
-  // thing that costs money is the model call, which happens later. Enqueuing a
-  // run is free.
-  const affordablePromise = import('@/lib/agent/usage')
-    .then(({ canStartTurn }) => canStartTurn(user.id))
-    .catch(() => ({ ok: true }) as { ok: boolean; reason?: string });
-
-  const { data: sessionRow } = await supabase
-    .from('harness_sessions')
-    .select('id')
-    .eq('id', sessionId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-  stage('session');
-
-  // Confirm the session belongs to this user before spending a model call on it.
-  if (!sessionRow) {
-    void affordablePromise;
-    return jsonOutcome('refused', { error: 'Session not found' }, 404);
-  }
 
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
   const attachments = Array.isArray(body?.attachments) ? body.attachments : undefined;
@@ -195,11 +188,11 @@ export async function POST(req: Request) {
   // needed to read a session's log.
   const eventsPromise = loadEvents(supabase, sessionId).catch(() => []);
 
-  // One write, not two: the row is created already owned by this request. See
-  // createClaimedRun — a queued row followed by an UPDATE was a round trip on the
-  // path to the first token for no benefit.
+  // One round trip, not three: the row is created already leased to this request,
+  // and the "does this session belong to you" question is part of the same write
+  // (harness_create_claimed_run). See createClaimedRun.
   const worker = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const claimed = await createClaimedRun(supabase, {
+  const claim = await createClaimedRun(supabase, {
     sessionId,
     userId: user.id,
     goal: goal || 'Continue the conversation.',
@@ -208,10 +201,21 @@ export async function POST(req: Request) {
     idempotencyKey,
     priority: 1,
   });
-  if (!claimed) {
+  if (!claim.ok) {
     void eventsPromise;
-    return jsonOutcome('refused', { error: 'Could not queue the run' }, 500);
+    void tenantPromise;
+    void affordablePromise;
+    if (claim.reason === 'not_owned') {
+      // Same answer the ownership query used to give, without the query.
+      return jsonOutcome('refused', { error: 'Session not found' }, 404);
+    }
+    return jsonOutcome(
+      'refused',
+      { error: 'Could not queue the run', detail: claim.detail },
+      500
+    );
   }
+  const claimed = claim.run;
   stage('claimed');
 
   // ── the affordability gate, immediately before anything that costs money ──
@@ -221,6 +225,7 @@ export async function POST(req: Request) {
   const affordable = await affordablePromise;
   if (!affordable.ok) {
     void eventsPromise;
+    void tenantPromise;
     await finishRun(supabase, claimed.id, worker, {
       status: 'cancelled',
       error: 'Stopped before it started: not enough credits.',
@@ -245,6 +250,9 @@ export async function POST(req: Request) {
       budgetMs: TURN_BUDGET_MS,
       maxSteps: TURN_MAX_STEPS,
       preloadedEvents: await eventsPromise,
+      // Started right after auth, so the profile and skills reads are already done
+      // by the time the prompt is assembled.
+      prefetchedTenant: await tenantPromise,
       // NOTE: no `abortSignal: req.signal` here.
       //
       // Next can abort `req.signal` as part of finishing a streamed response,

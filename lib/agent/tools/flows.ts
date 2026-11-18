@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Authoring an automation flow, which the agent could not do at all.
  *
  * THE GAP THIS CLOSES
@@ -155,7 +155,13 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
         position: { x, y: ORIGIN_Y },
         data: {
           title: `AI call ${index + 1}`,
-          ...(step.text ? { script: String(step.text) } : {}),
+          // `description` is the key the runner reads (planFromFlowDescription in
+          // lib/flows/start.ts). It used to be written as `script`, which nothing
+          // read, so the instructions the owner gave for the call were silently
+          // dropped and the call was queued with a null script. Keep both keys:
+          // `description` is the one that works, `script` is what the stored
+          // shape has always looked like from outside.
+          ...(step.text ? { description: String(step.text), script: String(step.text) } : {}),
         },
       });
       return;

@@ -205,21 +205,33 @@ export async function claimRun(
   return row;
 }
 
+export type ClaimRunResult =
+  | { ok: true; run: HarnessRun }
+  /** `not_owned` means the session exists but is not the caller's — answer 404, not 500. */
+  | { ok: false; reason: 'not_owned' | 'failed'; detail?: string };
+
 /**
- * Create a run and take its lease in ONE write.
+ * Create a run and take its lease in ONE round trip, already proved to belong to
+ * the caller.
  *
- * The streaming route does not need a queued run that it then immediately
- * claims; it needs a row that says "this request owns this run". Inserting it
- * directly in the `running` state with the lease already held does that in a
- * single round trip instead of an INSERT followed by an UPDATE — and a round trip
- * here is on the path to the first token.
+ * Three things used to be serial here, and only the last was useful work:
+ *   1. SELECT the session to prove the caller owns it
+ *   2. INSERT the run
+ *   3. UPDATE the run to take the lease
  *
- * `claimRun` still cannot steal it: it only takes `queued` runs, or `running`
- * ones whose lease has expired (which is exactly what should happen if this
- * request dies mid-turn).
+ * `harness_create_claimed_run` (migration 20261119000000) does all of it as one
+ * INSERT ... SELECT: the source row is the session, filtered by owner, so a
+ * session that is not the caller's simply produces no row and nothing is
+ * created. RLS still applies on both tables because the function is SECURITY
+ * INVOKER.
  *
- * Falls back to the two-step path when an idempotency key collides, because then
- * the row already exists and has to be claimed conditionally.
+ * Without that function on the database this falls back to the same three steps
+ * explicitly — including the ownership check, which must never be skipped just
+ * because the fast path is unavailable.
+ *
+ * `claimRun` still cannot steal the row: it only takes `queued` runs, or
+ * `running` ones whose lease has expired (which is exactly what should happen if
+ * this request dies mid-turn).
  */
 export async function createClaimedRun(
   supabase: SupabaseClient,
@@ -233,12 +245,79 @@ export async function createClaimedRun(
     priority?: number;
     deadlineAt?: string;
   }
-): Promise<HarnessRun | null> {
+): Promise<ClaimRunResult> {
   const leaseSeconds = input.leaseSeconds ?? 300;
+
+  const { data, error } = await db(supabase).rpc('harness_create_claimed_run', {
+    p_session_id: input.sessionId,
+    p_user_id: input.userId,
+    p_goal: input.goal,
+    p_worker: input.worker,
+    p_lease_seconds: leaseSeconds,
+    p_idempotency_key: input.idempotencyKey ?? null,
+    p_priority: input.priority ?? 0,
+    p_deadline_at: input.deadlineAt ?? null,
+  });
+
+  if (!error) {
+    // PostgREST hands back an all-NULLs composite when the function returns NULL,
+    // which is the "not your session" answer.
+    const row = (Array.isArray(data) ? data[0] : data) as HarnessRun | null | undefined;
+    if (row?.id) return { ok: true, run: row };
+    return { ok: false, reason: 'not_owned' };
+  }
+
+  if (error.code === '23505' && input.idempotencyKey) {
+    // Same key, same session: the run exists. Claim it properly.
+    const { data: existing } = await db(supabase)
+      .from('harness_runs')
+      .select('id')
+      .eq('session_id', input.sessionId)
+      .eq('idempotency_key', input.idempotencyKey)
+      .maybeSingle();
+    if (existing?.id) {
+      const claimed = await claimRunById(supabase, existing.id as string, input.worker, leaseSeconds);
+      if (claimed) return { ok: true, run: claimed };
+    }
+    return { ok: false, reason: 'failed', detail: 'idempotency key collided and the run could not be claimed' };
+  }
+
+  if (!isMissing(error)) {
+    console.error('[Harness] createClaimedRun failed:', error.message);
+    return { ok: false, reason: 'failed', detail: error.message };
+  }
+
+  console.warn(
+    '[Harness] harness_create_claimed_run is missing — falling back to the three-step create. ' +
+      'Apply supabase/migrations/20261119000000_harness_create_claimed_run.sql.'
+  );
+  return createClaimedRunSlowPath(supabase, input, leaseSeconds);
+}
+
+/** The pre-migration path: prove ownership, insert, take the lease. */
+async function createClaimedRunSlowPath(
+  supabase: SupabaseClient,
+  input: {
+    sessionId: string;
+    userId: string;
+    goal: string;
+    worker: string;
+    idempotencyKey?: string;
+    priority?: number;
+    deadlineAt?: string;
+  },
+  leaseSeconds: number
+): Promise<ClaimRunResult> {
+  const { data: owned } = await db(supabase)
+    .from('harness_sessions')
+    .select('id')
+    .eq('id', input.sessionId)
+    .eq('user_id', input.userId)
+    .maybeSingle();
+  if (!owned?.id) return { ok: false, reason: 'not_owned' };
+
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
-  const deadline = input.deadlineAt ?? new Date(now + 6 * 60 * 60_000).toISOString();
-
   const { data, error } = await db(supabase)
     .from('harness_runs')
     .insert({
@@ -247,7 +326,7 @@ export async function createClaimedRun(
       goal: input.goal,
       status: 'running',
       priority: input.priority ?? 0,
-      deadline_at: deadline,
+      deadline_at: input.deadlineAt ?? new Date(now + 6 * 60 * 60_000).toISOString(),
       idempotency_key: input.idempotencyKey ?? null,
       lease_owner: input.worker,
       lease_expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
@@ -258,22 +337,11 @@ export async function createClaimedRun(
     .select('*')
     .single();
 
-  if (!error) return data as HarnessRun;
-
-  if (error.code === '23505' && input.idempotencyKey) {
-    // Same key, same session: the run exists. Claim it properly.
-    const { data: existing } = await db(supabase)
-      .from('harness_runs')
-      .select('id')
-      .eq('session_id', input.sessionId)
-      .eq('idempotency_key', input.idempotencyKey)
-      .maybeSingle();
-    if (existing?.id) return claimRunById(supabase, existing.id as string, input.worker, leaseSeconds);
-    return null;
+  if (error) {
+    if (!isMissing(error)) console.error('[Harness] createClaimedRun (slow path) failed:', error.message);
+    return { ok: false, reason: 'failed', detail: error.message };
   }
-
-  if (!isMissing(error)) console.error('[Harness] createClaimedRun failed:', error.message);
-  return null;
+  return { ok: true, run: data as HarnessRun };
 }
 
 /**

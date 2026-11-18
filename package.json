@@ -138,6 +138,7 @@
     "measure:stream": "esbuild scripts/measure-stream-throughput.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-measure-stream.mjs --log-level=warning && node .tmp-measure-stream.mjs",
     "verify:turn-stream": "esbuild scripts/verify-turn-stream.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-turn-stream.mjs --log-level=warning && node .tmp-turn-stream.mjs",
     "accept:stream-ui": "node scripts/accept-turn-stream-ui.mjs",
+    "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",
     "probe:flow-scheduler": "esbuild scripts/probe-flow-scheduler.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probeflow.mjs --log-level=warning && node .tmp-probeflow.mjs",
     "probe:flow-chain": "esbuild scripts/probe-flow-chain.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probechain.mjs --log-level=warning && node .tmp-probechain.mjs"
   },

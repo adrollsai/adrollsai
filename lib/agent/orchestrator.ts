@@ -50,6 +50,66 @@ export interface AgentContextOptions {
   intentText?: string;
   /** Force an exact group list (tests, audit scripts, the generic MCP endpoint). */
   forceGroups?: ToolGroup[];
+  /**
+   * Tenant data this caller already read (see loadTenantContext).
+   *
+   * A PREFETCH, not a cache: the caller starts the read before it knows what it
+   * will ask, and hands the result over here so the two round trips are not on
+   * the path to the first token. Nothing is kept between requests — the tool
+   * closures capture a request-scoped Supabase client, so a shared context would
+   * run under somebody else's (or an expired) JWT.
+   */
+  prefetched?: TenantContext;
+}
+
+/** The tenant-shaped half of the agent context: who they are, and what they taught it. */
+export interface TenantContext {
+  profile: any | null;
+  skillCatalogue: string;
+}
+
+/**
+ * Read the two things about a tenant that do not depend on the conversation.
+ *
+ * Split out so a caller can start it early: `createAgentContext` needs the
+ * conversation text to pick tool groups, but it does not need it to read the
+ * profile. In the streaming route this is started straight after auth and is
+ * already resolved by the time the prompt is assembled.
+ *
+ * Deliberately NOT memoised. Caching it would survive the request, and the tool
+ * closures built afterwards hold this request's client and JWT.
+ */
+export async function loadTenantContext(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<TenantContext> {
+  const [profileResult, skillCatalogue] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select(`
+        business_name, mission_statement, custom_prompt, currency, business_info, industry,
+        role, email, ad_account_id, logo_url, brand_color, contact_number, address,
+        business_landing_hero_title, business_landing_hero_subtitle
+      `)
+      .eq('id', userId)
+      .maybeSingle(),
+    (async () => {
+      try {
+        const { data: skillRows } = await supabase
+          .from('agent_skills')
+          .select('name, description')
+          .eq('user_id', userId)
+          .eq('enabled', true)
+          .order('updated_at', { ascending: false })
+          .limit(40);
+        return skillRows?.length ? formatSkillCatalogue(skillRows as any) : '';
+      } catch {
+        return ''; /* skills are optional */
+      }
+    })(),
+  ]);
+
+  return { profile: profileResult.data ?? null, skillCatalogue };
 }
 
 export async function createAgentContext(
@@ -63,38 +123,11 @@ export async function createAgentContext(
       : operatorUserIdOrOpts || {};
   const operatorUserId = opts.operatorUserId;
 
-  // The business's own skills: names and when-to-use only. Bodies are fetched by
-  // get_skill on demand, so twenty uploaded skills cost twenty lines, not twenty
-  // documents. A failed read must never break context building.
-  //
-  // Started here, next to the profile read, because it does not depend on the
-  // profile: two independent reads in series were two round trips before the
-  // model could even be asked anything. Awaited where the text is used.
-  const skillCataloguePromise = (async () => {
-    try {
-      const { data: skillRows } = await supabase
-        .from('agent_skills')
-        .select('name, description')
-        .eq('user_id', userId)
-        .eq('enabled', true)
-        .order('updated_at', { ascending: false })
-        .limit(40);
-      return skillRows?.length ? formatSkillCatalogue(skillRows as any) : '';
-    } catch {
-      return ''; /* skills are optional */
-    }
-  })();
-
-  // Fetch user profile and business context for the target business
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select(`
-      business_name, mission_statement, custom_prompt, currency, business_info, industry,
-      role, email, ad_account_id, logo_url, brand_color, contact_number, address,
-      business_landing_hero_title, business_landing_hero_subtitle
-    `)
-    .eq('id', userId)
-    .maybeSingle();
+  // Who the tenant is, and what it has taught the agent. Either the caller
+  // already read this (and started it early), or we read both in one go here —
+  // the reads are independent of each other, so they never queue.
+  const tenant = opts.prefetched ?? (await loadTenantContext(supabase, userId));
+  const profile = tenant.profile;
 
   // If operator is specified, check if operator is super_admin
   let isSuperAdmin = profile?.role === 'super_admin' || profile?.email === 'rchopra489@gmail.com';
@@ -212,7 +245,8 @@ export async function createAgentContext(
   };
 
   // The read started above, alongside the profile — this only collects it.
-  const skillCatalogue = await skillCataloguePromise;
+  // The read happened above, alongside the profile — this only collects it.
+  const skillCatalogue = tenant.skillCatalogue;
 
   const impersonationNotice = isImpersonating ? `
 CLIENT ACCOUNT IMPERSONATION ACTIVE:

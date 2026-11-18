@@ -32,7 +32,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { streamText, stepCountIs } from 'ai';
 import { getAgentModel } from '../deepseek';
-import { createAgentContext } from '../orchestrator';
+import { createAgentContext, type TenantContext } from '../orchestrator';
 import { appendEvents, loadEvents } from './store';
 import { createEvent, type HarnessEvent } from './events';
 import { persistStep } from './persist';
@@ -68,6 +68,15 @@ export interface SliceOptions {
    * Ignored when resuming from a checkpoint, which carries its own history.
    */
   preloadedEvents?: HarnessEvent[];
+  /**
+   * The tenant's profile and skill catalogue, already read by the caller.
+   *
+   * `loadTenantContext` is started straight after auth in the streaming route,
+   * because reading who the business is does not depend on the conversation —
+   * while the tool-group selection does. Passing it here keeps two round trips
+   * off the path to the first token.
+   */
+  prefetchedTenant?: TenantContext;
   /**
    * Called as each setup stage completes. Time-to-first-token is dominated by
    * what happens BEFORE the model is asked anything, so the route records these
@@ -252,6 +261,7 @@ export async function openRunTurn(
   const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, {
     operatorUserId: run.user_id,
     intentText,
+    ...(opts.prefetchedTenant ? { prefetched: opts.prefetchedTenant } : {}),
   });
   stage('context');
 
