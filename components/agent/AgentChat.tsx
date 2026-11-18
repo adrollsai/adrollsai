@@ -695,6 +695,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   useEffect(() => {
     if (adoptedSession.current) return;
     if (harness.available !== true) return;
+    // The user has already picked a thread (a session, CEO, or a deep link), or
+    // has just created one. Adopting "the most recent chat" on top of that threw
+    // the choice away — clicking New session right after load created a real
+    // session, and then this effect opened a different one, so the pane went
+    // blank and the reply landed in a conversation nobody was looking at.
+    if (userChoseThreadRef.current) {
+      adoptedSession.current = true;
+      return;
+    }
     if (logSessionId) {
       adoptedSession.current = true;
       return;
@@ -1005,6 +1014,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         setLogSessionId(sid);
       }
     }
+    // Wherever this message is going, that thread is now the user's choice — the
+    // adoption effect must not switch away from it mid-turn.
+    if (sid) userChoseThreadRef.current = true;
 
     // NOTE: no appendUserMessage here in the durable path.
     //
@@ -1147,6 +1159,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   };
 
   const handleOpenSession = async (sessionId: string) => {
+    // A deliberate choice: the "adopt the most recent chat" effect must not undo it.
+    userChoseThreadRef.current = true;
     setActiveSessionId(sessionId);
     setSecondsElapsed(0);
     isAutoScrollEnabled.current = true;
@@ -1172,6 +1186,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   };
 
   const handleNewSession = async (targetWsId?: string) => {
+    // A deliberate choice: the "adopt the most recent chat" effect must not undo it.
+    userChoseThreadRef.current = true;
     const wsId = targetWsId || activeWorkspaceId;
     setActiveWorkspaceId(wsId);
     setMessages([]);
