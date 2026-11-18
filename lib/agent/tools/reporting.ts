@@ -224,7 +224,7 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
     lead_conversations: tool({
       description:
-        'What the AI caller actually said on the phone. Returns the call summary (and transcript when available) plus the agent\'s last thought for specific leads, or the most recent leads that have call summaries. Use this for "what did the AI talk about", "summarise the calls", "what did lead X say".',
+        'What the AI caller actually said on the phone. Returns the call summary, the transcript and the RECORDING LINK (recordingUrl) for specific leads, or the most recent leads that have call summaries. Use this for "what did the AI talk about", "summarise the calls", "what did lead X say", "pull the conversation and the audio", "send me the call recording". The recordingUrl is a directly playable audio file when the call has one; hasRecording is false when no audio was captured — say so plainly rather than hunting for the file.',
       inputSchema: z.object({
         leadId: z.string().optional().describe('A specific lead id'),
         leadNameContains: z.string().optional().describe('Find leads whose name contains this text'),
@@ -249,7 +249,7 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
           let q = supabase
             .from('leads')
-            .select('id, name, phone, pipeline_stage, voice_call_status, last_call_at, updated_at, voice_call_summary, voice_call_transcript, summary, notes, last_agent_thought, ad_name')
+            .select('id, name, phone, pipeline_stage, voice_call_status, last_call_at, updated_at, voice_call_summary, voice_call_transcript, voice_recording_url, summary, notes, last_agent_thought, ad_name')
             .in('user_id', ids)
             .order('updated_at', { ascending: false })
             .limit(fetchLimit);
@@ -277,15 +277,33 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             lastCallAt: l.last_call_at,
             lastCallStatus: l.voice_call_status,
             callSummary: l.voice_call_summary || null,
-            transcriptExcerpt: l.voice_call_transcript
-              ? String(l.voice_call_transcript).slice(0, 1200)
-              : null,
+            // The conversation, in words.
+            //
+            // `voice_call_transcript` is an ARRAY of { role, message } turns, and this
+            // used to do `String(transcript).slice(...)` — which reached the model as
+            // "[object Object],[object Object],…". So "pull the conversation" was
+            // unanswerable even though the transcript was right there: the agent got
+            // gibberish, re-asked with different parameters seven times, and eventually
+            // went hunting through table names for a readable copy.
+            transcriptExcerpt: formatTranscript(l.voice_call_transcript),
+            transcriptTurns: countTranscriptTurns(l.voice_call_transcript),
+            // The audio, which this tool used to omit even though the column holds it.
+            //
+            // An owner asking "pull the conversation and the audio too" could not be
+            // answered: the transcript was here, the recording was not, and no other
+            // tool returns one. The agent spent seven minutes guessing table names and
+            // then looking for credentials in the sandbox to fetch the file itself,
+            // produced no answer at all, and was cancelled. The recording was in the
+            // row the whole time.
+            recordingUrl: l.voice_recording_url || null,
+            hasRecording: Boolean(l.voice_recording_url),
             notes: l.notes ? String(l.notes).slice(0, 400) : null,
             agentThought: l.last_agent_thought ? String(l.last_agent_thought).slice(0, 300) : null,
             campaign: l.ad_name || null,
           }));
 
           const withSummary = rows.filter((r) => r.callSummary);
+          const recordings = rows.filter((r) => r.hasRecording).length;
           const answer =
             rows.length === 0
               ? 'No leads with call summaries found for this organisation.'
@@ -296,7 +314,8 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
                   withSummary
                     .slice(0, 3)
                     .map((r) => `${r.name} — ${String(r.callSummary).slice(0, 140)}`)
-                    .join(' | ');
+                    .join(' | ') +
+                  (recordings ? ` ${recordings} of them ${recordings === 1 ? 'has' : 'have'} a recording (recordingUrl).` : '');
 
           return { success: true, answer, count: rows.length, leads: rows };
         } catch (err: any) {
@@ -731,4 +750,55 @@ function timezoneLabel(tz: string): string {
     UTC: ' (UTC)',
   };
   return map[tz] || ` (${tz})`;
+}
+
+/** Readable turn count, whatever shape the column holds. */
+function countTranscriptTurns(transcript: unknown): number {
+  if (Array.isArray(transcript)) return transcript.length;
+  if (typeof transcript === 'string' && transcript.trim()) {
+    try {
+      const parsed = JSON.parse(transcript);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+/**
+ * A stored call transcript, as speaker-labelled lines.
+ *
+ * `leads.voice_call_transcript` is a JSON array of { role, message }. Stringifying
+ * it produced "[object Object]" for the model, which is why "pull the conversation"
+ * could not be answered from a tool that already had the conversation.
+ *
+ * Accepts a JSON string as well, because older rows hold one.
+ */
+function formatTranscript(transcript: unknown, limit = 2400): string | null {
+  let turns: any = transcript;
+  if (typeof transcript === 'string') {
+    const raw = transcript.trim();
+    if (!raw) return null;
+    try {
+      turns = JSON.parse(raw);
+    } catch {
+      // Already human-readable prose from some other writer.
+      return raw.slice(0, limit);
+    }
+  }
+  if (!Array.isArray(turns) || !turns.length) return null;
+
+  const lines: string[] = [];
+  for (const turn of turns) {
+    const role = String(turn?.role ?? '').toLowerCase();
+    const message = String(turn?.message ?? turn?.text ?? '').trim();
+    if (!message) continue;
+    const who = role === 'agent' || role === 'assistant' || role === 'ai' ? 'Nobo' : 'Lead';
+    lines.push(`${who}: ${message}`);
+  }
+  if (!lines.length) return null;
+
+  const joined = lines.join('\n');
+  return joined.length > limit ? `${joined.slice(0, limit)}…` : joined;
 }

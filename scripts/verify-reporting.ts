@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Verifies org_call_report against the real database.
  *
  * The whole point of this tool is that the number is right, so the test does
@@ -130,6 +130,63 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   // ── status breakdown is coherent ─────────────────────────────────────────
   const statusSum = Object.values(today.byStatus || {}).reduce((a: number, b: any) => a + Number(b), 0);
   check('status breakdown sums to the total', statusSum === today.totalCalls, `${statusSum} vs ${today.totalCalls}`);
+
+  /* ====================================================================== */
+  /* lead_conversations: "pull the conversation and the audio too"           */
+  /* ====================================================================== */
+  //
+  // Both halves used to be unanswerable from the tool that exists for exactly
+  // this question. The transcript is an ARRAY of turns and was stringified, so
+  // the model received "[object Object],[object Object],…"; the recording link
+  // was never selected at all. The owner asked, got nothing, and the agent spent
+  // seven minutes guessing table names before being cancelled.
+  console.log('\n— lead_conversations: conversation + audio —');
+  {
+    // Must be a lead inside the org this run is testing as — the tool scopes by
+    // org, so a lead belonging to another tenant would (correctly) come back empty
+    // and the test would be failing its own harness.
+    const { data: withRecording } = await sb
+      .from('leads')
+      .select('id, name, user_id')
+      .in('user_id', ids.length ? ids : [profile.id])
+      .not('voice_recording_url', 'is', null)
+      .limit(1);
+    const target = withRecording?.[0];
+
+    if (!target) {
+      check(
+        'a lead with a recording exists in this org to test against',
+        false,
+        'none found — cannot check the audio half for this org'
+      );
+    } else {
+      const out = await tools.lead_conversations.execute(
+        { leadId: target.id, onlyWithSummary: false, limit: 1 },
+        { toolCallId: 't', messages: [] }
+      );
+      const lead = out?.leads?.[0];
+      check('the tool returns the lead it was asked about', lead?.leadId === target.id, lead?.name);
+      check(
+        'the recording link is returned',
+        typeof lead?.recordingUrl === 'string' && lead.recordingUrl.startsWith('http'),
+        String(lead?.recordingUrl).slice(0, 64)
+      );
+      check('…and flagged as present', lead?.hasRecording === true);
+      check(
+        'the transcript is readable prose, not [object Object]',
+        typeof lead?.transcriptExcerpt === 'string' &&
+          !lead.transcriptExcerpt.includes('[object Object]') &&
+          /^(Nobo|Lead):/m.test(lead.transcriptExcerpt),
+        String(lead?.transcriptExcerpt).split('\n')[0]?.slice(0, 80)
+      );
+      check('…and reports how many turns it has', Number(lead?.transcriptTurns) > 0, String(lead?.transcriptTurns));
+      check(
+        'the headline answer mentions the recording',
+        /recording/i.test(String(out?.answer || '')),
+        String(out?.answer).slice(-70)
+      );
+    }
+  }
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n=== ${results.length - failed.length}/${results.length} passed`);
