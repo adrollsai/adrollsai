@@ -72,7 +72,8 @@ import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
 import HarnessTranscript from './HarnessTranscript';
 import HarnessDetails from './HarnessDetails';
 import { useHarnessSession } from '@/lib/agent/harness/useHarnessSession';
-import { itemsToUIMessages } from '@/lib/agent/harness/projection';
+import { useRunStream, stripPersistedPrefix, logStreamMetrics } from '@/lib/agent/harness/useRunStream';
+import { itemsToUIMessages, type HarnessState } from '@/lib/agent/harness/projection';
 import { AGENT_MODEL, displayNameFor } from '@/lib/agent/models';
 import { resolveToolPresentation, summarizeToolInput } from '@/lib/agent/presentation';
 import { createClient } from '@/utils/supabase/client';
@@ -414,10 +415,135 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     onError: handleError,
   }) as any;
 
+  // ── the live turn stream ────────────────────────────────────────────────
+  //
+  // The reply now arrives over SSE straight from the model
+  // (`/api/agent/v2/runs/stream`), not through the event log. Realtime stays
+  // connected purely as the reconnect path: if this stream drops, the
+  // projection — a fold of the log, which the runner still writes once per
+  // step — catches the transcript up and the durable run finishes the work.
+  const runStream = useRunStream();
+  const liveTurn = runStream.message;
+  const sendRunStream = runStream.send;
+  const stopRunStream = runStream.stop;
+  const resetRunStream = runStream.reset;
+
   // A durable run counts as "busy" exactly like a streaming turn, so the
   // composer, spinner and live indicator all behave the same either way.
   const isLoading =
-    status === 'submitted' || status === 'streaming' || harness.runInProgress === true;
+    status === 'submitted' ||
+    status === 'streaming' ||
+    runStream.streaming ||
+    harness.runInProgress === true;
+
+  /**
+   * Show the user's own message the instant they send it.
+   *
+   * The server appends `user.message` using the id we hand it, so the fold of
+   * the log produces exactly this item — the optimistic row is not a guess, it
+   * is the same row arriving early, and Realtime confirming it is a no-op.
+   * Without it a brand-new session shows the reply typing into an empty pane,
+   * because nothing has come back over Realtime yet.
+   */
+  const appendOptimisticUser = useCallback(
+    (sessionId: string, id: string, text: string, attachment: any) => {
+      harness.setProjectedState((prev) => {
+        const base: HarnessState =
+          prev && prev.sessionId === sessionId
+            ? prev
+            : ({
+                sessionId,
+                title: 'New session',
+                workspaceId: activeWorkspaceId,
+                status: 'idle',
+                items: [],
+                toolIndex: {},
+                seenIds: {},
+                resolvedCalls: {},
+                version: 0,
+              } as HarnessState);
+        if (base.seenIds[id]) return base;
+        return {
+          ...base,
+          items: [
+            ...base.items,
+            {
+              kind: 'user' as const,
+              id,
+              text,
+              attachments: attachment
+                ? [
+                    {
+                      name: attachment.name,
+                      url: attachment.url,
+                      type: attachment.type,
+                      size: attachment.size,
+                    },
+                  ]
+                : undefined,
+            },
+          ],
+          seenIds: { ...base.seenIds, [id]: true },
+          version: base.version + 1,
+        };
+      });
+    },
+    [harness, activeWorkspaceId]
+  );
+
+  /** Take it back when the server refused the turn — nothing was committed. */
+  const dropOptimisticUser = useCallback(
+    (sessionId: string, id: string) => {
+      harness.setProjectedState((prev) => {
+        if (!prev || prev.sessionId !== sessionId || !prev.seenIds[id]) return prev;
+        const seenIds = { ...prev.seenIds };
+        delete seenIds[id];
+        return {
+          ...prev,
+          items: prev.items.filter((item) => item.id !== id),
+          seenIds,
+          version: prev.version + 1,
+        };
+      });
+    },
+    [harness]
+  );
+
+  // The turn in flight, minus everything the committed projection already shows.
+  //
+  // The runner persists a step the moment it finishes, and the projection renders
+  // it immediately; the live stream meanwhile holds the whole assistant turn so
+  // far. In a multi-step answer step 1 therefore exists in both places and the
+  // reader sees the same paragraph twice. Only prose and thinking belong in the
+  // overlay: tool rows and run status already come from the log, once each.
+  const persistedTexts = useMemo(() => {
+    const text: string[] = [];
+    const reasoning: string[] = [];
+    // Only the tail matters: the overlay can only be re-showing what this turn
+    // already committed, and looking further back invites a false match against
+    // an older reply that happened to start with the same words.
+    const tail = (projected?.items ?? []).slice(-12);
+    for (const item of tail) {
+      if (item.kind === 'assistant' && item.text.trim()) text.push(item.text.trim());
+      else if (item.kind === 'reasoning' && item.text.trim()) reasoning.push(item.text.trim());
+    }
+    return { text, reasoning };
+  }, [projected?.items]);
+
+  const liveOverlay = useMemo(() => {
+    const stripped = stripPersistedPrefix(liveTurn, persistedTexts);
+    const parts = (stripped?.parts ?? []).filter((p: any) => {
+      const type = typeof p?.type === 'string' ? p.type : '';
+      return type === 'text' || type === 'reasoning' || type === 'thinking';
+    });
+    if (!parts.length) return null;
+    return { ...(stripped as any), parts };
+  }, [liveTurn, persistedTexts]);
+
+  const liveThread = useMemo(() => {
+    const base = Array.isArray(messages) ? messages : [];
+    return liveOverlay ? [...base, liveOverlay] : base;
+  }, [messages, liveOverlay]);
 
   // ── Follow-up queue ──────────────────────────────────────────────────
   // Sending while a turn is streaming used to be blocked outright, so a user
@@ -538,10 +664,15 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   }, [isLoading, isUploading, queuedCount]);
 
   // When a run finishes, the turn is in the log — reload the projection so the
-  // live view is replaced by the authoritative replay view.
+  // live stream overlay is replaced by the authoritative replay view.
   const wasStreaming = useRef(false);
+  const metricsRef = useRef(runStream.metrics);
+  metricsRef.current = runStream.metrics;
   useEffect(() => {
     if (wasStreaming.current && !isLoading && logSessionId) {
+      // Time-to-first-token and tokens/sec for the turn that just ended, so a
+      // slow reply is a number in the console and not only a feeling.
+      logStreamMetrics('turn finished', metricsRef.current);
       void harness.openSession(logSessionId);
       // The server names a session from its first message (`maybeAutoTitle`), and
       // that write lands DURING the turn. The sidebar list was only fetched on
@@ -894,41 +1025,65 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       textareaRef.current.style.height = 'auto';
     }
 
-    // ── Durable by default ───────────────────────────────────────────────
-    // Every message becomes a queued run, so nothing depends on a single HTTP
-    // request surviving: the run is checkpointed, retried and continued by the
-    // worker whether this tab stays open, sleeps, or the request is killed.
-    // The transcript below streams from the event log over Realtime, so the
-    // user still watches thinking blocks and tool rows land as they happen.
+    // ── Live turn, durable underneath ────────────────────────────────────
+    //
+    // The reply is streamed straight from the model to this browser over SSE.
+    // The run behind it is still durable: `/runs/stream` claims a `harness_runs`
+    // row before the first token, so if this tab closes the checkpoint is
+    // re-queued and the cron worker carries the task on. The event log is
+    // written once per finished step — never per token — so the wire speed is
+    // the model's, not Postgres's.
     if (harness.available === true && sid) {
-      const run = await harness.startRun(fullPrompt);
-      if (run) {
-        toast.success('Running in the background — safe to close this tab.');
+      // The client owns the id its bubble is rendered with, so the optimistic
+      // row and the persisted row are the same row. Without that the bubble
+      // appears twice the moment Realtime echoes the insert back.
+      const userMessageId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? `u_${crypto.randomUUID()}`
+          : `u_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      appendOptimisticUser(sid, userMessageId, fullPrompt, attachedFile);
+
+      const result = await sendRunStream({
+        sessionId: sid,
+        text: fullPrompt,
+        messageId: userMessageId,
+        goal: fullPrompt,
+        attachments: attachedFile
+          ? [
+              {
+                name: attachedFile.name,
+                url: attachedFile.url,
+                type: attachedFile.type,
+                size: attachedFile.size,
+              },
+            ]
+          : undefined,
+      });
+
+      if (result.outcome === 'streaming') return;
+
+      if (result.outcome === 'steered' || result.outcome === 'queued') {
+        // Deliberately NOT an error: the message was accepted and the work is
+        // happening. A red banner here is what made a working agent look broken.
+        if (result.notice) toast.info(result.notice);
         return;
       }
-      // Do NOT fall through to a live turn here. The usual reason the queue refuses is
-      // that a run is already working on this chat (a reload, a second tab, or another
-      // device), and a fallback would start a SECOND run against the same event log —
-      // interleaving the transcript, which is the failure this guard exists to prevent.
-      // Queue it instead: the message is kept and delivered when the current run ends.
-      queueRef.current.push(fullPrompt);
-      setQueuedCount(queueRef.current.length);
-      setInput('');
-      toast.info('A run is already working on this chat — queued as a follow-up.');
+
+      if (result.outcome === 'refused' || result.outcome === 'error') {
+        // The optimistic bubble has to go: nothing was committed, and leaving it
+        // behind would look like the agent silently ignored the message.
+        dropOptimisticUser(sid, userMessageId);
+        toast.error(result.error || 'The agent could not start that turn.');
+        // Re-read the log so the pane shows what actually exists.
+        void harness.refreshProjection();
+        return;
+      }
       return;
     }
 
-    // Fallback only when the durable queue is unavailable.
-    if (harness.available === true && sid) {
-      void harness.appendUserMessage(
-        fullPrompt,
-        attachedFile
-          ? [{ name: attachedFile.name, url: attachedFile.url, type: attachedFile.type, size: attachedFile.size }]
-          : undefined,
-        sid
-      );
-    }
-    await sendMessage({ text: fullPrompt }, sid ? { body: { sessionId: sid } } : undefined);
+    // Fallback only when the session log is unavailable.
+    await sendMessage({ text: fullPrompt });
   };
 
   /**
@@ -989,6 +1144,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     setActiveSessionId(sessionId);
     setSecondsElapsed(0);
     isAutoScrollEnabled.current = true;
+    // Any overlay belongs to the session we are leaving.
+    resetRunStream();
 
     if (harness.available === true) {
       setLogSessionId(sessionId);
@@ -1014,6 +1171,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     setMessages([]);
     setSecondsElapsed(0);
     isAutoScrollEnabled.current = true;
+    resetRunStream();
 
     if (harness.available === true) {
       const serverId = await harness.createSession({ workspaceId: wsId });
@@ -1729,24 +1887,21 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     ))}
                   </div>
                 )}
-                {isLoading &&
-                  messages.length > 0 &&
-                  messages[messages.length - 1]?.role === 'assistant' && (
-                    // Only ever render the live ASSISTANT message here. The
-                    // committed projection already contains the user's message,
-                    // so rendering the live user message too made it appear
-                    // twice until the projection caught up.
-                    <SafeMessageRenderer
-                      m={messages[messages.length - 1]}
-                      mIdx={messages.length - 1}
-                      messages={messages}
-                      isLoading={isLoading}
-                      handleSend={handleSend}
-                      handleCopyMessage={handleCopyMessage}
-                      copiedIndex={copiedIndex}
-                      reload={reload}
-                    />
-                  )}
+                {liveOverlay && (
+                  // The turn in flight, streamed straight from the model. It is
+                  // rendered last, and only carries what the committed
+                  // projection has not already shown — see `liveOverlay`.
+                  <SafeMessageRenderer
+                    m={liveOverlay}
+                    mIdx={liveThread.length - 1}
+                    messages={liveThread}
+                    isLoading={isLoading}
+                    handleSend={handleSend}
+                    handleCopyMessage={handleCopyMessage}
+                    copiedIndex={copiedIndex}
+                    reload={reload}
+                  />
+                )}
               </>
             ) : (
               messages.map((m: any, mIdx: number) => (
@@ -1797,7 +1952,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   type="button"
                   onClick={() => {
                     if (harness.runInProgress) void harness.cancelRun();
-                    else stop();
+                    // Stop the live SSE turn too: aborting the request stops
+                    // paying for tokens nobody will read, and the runner
+                    // re-queues whatever it had already completed.
+                    stopRunStream();
+                    stop();
                   }}
                   className="ml-auto shrink-0 px-2 py-1 rounded-[6px] dsh-t-xs dsh-label-secondary dsh-interactive"
                 >
@@ -2032,7 +2191,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={handleStartRun}
-                    disabled={(!input.trim() && !attachedFile) || isUploading || harness.runInProgress}
+                    disabled={(!input.trim() && !attachedFile) || isUploading || isLoading}
                     className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
                     title="Run in the background (survives closing this tab)"
                   >
@@ -2045,10 +2204,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     <button
                       type="button"
                       onClick={() => {
-                        // A durable run is cancelled via the run API; the stream
-                        // controller only knows about live in-request turns.
+                        // A durable run is cancelled via the run API; the live
+                        // stream is cancelled by aborting its request.
                         if (harness.runInProgress) void harness.cancelRun();
-                        else stop();
+                        stopRunStream();
+                        stop();
                       }}
                       className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn-primary flex items-center justify-center"
                       title="Stop"

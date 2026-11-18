@@ -205,6 +205,57 @@ export async function claimRun(
   return row;
 }
 
+/**
+ * Claim ONE specific run, by id.
+ *
+ * `claimRun` hands out whatever the queue says is next, which is right for a
+ * background worker and wrong for the request that just created the run: it is
+ * about to stream this exact run's tokens to the browser, and if the cron tick
+ * claims it first the same task runs twice and the user sees two replies.
+ *
+ * The conditional UPDATE is the mutual exclusion — Postgres applies the WHERE
+ * clause atomically, so exactly one of `{this request, the worker}` wins, and
+ * the loser is told so (`null`) instead of guessing.
+ */
+export async function claimRunById(
+  supabase: SupabaseClient,
+  runId: string,
+  worker: string,
+  leaseSeconds = 300
+): Promise<HarnessRun | null> {
+  const now = Date.now();
+  const { data, error } = await db(supabase)
+    .from('harness_runs')
+    .update({
+      status: 'running',
+      lease_owner: worker,
+      lease_expires_at: new Date(now + leaseSeconds * 1000).toISOString(),
+      last_heartbeat_at: new Date(now).toISOString(),
+      updated_at: new Date(now).toISOString(),
+    })
+    .eq('id', runId)
+    .eq('status', 'queued')
+    .select('*')
+    .maybeSingle();
+
+  if (error) {
+    if (!isMissing(error)) console.error('[Harness] claimRunById failed:', error.message);
+    return null;
+  }
+  const row = data as HarnessRun | null;
+  if (!row?.id) return null;
+
+  // started_at is "first time this run ever ran", so it is set once.
+  if (!row.started_at) {
+    await db(supabase)
+      .from('harness_runs')
+      .update({ started_at: new Date(now).toISOString() })
+      .eq('id', runId)
+      .is('started_at', null);
+  }
+  return row;
+}
+
 /** Extend the lease during a slice. Returns false if the lease was stolen. */
 export async function heartbeatRun(
   supabase: SupabaseClient,

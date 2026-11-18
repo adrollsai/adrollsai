@@ -13,6 +13,21 @@
  *   * checkpoints make a slice resumable
  *   * the idempotency ledger makes side effects at-most-once per run
  *   * backoff + attempts + dead-letter stop a broken run from spinning forever
+ *
+ * ── the wire and the log are different things ──────────────────────────────
+ * This module used to write every streaming delta into `harness_events` so the
+ * browser could render it over Realtime. That made typing speed a function of
+ * Postgres insert throughput plus Realtime fan-out (measured: ~1 token/second,
+ * four writes a second), and it filled the log with hundreds of
+ * `assistant.text` rows for one reply — which eventually pushed the
+ * reconstructed history past the model window and had requests rejected
+ * outright (steps:0, no tokens).
+ *
+ * So: the event log is HISTORY and is written once per finished step
+ * (`persistStep`), while the live answer travels straight from the model to
+ * whichever browser is watching, over SSE. `openRunTurn()` is the seam those
+ * two paths share: the cron worker drains the model stream with nobody
+ * watching, and the streaming route hands the same stream to the browser.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { streamText, stepCountIs } from 'ai';
@@ -32,7 +47,6 @@ import { AGENT_MODEL } from '../models';
 /** Generous output budget: reasoning is billed inside it, so a small default starves the answer. */
 const HARNESS_MAX_OUTPUT_TOKENS = 16000;
 
-
 export interface SliceOptions {
   worker: string;
   /** Wall-clock budget for this slice. Keep below the route's maxDuration. */
@@ -41,6 +55,11 @@ export interface SliceOptions {
   maxSteps: number;
   /** Called periodically so the lease does not expire mid-slice. */
   onHeartbeat?: () => Promise<unknown>;
+  /**
+   * Abort the model call when this signal fires (the browser goes away).
+   * Only the streaming route passes one; the worker is never aborted by a client.
+   */
+  abortSignal?: AbortSignal;
 }
 
 export interface SliceResult {
@@ -55,7 +74,55 @@ export interface SliceResult {
   incrementAttempt?: boolean;
 }
 
+/** A slice that is already generating, plus the promise that settles it. */
+export interface OpenedTurn {
+  /** The AI SDK stream result — already producing tokens. */
+  result: any;
+  /** Resolves once the slice is settled: steps persisted, checkpoint decided. */
+  done: Promise<SliceResult>;
+  /** Wall clock when the model call started. */
+  startedAt: number;
+  /** Milliseconds until the first text or reasoning delta arrived (null until then). */
+  ttftMs: () => number | null;
+  /** The run this turn belongs to, for logging and metrics. */
+  runId: string;
+  sliceNumber: number;
+}
+
+/**
+ * Either a turn that is now streaming, or a slice that never got that far
+ * (continuation limit, past deadline, empty conversation). The caller records
+ * the outcome either way.
+ */
+export type TurnOpening = { kind: 'settled'; result: SliceResult } | { kind: 'open'; turn: OpenedTurn };
+
 const HEARTBEAT_EVERY_MS = 60_000;
+
+/** Wait for `promise`, but never longer than `ms`. Keeps a stuck SDK promise from pinning a lease. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(null);
+    }, ms);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}
 
 async function appendRunStatus(
   supabase: SupabaseClient,
@@ -77,18 +144,26 @@ async function appendRunStatus(
   }
 }
 
-export async function executeRunSlice(
+/**
+ * Build the model call for one slice and start it.
+ *
+ * Everything the worker and the streaming route have in common lives here:
+ * history reconstruction, tool surface, steering, the step-boundary persistence
+ * and the decision of what the slice's outcome is. What they do NOT share is
+ * how the tokens reach a human — the worker drains them, the route pipes them.
+ */
+export async function openRunTurn(
   supabase: SupabaseClient,
   run: HarnessRun,
   opts: SliceOptions
-): Promise<SliceResult> {
+): Promise<TurnOpening> {
   const startedAt = Date.now();
   const sliceNumber = (run.checkpoint?.slices ?? 0) + 1;
 
   if (run.continuations >= run.max_continuations) {
     const error = `Run exceeded its continuation limit (${run.max_continuations} slices).`;
     await appendRunStatus(supabase, run.session_id, 'failed', error, sliceNumber);
-    return { status: 'dead', steps: 0, error };
+    return { kind: 'settled', result: { status: 'dead', steps: 0, error } };
   }
 
   await appendRunStatus(supabase, run.session_id, 'running', run.goal ?? undefined, sliceNumber);
@@ -121,14 +196,14 @@ export async function executeRunSlice(
   if (!messages.length) {
     const error = 'Nothing to run: the session has no user message.';
     await appendRunStatus(supabase, run.session_id, 'failed', error, sliceNumber);
-    return { status: 'dead', steps: 0, error };
+    return { kind: 'settled', result: { status: 'dead', steps: 0, error } };
   }
 
   // ── deadline ──────────────────────────────────────────────────────────────
   if (run.deadline_at && new Date(run.deadline_at).getTime() <= Date.now()) {
     const error = `Run deadline (${run.deadline_at}) passed before it finished.`;
     await appendRunStatus(supabase, run.session_id, 'failed', error, sliceNumber);
-    return { status: 'dead', steps: 0, error };
+    return { kind: 'settled', result: { status: 'dead', steps: 0, error } };
   }
 
   // ── build the agent ───────────────────────────────────────────────────────
@@ -149,7 +224,6 @@ export async function executeRunSlice(
     operatorUserId: run.user_id,
     intentText,
   });
-
 
   // Seed occurrence counters from the conversation we are resuming, so a
   // re-issued call maps to the same ledger row it did before a crash, while a
@@ -176,7 +250,15 @@ export async function executeRunSlice(
   // Only a handful of schemas travel with each request; the rest are found on demand.
   const discovery = buildDiscoverableTools(wrappedTools as Record<string, any>);
   const tools = discovery.tools;
-  console.error('[Harness runner] TOOL SURFACE ' + JSON.stringify({ exposed: discovery.exposed.length, discoverable: discovery.discoverable, inlineSchemaChars: discovery.inlineSchemaChars, fullSchemaChars: discovery.fullSchemaChars }));
+  console.error(
+    '[Harness runner] TOOL SURFACE ' +
+      JSON.stringify({
+        exposed: discovery.exposed.length,
+        discoverable: discovery.discoverable,
+        inlineSchemaChars: discovery.inlineSchemaChars,
+        fullSchemaChars: discovery.fullSchemaChars,
+      })
+  );
   const fullSystemPrompt = systemPrompt + '\n\n' + discoveryPromptSection();
 
   const model = await getAgentModel();
@@ -186,189 +268,68 @@ export async function executeRunSlice(
     heartbeatTimer = setInterval(() => {
       void opts.onHeartbeat?.().catch(() => {});
     }, HEARTBEAT_EVERY_MS);
+    // A slice is not supposed to outlive the process, but never let a stray
+    // interval keep a serverless invocation warm.
+    if (typeof (heartbeatTimer as any)?.unref === 'function') (heartbeatTimer as any).unref();
   }
 
   let steps = 0;
   let cancelled = false;
+  let firstDeltaAt: number | null = null;
   // Meter this slice's model tokens, sandbox seconds and media calls.
   const usageMeter = startUsageMeter();
 
-  try {
-    // Stream, not generateText.
-    //
-    // generateText only reports at step boundaries, so a durable run showed
-    // nothing for 5-20 seconds and then a whole step at once — which is precisely
-    // why it felt dead next to a live-streaming harness. streamText lets the
-    // partial answer be written incrementally, so the transcript animates.
-    // ── steering ────────────────────────────────────────────────────────────
-    // A message sent while the task is running is not parked until the end: the
-    // harness hands it to the running agent so it can adapt mid-flight. We remember
-    // the highest event sequence already folded into `messages`, and anything newer
-    // arrives as an extra user turn before the next model call.
-    let steerCursor = Math.max(0, ...messages.map((m: any) => Number(m?.__seq) || 0));
-    {
-      const { data: newest } = await supabase
-        .from('harness_events')
-        .select('seq')
-        .eq('session_id', run.session_id)
-        .order('seq', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const latestSeq = Number(newest?.seq) || 0;
-      if (latestSeq > steerCursor) steerCursor = latestSeq;
-    }
-    let steeredCount = 0;
+  let settle!: (result: SliceResult) => void;
+  const done = new Promise<SliceResult>((resolve) => {
+    settle = resolve;
+  });
+  let settled = false;
 
-    const pullSteering = async (): Promise<string[]> => {
-      try {
-        const { data } = await supabase
-          .from('harness_events')
-          .select('seq, type, data')
-          .eq('session_id', run.session_id)
-          .eq('type', 'user.message')
-          .gt('seq', steerCursor)
-          .order('seq', { ascending: true })
-          .limit(10);
-        if (!data?.length) return [];
-        const texts: string[] = [];
-        for (const ev of data as any[]) {
-          steerCursor = Math.max(steerCursor, Number(ev.seq) || steerCursor);
-          const text = String(ev?.data?.text || '').trim();
-          if (text) texts.push(text);
-        }
-        if (texts.length) {
-          steeredCount += texts.length;
-          console.log(
-            `[Harness runner] steering: ${texts.length} new user message(s) delivered mid-run ` +
-              `(run ${run.id.slice(0, 8)})`
-          );
-        }
-        return texts;
-      } catch {
-        return [];
-      }
-    };
-
-    const result = streamText({
-      model,
-      // Reasoning tokens count against this budget. Left undeclared it falls back to a provider
-      // default that a long goal exhausts before any answer is emitted, and the SDK reports the
-      // empty result as 'No output generated'. Declare it, generously, per call.
-      maxOutputTokens: HARNESS_MAX_OUTPUT_TOKENS,
-      system: fullSystemPrompt,
-      messages,
-      tools,
-      stopWhen: [
-        stepCountIs(opts.maxSteps),
-        ({ steps: taken }: { steps: Array<unknown> }) =>
-          Date.now() - startedAt > opts.budgetMs || taken.length >= opts.maxSteps,
-        async () => {
-          if (cancelled) return true;
-          const asked = await isCancelRequested(supabase, run.id);
-          if (asked) cancelled = true;
-          return asked;
-        },
-      ],
-      onStepFinish: async (step: any) => {
-        steps++;
-        try { usageMeter?.addModelUsage(AGENT_MODEL, step?.usage); } catch {}
-        try {
-          await persistStep(supabase, run.session_id, step);
-        } catch (err: any) {
-          console.warn('[Harness runner] persistStep failed:', err?.message);
-        }
-        // Next step writes to a fresh text id so partials never overwrite the
-        // previous step's finished answer.
-        partialCounter++;
-        flushedLength = 0;
-      },
-      // Checkpoint at every step boundary, so a crash can lose at most the one
-      // step that was in flight — not the whole slice.
-      prepareStep: async ({ messages: stepMessages }: { messages: any[] }) => {
-        // Steering happens here: new user messages become an extra user turn before
-        // the next model call, so the agent reacts to them without restarting.
-        const steered = await pullSteering();
-        const withSteering = steered.length
-          ? [...stepMessages, ...steered.map((text) => ({ role: 'user' as const, content: text }))]
-          : stepMessages;
-        await saveCheckpoint(supabase, run.id, withSteering, sliceNumber);
-        return steered.length ? { messages: withSteering } : {};
-      },
-    });
-
-    // Pump partial text into the event log so Realtime can render it live.
-    // Throttled: the projection upserts by id, so each write replaces the row.
-    let streamedText = '';
-    let flushedLength = 0;
-    let partialCounter = 0;
-    let lastFlushAt = 0;
+  /** Record the slice outcome exactly once, then release the heartbeat and meter. */
+  const settleOnce = async (outcome: SliceResult) => {
+    if (settled) return;
+    settled = true;
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    // Charge this slice's measured usage at 2x margin. Runs on every path so a
+    // slice that fails or is cancelled is still billed for what it consumed.
     try {
-      for await (const delta of result.textStream) {
-        streamedText += delta;
-        const now = Date.now();
-        // ~4 flushes a second is enough to look live without hammering Realtime.
-        if (now - lastFlushAt < 250) continue;
-        lastFlushAt = now;
-        if (streamedText.length <= flushedLength) continue;
-        flushedLength = streamedText.length;
-        try {
-          await appendEvents(supabase, run.session_id, [
-            createEvent('assistant.text', {
-              // STABLE per slice. This used to include the flush counter, so every ~250 ms
-              // the growing answer was appended as a NEW transcript item instead of
-              // replacing the previous one — which is why a single reply appeared two or
-              // three times and why it looked like it was typing at one word per second.
-              id: `a_${run.id.slice(0, 8)}_p${sliceNumber}`,
-              text: streamedText,
-            }),
-          ]);
-        } catch {
-          /* partial display is best-effort; the step event carries the truth */
-        }
-      }
-    } catch (streamErr: any) {
-      console.warn('[Harness runner] partial stream ended early:', streamErr?.message);
-    }
+      await settleUsage(run.user_id, usageMeter, `Agent run slice ${sliceNumber}`);
+    } catch {}
+    settle(outcome);
+  };
 
-    // streamText exposes these as promises (generateText resolved them inline).
-    //
-    // NEVER fatal. A slice that ends on a tool call has no text part, and the SDK surfaces that as
-    // "No output generated" — in a tool loop that is ordinary, not an error, and treating it as one
-    // is what killed runs after three attempts. Keep the messages we have and let the loop continue.
-    let response: any = { messages: [] };
-    let finishReason: any = 'no-content';
-    try {
-      [response, finishReason] = await Promise.all([result.response, result.finishReason]);
-    } catch (emptyErr: any) {
-      console.warn('[Harness runner] this slice produced no text (continuing):', emptyErr?.message);
-      if (streamedText.trim()) {
-        response = { messages: [{ role: 'assistant', content: streamedText }] };
-        finishReason = 'text-only';
-      }
-    }
-    const nextMessages = [...messages, ...((response as any)?.messages ?? [])];
-
+  /** Common tail of every successful generation: decide the checkpoint, then the status. */
+  const completeSlice = async (nextMessages: any[], finishReason: string) => {
     if (cancelled) {
       await appendRunStatus(supabase, run.session_id, 'cancelled', 'Stopped at your request.', sliceNumber);
-      return { status: 'cancelled', steps, checkpoint: { messages: nextMessages, slices: sliceNumber } };
+      await settleOnce({
+        status: 'cancelled',
+        steps,
+        checkpoint: { messages: nextMessages, slices: sliceNumber },
+      });
+      return;
     }
 
     // Keep the checkpoint bounded so long runs stay cheap to resume.
     const compacted = await maybeCompact(nextMessages as any);
     const checkpoint = { messages: compacted.messages as unknown[], slices: sliceNumber };
 
-    const unfinished = finishReason === 'tool-calls';
-    if (unfinished) {
+    // A slice that ends on a tool call still has work to do; `queued` is the
+    // durable way of saying "run me again", and the worker picks it straight up.
+    if (finishReason === 'tool-calls') {
       console.log(
         `[Harness runner] run ${run.id.slice(0, 8)} slice ${sliceNumber}: ${steps} step(s), more work pending — re-queueing`
       );
-      return { status: 'queued', steps, checkpoint };
+      await settleOnce({ status: 'queued', steps, checkpoint });
+      return;
     }
 
     await appendRunStatus(supabase, run.session_id, 'completed', undefined, sliceNumber);
-    return { status: 'completed', steps, checkpoint };
-  } catch (err: any) {
-    const message = String(err?.message || err).slice(0, 1000);
+    await settleOnce({ status: 'completed', steps, checkpoint });
+  };
+
+  const settleFailure = async (err: any) => {
+    const message = String(err?.message || err || 'Unknown error').slice(0, 1000);
 
     // A side effect may have half-happened. Never retry that automatically.
     if (err instanceof UnsafeToRetryError) {
@@ -380,7 +341,8 @@ export async function executeRunSlice(
         `Needs review before retrying: ${message}`,
         sliceNumber
       );
-      return { status: 'dead', steps, error: message, incrementAttempt: true };
+      await settleOnce({ status: 'dead', steps, error: message, incrementAttempt: true });
+      return;
     }
 
     const attempt = run.attempts + 1;
@@ -398,7 +360,8 @@ export async function executeRunSlice(
         `Attempt ${attempt}/${run.max_attempts} failed: ${message} — retrying automatically.`,
         sliceNumber
       );
-      return { status: 'queued', steps, error: message, nextAttemptAt, incrementAttempt: true };
+      await settleOnce({ status: 'queued', steps, error: message, nextAttemptAt, incrementAttempt: true });
+      return;
     }
 
     console.error(
@@ -411,13 +374,211 @@ export async function executeRunSlice(
       `Gave up after ${run.max_attempts} attempts: ${message}`,
       sliceNumber
     );
-    return { status: 'dead', steps, error: message, incrementAttempt: true };
-  } finally {
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    // Charge this slice's measured usage at 2x margin. Runs in `finally` so a
-    // slice that fails or is cancelled is still billed for what it consumed.
-    try {
-      await settleUsage(run.user_id, usageMeter, `Agent run slice ${sliceNumber}`);
-    } catch {}
+    await settleOnce({ status: 'dead', steps, error: message, incrementAttempt: true });
+  };
+
+  // ── steering ──────────────────────────────────────────────────────────────
+  // A message sent while the task is running is not parked until the end: the
+  // harness hands it to the running agent so it can adapt mid-flight. We remember
+  // the highest event sequence already folded into `messages`, and anything newer
+  // arrives as an extra user turn before the next model call.
+  let steerCursor = Math.max(0, ...messages.map((m: any) => Number(m?.__seq) || 0));
+  {
+    const { data: newest } = await supabase
+      .from('harness_events')
+      .select('seq')
+      .eq('session_id', run.session_id)
+      .order('seq', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const latestSeq = Number(newest?.seq) || 0;
+    if (latestSeq > steerCursor) steerCursor = latestSeq;
   }
+
+  const pullSteering = async (): Promise<string[]> => {
+    try {
+      const { data } = await supabase
+        .from('harness_events')
+        .select('seq, type, data')
+        .eq('session_id', run.session_id)
+        .eq('type', 'user.message')
+        .gt('seq', steerCursor)
+        .order('seq', { ascending: true })
+        .limit(10);
+      if (!data?.length) return [];
+      const texts: string[] = [];
+      for (const ev of data as any[]) {
+        steerCursor = Math.max(steerCursor, Number(ev.seq) || steerCursor);
+        const text = String(ev?.data?.text || '').trim();
+        if (text) texts.push(text);
+      }
+      if (texts.length) {
+        console.log(
+          `[Harness runner] steering: ${texts.length} new user message(s) delivered mid-run ` +
+            `(run ${run.id.slice(0, 8)})`
+        );
+      }
+      return texts;
+    } catch {
+      return [];
+    }
+  };
+
+  const result = streamText({
+    model,
+    // Reasoning tokens count against this budget. Left undeclared it falls back to a provider
+    // default that a long goal exhausts before any answer is emitted, and the SDK reports the
+    // empty result as 'No output generated'. Declare it, generously, per call.
+    maxOutputTokens: HARNESS_MAX_OUTPUT_TOKENS,
+    system: fullSystemPrompt,
+    messages,
+    tools,
+    ...(opts.abortSignal ? { abortSignal: opts.abortSignal } : {}),
+    stopWhen: [
+      stepCountIs(opts.maxSteps),
+      ({ steps: taken }: { steps: Array<unknown> }) =>
+        Date.now() - startedAt > opts.budgetMs || taken.length >= opts.maxSteps,
+      async () => {
+        if (cancelled) return true;
+        const asked = await isCancelRequested(supabase, run.id);
+        if (asked) cancelled = true;
+        return asked;
+      },
+    ],
+    onChunk: ({ chunk }: any) => {
+      // Time to first token is the number the whole change is about: it says how
+      // long a person stares at nothing before the answer starts moving.
+      if (firstDeltaAt === null && (chunk?.type === 'text-delta' || chunk?.type === 'reasoning-delta')) {
+        firstDeltaAt = Date.now();
+      }
+    },
+    onStepFinish: async (step: any) => {
+      steps++;
+      try {
+        usageMeter?.addModelUsage(AGENT_MODEL, step?.usage);
+      } catch {}
+      // THE ONLY WRITE PER STEP. The partial-text pump that used to run four
+      // times a second is gone: it is what made the reply type at ~1 token/sec
+      // and what filled the log with hundreds of rows per answer.
+      try {
+        await persistStep(supabase, run.session_id, step);
+      } catch (err: any) {
+        console.warn('[Harness runner] persistStep failed:', err?.message);
+      }
+    },
+    // Checkpoint at every step boundary, so a crash can lose at most the one
+    // step that was in flight — not the whole slice.
+    prepareStep: async ({ messages: stepMessages }: { messages: any[] }) => {
+      // Steering happens here: new user messages become an extra user turn before
+      // the next model call, so the agent reacts to them without restarting.
+      const steered = await pullSteering();
+      const withSteering = steered.length
+        ? [...stepMessages, ...steered.map((text) => ({ role: 'user' as const, content: text }))]
+        : stepMessages;
+      await saveCheckpoint(supabase, run.id, withSteering, sliceNumber);
+      return steered.length ? { messages: withSteering } : {};
+    },
+    onFinish: async (event: any) => {
+      try {
+        const finishReason = String(event?.finishReason ?? 'stop');
+        const produced = Array.isArray(event?.response?.messages) ? event.response.messages : [];
+        const nextMessages = [...messages, ...produced];
+        await completeSlice(nextMessages, finishReason);
+      } catch (err: any) {
+        // Never leave the caller waiting: an onFinish that throws would strand
+        // the promise and keep the run's lease until it expires.
+        console.warn('[Harness runner] slice could not be finalised:', err?.message);
+        await settleOnce({ status: 'queued', steps, error: String(err?.message || err).slice(0, 500) });
+      }
+    },
+    onAbort: async () => {
+      // The browser went away mid-slice. Completed steps are already persisted,
+      // so hand the remainder to the durable queue rather than losing the task.
+      cancelled = true;
+      console.log(`[Harness runner] run ${run.id.slice(0, 8)} aborted by the client after ${steps} step(s)`);
+      await settleOnce({
+        status: 'queued',
+        steps,
+        checkpoint: { messages, slices: sliceNumber },
+      });
+    },
+    onError: async ({ error }: any) => {
+      console.warn('[Harness runner] stream error:', error?.message || error);
+      await settleFailure(error);
+    },
+  });
+
+  return {
+    kind: 'open',
+    turn: {
+      result,
+      done,
+      startedAt,
+      ttftMs: () => (firstDeltaAt === null ? null : firstDeltaAt - startedAt),
+      runId: run.id,
+      sliceNumber,
+    },
+  };
+}
+
+/**
+ * Execute one worker slice: open the turn, drain the model stream with nobody
+ * watching, and report the outcome.
+ *
+ * Draining is not wasted work — it is what drives `streamText` to completion so
+ * the tool loop advances. What it deliberately does NOT do is write anything to
+ * the database: the wire is not the log.
+ */
+export async function executeRunSlice(
+  supabase: SupabaseClient,
+  run: HarnessRun,
+  opts: SliceOptions
+): Promise<SliceResult> {
+  let opening: TurnOpening;
+  try {
+    opening = await openRunTurn(supabase, run, opts);
+  } catch (err: any) {
+    const message = String(err?.message || err).slice(0, 1000);
+    console.error(`[Harness runner] run ${run.id.slice(0, 8)} could not start: ${message}`);
+    await appendRunStatus(supabase, run.session_id, 'failed', message, (run.checkpoint?.slices ?? 0) + 1);
+    if (err instanceof UnsafeToRetryError) {
+      return { status: 'dead', steps: 0, error: message, incrementAttempt: true };
+    }
+    const attempt = run.attempts + 1;
+    if (attempt < run.max_attempts) {
+      return {
+        status: 'queued',
+        steps: 0,
+        error: message,
+        nextAttemptAt: new Date(Date.now() + nextBackoffMs(attempt)).toISOString(),
+        incrementAttempt: true,
+      };
+    }
+    return { status: 'dead', steps: 0, error: message, incrementAttempt: true };
+  }
+
+  if (opening.kind === 'settled') return opening.result;
+  const { turn } = opening;
+
+  try {
+    // Consume the stream so the SDK keeps generating. No DB writes in here.
+    for await (const _delta of turn.result.textStream) {
+      /* the wire is not the log */
+    }
+  } catch (streamErr: any) {
+    console.warn('[Harness runner] model stream ended early:', streamErr?.message);
+  }
+
+  // `done` is settled by onFinish/onError/onAbort. The timeout exists so a stuck
+  // SDK promise cannot pin the lease until it expires and strand the run.
+  const settled = await withTimeout(turn.done, Math.max(5_000, opts.budgetMs));
+  if (settled) return settled;
+
+  console.warn(`[Harness runner] run ${run.id.slice(0, 8)} did not settle — re-queueing.`);
+  return {
+    status: 'queued',
+    steps: 0,
+    error: 'The model stream did not report completion in time.',
+    incrementAttempt: true,
+  };
 }

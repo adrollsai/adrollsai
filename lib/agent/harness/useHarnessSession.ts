@@ -56,7 +56,9 @@ export interface UseHarnessSession {
     forSessionId?: string
   ) => Promise<string | null>;
   /** Merge a fresh projection pushed by the caller (e.g. after a completed run). */
-  setProjectedState: (next: HarnessState | null) => void;
+  setProjectedState: (
+    next: HarnessState | null | ((prev: HarnessState | null) => HarnessState | null)
+  ) => void;
   /** Tail the log from the last seen seq — resumes a run the tab did not watch. */
   syncFromLog: () => Promise<HarnessEvent[]>;
 
