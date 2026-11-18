@@ -24,7 +24,7 @@
  */
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { isAvailable, appendEvents, setSessionStatus } from '@/lib/agent/harness/store';
+import { isAvailable, appendEvents, setSessionStatus, loadEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
 import {
   enqueueRun,
@@ -117,28 +117,27 @@ export async function POST(req: Request) {
   const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : '';
   if (!sessionId) return jsonOutcome('refused', { error: 'sessionId is required' }, 400);
 
-  // These two are independent, so they go together. Sequentially they were the
-  // two cheapest seconds on the way to the first token, spent one after the other.
-  const [sessionLookup, affordable] = await Promise.all([
-    supabase
-      .from('harness_sessions')
-      .select('id')
-      .eq('id', sessionId)
-      .eq('user_id', user.id)
-      .maybeSingle(),
-    // An empty wallet must not start work we then fail to bill.
-    import('@/lib/agent/usage').then(({ canStartTurn }) => canStartTurn(user.id)),
-  ]);
-  stage('preflight');
+  // Ownership first: it is one query and it decides whether we do anything at
+  // all. The affordability check is started NOW but not awaited — it is the
+  // slowest of the pre-flight reads (it walks the credit pots), and the only
+  // thing that costs money is the model call, which happens later. Enqueuing a
+  // run is free.
+  const affordablePromise = import('@/lib/agent/usage')
+    .then(({ canStartTurn }) => canStartTurn(user.id))
+    .catch(() => ({ ok: true }) as { ok: boolean; reason?: string });
+
+  const { data: sessionRow } = await supabase
+    .from('harness_sessions')
+    .select('id')
+    .eq('id', sessionId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+  stage('session');
 
   // Confirm the session belongs to this user before spending a model call on it.
-  if (!sessionLookup.data) return jsonOutcome('refused', { error: 'Session not found' }, 404);
-  if (!affordable.ok) {
-    return jsonOutcome(
-      'refused',
-      { error: 'insufficient_credits', message: affordable.reason },
-      402
-    );
+  if (!sessionRow) {
+    void affordablePromise;
+    return jsonOutcome('refused', { error: 'Session not found' }, 404);
   }
 
   const message = typeof body?.message === 'string' ? body.message.trim() : '';
@@ -191,6 +190,12 @@ export async function POST(req: Request) {
       : undefined;
 
   // ── durability first, stream second ───────────────────────────────────────
+  //
+  // The conversation is read here, not inside the turn, so the read overlaps the
+  // queue work below instead of queuing behind it. Nothing about the run row is
+  // needed to read a session's log.
+  const eventsPromise = loadEvents(supabase, sessionId).catch(() => []);
+
   const run = await enqueueRun(supabase, {
     sessionId,
     userId: user.id,
@@ -207,12 +212,33 @@ export async function POST(req: Request) {
     // The worker won the race for this run — let it do the work and tell the
     // client to watch the log instead of a stream. Two runners on one event log
     // is exactly the interleaving this guard exists to prevent.
+    void eventsPromise;
     return jsonOutcome('queued', {
       run: { id: run.id, sessionId, status: 'queued' },
       message: 'A worker picked this up — the reply will appear in the transcript.',
     });
   }
   stage('claim');
+
+  // ── the affordability gate, immediately before anything that costs money ──
+  // Same rule as before — an empty wallet must not start work we then fail to
+  // bill — but no longer in front of the queue work. If it refuses, the run is
+  // cancelled rather than left for a worker to pick up.
+  const affordable = await affordablePromise;
+  if (!affordable.ok) {
+    void eventsPromise;
+    await finishRun(supabase, claimed.id, worker, {
+      status: 'cancelled',
+      error: 'Stopped before it started: not enough credits.',
+    });
+    await setSessionStatus(supabase, sessionId, 'idle');
+    return jsonOutcome(
+      'refused',
+      { error: 'insufficient_credits', message: (affordable as any).reason },
+      402
+    );
+  }
+  stage('affordable');
 
   // The sidebar dot, not the answer. Waiting for it put an UPDATE in front of the
   // first token for no reason the reader can see.
@@ -224,6 +250,7 @@ export async function POST(req: Request) {
       worker,
       budgetMs: TURN_BUDGET_MS,
       maxSteps: TURN_MAX_STEPS,
+      preloadedEvents: await eventsPromise,
       // NOTE: no `abortSignal: req.signal` here.
       //
       // Next can abort `req.signal` as part of finishing a streamed response,

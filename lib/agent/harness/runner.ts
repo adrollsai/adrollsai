@@ -34,7 +34,7 @@ import { streamText, stepCountIs } from 'ai';
 import { getAgentModel } from '../deepseek';
 import { createAgentContext } from '../orchestrator';
 import { appendEvents, loadEvents } from './store';
-import { createEvent } from './events';
+import { createEvent, type HarnessEvent } from './events';
 import { persistStep } from './persist';
 import { buildDiscoverableTools, discoveryPromptSection } from './tool-proxy';
 import { project, itemsToModelMessages } from './projection';
@@ -60,6 +60,14 @@ export interface SliceOptions {
    * Only the streaming route passes one; the worker is never aborted by a client.
    */
   abortSignal?: AbortSignal;
+  /**
+   * The session's event log, already read by the caller.
+   *
+   * Reading it is on the critical path but does not depend on the run row, so the
+   * route starts the read while the queue work happens and hands it over here.
+   * Ignored when resuming from a checkpoint, which carries its own history.
+   */
+  preloadedEvents?: HarnessEvent[];
   /**
    * Called as each setup stage completes. Time-to-first-token is dominated by
    * what happens BEFORE the model is asked anything, so the route records these
@@ -198,7 +206,7 @@ export async function openRunTurn(
         `from checkpoint (${messages.length} messages, attempt ${run.attempts + 1}/${run.max_attempts})`
     );
   } else {
-    const events = await loadEvents(supabase, run.session_id);
+    const events = opts.preloadedEvents ?? (await loadEvents(supabase, run.session_id));
     for (const ev of events) loadedMaxSeq = Math.max(loadedMaxSeq, Number(ev.seq) || 0);
     const state = project(run.session_id, events);
     // Faithful reconstruction: keeps tool calls, results AND reasoning. The
