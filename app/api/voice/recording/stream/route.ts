@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createClient } from '@/utils/supabase/server'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
 import { resolveRecordingLinkSecret, verifyRecordingToken } from '@/lib/automation/call-receipt'
 import { isOurRecording, signedRecordingUrl, RECORDING_BUCKET } from '@/lib/automation/recording-link'
 
-const supabaseAdmin = createClient(
+const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
@@ -25,17 +26,48 @@ function isCarrierMediaUrl(raw: string): boolean {
     }
 }
 
+/**
+ * May the caller standing behind this request play this lead's recording?
+ *
+ * Answered with the CALLER's own client, not the service role, so row-level
+ * security decides it: a lead the caller cannot see is a lead they cannot hear.
+ */
+async function callerMayReadLead(leadId: string | null): Promise<boolean> {
+    if (!leadId) return false
+    try {
+        const supabase = await createClient()
+        const {
+            data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) return false
+        const { data: lead } = await supabase
+            .from('leads')
+            .select('id')
+            .eq('id', leadId)
+            .maybeSingle()
+        return Boolean(lead?.id)
+    } catch {
+        return false
+    }
+}
+
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url)
         let rawUrl = searchParams.get('url')
         const leadId = searchParams.get('leadId')
 
-        // Signed links (the ones we email / WhatsApp to the owner) carry `exp`
-        // and `sig`. When present they must verify, which keeps a mailed link a
-        // bearer capability for one lead with a deadline instead of an open
-        // handle on the storage bucket. Unsigned requests keep working: the
-        // authenticated dashboard still links `?url=...&leadId=...` directly.
+        // Two ways in, and BOTH are now checked.
+        //
+        //   signed  — `exp` + `sig`, as emailed / WhatsApped to the owner. A bearer
+        //             capability for one lead with a deadline.
+        //   session — an authenticated browser asking for a lead in its own
+        //             organisation, which is how the dashboard plays a recording.
+        //
+        // The session check is not optional. Without it this route minted a signed
+        // storage URL for ANY lead id handed to it, with no authentication at all —
+        // so closing the bucket would have protected nothing: anyone who could guess
+        // a lead UUID could still ask this route to sign one for them.
         const signature = searchParams.get('sig')
         const expiresAt = searchParams.get('exp')
         if (signature || expiresAt) {
@@ -54,6 +86,11 @@ export async function GET(req: Request) {
             // A signed link never lets the caller choose an arbitrary upstream
             // URL - it resolves through the lead only.
             rawUrl = null
+        } else {
+            const allowed = await callerMayReadLead(leadId)
+            if (!allowed) {
+                return new NextResponse('Not authorised to play this recording', { status: 403 })
+            }
         }
 
         // If no direct URL passed, look up from lead
