@@ -74,7 +74,16 @@ export const NODE_SPECS: NodeSpec[] = [
 
   // ── calls ───────────────────────────────────────────────────────────────
   { type: 'aiCallNode', aliases: ['action_ai_call'], label: 'AI phone call', category: 'integration', support: 'executed', note: 'Calls triggerOutboundCall immediately when the flow runs.' },
-  { type: 'action_ai_call_transfer', label: 'Transfer to human', category: 'integration', support: 'unsupported' },
+  {
+    type: 'action_ai_call_transfer',
+    label: 'Transfer to human',
+    category: 'integration',
+    support: 'executed',
+    config: ['agent', 'assignAgent', 'note'],
+    note:
+      'Records the handoff in the CRM — assigns the lead to an agent (or writes a note that a human must take over). ' +
+      'It dials nobody and messages nobody, so it needs no approval and cannot reach a customer.',
+  },
   {
     type: 'action_follow_up',
     label: 'Schedule follow-up',
@@ -89,15 +98,33 @@ export const NODE_SPECS: NodeSpec[] = [
   // ── integrations ────────────────────────────────────────────────────────
   { type: 'customApiNode', aliases: ['action_webhook'], label: 'Webhook / custom API', category: 'integration', support: 'executed', config: ['url', 'method', 'headers'] },
   { type: 'custom_webhook', label: 'Webhook (legacy type)', category: 'integration', support: 'executed', config: ['url', 'method'], note: 'Legacy spelling, handled like customApiNode.' },
-  { type: 'ai_deepseek', label: 'AI (DeepSeek) step', category: 'integration', support: 'unsupported' },
+  {
+    type: 'ai_deepseek',
+    label: 'AI (DeepSeek) step',
+    category: 'integration',
+    support: 'executed',
+    config: ['prompt', 'description'],
+    note:
+      'Writes the copy for the step that follows it. The text is generated at approval time, not before, ' +
+      'so no model is paid for a message nobody approved and the reviewer sees the exact words that will send.',
+  },
 
   // ── channel replies ─────────────────────────────────────────────────────
-  { type: 'action_ig_comment_reply', label: 'Reply to IG comment', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
-  { type: 'action_ig_send_dm', label: 'Send IG DM', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
-  { type: 'action_ig_card', label: 'IG card', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
-  { type: 'action_fb_comment_reply', label: 'Reply to FB comment', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
-  { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported', note: 'Requires Instagram messaging permissions this app does not request. Sending would fail at runtime, so it is blocked at validation instead.' },
-  { type: 'action_whatsapp_interactive', label: 'WhatsApp interactive message', category: 'message', support: 'unsupported' },
+  { type: 'action_ig_comment_reply', label: 'Reply to IG comment', category: 'message', support: 'unsupported', note: 'This deployment has no Instagram messaging credentials (no IG account id and page token wired into a sender), so a send would fail at runtime. It is blocked at validation instead of failing silently later.' },
+  { type: 'action_ig_send_dm', label: 'Send IG DM', category: 'message', support: 'unsupported', note: 'This deployment has no Instagram messaging credentials, so a DM would fail at runtime. Blocked at validation instead.' },
+  { type: 'action_ig_card', label: 'IG card', category: 'message', support: 'unsupported', note: 'An IG card is a DM with structured content; with no Instagram messaging credentials wired there is nothing to send it through.' },
+  { type: 'action_fb_comment_reply', label: 'Reply to FB comment', category: 'message', support: 'unsupported', note: 'Comment replies need pages_manage_engagement plus a wired sender; this deployment has neither, so the step is blocked rather than silently skipped.' },
+  { type: 'action_fb_send_messenger', label: 'Send Messenger message', category: 'message', support: 'unsupported', note: 'Messenger sends need pages_messaging plus a wired sender; this deployment has neither, so the step is blocked rather than silently skipped.' },
+  {
+    type: 'action_whatsapp_interactive',
+    label: 'WhatsApp interactive message',
+    category: 'message',
+    support: 'executed',
+    config: ['message', 'body', 'buttons'],
+    note:
+      'Sends a body with up to three quick-reply buttons. Like all free-form WhatsApp text it only works inside the ' +
+      '24-hour service window, so an approval outside that window is refused with the reason rather than attempted.',
+  },
   {
     type: 'action_whatsapp_questions',
     label: 'WhatsApp question flow',

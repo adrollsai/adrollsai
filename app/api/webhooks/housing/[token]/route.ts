@@ -434,6 +434,29 @@ export async function POST(
             console.error('Failed to send push notification:', e)
         }
 
+        // Start the flows that listen for "a lead was added to the CRM". Queue-only: every step
+        // waits for a human to approve it, so nothing here can message a customer by itself.
+        if (savedLeadId) {
+            try {
+                const { fireFlowTrigger } = await import('@/lib/flows/ingress')
+                const fired = await fireFlowTrigger(supabaseAdmin, {
+                    userId: profile.id,
+                    trigger: 'trigger_crm_lead',
+                    leadId: savedLeadId,
+                    text: `${name} ${phone || ''} ${projectName || ''}`,
+                    runKey: `lead:${savedLeadId}`,
+                })
+                if (fired.started.length) {
+                    console.log(`[Flow trigger] trigger_crm_lead started ${fired.started.length} flow run(s) for lead ${savedLeadId}`)
+                }
+                for (const skip of fired.skipped) {
+                    console.log(`[Flow trigger] trigger_crm_lead skipped "${skip.title}": ${skip.why}`)
+                }
+            } catch (flowErr: any) {
+                console.warn('[Flow trigger] crm lead hook failed:', flowErr?.message || flowErr)
+            }
+        }
+
         return NextResponse.json({
             success: true,
             message: actionMessage,

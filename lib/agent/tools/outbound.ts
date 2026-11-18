@@ -197,6 +197,111 @@ export async function sendWhatsAppTemplate(params: {
   }
 }
 
+export interface WhatsAppTextResult {
+  success: boolean;
+  /** The number actually messaged, after the test-mode guard. */
+  to?: string;
+  messageId?: string;
+  error?: string;
+  redirected?: boolean;
+}
+
+/**
+ * Send free-form WhatsApp text (optionally as a quick-reply button message).
+ *
+ * This is NOT a replacement for a template: WhatsApp only accepts free-form text inside the
+ * 24-hour service window that an inbound message opens. The caller must have checked that window
+ * — `lib/flows/delivery.ts` does, and refuses instead of sending when it is shut. Meta's own
+ * refusal (code 131047, "re-engagement message") is also reported verbatim rather than retried.
+ */
+export async function sendWhatsAppText(params: {
+  supabase: any;
+  userId: string;
+  phone: string;
+  text: string;
+  /** Up to three quick-reply buttons; turns the send into an interactive message. */
+  buttons?: { id: string; title: string }[];
+}): Promise<WhatsAppTextResult> {
+  const { supabase, userId } = params;
+  const requested = String(params.phone || '').replace(/\D/g, '');
+  if (!requested) return { success: false, error: 'No phone number was given.' };
+
+  const to = outboundRecipient(requested);
+  if (!to) {
+    return { success: false, error: 'Test mode is on but no test number is configured, so nothing was sent.' };
+  }
+
+  const body = String(params.text || '').trim();
+  if (!body) return { success: false, to, error: 'There is no message text to send.' };
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('whatsapp_phone_number_id, whatsapp_access_token')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError) return { success: false, to, error: `Could not read WhatsApp settings: ${profileError.message}` };
+  if (!profile?.whatsapp_phone_number_id || !profile?.whatsapp_access_token) {
+    return {
+      success: false,
+      to,
+      error:
+        'WhatsApp is not connected for this account: no phone number id / access token. ' +
+        'Connect a WABA in dashboard settings, then try again.',
+    };
+  }
+
+  const buttons = (params.buttons || []).slice(0, 3).map((b) => ({
+    type: 'reply' as const,
+    reply: { id: String(b.id).slice(0, 256), title: String(b.title).slice(0, 20) },
+  }));
+
+  const payload: any = buttons.length
+    ? {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: { type: 'button', body: { text: body.slice(0, 1024) }, action: { buttons } },
+      }
+    : {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'text',
+        text: { preview_url: false, body: body.slice(0, 4096) },
+      };
+
+  try {
+    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${profile.whatsapp_phone_number_id}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${profile.whatsapp_access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const json: any = await res.json().catch(() => ({}));
+    const redirected = to !== requested;
+
+    if (json?.error) {
+      const code = json.error.code ? ` (code ${json.error.code})` : '';
+      const hint =
+        json.error.code === 131047
+          ? ' — this number has not messaged in 24 hours, so only an approved template may be sent.'
+          : '';
+      return { success: false, to, redirected, error: `${json.error.message || 'Meta rejected the message'}${code}${hint}` };
+    }
+    const messageId = json?.messages?.[0]?.id;
+    if (!res.ok || !messageId) {
+      return { success: false, to, redirected, error: `Meta returned ${res.status} without a message id.` };
+    }
+    return { success: true, to, messageId, redirected };
+  } catch (error: any) {
+    return { success: false, to, error: String(error?.message || error) };
+  }
+}
+
 export interface VoiceCallResult {
   success: boolean;
   callId?: string;

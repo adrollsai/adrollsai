@@ -27,7 +27,7 @@ export interface DryRunAction extends PlannedAction {
 
 export interface Effect {
   step: number;
-  kind: 'message' | 'call';
+  kind: 'message' | 'call' | 'handoff';
   at: string;
   note?: string;
 }
@@ -106,6 +106,13 @@ export function dryRun(actions: DryRunAction[], facts: CapabilityFacts, startAt:
         continue;
       }
       effects.push({ step: row.stepIndex + 1, kind: 'message', at: row.runAt.toISOString(), note });
+      continue;
+    }
+
+    // A handoff touches the CRM, not a person: it needs no phone number, no template and no
+    // approval, so it is an effect purely so the timeline shows it happened in order.
+    if (action.kind === 'handoff') {
+      effects.push({ step: row.stepIndex + 1, kind: 'handoff', at: row.runAt.toISOString(), note: 'a CRM handoff — no message, no call' });
       continue;
     }
 

@@ -23,6 +23,7 @@ function mapStep(row: any): ScheduledStep {
     kind: row.kind,
     status: row.status,
     attempts: Number(row.attempts ?? 0),
+    runKey: row.run_key ? String(row.run_key) : 'once',
   };
 }
 
@@ -31,7 +32,7 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
     async dueSteps(now, limit) {
       const { data, error } = await supabase
         .from(SCHEDULES)
-        .select('id, flow_id, lead_id, step_index, run_at, status, attempts, kind')
+        .select('id, flow_id, lead_id, step_index, run_at, status, attempts, kind, run_key')
         .eq('user_id', userId)
         .eq('status', 'pending')
         .lte('run_at', now.toISOString())
@@ -61,7 +62,7 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
       await supabase.from(SCHEDULES).update({ status: 'skipped', skip_reason: reason }).eq('id', stepId);
     },
 
-    async hasRun(flowId, leadId, stepIndex) {
+    async hasRun(flowId, leadId, stepIndex, runKey) {
       const { data, error } = await supabase
         .from(RUNS)
         .select('id')
@@ -69,12 +70,13 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
         .eq('flow_id', flowId)
         .eq('lead_id', leadId)
         .eq('step_index', stepIndex)
+        .eq('run_key', runKey ?? 'once')
         .limit(1);
       if (error) return false;
       return (data ?? []).length > 0;
     },
 
-    async recordRun(flowId, leadId, stepIndex, at) {
+    async recordRun(flowId, leadId, stepIndex, at, runKey) {
       // The unique index makes a duplicate insert fail rather than send twice; that failure is the
       // last line of defence, so it is swallowed deliberately.
       await supabase.from(RUNS).insert({
@@ -82,6 +84,7 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
         flow_id: flowId,
         lead_id: leadId,
         step_index: stepIndex,
+        run_key: runKey ?? 'once',
         kind: 'step',
         ran_at: at.toISOString(),
       });
@@ -100,14 +103,28 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
     },
 
     async isOptedOut(leadId) {
-      const { data, error } = await supabase
+      // `opted_out` is the column that says so; `pipeline_stage` carries the same intent for records
+      // written before it existed. The select falls back to the older shape rather than treating a
+      // schema difference as "everybody opted out" — that silently stopped every flow on every
+      // account once, and the skip reason said the person had opted out, which was a lie.
+      let data: any = null;
+      let error: any = null;
+      ({ data, error } = await supabase
         .from('leads')
         .select('id, opted_out, pipeline_stage')
         .eq('id', leadId)
-        .maybeSingle();
-      if (error || !data) return true; // unknown lead: do not message
-      const stage = String((data as any).pipeline_stage ?? '').toLowerCase();
-      return (data as any).opted_out === true || stage === 'opted_out' || stage === 'unsubscribed';
+        .maybeSingle());
+      if (error) {
+        ({ data, error } = await supabase
+          .from('leads')
+          .select('id, pipeline_stage')
+          .eq('id', leadId)
+          .maybeSingle());
+      }
+      if (error) return 'unreadable' as const; // cannot verify: do not message, but say why
+      if (!data) return true; // no such lead: nothing to message
+      const stage = String(data.pipeline_stage ?? '').toLowerCase();
+      return data.opted_out === true || stage === 'opted_out' || stage === 'unsubscribed';
     },
 
     async isPaused(flowId) {
@@ -145,7 +162,7 @@ export async function quietHoursFor(supabase: SupabaseClient, userId: string) {
   return { startHour, endHour };
 }
 
-export type EnqueueKind = 'message' | 'call' | 'email' | 'dm_reply';
+export type EnqueueKind = 'message' | 'call' | 'email' | 'dm_reply' | 'handoff';
 
 /**
  * Write the waits down. Called when a flow fires, instead of holding the request open.
@@ -156,7 +173,8 @@ export async function enqueueFlowRun(
   userId: string,
   flowId: string,
   leadId: string,
-  steps: { stepIndex: number; kind: EnqueueKind; runAt: Date; payload?: Record<string, unknown> }[]
+  steps: { stepIndex: number; kind: EnqueueKind; runAt: Date; payload?: Record<string, unknown>; runKey?: string }[],
+  runKey = 'once'
 ): Promise<{ queued: number }> {
   if (!steps.length) return { queued: 0 };
   const rows = steps.map((s) => ({
@@ -167,13 +185,14 @@ export async function enqueueFlowRun(
     kind: s.kind,
     payload: s.payload ?? {},
     run_at: s.runAt.toISOString(),
+    run_key: s.runKey ?? runKey,
     status: 'pending' as const,
   }));
-  // upsert with ignoreDuplicates leans on flow_schedules_once_idx: enqueuing the same step twice
-  // is a no-op rather than a second message.
+  // upsert with ignoreDuplicates leans on flow_schedules_run_once_idx: enqueuing the same step of
+  // the same run twice is a no-op rather than a second message.
   const { data, error } = await supabase
     .from(SCHEDULES)
-    .upsert(rows, { onConflict: 'flow_id,lead_id,step_index', ignoreDuplicates: true })
+    .upsert(rows, { onConflict: 'flow_id,lead_id,run_key,step_index', ignoreDuplicates: true })
     .select('id');
   // A silent zero is how a scheduler lies: it reads as "nothing to do" when the truth is "the write
   // failed". Surface it instead.

@@ -1,7 +1,9 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { runDueSteps } from '@/lib/flows/scheduling';
 import { SCHEDULES, RUNS, quietHoursFor, scheduledStore } from '@/lib/flows/store';
+import { dispatchApprovedDeliveries, expireStaleDeliveries, releaseStaleClaims } from '@/lib/flows/delivery';
+import { queueDueStep } from '@/lib/flows/queue-step';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +18,13 @@ export const maxDuration = 60;
  * before a customer does.
  *
  * Protected by CRON_SECRET. Without it, anyone could force the scheduler to run.
+ *
+ * THREE JOBS, AND THE ORDER MATTERS
+ *   1. queue    — turn due steps into approvals, or apply the ones that touch only the CRM
+ *   2. dispatch — send what a human approved, and nothing else
+ *   3. tidy     — release crashed claims, expire approvals nobody answered
+ * Step 2 did not exist for a while: steps were written to the queue and never sent, so a flow that
+ * "ran" reached nobody. Step 3 did not exist either, so a crashed worker wedged rows for ever.
  */
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -58,57 +67,34 @@ export async function GET(request: Request) {
       quietHours,
       limit: 25,
       execute: async (step) => {
-        // Hand the work over as a COMPLETE approval row: real text, real phone, real template.
-        // It is not sent here - a person says yes in the approvals queue, and the existing delivery
-        // path dispatches it. A placeholder row would look like work and do nothing.
-        const { data: row } = await supabase
-          .from(SCHEDULES)
-          .select('payload')
-          .eq('id', step.id)
-          .maybeSingle();
-        const payload: any = (row as any)?.payload ?? {};
-
-        const { data: lead } = await supabase
-          .from('leads')
-          .select('id, name, phone')
-          .eq('id', step.leadId)
-          .maybeSingle();
-        const phone = String((lead as any)?.phone ?? '').replace(/[^\d+]/g, '');
-        if (!phone) throw new Error('no phone number on lead ' + step.leadId + '; cannot queue the step');
-
-        const text = String(payload.text ?? '').trim();
-        if (step.kind === 'message' && !text) {
-          throw new Error('step ' + step.stepIndex + ' has no message text in its payload');
-        }
-
-        const { error: qErr } = await supabase.from('agent_pending_deliveries').insert({
-          user_id: userId,
-          lead_id: step.leadId,
-          channel: step.kind === 'call' ? 'call' : 'whatsapp',
-          to_phone: phone,
-          body: step.kind === 'call' ? (text || 'Flow follow-up call') : text,
-          template_name: payload.templateName ?? null,
-          flow_id: step.flowId,
-          flow_step_index: step.stepIndex,
-          trigger: payload.trigger ?? null,
-          status: 'pending_approval',
-        });
-        if (qErr) {
-          // No queue table or no row shape for this channel yet: fail loudly so the scheduler
-          // reports it instead of pretending the message went out.
-          throw new Error(`could not queue step ${step.id}: ${qErr.message}`);
-        }
+        // One due step, turned into work — a shared function, so a probe runs exactly what the
+        // clock runs. It queues approvals and applies CRM-only steps; it never sends anything.
+        await queueDueStep(supabase, { userId, step });
       },
     });
 
     results.push({ userId, ...report });
   }
 
+  // Whatever a human has already approved goes out now, and stale rows stop pretending to be
+  // pending. Both are best-effort: a failure here must not turn the scheduler tick into an error.
+  const released = await releaseStaleClaims(supabase).catch(() => 0);
+  const dispatched = await dispatchApprovedDeliveries(supabase).catch(() => ({ considered: 0, outcomes: [] }));
+  const expired = await expireStaleDeliveries(supabase).catch(() => 0);
+
   return NextResponse.json({
     ok: true,
     ranAt: now.toISOString(),
     owners: owners.length,
     results,
+    dispatch: {
+      considered: dispatched.considered,
+      sent: dispatched.outcomes.filter((o) => o.status === 'delivered').length,
+      blocked: dispatched.outcomes.filter((o) => o.status === 'blocked').length,
+      failed: dispatched.outcomes.filter((o) => o.status === 'failed').length,
+      releasedClaims: released,
+      expiredApprovals: expired,
+    },
   });
 }
 
@@ -131,11 +117,30 @@ export async function POST(request: Request) {
   const pending = await supabase.from(SCHEDULES).select('id', { count: 'exact', head: true }).eq('status', 'pending');
   const done = await supabase.from(SCHEDULES).select('id', { count: 'exact', head: true }).eq('status', 'done');
   const runs = await supabase.from(RUNS).select('id', { count: 'exact', head: true });
+  // The delivery queue is the half of the story that used to be invisible: steps queued for a human,
+  // steps a human approved, and steps that actually reached a provider.
+  const awaitingApproval = await supabase
+    .from('agent_pending_deliveries')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending_approval');
+  const approvedNotSent = await supabase
+    .from('agent_pending_deliveries')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'approved');
+  const delivered = await supabase
+    .from('agent_pending_deliveries')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'delivered');
   return NextResponse.json({
     ok: tablesReady,
     pending: pending.count ?? 0,
     done: done.count ?? 0,
     runs: runs.count ?? 0,
-    note: tablesReady ? undefined : `scheduler tables missing: ${probe.error?.message} â€” apply supabase/migrations/20261112000000_flow_scheduling.sql`,
+    deliveryQueue: {
+      awaitingApproval: awaitingApproval.count ?? 0,
+      approvedNotSent: approvedNotSent.count ?? 0,
+      delivered: delivered.count ?? 0,
+    },
+    note: tablesReady ? undefined : `scheduler tables missing: ${probe.error?.message} — apply supabase/migrations/20261112000000_flow_scheduling.sql`,
   });
 }

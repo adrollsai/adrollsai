@@ -1997,6 +1997,39 @@ export async function POST(request: Request) {
                                           }
                                       }
 
+                                      // =================================================================
+                                      // FLOW TRIGGERS (the scheduled flow engine)
+                                      // This is the bridge that did not exist: a real inbound event
+                                      // now starts the flows that listen for it. It only QUEUES —
+                                      // each step waits for a human to approve it — so it is safe on
+                                      // the inbound path, and it is why a saved flow is no longer a
+                                      // saved diagram. Best-effort: a flow that cannot start must
+                                      // never fail the webhook or delay Meta's acknowledgement.
+                                      // =================================================================
+                                      if (latestLead?.id && ownerUserId) {
+                                          try {
+                                              const { fireFlowTrigger, inboundTriggerFor } = await import('@/lib/flows/ingress');
+                                              const trigger = inboundTriggerFor({ isFromAd, buttonId: buttonReplyId });
+                                              const fired = await fireFlowTrigger(supabaseAdmin, {
+                                                  userId: ownerUserId,
+                                                  trigger,
+                                                  leadId: latestLead.id,
+                                                  text: messageText,
+                                                  buttonId: buttonReplyId || null,
+                                                  // A new message is a new run; a replayed webhook is not.
+                                                  runKey: `msg:${msgId || currentInboundMsgCreatedAt || Date.now()}`,
+                                              });
+                                              if (fired.started.length) {
+                                                  console.log(`[Flow trigger] ${trigger} started ${fired.started.length} flow run(s) for ${cleanFrom}: ${fired.started.map((s) => `${s.title} (${s.queued} step(s))`).join(', ')}`);
+                                              }
+                                              for (const skip of fired.skipped) {
+                                                  console.log(`[Flow trigger] ${trigger} skipped "${skip.title}": ${skip.why}`);
+                                              }
+                                          } catch (flowTriggerErr: any) {
+                                              console.warn('[Flow trigger] inbound hook failed:', flowTriggerErr?.message || flowTriggerErr);
+                                          }
+                                      }
+
                                       // 1. Dynamic User-Configured Automation Flows (ChatbotX Engine)
                                       try {
                                           const flowResult = await executeFlowRunner({
@@ -4698,6 +4731,28 @@ RULES:
                       action_type: 'REMARK',
                       description: `🚫 Auto AI call skipped: Lead phone number (${phone}) is non-Indian. AI voice calling is restricted to Indian (+91) numbers.`
                   }).then(() => {}, () => {});
+              }
+          }
+          // Start the flows that listen for a Meta lead form. Queue-only: each step waits for a
+          // human to approve it, so a lead arriving at 3am cannot message or call itself.
+          if (savedLead?.id) {
+              try {
+                  const { fireFlowTrigger } = await import('@/lib/flows/ingress');
+                  const fired = await fireFlowTrigger(supabaseAdmin, {
+                      userId: profile.id,
+                      trigger: 'trigger_meta_ad',
+                      leadId: savedLead.id,
+                      text: `${name || ''} ${phone || ''} ${campaignName || ''}`,
+                      runKey: `lead:${savedLead.id}`,
+                  });
+                  if (fired.started.length) {
+                      console.log(`[Flow trigger] trigger_meta_ad started ${fired.started.length} flow run(s) for lead ${savedLead.id}`);
+                  }
+                  for (const skip of fired.skipped) {
+                      console.log(`[Flow trigger] trigger_meta_ad skipped "${skip.title}": ${skip.why}`);
+                  }
+              } catch (flowErr: any) {
+                  console.warn('[Flow trigger] meta lead hook failed:', flowErr?.message || flowErr);
               }
           }
           } finally {

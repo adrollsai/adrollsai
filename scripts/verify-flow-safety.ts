@@ -132,11 +132,11 @@ function memoryStore(seed: ScheduledStep[]) {
       const s = steps.find((x) => x.id === id);
       if (s) s.status = 'skipped';
     },
-    async hasRun(flowId, leadId, stepIndex) {
-      return runs.includes(`${flowId}:${leadId}:${stepIndex}`);
+    async hasRun(flowId, leadId, stepIndex, runKey) {
+      return runs.includes(`${flowId}:${leadId}:${runKey ?? 'once'}:${stepIndex}`);
     },
-    async recordRun(flowId, leadId, stepIndex, at) {
-      runs.push(`${flowId}:${leadId}:${stepIndex}`);
+    async recordRun(flowId, leadId, stepIndex, at, runKey) {
+      runs.push(`${flowId}:${leadId}:${runKey ?? 'once'}:${stepIndex}`);
       leadMessages.set(leadId, at);
     },
     async lastMessageAtForLead(leadId) {
@@ -296,6 +296,25 @@ check('a flow with no trigger is refused', planFromFlowDescription('{}').trigger
 const waitsOnly = planFromFlowDescription(JSON.stringify({ trigger: { type: 'trigger_meta_ad' }, nodes: [{ type: 'delayNode', data: { seconds: 60 } }] }));
 check('a flow of only waits is refused', waitsOnly.problems.some((p) => /no message or call/i.test(p)));
 check('the comment flow still plans (refusal happens at validation)', igFlow.actions.length === 1);
+
+// ---------------------------------------------------------------- runs, not "once for ever"
+// A flow used to fire once per lead for ever, because the idempotency key was
+// (flow, lead, step) with no notion of which run it belonged to. An inbound message is an event
+// you can genuinely get twice, and the second one was a silent no-op. The run key fixes that
+// without giving up the no-double-send guarantee.
+console.log('\nruns: one flow, many events, still never twice');
+{
+  const { store, steps } = memoryStore([step({ id: 'r1', flowId: 'fz', leadId: 'L9', runKey: 'msg:1' })]);
+  const first = await runDueSteps(store, at(10, 1), { execute: async () => {} });
+  check('the first run of a step executes', first.executed.length === 1 && steps[0].status === 'done');
+  check('the run key is carried on the ledger row', steps[0].runKey === 'msg:1');
+  const again = memoryStore([step({ id: 'r2', flowId: 'fz', leadId: 'L9', runKey: 'msg:2' })]);
+  // A second inbound message is a second run: it must not be blocked by the first.
+  (again.store as any).hasRun = async (flowId: string, leadId: string, stepIndex: number, runKey?: string) =>
+    flowId === 'fz' && leadId === 'L9' && stepIndex === 0 && runKey === 'msg:1';
+  const secondRun = await runDueSteps(again.store, at(10, 1), { execute: async () => {} });
+  check('a second run of the same step for a new event is allowed', secondRun.executed.length === 1);
+}
 
 console.log(`\n${'='.repeat(64)}`);
 console.log(`${passed} passed, ${failed} failed`);

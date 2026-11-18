@@ -61,6 +61,10 @@ export async function POST(request: Request) {
     flowId: String((flow as any).id),
     leadId,
     description: (flow as any).description,
+    // A flow that records no trigger can still be started by the event that is calling — that is
+    // the whole point of passing it. Omitted, an untriggered flow is refused with the reason.
+    triggerType: body?.trigger ? String(body.trigger) : null,
+    runKey: body?.runKey ? String(body.runKey) : 'once',
   });
 
   return NextResponse.json(

@@ -32,6 +32,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { describeConflict, findTriggerConflict, identityKey, type FlowIdentity } from '@/lib/flows/conflicts';
 import { actionsAvailableFor, validateAgainstTrigger } from '@/lib/flows/capabilities';
+import { describeDelivery, listDeliveries } from '@/lib/flows/delivery';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /** The trigger vocabulary `flow-runner.ts` actually matches on. */
@@ -384,6 +385,151 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
           }
           return { success: false, error: String(error?.message ?? error) };
         }
+      },
+    }),
+
+    /**
+     * Legacy flows were saved without a trigger. Nothing can start them: `startFlowRun` refuses with
+     * "the flow does not record which event starts it", which is the honest answer but not a fix.
+     * Guessing a trigger from the flow's name would be worse than refusing — the wrong event means a
+     * customer gets a sequence that was written for somebody else — so the owner picks one, here.
+     */
+    repair_flow_trigger: tool({
+      description:
+        'Give a flow the trigger it is missing so it can actually fire. Flows saved before triggers were ' +
+        'recorded have no trigger and can never start; this sets one and adds the trigger node the editor ' +
+        'needs. It cannot invent a trigger: you must choose one from the supported list, and if the flow ' +
+        'already has a different trigger this refuses unless force is true. Read the flow name and steps ' +
+        'first and only choose a trigger that genuinely describes when it should run.',
+      inputSchema: z.object({
+        flowId: z.string().describe('The automation id from list_automation_flows'),
+        trigger: z
+          .enum(FLOW_TRIGGERS as unknown as [string, ...string[]])
+          .describe('The event that should start this flow'),
+        templateName: z.string().optional().describe('For a template-button trigger, which template starts it'),
+        force: z.boolean().optional().describe('Replace a trigger the flow already records'),
+      }),
+      execute: async (input: any) => {
+        const { data: row, error } = await supabase
+          .from('automations')
+          .select('id, title, description, is_active')
+          .eq('id', input.flowId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (error) return { success: false, error: `could not read that flow: ${error.message}` };
+        if (!row) return { success: false, error: 'No such flow on this account.' };
+
+        const raw = String((row as any).description ?? '');
+        const brace = raw.indexOf('{');
+        if (brace < 0) {
+          return {
+            success: false,
+            error:
+              'This flow stores no readable step data, so setting a trigger would make it fire with nothing to run. ' +
+              'Recreate it with create_flow instead.',
+          };
+        }
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(raw.slice(brace));
+        } catch (parseError: any) {
+          return { success: false, error: `the stored flow is not readable JSON: ${parseError?.message || parseError}` };
+        }
+
+        const existingTrigger = parsed?.trigger?.type ? String(parsed.trigger.type) : null;
+        if (existingTrigger && !input.force) {
+          return {
+            success: false,
+            reason: 'already_has_trigger',
+            trigger: existingTrigger,
+            message: `This flow already starts on ${existingTrigger}, so nothing was changed. Pass force to replace it.`,
+          };
+        }
+
+        const nodes: any[] = Array.isArray(parsed.nodes) ? parsed.nodes : [];
+        if (!nodes.some((n) => String(n?.type) === 'triggerNode')) {
+          // The editor's validate-on-publish requires a trigger node; without one the flow would be
+          // given a trigger and still fail to publish, which is the confusing half-fix.
+          nodes.unshift({ id: 'trigger', type: 'triggerNode', data: { triggerType: String(input.trigger) } });
+        }
+
+        const next = {
+          ...parsed,
+          trigger: {
+            ...(parsed.trigger ?? {}),
+            type: String(input.trigger),
+            ...(input.templateName ? { templateName: String(input.templateName) } : {}),
+            config: parsed?.trigger?.config ?? {},
+          },
+          nodes,
+        };
+
+        const { error: updateError } = await supabase
+          .from('automations')
+          .update({ description: JSON.stringify(next) })
+          .eq('id', (row as any).id)
+          .eq('user_id', userId);
+        if (updateError) return { success: false, error: `could not save the trigger: ${updateError.message}` };
+
+        return {
+          success: true,
+          flowId: (row as any).id,
+          title: (row as any).title,
+          trigger: String(input.trigger),
+          replaced: existingTrigger,
+          active: (row as any).is_active === true,
+          message:
+            `"${(row as any).title}" now starts on ${input.trigger}` +
+            ((row as any).is_active === true
+              ? '. It is active, so the next matching event will queue its steps for your approval.'
+              : '. It is still paused — turn it on when you are ready.'),
+        };
+      },
+    }),
+
+    /**
+     * The approvals queue, readable from chat. Every flow step waits for a human, so a flow whose
+     * steps are queued looks exactly like a flow that did nothing unless the owner can see the queue.
+     */
+    list_flow_approvals: tool({
+      description:
+        'List the flow steps waiting for the owner to approve them, and say what each one would do. ' +
+        'Use this when asked whether a flow fired, what is pending, or why nothing was sent — a flow that ' +
+        'queued steps has not messaged anybody yet.',
+      inputSchema: z.object({
+        includeSent: z.boolean().optional().describe('Also show steps that were already sent or blocked'),
+        limit: z.number().optional().describe('How many to return, default 20'),
+      }),
+      execute: async (input: any) => {
+        const statuses: any = input?.includeSent ? ['pending_approval', 'approved', 'sending', 'delivered', 'blocked', 'failed'] : ['pending_approval'];
+        const rows = await listDeliveries(supabase, userId, { status: statuses, limit: Math.min(Number(input?.limit ?? 20) || 20, 50) });
+        if (!rows.length) {
+          return {
+            success: true,
+            waiting: 0,
+            message:
+              'Nothing is waiting for approval. A flow step only appears here when a flow is due to message or call somebody.',
+          };
+        }
+        return {
+          success: true,
+          waiting: rows.filter((d) => d.status === 'pending_approval').length,
+          steps: rows.map((d) => ({
+            id: d.id,
+            status: d.status,
+            summary: describeDelivery(d),
+            channel: d.channel,
+            template: d.templateName ?? undefined,
+            text: d.body ?? undefined,
+            trigger: d.trigger ?? undefined,
+            queuedAt: d.createdAt,
+            refusal: d.errorMessage ?? undefined,
+          })),
+          message:
+            `${rows.filter((d) => d.status === 'pending_approval').length} step(s) are waiting for you. ` +
+            'They are sent only after you approve them, on dashboard/flows/approvals.',
+        };
       },
     }),
   };

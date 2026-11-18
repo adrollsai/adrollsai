@@ -13,7 +13,8 @@ import {
   ArrowLeft,
   ChevronRight,
   Zap,
-  PhoneCall
+  PhoneCall,
+  ShieldCheck
 } from 'lucide-react'
 
 // Custom SVG Icons for Instagram & Facebook for pixel perfection
@@ -135,6 +136,16 @@ export function SuiteHeader({
                 title="Open the visual flow editor"
               >
                 <Workflow size={11} /> Flow Studio
+              </button>
+              {/* A flow that reaches a customer does so through this queue: the scheduler writes a
+                  row per due step and nothing sends until somebody approves it here. Without a link
+                  that queue is invisible, and an invisible queue reads as "the flow did nothing". */}
+              <button
+                onClick={() => router.push(`/dashboard/flows/approvals${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
+                className="ml-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-full px-2.5 py-0.5 transition-colors cursor-pointer flex items-center gap-1"
+                title="Approve the steps your flows are due to take"
+              >
+                <ShieldCheck size={11} /> Approvals
               </button>
             </div>
 

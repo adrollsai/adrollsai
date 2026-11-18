@@ -448,6 +448,29 @@ export async function POST(
             }
         }
 
+        // Trigger the flows that listen for "a lead was added to the CRM". Queue-only: each step
+        // waits for a human to approve it, so this cannot message anybody on its own.
+        if (savedLead?.id) {
+            try {
+                const { fireFlowTrigger } = await import('@/lib/flows/ingress')
+                const fired = await fireFlowTrigger(supabaseAdmin, {
+                    userId: profile.id,
+                    trigger: 'trigger_crm_lead',
+                    leadId: savedLead.id,
+                    text: `${name} ${phone} ${projectName || ''}`,
+                    runKey: `lead:${savedLead.id}`,
+                })
+                if (fired.started.length) {
+                    console.log(`[Flow trigger] trigger_crm_lead started ${fired.started.length} flow run(s) for lead ${savedLead.id}`)
+                }
+                for (const skip of fired.skipped) {
+                    console.log(`[Flow trigger] trigger_crm_lead skipped "${skip.title}": ${skip.why}`)
+                }
+            } catch (flowErr: any) {
+                console.warn('[Flow trigger] crm lead hook failed:', flowErr?.message || flowErr)
+            }
+        }
+
         return NextResponse.json({
             success: true,
             leadId: savedLead.id,

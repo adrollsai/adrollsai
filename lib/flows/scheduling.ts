@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Durable waiting, safe sending.
  *
  * A flow cannot sleep for an hour: the thing executing it has to finish. So a wait is not a pause,
@@ -23,11 +23,19 @@ export interface ScheduledStep {
   /** Index of the action inside the flow, so a step is identifiable independent of time. */
   stepIndex: number;
   /** What the step does when it fires. */
-  kind?: 'message' | 'call' | 'email' | 'dm_reply';
+  kind?: 'message' | 'call' | 'email' | 'dm_reply' | 'handoff';
   /** When it should run, ISO string. */
   runAt: string;
   status: StepStatus;
   attempts: number;
+  /**
+   * Which run of the flow this step belongs to.
+   *
+   * Without this a flow could fire once per lead for ever: the idempotency key was
+   * (flow, lead, step), so a genuinely new inbound message produced a silent no-op. The run key
+   * is the event that started the run ('once' for a flow that should only ever fire one way).
+   */
+  runKey?: string;
 }
 
 export interface QuietHours {
@@ -50,11 +58,16 @@ export interface FlowStore {
   claim(stepId: string, now: Date): Promise<boolean>;
   complete(stepId: string): Promise<void>;
   skip(stepId: string, reason: string): Promise<void>;
-  /** Idempotency: has this exact step for this lead already run? */
-  hasRun(flowId: string, leadId: string, stepIndex: number): Promise<boolean>;
-  recordRun(flowId: string, leadId: string, stepIndex: number, at: Date): Promise<void>;
+  /** Idempotency: has this exact step of this exact run already happened for this lead? */
+  hasRun(flowId: string, leadId: string, stepIndex: number, runKey?: string): Promise<boolean>;
+  recordRun(flowId: string, leadId: string, stepIndex: number, at: Date, runKey?: string): Promise<void>;
   lastMessageAtForLead(leadId: string): Promise<Date | null>;
-  isOptedOut(leadId: string): Promise<boolean>;
+  /**
+   * `'unreadable'` is distinct from `true` on purpose: "this person opted out" and "we could not
+   * read this person" both stop the send, but only one of them is their decision, and a report that
+   * confuses them sends somebody hunting for a consent they never withdrew.
+   */
+  isOptedOut(leadId: string): Promise<boolean | 'unreadable'>;
   isPaused(flowId: string): Promise<boolean>;
   isAllPaused(): Promise<boolean>;
 }
@@ -78,6 +91,8 @@ export type SkipReason =
   | 'kill_switch'
   | 'flow_paused'
   | 'opted_out'
+  /** Could not read the lead, so it was not messaged — but it was not cancelled either. */
+  | 'lead_unreadable'
   | 'already_ran'
   | 'recently_messaged_by_other_flow'
   | 'claim_lost'
@@ -134,7 +149,14 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
       report.skipped.push({ stepId: step.id, reason: 'flow_paused' });
       continue;
     }
-    if (await store.isOptedOut(step.leadId)) {
+    const optOut = await store.isOptedOut(step.leadId);
+    if (optOut === 'unreadable') {
+      // Not skipped: the row stays pending so a transient read failure does not quietly cancel
+      // somebody's follow-up. It is reported, so the silence is explainable.
+      report.skipped.push({ stepId: step.id, reason: 'lead_unreadable' });
+      continue;
+    }
+    if (optOut) {
       await store.skip(step.id, 'opted_out');
       report.skipped.push({ stepId: step.id, reason: 'opted_out' });
       continue;
@@ -144,16 +166,22 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
       report.deferred.push({ stepId: step.id, until: until.toISOString() });
       continue;
     }
-    if (await store.hasRun(step.flowId, step.leadId, step.stepIndex)) {
+    if (await store.hasRun(step.flowId, step.leadId, step.stepIndex, step.runKey)) {
       await store.skip(step.id, 'already_ran');
       report.skipped.push({ stepId: step.id, reason: 'already_ran' });
       continue;
     }
-    const last = await store.lastMessageAtForLead(step.leadId);
-    if (last && now.getTime() - last.getTime() < windowMs) {
-      report.deferred.push({ stepId: step.id, until: new Date(last.getTime() + windowMs).toISOString() });
-      report.skipped.push({ stepId: step.id, reason: 'recently_messaged_by_other_flow' });
-      continue;
+    // Cross-flow freshness protects a PERSON from being messaged twice in an hour. An internal
+    // step messages nobody, so holding it back for an hour would only delay a handoff or a tag —
+    // and worse, the step right after a message would always be deferred, because the message it
+    // follows is the thing that set the timestamp.
+    if (step.kind !== 'handoff') {
+      const last = await store.lastMessageAtForLead(step.leadId);
+      if (last && now.getTime() - last.getTime() < windowMs) {
+        report.deferred.push({ stepId: step.id, until: new Date(last.getTime() + windowMs).toISOString() });
+        report.skipped.push({ stepId: step.id, reason: 'recently_messaged_by_other_flow' });
+        continue;
+      }
     }
     if (!(await store.claim(step.id, now))) {
       report.skipped.push({ stepId: step.id, reason: 'claim_lost' });
@@ -161,7 +189,7 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
     }
     try {
       await opts.execute(step);
-      await store.recordRun(step.flowId, step.leadId, step.stepIndex, now);
+      await store.recordRun(step.flowId, step.leadId, step.stepIndex, now, step.runKey);
       await store.complete(step.id);
       report.executed.push(step.id);
     } catch {
@@ -177,12 +205,30 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
  * is pushed past quiet hours so nobody is called at midnight.
  */
 export interface PlannedAction {
-  kind: 'message' | 'call' | 'wait';
+  kind: 'message' | 'call' | 'wait' | 'handoff';
   seconds?: number;
+  /** For a `handoff` step: what internal work it does. Never messages a customer. */
+  internal?: InternalAction;
 }
 
-export function scheduleFor(flowId: string, leadId: string, actions: PlannedAction[], startAt: Date, quiet: QuietHours = DEFAULT_QUIET_HOURS) {
-  const rows: { flowId: string; leadId: string; stepIndex: number; runAt: Date; kind: 'message' | 'call' }[] = [];
+/**
+ * Internal work a flow may do without asking anybody: it touches the CRM, not a person.
+ * It is kept as data (not a callback) so a plan stays serialisable and testable.
+ */
+export interface InternalAction {
+  kind: 'note' | 'tag' | 'stage' | 'assign';
+  value?: string | null;
+}
+
+export function scheduleFor(
+  flowId: string,
+  leadId: string,
+  actions: PlannedAction[],
+  startAt: Date,
+  quiet: QuietHours = DEFAULT_QUIET_HOURS,
+  runKey = 'once'
+) {
+  const rows: { flowId: string; leadId: string; stepIndex: number; runAt: Date; kind: 'message' | 'call' | 'handoff' }[] = [];
   let cursor = new Date(startAt);
   let stepIndex = 0;
   for (const action of actions) {
@@ -190,10 +236,12 @@ export function scheduleFor(flowId: string, leadId: string, actions: PlannedActi
       cursor = addSeconds(cursor, Math.max(0, action.seconds ?? 0));
       continue;
     }
-    const allowed = nextAllowedTime(cursor, quiet);
+    // Quiet hours exist so a customer is not called at midnight. An internal step wakes nobody,
+    // so clamping it until morning would delay a tag for no reason.
+    const allowed = action.kind === 'handoff' ? new Date(cursor) : nextAllowedTime(cursor, quiet);
     rows.push({ flowId, leadId, stepIndex, runAt: allowed, kind: action.kind });
     stepIndex++;
     cursor = allowed;
   }
-  return rows;
+  return rows.map((row) => ({ ...row, runKey }));
 }
