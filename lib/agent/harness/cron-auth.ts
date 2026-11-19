@@ -30,13 +30,18 @@ export function acceptedCronSecrets(): string[] {
   );
 }
 
-/** Extract the bearer value from the Authorization header or `?cronSecret=`. */
+/** Extract the bearer value from the Authorization header, `x-cron-secret`, or `?cronSecret=`. */
 export function presentedCronSecret(req: Request): string | null {
   const header = req.headers.get('authorization') || req.headers.get('Authorization');
   if (header) {
     const bearer = header.replace(/^Bearer\s+/i, '').trim();
     if (bearer) return bearer;
   }
+  // Some of this repo's cron routes accept `x-cron-secret` and some do not, so an operator holding
+  // the right secret could still get a 401 from half of them and had no way to tell why. The secret
+  // is the same secret; accept either header.
+  const explicit = (req.headers.get('x-cron-secret') || '').trim();
+  if (explicit) return explicit;
   const fromQuery = new URL(req.url).searchParams.get('cronSecret');
   return fromQuery ? fromQuery.trim() : null;
 }

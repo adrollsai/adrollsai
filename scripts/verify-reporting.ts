@@ -27,35 +27,77 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   // Pass a profile id to test a specific organisation, e.g.
   //   node .tmp-rep.cjs bc63c065-9bcc-4793-bedc-f0960406425b
   const profileId = process.argv[2] || process.env.VERIFY_USER_ID || null;
-  const { data: profile } = profileId
-    ? await sb
-        .from('profiles')
-        .select('id, business_name, role, parent_id, agency_id')
-        .eq('id', profileId)
-        .maybeSingle()
-    : await sb
-        .from('profiles')
-        .select('id, business_name, role, parent_id, agency_id')
-        .eq('role', 'super_admin')
-        .limit(1)
-        .maybeSingle();
+
+  const rootOf = (p: any) => p.parent_id || p.agency_id || p.id;
+  const memberIdsOf = async (root: string) => {
+    const { data: members } = await sb
+      .from('profiles')
+      .select('id')
+      .or(`id.eq.${root},parent_id.eq.${root},agency_id.eq.${root}`);
+    return (members || []).map((m: any) => m.id as string);
+  };
+
+  /**
+   * Pick an organisation that can actually exercise these tools.
+   *
+   * `role = super_admin` alone is not enough: the first such row can be an empty demo account. This
+   * gate used to test "Nobogent Demo Infra" — an org that has never logged a call — and then failed
+   * two checks because there was no data to check, which reads as a defect and sends somebody
+   * hunting through the reporting code. Prefer an org with a recorded call, then one with any leads,
+   * then anything, and say which it picked and why.
+   */
+  let profile: any = null;
+  let pickedBecause = '';
+  if (profileId) {
+    const { data } = await sb
+      .from('profiles')
+      .select('id, business_name, role, parent_id, agency_id')
+      .eq('id', profileId)
+      .maybeSingle();
+    profile = data ?? null;
+    pickedBecause = 'explicitly requested';
+  } else {
+    const { data: candidates } = await sb
+      .from('profiles')
+      .select('id, business_name, role, parent_id, agency_id')
+      .eq('role', 'super_admin')
+      .limit(50);
+
+    for (const withRecordings of [true, false]) {
+      for (const candidate of candidates || []) {
+        const memberIds = await memberIdsOf(rootOf(candidate));
+        let query = sb
+          .from('leads')
+          .select('id', { count: 'exact', head: true })
+          .in('user_id', memberIds.length ? memberIds : [candidate.id]);
+        if (withRecordings) query = query.not('voice_recording_url', 'is', null);
+        const { count } = await query;
+        if ((count ?? 0) > 0) {
+          profile = candidate;
+          pickedBecause = withRecordings ? `${count} lead(s) with a call recording` : `${count} lead(s)`;
+          break;
+        }
+      }
+      if (profile) break;
+    }
+    if (!profile && candidates?.length) {
+      profile = candidates[0];
+      pickedBecause = 'no organisation had lead data, so the first super_admin was used';
+    }
+  }
 
   if (!profile) {
     console.error('no super_admin profile to test with');
     process.exit(1);
   }
-  const root = profile.parent_id || profile.agency_id || profile.id;
-  console.log(`testing as ${profile.business_name} (org root ${root.slice(0, 8)})\n`);
+  const root = rootOf(profile);
+  console.log(`testing as ${profile.business_name} (org root ${root.slice(0, 8)}) — ${pickedBecause}\n`);
 
   const tools = createReportingTools(sb, profile.id) as any;
   const run = (args: any) => tools.org_call_report.execute(args, { toolCallId: 't', messages: [] });
 
-  // ── member set ───────────────────────────────────────────────────────────
-  const { data: members } = await sb
-    .from('profiles')
-    .select('id')
-    .or(`id.eq.${root},parent_id.eq.${root},agency_id.eq.${root}`);
-  const ids = (members || []).map((m) => m.id);
+  // The organisation's member set: the root plus everything hanging off it.
+  const ids = await memberIdsOf(root);
 
   // ── today ────────────────────────────────────────────────────────────────
   const today = await run({ period: 'today' });
