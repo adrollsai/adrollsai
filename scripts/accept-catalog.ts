@@ -20,13 +20,13 @@ import fs from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createServerClient } from '@supabase/ssr';
 
-function env(name) {
+function env(name: string): string {
   const raw = fs.readFileSync('.env.local', 'utf8');
   const m = raw.match(new RegExp('^' + name + '=(.*)$', 'm'));
   if (!m) throw new Error(`missing ${name}`);
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
-function arg(name, fallback = '') {
+function arg(name: string, fallback = ''): string {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
 }
@@ -41,7 +41,7 @@ const admin = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVIC
 
 let pass = 0;
 let fail = 0;
-const check = (name, ok, detail) => {
+const check = (name: string, ok: boolean, detail?: unknown) => {
   if (ok) {
     pass++;
     console.log(`  ok   ${name}${detail === undefined ? '' : `  — ${typeof detail === 'string' ? detail : JSON.stringify(detail)?.slice(0, 300)}`}`);
@@ -51,7 +51,7 @@ const check = (name, ok, detail) => {
   }
 };
 
-async function signIn(userId) {
+async function signIn(userId: string): Promise<string> {
   const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
   const user = users.users.find((u) => u.id === userId) || users.users.find((u) => u.email);
   if (!user?.email) throw new Error(`no email for ${userId}`);
@@ -75,7 +75,7 @@ async function signIn(userId) {
   return Array.from(jar.entries()).map(([name, value]) => `${name}=${value}`).join('; ');
 }
 
-const cleanup = [];
+const cleanup: Array<() => Promise<unknown>> = [];
 
 async function main() {
   const cookie = await signIn(OWNER);
@@ -182,7 +182,7 @@ async function main() {
 async function run() {
   try {
     await main();
-  } catch (error) {
+  } catch (error: any) {
     fail++;
     console.log(`  FAIL acceptance crashed: ${String(error?.message || error)}`);
   } finally {
