@@ -4,6 +4,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { sendFollowupReminderEmail } from '@/utils/email-helper'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
+import { isBookableActionType } from '@/utils/followup-activity'
+
 
 export async function POST(request: Request) {
   const body = await request.json()
@@ -75,13 +77,24 @@ export async function POST(request: Request) {
     nextActionDate,
     nextActionType = 'Call',
     assignedTo,
-    remindMe = true
+    remindMe = true,
+    // Idempotency key minted by the client for this one save. A retry — or the client's
+    // offline fallback racing a request it aborted — resends the same key, and the second
+    // write is recognised and acknowledged instead of duplicated.
+    writeId = null
   } = body
 
   const effectiveNextActionRemark = (nextActionRemark || nextRemarks || '').trim()
+  const isBookableNextAction = isBookableActionType(nextActionType)
 
   if (!leadId) {
     return NextResponse.json({ error: 'Missing leadId' }, { status: 400 })
+  }
+
+  if (nextActionDate && typeof nextActionDate === 'string' && nextActionDate.trim() !== '') {
+    if (Number.isNaN(new Date(nextActionDate).getTime())) {
+      return NextResponse.json({ error: 'Next Action Date is not a valid date' }, { status: 400 })
+    }
   }
 
   try {
@@ -112,6 +125,7 @@ export async function POST(request: Request) {
       await supabaseAdmin.from('lead_history').insert({
         lead_id: leadId,
         user_id: user.id,
+        actor_id: user.id,
         action_type: 'REMARK',
         description: callDesc
       })
@@ -119,12 +133,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, message: 'Call initiated logged successfully' })
     }
 
+    // ── Idempotency ─────────────────────────────────────────────────────────────
+    // The client mints a `writeId` per save. If this lead already carries that id, the write
+    // has landed and the client is retrying (typically after its own 12s timeout fired while
+    // the request was still completing). Acknowledge instead of writing a second follow-up
+    // and a second history row.
+    const existingCustomFields: Record<string, any> = (() => {
+      const raw = lead.custom_fields
+      if (!raw) return {}
+      if (typeof raw === 'string') {
+        try { return JSON.parse(raw) } catch { return {} }
+      }
+      return typeof raw === 'object' ? { ...raw } : {}
+    })()
+
+    if (writeId && existingCustomFields.last_write_id === writeId) {
+      return NextResponse.json({
+        success: true,
+        duplicate: true,
+        message: 'Followup already saved'
+      })
+    }
+
     // Build update object for lead using strictly verified DB columns
     const updatePayload: Record<string, any> = {}
 
     if (nextActionDate) {
       updatePayload.next_followup = nextActionDate
-      if (nextActionType === 'Site Visit' || nextActionType === 'Meeting' || nextActionType === 'Appointment') {
+      if (isBookableNextAction) {
         updatePayload.booked_time = nextActionDate
       }
       // Note: Preserve existing booked_time on regular call/message follow-ups
@@ -163,9 +199,34 @@ export async function POST(request: Request) {
 
     const hasExplicitNextAction = Boolean(nextActionDate && typeof nextActionDate === 'string' && nextActionDate.trim() !== '')
 
+    // Next action dates are commitments, so a date already in the past is almost always a typo
+    // ("11/17" typed as a month/day mix-up, or a value carried over from the previous call).
+    // Those typos used to be stored verbatim — and, worse, re-read as the follow-up's own
+    // timestamp by the analytics page, which pushed real work out of "today".
+    //
+    // Only enforced when the date will actually be kept: a Lost/Closed stage clears the next
+    // action, and rejecting a stale pre-filled date would block an agent from closing a lead.
+    if (hasExplicitNextAction && !isLostOrClosed) {
+      const parsedNext = new Date(nextActionDate).getTime()
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+      const oneYearAhead = Date.now() + 366 * 24 * 60 * 60 * 1000
+      if (parsedNext < fiveMinutesAgo) {
+        return NextResponse.json(
+          { error: 'Next Action Date is in the past. Pick a future date for the next follow-up.' },
+          { status: 400 }
+        )
+      }
+      if (parsedNext > oneYearAhead) {
+        return NextResponse.json(
+          { error: 'Next Action Date is more than a year away. Check the month and day.' },
+          { status: 400 }
+        )
+      }
+    }
+
     if (hasExplicitNextAction) {
       updatePayload.next_followup = nextActionDate
-      if (nextActionType === 'Site Visit' || nextActionType === 'Meeting' || nextActionType === 'Appointment') {
+      if (isBookableNextAction) {
         updatePayload.booked_time = nextActionDate
       }
     } else if (isLostOrClosed) {
@@ -186,17 +247,15 @@ export async function POST(request: Request) {
     }
 
     // Update custom_fields with reference info, interested properties, client_status, next action & DNP state
-    let customFields: Record<string, any> = {}
-    if (lead.custom_fields) {
-      if (typeof lead.custom_fields === 'string') {
-        try { customFields = JSON.parse(lead.custom_fields) } catch (e) {}
-      } else if (typeof lead.custom_fields === 'object') {
-        customFields = { ...lead.custom_fields }
-      }
-    }
+    const customFields: Record<string, any> = { ...existingCustomFields }
 
     customFields.last_followup_at = new Date().toISOString()
     customFields.last_followup_type = isDnp ? 'Call (DNP)' : followupType
+    // Who actually logged it. Nothing used to record this, so "someone is editing my leads"
+    // could not be answered from the data. `last_followup_by` is read by the transfer route.
+    customFields.last_followup_by = user.id
+    customFields.last_followup_by_name = callerName
+    if (writeId) customFields.last_write_id = writeId
     if (remarks && typeof remarks === 'string' && remarks.trim()) {
       customFields.last_followup_remark = remarks.trim()
       customFields.last_remark = remarks.trim()
@@ -208,6 +267,15 @@ export async function POST(request: Request) {
       customFields.next_action_date = nextActionDate
       updatePayload.next_followup = nextActionDate
       if (nextActionType) customFields.next_action_type = nextActionType
+      // A meeting, site visit or appointment is a booking, so the lead must carry the
+      // booked time. Without this the lead stays a plain "call due" and the meeting is
+      // invisible in every appointment view — which is how a "meet at 9pm" follow-up
+      // disappeared overnight.
+      if (isBookableNextAction) {
+        customFields.booked_time = nextActionDate
+        customFields.booked_at = new Date().toISOString()
+        customFields.booked_by = user.id
+      }
       if (effectiveNextActionRemark) {
         customFields.next_action_remark = effectiveNextActionRemark
         customFields.next_remarks = effectiveNextActionRemark
@@ -364,6 +432,8 @@ export async function POST(request: Request) {
     await supabaseAdmin.from('lead_history').insert({
       lead_id: leadId,
       user_id: user.id,
+      // Who actually pressed save. `user_id` is the credited owner; `actor_id` is the human.
+      actor_id: user.id,
       action_type: isDnp ? 'REMARK' : (isExplicitStageChange ? 'STATUS_CHANGE' : 'FOLLOWUP'),
       description: historyDesc
     })
@@ -371,6 +441,11 @@ export async function POST(request: Request) {
     // Manual followup updated successfully (notifications skipped per user request)
     return NextResponse.json({
       success: true,
+      // Echoed so the client can confirm this exact save landed and skip its fallback.
+      writeId,
+      followupCount: customFields.followup_count,
+      nextFollowup: updatePayload.next_followup ?? null,
+      bookedTime: updatePayload.booked_time ?? null,
       message: isDnp ? 'DNP followup logged successfully' : 'Followup updated successfully'
     })
   } catch (err: any) {

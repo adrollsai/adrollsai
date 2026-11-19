@@ -142,6 +142,11 @@ export async function POST(request: Request) {
       customFields.last_remark = cleanDesc
       customFields.last_followup_remark = cleanDesc
       customFields.last_followup_at = new Date().toISOString()
+      // Who logged it. `lead_history` keeps the workspace owner in user_id and the human in
+      // actor_id; custom_fields is the only place on the lead itself that answers "who last
+      // touched this?", and the transfer route reads it back.
+      customFields.last_followup_by = user.id
+      customFields.last_followup_by_name = user.email || null
       
       // Increment followup count if action is REMARK, CALL_FEEDBACK, or FOLLOWUP
       if (actionType === 'REMARK' || actionType === 'CALL_FEEDBACK' || actionType === 'FOLLOWUP' || actionType === 'STATUS_CHANGE') {

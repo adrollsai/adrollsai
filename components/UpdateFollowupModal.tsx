@@ -7,6 +7,7 @@ import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { createClient } from '@/utils/supabase/client'
 import { categorizeLeadStage } from '@/utils/pipeline-stages'
 import { parseCustomFields } from '@/utils/lead-helpers'
+import { isBookableActionType } from '@/utils/followup-activity'
 
 export const isPlanPostponedStage = (stage?: string | null): boolean => {
   if (!stage) return false
@@ -276,6 +277,46 @@ export default function UpdateFollowupModal({
       }
     }
 
+    // A next action is a commitment, so a date already in the past is a typo — usually a
+    // month/day mix-up ("11/17" meant 17 Nov) or a stale value carried over from the last
+    // call (the field is pre-filled from the lead's existing date). Those typos used to be
+    // saved verbatim and then re-read as the follow-up's own timestamp, which pushed real work
+    // out of "today".
+    //
+    // Not applied when the date will be discarded anyway: closing a lead (Lost/NI, Closed,
+    // Postponed) clears the next action, and blocking there would stop an agent closing a lead
+    // whose old date has simply gone stale.
+    if (parsedIsoNextAction && !isClosedStatus && !isPostponed && !noFutureFollowup) {
+      const nextMs = new Date(parsedIsoNextAction).getTime()
+      const fiveMinutesAgo = Date.now() - 5 * 60 * 1000
+      const oneYearAhead = Date.now() + 366 * 24 * 60 * 60 * 1000
+      if (nextMs < fiveMinutesAgo) {
+        setError('The Next Action date is in the past. Pick a future date and time for the next follow-up.')
+        setLoading(false)
+        isSubmittingRef.current = false
+        nextActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+      if (nextMs > oneYearAhead) {
+        setError('The Next Action date is more than a year away. Check the month and day.')
+        setLoading(false)
+        isSubmittingRef.current = false
+        nextActionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        return
+      }
+    }
+
+    // Bookable next actions (meeting / visit / appointment) must carry a booking time, or the
+    // appointment is invisible in every booking view — the "book a meeting at 9pm" case.
+    const isBookableNextAction = parsedIsoNextAction ? isBookableActionType(nextActionType) : false
+
+    // One save, one identity. Every retry of this submit reuses it, so the API can recognise
+    // a repeat and the offline fallback can tell "my write landed" from "my write did not".
+    const writeId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `w-${Date.now()}-${Math.random().toString(36).slice(2)}`
+
     const currentStageNorm = (lead.pipeline_stage || lead.status || '').toLowerCase().trim()
     const isCurrentFresh = (
       !currentStageNorm ||
@@ -307,7 +348,8 @@ export default function UpdateFollowupModal({
       nextActionDate: parsedIsoNextAction,
       nextActionType: parsedIsoNextAction ? nextActionType : null,
       assignedTo: assignedTo || null,
-      remindMe: parsedIsoNextAction ? remindMe : false
+      remindMe: parsedIsoNextAction ? remindMe : false,
+      writeId
     }
 
     try {
@@ -326,45 +368,136 @@ export default function UpdateFollowupModal({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
 
-      let saveSuccess = false
-
-      // Try API route with a strict 12-second timeout so poor mobile connections never hang indefinitely
-      try {
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 12000)
-
+      // A follow-up must be written exactly once.
+      //
+      // The old code aborted the request after 12s and then unconditionally ran a direct
+      // Supabase fallback. Aborting is a client-side act: the server kept running and usually
+      // committed anyway. The result was two follow-ups, two history rows a second apart (one
+      // attributed "by <name>" and one not) and a followup_count incremented twice — which is
+      // what made reps think somebody else was editing their leads.
+      //
+      // Now a timeout is treated as "unknown", and we ask the database whether this exact save
+      // (identified by `writeId`) landed before deciding to write again.
+      const postFollowup = async (signal?: AbortSignal) => {
         const res = await fetch('/api/crm/followup', {
           method: 'POST',
           headers,
-          signal: controller.signal,
+          signal,
           body: JSON.stringify({
             ...payload,
-            userId: currentUserId || lead.assigned_to || lead.user_id
+            // Only ever the authenticated user. This used to fall back to the lead's assignee,
+            // so a save made without a resolved session was credited to somebody else.
+            userId: currentUserId || undefined
           })
         })
-        clearTimeout(timer)
-
-        if (res.ok) {
-          saveSuccess = true
-        } else {
-          const errData = await res.json().catch(() => null)
-          throw new Error(errData?.error || `Server returned error (${res.status})`)
-        }
-      } catch (fetchErr: any) {
-        const isNetworkDisconnect = fetchErr.name === 'AbortError' || 
-          fetchErr.message?.includes('Failed to fetch') || 
-          fetchErr.message?.includes('NetworkError');
-
-        if (!isNetworkDisconnect) {
-          throw fetchErr
-        }
-        console.warn('[UpdateFollowupModal] Network offline, executing resilient direct Supabase update...')
+        if (res.ok) return { ok: true as const }
+        const errData = await res.json().catch(() => null)
+        return { ok: false as const, status: res.status, error: errData?.error || `Server returned error (${res.status})` }
       }
 
-      // Resilient Direct Supabase Fallback strictly if offline or connection aborted
+      /** Did a write carrying this writeId reach the lead? */
+      const didMyWriteLand = async (): Promise<boolean> => {
+        try {
+          const readPromise = supabase
+            .from('leads')
+            .select('custom_fields')
+            .eq('id', lead.id)
+            .maybeSingle()
+          const timeout = new Promise<any>((resolve) => setTimeout(() => resolve(null), 6000))
+          const result: any = await Promise.race([readPromise, timeout])
+          if (!result?.data?.custom_fields) return false
+          let cf = result.data.custom_fields
+          for (let i = 0; i < 3 && typeof cf === 'string'; i += 1) {
+            try { cf = JSON.parse(cf) } catch { return false }
+          }
+          return Boolean(cf && cf.last_write_id === writeId)
+        } catch {
+          return false
+        }
+      }
+
+      let saveSuccess = false
+      let failureMessage: string | null = null
+      // A 4xx is the server refusing this save on its merits (bad date, bad permission).
+      // Retrying or writing around it would store something the server just rejected.
+      let rejectedByServer = false
+
+      // Attempt 1 — with a timeout, but a timeout no longer means "did not save".
+      try {
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 12000)
+        try {
+          const outcome = await postFollowup(controller.signal)
+          if (outcome.ok) {
+            saveSuccess = true
+          } else {
+            failureMessage = outcome.error
+            if (outcome.status >= 400 && outcome.status < 500) rejectedByServer = true
+          }
+        } finally {
+          clearTimeout(timer)
+        }
+      } catch (fetchErr: any) {
+        const isNetworkDisconnect =
+          fetchErr?.name === 'AbortError' ||
+          fetchErr?.message?.includes('Failed to fetch') ||
+          fetchErr?.message?.includes('NetworkError')
+
+        if (!isNetworkDisconnect) {
+          // A real server rejection (validation, permissions) — surface it, never paper over it.
+          throw fetchErr
+        }
+        failureMessage = fetchErr?.message || 'Request interrupted'
+        console.warn('[UpdateFollowupModal] Request did not complete in time; verifying whether it landed...')
+      }
+
+      // Attempt 1 timed out or errored in transit: ask the database before doing anything else.
+      if (!saveSuccess && !rejectedByServer) {
+        const landed = await didMyWriteLand()
+        if (landed) {
+          console.log('[UpdateFollowupModal] The save did land — not writing a second time.')
+          saveSuccess = true
+        }
+      }
+
+      // Attempt 2 — one clean retry with the same writeId. The API is idempotent on it, so a
+      // duplicate cannot be created even if attempt 1 was still committing.
+      if (!saveSuccess && !rejectedByServer && currentUserId) {
+        try {
+          const outcome = await postFollowup()
+          if (outcome.ok) {
+            saveSuccess = true
+            failureMessage = null
+          } else {
+            failureMessage = outcome.error
+            if (outcome.status >= 400 && outcome.status < 500) rejectedByServer = true
+          }
+        } catch (retryErr: any) {
+          failureMessage = retryErr?.message || 'Retry failed'
+        }
+
+        if (!saveSuccess && !rejectedByServer && (await didMyWriteLand())) {
+          saveSuccess = true
+          failureMessage = null
+        }
+      }
+
+      // The server refused this save on its merits — tell the agent, do not route around it.
+      if (!saveSuccess && rejectedByServer) {
+        throw new Error(failureMessage || 'The follow-up was rejected. Please check the details and try again.')
+      }
+
+      // Last resort: a direct write, but only with a real actor and only for this one save.
+      // Refusing here is better than writing a follow-up under the wrong person's name.
       if (!saveSuccess) {
-        console.log('[UpdateFollowupModal] Executing resilient direct Supabase update...')
-        
+        if (!currentUserId) {
+          throw new Error(
+            failureMessage ||
+              'Your session has expired. Please sign in again so the follow-up is recorded against your name.'
+          )
+        }
+        console.warn('[UpdateFollowupModal] API unreachable; writing directly with the signed-in user id.')
+
         let cf = lead.custom_fields || {}
         if (typeof cf === 'string') {
           try { cf = JSON.parse(cf) } catch (e) { cf = {} }
@@ -378,6 +511,8 @@ export default function UpdateFollowupModal({
           client_status: clientStatus,
           last_remark: remarks || null,
           last_followup_remark: remarks || null,
+          last_followup_by: currentUserId,
+          last_write_id: writeId,
           followup_count: (cf.followup_count || 0) + 1,
           next_action_date: parsedIsoNextAction,
           next_action_type: parsedIsoNextAction ? nextActionType : null,
@@ -387,13 +522,33 @@ export default function UpdateFollowupModal({
           status: payload.leadStatus
         }
 
+        if (isBookableNextAction && parsedIsoNextAction) {
+          cf.booked_time = parsedIsoNextAction
+          cf.booked_at = new Date().toISOString()
+          cf.booked_by = currentUserId
+        }
+
+        // Resolve the actor's name so the note block and the history row are attributable.
+        // Offline-written notes used to carry no "by <name>", which is why follow-ups logged
+        // this way could not be credited to the person who actually made them.
+        let actorName = ''
+        try {
+          const { data: actorProfile } = await supabase
+            .from('profiles')
+            .select('full_name, email')
+            .eq('id', currentUserId)
+            .maybeSingle()
+          actorName = actorProfile?.full_name || actorProfile?.email || ''
+        } catch {}
+
         let newNotes = lead.notes || ''
         const formattedDateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+        const byClause = actorName ? ` by ${actorName}` : ''
         if (isDnp) {
-          const dnpNote = `[⚠️ Call Not Picked - DNP (${formattedDateStr})]: Next action scheduled for ${parsedIsoNextAction ? new Date(parsedIsoNextAction).toLocaleString('en-IN') : 'None'}.${remarks ? ` Remarks: ${remarks}` : ''}`
+          const dnpNote = `[⚠️ Call Not Picked - DNP (${formattedDateStr})${byClause}]: Next action scheduled for ${parsedIsoNextAction ? new Date(parsedIsoNextAction).toLocaleString('en-IN') : 'None'}.${remarks ? ` Remarks: ${remarks}` : ''}`
           newNotes = dnpNote + (newNotes ? `\n\n${newNotes}` : '')
         } else if (remarks && remarks.trim()) {
-          const remNote = `[📝 Followup (${followupType}) - ${formattedDateStr}]: Stage: ${payload.pipelineStage}. ${remarks.trim()}${nextRemarks ? ` | Next: ${nextRemarks}` : ''}`
+          const remNote = `[📝 Followup (${followupType}) - ${formattedDateStr}${byClause}]: Stage: ${payload.pipelineStage}. ${remarks.trim()}${nextRemarks ? ` | Next: ${nextRemarks}` : ''}`
           newNotes = remNote + (newNotes ? `\n\n${newNotes}` : '')
         }
 
@@ -426,9 +581,12 @@ export default function UpdateFollowupModal({
         try {
           await supabase.from('lead_history').insert({
             lead_id: lead.id,
-            user_id: currentUserId || lead.assigned_to || lead.user_id,
+            // `currentUserId` is guaranteed non-null here (checked above). It used to fall back
+            // to `lead.assigned_to`, which silently credited one agent's work to another.
+            user_id: currentUserId,
+            actor_id: currentUserId,
             action_type: isDnp ? 'REMARK' : 'FOLLOWUP',
-            description: `📝 Followup (${followupType}) updated. Stage: ${payload.pipelineStage}.${remarks ? ` Remarks: ${remarks}` : ''}${parsedIsoNextAction ? ` Next Action: ${nextActionType} on ${new Date(parsedIsoNextAction).toLocaleString()}` : ''}`
+            description: `📝 Followup (${followupType}) updated${byClause}. Stage: ${payload.pipelineStage}.${remarks ? ` Remarks: ${remarks}` : ''}${parsedIsoNextAction ? ` Next Action: ${nextActionType} on ${new Date(parsedIsoNextAction).toLocaleString()}` : ''}`
           })
         } catch (hErr) {}
 
@@ -911,6 +1069,26 @@ export default function UpdateFollowupModal({
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
+                    {/*
+                      The "book a meeting at 9pm" trap. An agent writes the appointment into the
+                      remark, leaves the next action as a plain Call, and the lead is saved with
+                      no booked_time — so the meeting never appears in any appointment view and
+                      silently lapses. Nudge them before they save.
+                    */}
+                    {/meet|meeting|appointment|demo|site visit/i.test(`${remarks} ${nextRemarks}`) &&
+                      !isBookableActionType(nextActionType) &&
+                      !isClosedStatus &&
+                      !isPostponed && (
+                        <p className="mt-1.5 text-[11px] font-semibold text-amber-700 flex items-start gap-1">
+                          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+                          <span>
+                            You mentioned a meeting or visit. Choose <strong>Visit</strong>,{' '}
+                            <strong>Revisit</strong>, <strong>Closing Meeting</strong> or{' '}
+                            <strong>Home Meeting</strong> so it is booked on the calendar — otherwise
+                            it stays a plain call and will not show under appointments.
+                          </span>
+                        </p>
+                      )}
                   </div>
 
                   <div>

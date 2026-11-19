@@ -58,6 +58,7 @@ import SearchableSelect from '@/components/SearchableSelect'
 import { categorizeLeadStage, extractStagesFromProfile, DEFAULT_PIPELINE_STAGES, isFreshStageName } from '@/utils/pipeline-stages'
 import { isHistoryRestrictedForViewer } from '@/utils/lead-visibility'
 import { hasLeadVisited, getLeadFollowupCount, getLeadReopenCount, getLeadLatestRemark, isLeadLastStatusDnp, getLeadNextActionRemark, parseCustomFields } from '@/utils/lead-helpers'
+import { countFollowupActivity, parseNoteBlockTime, type FollowupCategory } from '@/utils/followup-activity'
 
 // Render simple markdown headers, bolding, and lists into JSX
 function MarkdownRenderer({ text }: { text: string }) {
@@ -178,41 +179,22 @@ function getLeadNextActionTime(lead: any): number {
   return isNaN(t) ? 0 : t
 }
 
-function parseActionDate(text?: string, fallbackCreatedAt?: string): Date | null {
-  if (text) {
-    // 1. Bracket notes format e.g. [Followup (Call) - 31/8/2026, 12:10:24 pm] or [Call Not Picked - DNP (31/8/2026, 12:10:24 pm)...] or [Remark - 31/8/2026...]
-    const dateMatch = text.match(/([0-9]{1,2})[\/\-]([0-9]{1,2})[\/\-]([0-9]{2,4})(?:,?\s*([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))?\s*(am|pm)?)?/i)
-    if (dateMatch) {
-      const day = parseInt(dateMatch[1], 10)
-      const month = parseInt(dateMatch[2], 10) - 1
-      let year = parseInt(dateMatch[3], 10)
-      if (year < 100) year += 2000
-      let hour = dateMatch[4] ? parseInt(dateMatch[4], 10) : 0
-      const min = dateMatch[5] ? parseInt(dateMatch[5], 10) : 0
-      const sec = dateMatch[6] ? parseInt(dateMatch[6], 10) : 0
-      const ampm = dateMatch[7] ? dateMatch[7].toLowerCase() : null
-      if (ampm === 'pm' && hour < 12) hour += 12
-      if (ampm === 'am' && hour === 12) hour = 0
+// NOTE ON FOLLOW-UP TIMESTAMPS
+//
+// There used to be a `parseActionDate(text, fallbackCreatedAt)` helper here. It scanned the
+// entire description for the first date-looking token, which meant a lead_history row was
+// re-dated from the *next action* an agent had typed into it ("Next Action: Call on
+// 21/10/2026").  Any follow-up whose agent typed a past next-action date silently fell out
+// of "today" — that is how a rep who logged 9 follow-ups was shown 7 — and a value like
+// "11/17/2026" was read as month 17 and rolled into the following year.
+//
+// Timing rules now live in `@/utils/followup-activity`:
+//   • a lead_history row happened at `created_at`, never at a date quoted in its text;
+//   • a note block's timestamp may only come from its leading "[...]" header;
+//   • notes and custom_fields are a gap-fill for leads with no history row in range.
+// The two boards on this page (Followup Board and Action Report) read the same result, so
+// they can no longer disagree about the same rep on the same day.
 
-      // CRM bracket notes and action logs are stamped in Indian Standard Time (UTC+05:30)
-      if (dateMatch[4]) {
-        const utcMs = Date.UTC(year, month, day, hour, min, sec) - (5.5 * 3600 * 1000)
-        const d = new Date(utcMs)
-        if (!isNaN(d.getTime())) return d
-      } else {
-        const utcMs = Date.UTC(year, month, day, 0, 0, 0) - (5.5 * 3600 * 1000)
-        const d = new Date(utcMs)
-        if (!isNaN(d.getTime())) return d
-      }
-    }
-  }
-
-  if (fallbackCreatedAt) {
-    const d = new Date(fallbackCreatedAt)
-    if (!isNaN(d.getTime())) return d
-  }
-  return null
-}
 
 // Campaign / form names reach this page from Meta, from the DB and from lead rows, so
 // they routinely differ only by casing and stray whitespace. Normalising keeps the
@@ -842,8 +824,10 @@ export default function AnalyticsPage() {
 
           const historyTotal = historyCount || 0
           if (historyTotal > 0) {
-            // Cap to 3,000 in-range rows to protect mobile browsers.
-            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 3)
+            // Cap to 6,000 in-range rows to protect mobile browsers. The old cap of 3,000
+            // silently dropped the oldest rows of a busy day, so a rep whose follow-ups fell
+            // outside the newest 3,000 read as "you did nothing this morning".
+            const historyPages = Math.min(Math.ceil(historyTotal / 1000), 6)
             if (historyTotal > historyPages * 1000) {
               console.warn(
                 `[Analytics] lead_history truncated: showing ${historyPages * 1000} of ${historyTotal} in-range rows. ` +
@@ -853,7 +837,7 @@ export default function AnalyticsPage() {
             const historyPromises = Array.from({ length: historyPages }, (_, i) =>
               applyHistoryRange(
                 supabase.from('lead_history')
-                  .select('id, lead_id, user_id, action_type, description, created_at')
+                  .select('id, lead_id, user_id, actor_id, action_type, description, created_at')
                   .in('user_id', workspaceTeamIds)
               )
                 .order('created_at', { ascending: false })
@@ -869,16 +853,15 @@ export default function AnalyticsPage() {
 
           // Compute team metrics
           const rawTeam = teamMembers || []
-          const isActualCallAction = (h: any) => {
-            const type = (h.action_type || '').toUpperCase()
-            const desc = (h.description || '').toLowerCase()
-            if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false
-            if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return false
-            if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true
-            if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true
-            if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true
-            return false
-          }
+
+          // Same accounting pass the Followup Board and Action Report use, so the matrix can
+          // never quote a third number for the same rep and day.
+          const teamFollowupCounts = countFollowupActivity({
+            history: historyLeads,
+            leads: allLeads,
+            reps: rawTeam.map((m: any) => ({ id: m.id, name: m.business_name || m.full_name || m.email, email: m.email })),
+            isInRange: dateCutoffs.isDateInRange,
+          })
 
           const hasMultipleMembers = rawTeam.length > 1
           const teamData = rawTeam.map(member => {
@@ -895,7 +878,7 @@ export default function AnalyticsPage() {
             const dealTokenCount = memberLeads.filter(l => l.status === 'Deal/Token' || l.pipeline_stage === 'Closed' || l.pipeline_stage === 'Won').length
 
             const memberHistory = historyLeads.filter(h => h.user_id === member.id)
-            const memberCallCount = memberHistory.filter(isActualCallAction).length
+            const memberCallCount = teamFollowupCounts.totalByRep[member.id] || 0
             const memberLeadsDnpCount = memberLeads.filter(l => {
               let cf = l.custom_fields
               if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch(e) {} }
@@ -1250,7 +1233,7 @@ export default function AnalyticsPage() {
           )
           const notes = l.notes || ''
           const hasNoteDnp = notes.includes('[⚠️') && notes.split(/(?=\[⚠️)/).some((chk: string) => {
-            const d = parseActionDate(chk)
+            const d = parseNoteBlockTime(chk)
             return d && dateCutoffs.isDateInRange(d)
           })
           return Boolean(hasDnpInRange || hasDnpAction || hasNoteDnp)
@@ -1672,37 +1655,30 @@ export default function AnalyticsPage() {
     return { rows, actionTypes }
   }, [filteredLeads, dateCutoffs, allSalesReps, isAdminLike, profile?.id, selectedAgentId, searchQuery, isLeadAssignedToRep])
 
+  // --- FOLLOW-UP ACCOUNTING (single source of truth for this page) ---
+  //
+  // One counting pass feeds the Followup Board, the Action Report and the team matrix.
+  // Before this, each of the three counted lead_history its own way: the board counted raw
+  // rows, the action report re-dated rows from the text and de-duplicated, and the matrix
+  // counted raw rows again. The same rep on the same day could read 7 in one place and 11 in
+  // another. See utils/followup-activity.ts for the timing and attribution rules.
+  const followupCounts = useMemo(() => countFollowupActivity({
+    history: history as any,
+    leads: leads as any,
+    reps: allSalesReps.map(r => ({ id: r.id, name: r.name, email: r.email })),
+    isInRange: dateCutoffs.isDateInRange,
+  }), [history, leads, allSalesReps, dateCutoffs])
+
   // --- LEADERBOARD COMPUTATIONS (WorkVeu Screenshot 3) ---
   const followupBoardRows = useMemo(() => {
-    // Computed from the date/agent-filtered lead set so every board agrees with the KPI cards
-    const isActualCallAction = (h: any) => {
-      const type = (h.action_type || '').toUpperCase()
-      const desc = (h.description || '').toLowerCase()
-      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT'].includes(type)) return false
-      if (desc.includes('facebook ad submission') || desc.includes('reopened from facebook') || desc.includes('bulk transferred') || desc.includes('transferred from')) return false
-      if (['CALL_FEEDBACK', 'CALL', 'OUTBOUND_CALL', 'CALL_LOG', 'DNP'].includes(type)) return true
-      if (desc.includes('dnp') || desc.includes('not picked') || desc.includes('did not pick')) return true
-      if (desc.includes('call') || desc.includes('followup') || desc.includes('feedback')) return true
-      return false
-    }
-
     const reps = allSalesReps
 
     return reps.map(rep => {
       const repLeads = filteredLeads.filter(l => isLeadAssignedToRep(l, rep.id))
-      const repLeadIds = new Set(repLeads.map(l => l.id))
 
-      // Count call attempts from history for this rep's leads in range
-      // Credit each action to the rep who performed it. Matching on
-      // `user_id === rep.id || owns lead` counted one call for BOTH the caller and the
-      // lead owner, so per-rep follow-up totals could exceed the workspace total.
-      // Rows with no user_id (legacy imports) fall back to the lead owner.
-      const repHistory = history.filter(h => {
-        if (!dateCutoffs.isDateInRange(h.created_at)) return false
-        if (h.user_id) return h.user_id === rep.id
-        return repLeadIds.has(h.lead_id)
-      })
-      const totalFollowups = repHistory.filter(isActualCallAction).length
+      // Credit each action to the rep who performed it, from the shared counting pass, so
+      // this board and the Action Report below always print the same number for a rep.
+      const totalFollowups = followupCounts.totalByRep[rep.id] || 0
 
       const closingMeetings = repLeads.filter(l => {
         let cf: any = l.custom_fields;
@@ -1742,7 +1718,7 @@ export default function AnalyticsPage() {
         conversionRate
       }
     }).sort((a, b) => b.totalFollowups - a.totalFollowups)
-  }, [allSalesReps, filteredLeads, dateCutoffs, history, isLeadAssignedToRep])
+  }, [allSalesReps, filteredLeads, followupCounts, isLeadAssignedToRep])
 
   const statusBoardRows = useMemo(() => {
     // Computed from the date/agent-filtered lead set so every board agrees with the KPI cards
@@ -1840,9 +1816,7 @@ export default function AnalyticsPage() {
 
   // --- ACTION REPORT COMPUTATIONS (Agent Action Attempts) ---
   const actionReportData = useMemo(() => {
-    const { startCutoff, endCutoff, isDateInRange } = dateCutoffs
-
-    const ACTION_TYPES = [
+    const ACTION_TYPES: { key: FollowupCategory; label: string; icon: string; color: string }[] = [
       { key: 'calls', label: 'Connected Calls', icon: '📞', color: 'blue' },
       { key: 'dnp', label: 'DNP (Did Not Pick)', icon: '📵', color: 'rose' },
       { key: 'visits', label: 'Visits', icon: '🏠', color: 'purple' },
@@ -1852,182 +1826,20 @@ export default function AnalyticsPage() {
       { key: 'whatsapp', label: 'WhatsApp Followups', icon: '💬', color: 'green' },
     ]
 
-    const classifyAction = (h: any) => {
-      const type = (h.action_type || '').toUpperCase()
-      const desc = (h.description || '').trim()
-      // Exclude purely automated system imports/webhooks
-      if (['REOPENED', 'BULK_TRANSFER', 'LEAD_IMPORT', 'ASSIGNMENT'].includes(type)) return null
-      const descLower = desc.toLowerCase()
-      if (descLower.includes('facebook ad submission') || descLower.includes('reopened from facebook') || descLower.includes('bulk transferred') || descLower.includes('transferred from')) return null
-
-      // 1. DNP check
-      if (type === 'DNP' || descLower.includes('call not picked - dnp') || descLower.startsWith('[⚠️ call not picked') || descLower.includes('not picked') || descLower.includes('did not pick')) return 'dnp'
-
-      // 2. Explicit Followup Type check from "Followup (Type)"
-      // Matches "Followup (Call)", "Followup (Visit)", "Followup (Revisit)", "Followup (Closing Meeting)", "Followup (Home Meeting)", "Followup (WhatsApp)"
-      const followupMatch = desc.match(/Followup\s*\(([^)]+)\)/i)
-      if (followupMatch) {
-        const fType = followupMatch[1].toLowerCase().trim()
-        if (fType.includes('dnp') || fType.includes('not picked')) return 'dnp'
-        if (fType === 'visit' || fType === 'site visit') return 'visits'
-        if (fType === 'revisit' || fType === 're-visit') return 'revisits'
-        if (fType === 'closing meeting' || fType === 'closing') return 'closing_meetings'
-        if (fType === 'home meeting' || fType === 'home') return 'home_meetings'
-        if (fType === 'whatsapp') return 'whatsapp'
-        if (fType === 'call') return 'calls'
-        return 'calls'
-      }
-
-      // 3. Structured action_type checks
-      if (type === 'SITE_VISIT') return 'visits'
-      if (type === 'REVISIT') return 'revisits'
-      if (type === 'MEETING') return 'closing_meetings'
-      if (type === 'WHATSAPP') return 'whatsapp'
-      if (['CALL', 'CALL_LOG', 'OUTBOUND_CALL', 'CALL_FEEDBACK'].includes(type)) return 'calls'
-
-      // 4. Default for any other manual update
-      return 'calls'
-    }
-
     // Build lead lookup for drilldown
     const leadLookup: Record<string, any> = {}
     leads.forEach(l => { leadLookup[l.id] = l })
 
-    const repActionCounts: Record<string, Record<string, number>> = {}
-    const repActionLeadIds: Record<string, Record<string, Set<string>>> = {}
-    // Per-lead recorded action events: Map<leadId, Array<{ cat: string, time: number }>>
-    const leadRecordedEvents = new Map<string, Array<{ cat: string, time: number }>>()
+    // Counts come from this page's single follow-up accounting pass (see `followupCounts`
+    // above), not from a second private implementation. The removed version re-dated every
+    // row from the first date-looking token in its description — so a follow-up that quoted
+    // "Next Action: Call on 21/10/2026" was counted on 21 Oct and vanished from today — and
+    // it credited unattributed note blocks to whichever rep sorted first. The Followup Board
+    // beside it counted the same rows a third way, which is how one rep could read 7 on one
+    // board and 11 on the other.
+    const repActionCounts = followupCounts.countsByRep
+    const repActionLeadIds = followupCounts.leadsByRep
 
-    allSalesReps.forEach(r => {
-      repActionCounts[r.id] = { calls: 0, dnp: 0, visits: 0, revisits: 0, closing_meetings: 0, home_meetings: 0, whatsapp: 0 }
-      repActionLeadIds[r.id] = { calls: new Set(), dnp: new Set(), visits: new Set(), revisits: new Set(), closing_meetings: new Set(), home_meetings: new Set(), whatsapp: new Set() }
-    })
-
-    const recordAction = (repId: string | null | undefined, leadId: string | null | undefined, cat: string, date: Date | null) => {
-      if (!repId || !cat || !date || !isDateInRange(date)) return
-      if (!repActionCounts[repId]) return
-
-      const time = date.getTime()
-      if (leadId) {
-        const existing = leadRecordedEvents.get(leadId) || []
-        // Deduplicate: same category on the same lead within 30 minutes is the same event logged across notes/custom_fields/history
-        if (existing.some(e => e.cat === cat && Math.abs(e.time - time) < 30 * 60 * 1000)) return
-        existing.push({ cat, time })
-        leadRecordedEvents.set(leadId, existing)
-      }
-
-      repActionCounts[repId][cat]++
-      if (leadId) repActionLeadIds[repId][cat].add(leadId)
-    }
-
-    // 1. Process History Entries
-    history.forEach(h => {
-      const cat = classifyAction(h)
-      if (!cat) return
-      const effectiveDate = parseActionDate(h.description, h.created_at)
-      recordAction(h.user_id, h.lead_id, cat, effectiveDate)
-    })
-
-    // 2. Process Lead Notes Blocks
-    leads.forEach(l => {
-      const notes = l.notes || ''
-      if (notes.includes('[📝') || notes.includes('[⚠️')) {
-        const chunks = notes.split(/(?=\[(?:📝|⚠️))/)
-        chunks.forEach((chunk: string) => {
-          const effectiveDate = parseActionDate(chunk)
-          if (!effectiveDate || !isDateInRange(effectiveDate)) return
-
-          // Extract rep from chunk e.g. "by Harman Bajwa"
-          const repMatch = chunk.match(/by\s+([^\]\:\n]+)/i)
-          const repName = repMatch ? repMatch[1].trim().toLowerCase() : ''
-          const matchedRep = allSalesReps.find(r => {
-            const fn = (r.name || '').toLowerCase()
-            const em = (r.email || '').toLowerCase()
-            return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
-          }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
-
-          if (!matchedRep) return
-
-          const chunkLower = chunk.toLowerCase()
-          const fMatch = chunk.match(/Followup\s*\(([^)]+)\)/i)
-          let cat = 'calls'
-
-          if (chunkLower.includes('call not picked') || chunkLower.includes('dnp') || chunkLower.includes('not picked')) {
-            cat = 'dnp'
-          } else if (fMatch) {
-            const fType = fMatch[1].toLowerCase().trim()
-            if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
-            else if (fType === 'visit' || fType === 'site visit') cat = 'visits'
-            else if (fType === 'revisit' || fType === 're-visit') cat = 'revisits'
-            else if (fType === 'closing meeting' || fType === 'closing') cat = 'closing_meetings'
-            else if (fType === 'home meeting' || fType === 'home') cat = 'home_meetings'
-            else if (fType === 'whatsapp') cat = 'whatsapp'
-            else cat = 'calls'
-          } else {
-            const headerMatch = chunk.match(/^\[([^\]\-]+)/)
-            const header = (headerMatch ? headerMatch[1] : '').toLowerCase().trim()
-            if (header.includes('not picked') || header.includes('dnp')) cat = 'dnp'
-            else if (header === 'site visit' || header === 'visit') cat = 'visits'
-            else if (header === 'revisit' || header === 're-visit') cat = 'revisits'
-            else if (header === 'closing meeting') cat = 'closing_meetings'
-            else if (header === 'home meeting') cat = 'home_meetings'
-            else if (header === 'whatsapp') cat = 'whatsapp'
-            else cat = 'calls'
-          }
-
-          recordAction(matchedRep.id, l.id, cat, effectiveDate)
-        })
-      }
-
-      // 3. Process Custom Fields Followups Array
-      let cf = l.custom_fields
-      if (typeof cf === 'string') { try { cf = JSON.parse(cf) } catch (e) {} }
-      if (cf && Array.isArray(cf.followups)) {
-        cf.followups.forEach((f: any) => {
-          const fDate = f.date ? new Date(f.date) : parseActionDate(f.note)
-          if (!fDate || !isDateInRange(fDate)) return
-
-          const repName = (f.rep_name || f.by || '').toLowerCase()
-          const matchedRep = allSalesReps.find(r => {
-            const fn = (r.name || '').toLowerCase()
-            const em = (r.email || '').toLowerCase()
-            return (fn && repName.includes(fn)) || (fn && fn.includes(repName)) || (em && repName.includes(em))
-          }) || (l.assigned_to ? allSalesReps.find(r => r.id === l.assigned_to) : null)
-
-          if (!matchedRep) return
-
-          let cat = 'calls'
-          const fType = (f.followupType || f.type || '').toLowerCase().trim()
-          if (fType.includes('dnp') || fType.includes('not picked')) cat = 'dnp'
-          else if (fType === 'visit' || fType === 'site visit') cat = 'visits'
-          else if (fType === 'revisit' || fType === 're-visit') cat = 'revisits'
-          else if (fType === 'closing meeting' || fType === 'closing') cat = 'closing_meetings'
-          else if (fType === 'home meeting' || fType === 'home') cat = 'home_meetings'
-          else if (fType === 'whatsapp') cat = 'whatsapp'
-          else cat = 'calls'
-
-          recordAction(matchedRep.id, l.id, cat, fDate)
-        })
-      }
-
-      // 4. Process Lead Level Last Followup
-      if (cf?.last_followup_at && isDateInRange(cf.last_followup_at)) {
-        const repId = l.assigned_to
-        if (repId) {
-          const lType = (cf.last_followup_type || '').toLowerCase().trim()
-          let cat = 'calls'
-          if (cf.last_call_dnp === true || lType.includes('dnp') || lType.includes('not picked')) cat = 'dnp'
-          else if (lType === 'visit' || lType === 'site visit') cat = 'visits'
-          else if (lType === 'revisit' || lType === 're-visit') cat = 'revisits'
-          else if (lType === 'closing meeting' || lType === 'closing') cat = 'closing_meetings'
-          else if (lType === 'home meeting' || lType === 'home') cat = 'home_meetings'
-          else if (lType === 'whatsapp') cat = 'whatsapp'
-          else cat = 'calls'
-
-          recordAction(repId, l.id, cat, new Date(cf.last_followup_at))
-        }
-      }
-    })
 
     let actionAttemptRows = allSalesReps.map(rep => {
       const actionCounts = repActionCounts[rep.id] || { calls: 0, dnp: 0, visits: 0, revisits: 0, closing_meetings: 0, home_meetings: 0, whatsapp: 0 }
@@ -2085,7 +1897,7 @@ export default function AnalyticsPage() {
       grandTotalAttempts,
       grandTotalLeads
     }
-  }, [leads, allSalesReps, duration, customDate, startDate, endDate, isAdminLike, profile?.id, profile?.timezone, selectedAgentId, history, isLeadAssignedToRep, dateCutoffs])
+  }, [leads, allSalesReps, followupCounts, isAdminLike, profile?.id, selectedAgentId])
 
   // Open interactive drilldown drawer for leads
   const openLeadsDrilldown = (
