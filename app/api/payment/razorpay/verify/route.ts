@@ -158,7 +158,7 @@ export async function POST(req: Request) {
                             : 0;
             if (!planConfig && !orderNotes.creditsIncluded && !isTrial) {
                 console.warn(
-                    `[razorpay/verify] unknown plan "${effectivePlanId}" Ã¢â‚¬â€ granting ${creditsToAdd} credits. ` +
+                    `[razorpay/verify] unknown plan "${effectivePlanId}" — granting ${creditsToAdd} credits. ` +
                         'Add it to RAZORPAY_PLANS instead of relying on a fallback.',
                 );
             }
@@ -198,7 +198,7 @@ export async function POST(req: Request) {
                 console.log(`[Razorpay Verify] Payment ${razorpay_payment_id} already applied for user ${user.id}; not crediting again.`);
                 return NextResponse.json({
                     success: true,
-                    message: `This payment was already applied Ã¢â‚¬â€ ${planTitle} is active.`,
+                    message: `This payment was already applied — ${planTitle} is active.`,
                     plan: isTrial ? 'trial' : effectivePlanId,
                     credits: await creditBalance(supabaseAdmin, user.id),
                     validUntil: profile.subscription_valid_until || null,
@@ -213,7 +213,7 @@ export async function POST(req: Request) {
                 console.error(`[Razorpay Verify] Could not apply payment ${razorpay_payment_id} for user ${user.id}`);
                 return NextResponse.json({
                     success: false,
-                    error: "Payment verified but could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
+                    error: "Payment verified but could not be applied. Support has been notified — please do not pay again."
                 }, { status: 500 });
             }
 
@@ -248,7 +248,7 @@ export async function POST(req: Request) {
                 console.warn(`[Razorpay Verify] Payment ${razorpay_payment_id} credited but plan metadata failed for ${user.id}. Manual reconciliation needed.`);
             }
 
-            console.log(`Ã¢Å“â€¦ [Razorpay Success] Subscription ${effectivePlanId} activated for user ${user.id}. +${creditsToAdd} credits.`);
+            console.log(`✅ [Razorpay Success] Subscription ${effectivePlanId} activated for user ${user.id}. +${creditsToAdd} credits.`);
 
             return NextResponse.json({
                 success: true,
@@ -291,7 +291,7 @@ export async function POST(req: Request) {
                 console.log(`[Razorpay Verify] Top-up ${razorpay_payment_id} already applied for user ${user.id}.`);
                 return NextResponse.json({
                     success: true,
-                    message: `This top-up was already applied Ã¢â‚¬â€ ${creditsToAdd.toLocaleString()} credits are in your wallet.`,
+                    message: `This top-up was already applied — ${creditsToAdd.toLocaleString()} credits are in your wallet.`,
                     credits: await creditBalance(supabaseAdmin, user.id),
                     paymentId: razorpay_payment_id,
                     duplicate: true,
@@ -302,11 +302,11 @@ export async function POST(req: Request) {
                 console.error(`[Razorpay Verify] Could not apply top-up ${razorpay_payment_id} for user ${user.id}`);
                 return NextResponse.json({
                     success: false,
-                    error: "Payment verified but the credits could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
+                    error: "Payment verified but the credits could not be applied. Support has been notified — please do not pay again."
                 }, { status: 500 });
             }
 
-            console.log(`Ã¢Å“â€¦ [Razorpay Success] Credits recharged (+${creditsToAdd}) for user ${user.id}. New balance: ${grant.balance}.`);
+            console.log(`✅ [Razorpay Success] Credits recharged (+${creditsToAdd}) for user ${user.id}. New balance: ${grant.balance}.`);
 
             return NextResponse.json({
                 success: true,
@@ -344,7 +344,7 @@ export async function POST(req: Request) {
                 if (!claim.granted) {
                     return NextResponse.json({
                         success: false,
-                        error: "Payment verified but the add-on could not be applied. Support has been notified Ã¢â‚¬â€ please do not pay again."
+                        error: "Payment verified but the add-on could not be applied. Support has been notified — please do not pay again."
                     }, { status: 500 });
                 }
 
@@ -364,7 +364,7 @@ export async function POST(req: Request) {
                     throw new Error("Failed to update addon quota.");
                 }
 
-                console.log(`Ã¢Å“â€¦ [Razorpay Success] Add-on ${effectiveAddonId} (+${increment}) added for user ${user.id}.`);
+                console.log(`✅ [Razorpay Success] Add-on ${effectiveAddonId} (+${increment}) added for user ${user.id}.`);
 
                 return NextResponse.json({
                     success: true,

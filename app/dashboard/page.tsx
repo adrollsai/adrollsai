@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect, useRef } from 'react'
 import { Film, Plus, Search, X, Loader2, Image as ImageIcon, Link as LinkIcon, MoreHorizontal, LayoutGrid, FileText, Sparkles, RefreshCw, Trash2, AlertTriangle, Pencil, Maximize2, Tag, Building, ChevronLeft, ChevronRight, Upload, Download, SlidersHorizontal, Clock, Ratio, Check } from 'lucide-react'
@@ -245,17 +245,85 @@ export default function ProductsPage() {
     window.location.href = '/'
   }
 
+  /**
+   * Upload a batch of files with a bounded number in flight, and say exactly which one failed.
+   *
+   * The old code fired every upload at once through `Promise.all`: with twenty or thirty photographs
+   * that is twenty or thirty simultaneous R2 requests from one browser, and the first one to fail
+   * rejected the whole batch with whatever the SDK said — which is the "fetch error" the owner saw
+   * while adding a product, with no way to know which image, or how many, had gone wrong.
+   *
+   * Four at a time is fast enough and does not trip a rate limit; a failure names the file, so the
+   * person can remove it or try again instead of guessing.
+   */
+  const uploadFilesWithProgress = async (
+    files: File[],
+    folder: string,
+    label: string,
+    compress = false
+  ): Promise<string[]> => {
+    const results: string[] = new Array(files.length)
+    let cursor = 0
+    let firstError: string | null = null
+
+    const worker = async () => {
+      while (cursor < files.length && !firstError) {
+        const index = cursor++
+        const file = files[index]
+        try {
+          const payload = compress ? await compressImage(file) : file
+          results[index] = await uploadToR2(payload, folder)
+        } catch (error: any) {
+          firstError = `Could not upload ${label} ${index + 1} of ${files.length} ("${file.name}"): ${
+            error?.message || error
+          }`
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(4, files.length) }, () => worker()))
+    if (firstError) throw new Error(firstError)
+    return results
+  }
+
+  /**
+   * Turn any failed request into a sentence that says what actually happened.
+   *
+   * `await res.json()` on a failed request throws a JSON SyntaxError ("Unexpected token '<'"), which
+   * the previous code surfaced to the owner as an error about parsing rather than an error about the
+   * request. This reads the body as text when it is not JSON and keeps the status code, so a 413, a
+   * 500 or a gateway timeout each say what they are.
+   */
+  const describeFailedResponse = async (res: Response, fallback: string): Promise<string> => {
+    let detail = ''
+    try {
+      const text = await res.text()
+      try {
+        const parsed = JSON.parse(text)
+        detail = String(parsed?.error || parsed?.message || text)
+      } catch {
+        detail = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240)
+      }
+    } catch {
+      /* no body to read */
+    }
+    if (res.status === 413) {
+      return 'That request was too large for the server to accept. Try adding fewer images at once.';
+    }
+    if (res.status === 401 || res.status === 403) {
+      return `You are not allowed to do that (HTTP ${res.status}). ${detail}`.trim();
+    }
+    if (res.status >= 500) {
+      return `The server failed while saving (HTTP ${res.status}). ${detail || 'No further detail was returned.'}`;
+    }
+    return detail || `${fallback} (HTTP ${res.status})`
+  }
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
+      // NO IMAGE LIMIT. There used to be a hard cap of 20 here, which refused the 21st photograph
+      // outright; a product can have as many photographs as the owner wants to give it.
       const newFiles = Array.from(e.target.files)
-      const currentCount = selectedFiles.length
-      const limit = 20
-
-      if (currentCount + newFiles.length > limit) {
-          toast.error(`Maximum ${limit} images allowed per product.`)
-          return
-      }
-
       setSelectedFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setPreviews(prev => [...prev, ...newPreviews])
@@ -265,14 +333,6 @@ export default function ProductsPage() {
   const handleEditFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files)
-      const currentCount = existingImages.length + editFiles.length
-      const limit = 20
-
-      if (currentCount + newFiles.length > limit) {
-          toast.error(`Maximum ${limit} images allowed per product.`)
-          return
-      }
-
       setEditFiles(prev => [...prev, ...newFiles])
       const newPreviews = newFiles.map(file => URL.createObjectURL(file))
       setEditPreviews(prev => [...prev, ...newPreviews])
@@ -298,11 +358,6 @@ export default function ProductsPage() {
         return
     }
 
-    if (existingImages.length + editFiles.length > 20) {
-        toast.error("Maximum 20 images allowed.")
-        return
-    }
-
     setIsSubmitting(true)
 
     try {
@@ -313,22 +368,14 @@ export default function ProductsPage() {
 
       // Upload any *new* image files selected
       if (editFiles.length > 0) {
-        const uploadPromises = editFiles.map(async (file) => {
-          const compressedFile = await compressImage(file)
-          const publicUrl = await uploadToR2(compressedFile, 'properties')
-          return publicUrl
-        })
-        const results = await Promise.all(uploadPromises)
+        const results = await uploadFilesWithProgress(editFiles, 'properties', 'image', true)
         uploadedUrls.push(...results)
       }
 
       // Upload new PDF files if selected
       const newPdfUrls: string[] = []
       if (editPdfFiles.length > 0) {
-        const pdfPromises = editPdfFiles.map(async (file) => {
-          return await uploadToR2(file, 'product_pdfs')
-        })
-        const pdfResults = await Promise.all(pdfPromises)
+        const pdfResults = await uploadFilesWithProgress(editPdfFiles, 'product_pdfs', 'file')
         newPdfUrls.push(...pdfResults)
       }
 
@@ -358,8 +405,9 @@ export default function ProductsPage() {
         })
       })
 
-      const apiData = await apiRes.json()
-      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to update product')
+      // Read the failure BEFORE parsing, so a non-JSON error body cannot masquerade as a JSON problem.
+      if (!apiRes.ok) throw new Error(await describeFailedResponse(apiRes, 'Failed to update product'))
+      const apiData = await apiRes.json().catch(() => ({}))
 
       // Update Local State Optimistically
       const updatedProps = properties.map(p => p.id === editProp.id ? {
@@ -394,10 +442,6 @@ export default function ProductsPage() {
         toast.error("Please enter a Product/Service Name.")
         return
     }
-    if (selectedFiles.length > 20) {
-        toast.error("Maximum 20 images allowed.")
-        return
-    }
 
     setIsSubmitting(true)
 
@@ -408,12 +452,7 @@ export default function ProductsPage() {
       const uploadedUrls: string[] = []
 
       if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const compressedFile = await compressImage(file)
-          const publicUrl = await uploadToR2(compressedFile, 'properties')
-          return publicUrl
-        })
-        const results = await Promise.all(uploadPromises)
+        const results = await uploadFilesWithProgress(selectedFiles, 'properties', 'image', true)
         uploadedUrls.push(...results)
       }
 
@@ -421,17 +460,12 @@ export default function ProductsPage() {
       // and remain attachable later.
       const videoUrls: string[] = []
       if (selectedVideoFiles.length > 0) {
-        const videoPromises = selectedVideoFiles.map(async (file) => uploadToR2(file, 'product_videos'))
-        videoUrls.push(...(await Promise.all(videoPromises)))
+        videoUrls.push(...(await uploadFilesWithProgress(selectedVideoFiles, 'product_videos', 'video')))
       }
       // Upload PDF files if selected
       const pdfUrls: string[] = []
       if (selectedPdfFiles.length > 0) {
-        const pdfPromises = selectedPdfFiles.map(async (file) => {
-          return await uploadToR2(file, 'product_pdfs')
-        })
-        const pdfResults = await Promise.all(pdfPromises)
-        pdfUrls.push(...pdfResults)
+        pdfUrls.push(...(await uploadFilesWithProgress(selectedPdfFiles, 'product_pdfs', 'file')))
       }
 
       // Resolve correct attribution ID
@@ -466,8 +500,10 @@ export default function ProductsPage() {
         })
       })
 
-      const apiData = await apiRes.json()
-      if (!apiRes.ok) throw new Error(apiData.error || 'Failed to add product')
+      // A failed save must say what failed: the status, and the server's own words when it sent any.
+      if (!apiRes.ok) throw new Error(await describeFailedResponse(apiRes, 'Failed to add product'))
+      const apiData = await apiRes.json().catch(() => ({}))
+      void apiData
 
       await fetchProperties(true)
       setShowAddModal(false)
@@ -525,7 +561,7 @@ export default function ProductsPage() {
     }
 
     setGeneratingProps(prev => [...prev, prop.id])
-    toast.success("AI Generation Started âœ¨", { description: `Creating a poster for ${prop.title}. You can safely lock your phone or close the app.` })
+    toast.success("AI Generation Started ✨", { description: `Creating a poster for ${prop.title}. You can safely lock your phone or close the app.` })
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -559,7 +595,7 @@ export default function ProductsPage() {
       }).then(async (res) => {
            const data = await res.json();
            if (!res.ok) throw new Error(data.error);
-           toast.success(`Creative Ready! ðŸŽ‰`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
+           toast.success(`Creative Ready! 🎉`, { description: `Your AI asset for ${prop.title} is waiting in the linked creatives tab.` })
       }).catch(err => {
            console.error("Worker error:", err);
       }).finally(() => {
@@ -611,7 +647,7 @@ export default function ProductsPage() {
       const { data: { user } } = await supabase.auth.getUser()
       setLocalCache(`properties_cache_${ownerId || user?.id}`, updated)
 
-      toast.success("Daily Auto-Gen Activated! âœ¨", {
+      toast.success("Daily Auto-Gen Activated! ✨", {
         description: `Scheduled daily at ${autoGenTimeOfDay} (${autoGenDimensions}).`
       })
       setAutoGenModalProp(null)
@@ -710,7 +746,7 @@ export default function ProductsPage() {
       : `${origin}/shared/${ownerId}/properties${queryString}`;
     
     navigator.clipboard.writeText(shareUrl)
-    toast.success("âœ… Link Copied!")
+    toast.success("✅ Link Copied!")
   }
 
   const handleNativeShare = async (e: React.MouseEvent, prop: Property) => {
@@ -718,7 +754,7 @@ export default function ProductsPage() {
   
     if (isSharingId) return 
     
-    console.log("ðŸŸ¢ Inventory WhatsApp Share triggered for:", prop.title);
+    console.log("🟢 Inventory WhatsApp Share triggered for:", prop.title);
     const shareTitle = prop.title
     const shareText = `${shareTitle}\n\n${prop.description || ''}`
     let imageUrls = (prop.images && prop.images.length > 0) ? prop.images : [prop.image_url]
@@ -743,16 +779,16 @@ export default function ProductsPage() {
 
         // 2. Try to share actual files
         if (navigator.canShare && navigator.canShare({ files: filesArray })) {
-            console.log("ðŸ“± Sharing product files via native share sheet...");
+            console.log("📱 Sharing product files via native share sheet...");
             await navigator.share({ title: shareTitle, text: shareText, files: filesArray })
             return "Shared successfully!"
         } else {
-            console.warn("âš ï¸ File sharing not supported. Falling back to link...");
+            console.warn("⚠️ File sharing not supported. Falling back to link...");
             window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}`
             return "Shared via link"
         }
       } catch (error: any) { 
-        console.error("âŒ Share failed", error) 
+        console.error("❌ Share failed", error) 
         if (error.name !== 'AbortError') { 
           window.location.href = `whatsapp://send?text=${encodeURIComponent(textFallback)}` 
           return "Shared via link due to error"
@@ -942,7 +978,7 @@ export default function ProductsPage() {
                       if (tags.length === 0) return null;
                       return (
                         <p className="text-[11px] font-bold text-blue-600 mt-0.5 truncate">
-                          ðŸ·ï¸ {tags.join(', ')}
+                          🏷️ {tags.join(', ')}
                         </p>
                       );
                     })()}
@@ -1012,7 +1048,7 @@ export default function ProductsPage() {
                               className="inline-flex items-center gap-1 text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200/80 px-2 py-0.5 rounded-full hover:bg-amber-100 transition-colors"
                             >
                               <span>{dim}</span>
-                              <span className="text-amber-400">â€¢</span>
+                              <span className="text-amber-400">•</span>
                               <span>{time}</span>
                               <SlidersHorizontal size={9} className="ml-0.5 text-amber-600" />
                             </button>
@@ -1107,7 +1143,7 @@ export default function ProductsPage() {
                   <div className="space-y-1">
                     <div className="flex justify-between items-center px-1">
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Uploaded Photos ({previews.length})</span>
-                      <span className="text-[10px] text-slate-400 font-medium">Use â† â†’ to reorder</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
                     </div>
                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                       {previews.map((src, i) => (
@@ -1166,7 +1202,7 @@ export default function ProductsPage() {
                   </div>
                 )}
 
-                {/* Product Video Upload Field â€” a walkthrough clip sells better than any still, and
+                {/* Product Video Upload Field — a walkthrough clip sells better than any still, and
                     the agent needs it to make footage-led creative instead of a stock substitute. */}
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5 ml-1 flex items-center justify-between">
@@ -1367,7 +1403,7 @@ export default function ProductsPage() {
                 <div className="space-y-1">
                   <div className="flex justify-between items-center px-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Photos ({existingImages.length + editPreviews.length})</span>
-                    <span className="text-[10px] text-slate-400 font-medium">Use â† â†’ to reorder</span>
+                    <span className="text-[10px] text-slate-400 font-medium">Use ← → to reorder</span>
                   </div>
                   <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                     {/* Existing Saved Images */}
@@ -1676,7 +1712,7 @@ export default function ProductsPage() {
                            {selectedProperty.youtube_url && getYoutubeEmbedUrl(selectedProperty.youtube_url) && (
                               <div className="bg-white p-6 sm:p-8 rounded-[2rem] shadow-sm border border-slate-100">
                                 <h3 className="font-extrabold text-lg text-slate-900 mb-4 flex items-center gap-2">
-                                  <span className="text-red-600 font-bold">â–¶</span> Product Video
+                                  <span className="text-red-600 font-bold">▶</span> Product Video
                                 </h3>
                                 <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-slate-200 shadow-sm">
                                   <iframe

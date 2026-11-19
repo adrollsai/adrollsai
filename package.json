@@ -142,6 +142,7 @@
     "accept:stream-ui": "node scripts/accept-turn-stream-ui.mjs",
     "diagnose:pwa": "node scripts/diagnose-pwa.mjs",
     "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",
+    "accept:catalog": "esbuild scripts/accept-catalog.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-catalog.mjs --log-level=warning && node .tmp-accept-catalog.mjs",
     "accept:campaign-tabs": "esbuild scripts/accept-campaign-tabs.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-campaign-tabs.mjs --log-level=warning && node .tmp-accept-campaign-tabs.mjs",
     "accept:ui-additions": "node scripts/accept-ui-additions.mjs",
     "accept:audience-agent": "esbuild scripts/accept-audience-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-audience-agent.mjs --log-level=warning && node .tmp-accept-audience-agent.mjs",

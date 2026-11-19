@@ -144,15 +144,15 @@ export async function POST(req: Request) {
 
         // Build a formatted product details message (omitting address & config as per user request)
         const lines: string[] = []
-        if (prop.title) lines.push(`ðŸ·ï¸ *${prop.title}*`)
-        if (prop.price) lines.push(`ðŸ’° Price: ${prop.price}`)
+        if (prop.title) lines.push(`🏷️ *${prop.title}*`)
+        if (prop.price) lines.push(`💰 Price: ${prop.price}`)
         if (prop.description) {
             const shortDesc = prop.description.length > 300 ? prop.description.substring(0, 300) + '...' : prop.description
             lines.push(`\n${shortDesc}`)
         }
-        if (prop.youtube_url) lines.push(`\nðŸŽ¥ Video Tour: ${prop.youtube_url}`)
-        lines.push(`\nðŸŒ View Details & Photos: ${productUrl}`)
-        if (prop.brochure_url) lines.push(`ðŸ“„ Brochure: ${prop.brochure_url}`)
+        if (prop.youtube_url) lines.push(`\n🎥 Video Tour: ${prop.youtube_url}`)
+        lines.push(`\n🌐 View Details & Photos: ${productUrl}`)
+        if (prop.brochure_url) lines.push(`📄 Brochure: ${prop.brochure_url}`)
 
         const productText = lines.join('\n')
 
@@ -243,7 +243,7 @@ export async function POST(req: Request) {
         }
 
         // Log to whatsapp_messages
-        const logText = `ðŸ“¦ Product: ${prop.title || 'Untitled'}\n${productText}`
+        const logText = `📦 Product: ${prop.title || 'Untitled'}\n${productText}`
         const { data: msgRecord } = await supabase
             .from('whatsapp_messages')
             .insert({
@@ -261,7 +261,7 @@ export async function POST(req: Request) {
         await supabase
             .from('whatsapp_chats')
             .update({
-                last_message_text: `ðŸ“¦ Sent product: ${prop.title || 'Untitled'}`,
+                last_message_text: `📦 Sent product: ${prop.title || 'Untitled'}`,
                 unread_count: 0,
                 updated_at: new Date().toISOString()
             })
