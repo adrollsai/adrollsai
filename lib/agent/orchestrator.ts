@@ -34,6 +34,10 @@ import { createNotificationTools } from './tools/notifications';
 import { createReportingTools } from './tools/reporting';
 import { createAutomationTools } from './tools/automation';
 import { createFlowAuthoringTools } from './tools/flows';
+import { createAudienceTools } from './tools/audiences';
+import { createMessagingTools } from './tools/messaging';
+import { createCrmWriteTools } from './tools/crm-writes';
+import { createPageEditTools } from './tools/page-edit';
 import { createPageAuthoringTools } from './tools/pages';
 import { createProductMediaTools } from './tools/product-media';
 import { createVideoSkillTools } from './tools/video-skill';
@@ -215,6 +219,10 @@ export async function createAgentContext(
     // is composed from facts the owner supplied and emitted with editable sections, so
     // the page editor can then change one section without regenerating the rest.
     ...(has('sites') ? createPageAuthoringTools(supabase, userId) : {}),
+    // Section-level editing of a LIVE page: read the sections, replace one, prove nothing else
+    // moved. Publishing was a tool and changing one phone number was not, so "fix the footer"
+    // meant regenerating the page — and re-picking the hero image along with it.
+    ...(has('sites') ? createPageEditTools(supabase, userId) : {}),
     // Playbook is always available: it is how the CEO reads its own decisions and
     // how the user changes behaviour in plain language. Not feature-gated.
     ...createPlaybookTools(supabase, userId),
@@ -225,6 +233,16 @@ export async function createAgentContext(
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),
     ...(has('automation') ? createAutomationTools(supabase, userId) : {}),
+    // Audience groups and the campaign that uses them: the Audience Maker was a screen the agent
+    // could not reach, so "make an audience of Diwali buyers and message them" was impossible
+    // without the UI. Preview is free; the broadcast is gated.
+    ...(has('automation') || has('meta') ? createAudienceTools(supabase, userId) : {}),
+    // WhatsApp templates: the old tool rendered an HTML mock-up and reported success without
+    // submitting anything. This submits to Meta and reports its verdict.
+    ...(has('automation') ? createMessagingTools(supabase, userId) : {}),
+    // The other half of the CRM: stage changes, edits, archiving, and gated deletion — each one
+    // leaving a lead_history trail the UI's own writes never did.
+    ...(has('automation') || has('reporting') ? createCrmWriteTools(supabase, userId) : {}),
     // Creating a flow, which `automation` alone only knew how to LIST. The agent could
     // describe a flow it was incapable of building, and answered "I cannot do that" to
     // a request it should have served.

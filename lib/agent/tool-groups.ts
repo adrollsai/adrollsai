@@ -78,8 +78,12 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
     // Plurals matter: "what automations are running" and "which flows exist" are the
     // commonest phrasings, and a singular-only pattern loaded no automation tools at
     // all, so the agent truthfully answered that it could not see them.
+    //
+    // Audience groups and CRM writes belong here too: "make an audience of Diwali buyers",
+    // "message that group", "move them to site visit" are follow-up work on leads, and the
+    // tools for it were unreachable.
     signals:
-      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?)\b/i,
+      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?|audiences?|segments?|broadcasts?|campaigns?|move|stage|archiv\w+|tags?|crm)\b/i,
   },
   research: {
     signals:

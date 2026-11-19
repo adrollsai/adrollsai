@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { createHash } from 'node:crypto';
 import { campaignLaunchRefusal } from '../preflight';
 
 /**
@@ -20,6 +21,43 @@ const GRAPH = `https://graph.facebook.com/${process.env.META_GRAPH_VERSION || 'v
 const CURRENCY_SYMBOLS: Record<string, string> = {
   INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ', SGD: 'S$', AUD: 'A$', CAD: 'C$',
 };
+
+/**
+ * A Meta customer-list identifier, hashed the way Meta requires.
+ *
+ * Meta matches on SHA-256 of a NORMALISED value, and it does not tell you when the normalisation was
+ * wrong — the audience simply matches nobody. So: phone numbers are digits only, with the country
+ * code, no `+`, no spaces, no dashes; emails are lowercased and trimmed. A 10-digit number is given
+ * the caller's country code rather than being uploaded bare (which matches nothing).
+ */
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+export function normalisePhoneList(phones: string[], countryCode = '91'): string[] {
+  const cc = String(countryCode || '91').replace(/\D/g, '') || '91';
+  const seen = new Set<string>();
+  for (const raw of phones) {
+    let digits = String(raw ?? '').replace(/\D/g, '');
+    if (!digits) continue;
+    // A leading zero is a national-format trunk prefix, never part of the E.164 number.
+    digits = digits.replace(/^0+/, '');
+    if (digits.length === 10 && cc) digits = `${cc}${digits}`;
+    if (digits.length < 7) continue;
+    seen.add(sha256(digits));
+  }
+  return Array.from(seen);
+}
+
+export function normaliseEmailList(emails: string[]): string[] {
+  const seen = new Set<string>();
+  for (const raw of emails) {
+    const email = String(raw ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) continue;
+    seen.add(sha256(email));
+  }
+  return Array.from(seen);
+}
 
 export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
   async function creds() {
@@ -549,6 +587,239 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
           if (type === 'adgeolocation') params.location_types = locationTypes || ['city', 'region', 'country'];
           const res = await graphGet('search', params, token);
           return { success: true, type, query, results: res.data || [] };
+        } catch (err: any) {
+          return fail(err);
+        }
+      },
+    }),
+
+    meta_custom_audience_list: tool({
+      description:
+        'Meta Ads: lists the ad account\'s CUSTOM AUDIENCES with id, name, subtype, approximate size, delivery status and whether it is usable. Call it before creating one (a duplicate audience splits your data) and when the owner asks what audiences exist.',
+      inputSchema: z.object({
+        limit: z.number().default(25).describe('How many to return'),
+      }),
+      execute: async ({ limit }) => {
+        try {
+          const { token, adAccountId } = await creds();
+          const res = await graphGet(`${adAccountId}/customaudiences`, {
+            fields: 'id,name,subtype,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,time_updated',
+            limit,
+          }, token);
+          const audiences = (res.data || []).map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            subtype: a.subtype ?? null,
+            size: a.approximate_count_lower_bound ?? null,
+            deliveryStatus: a.delivery_status?.code !== undefined ? String(a.delivery_status.code) : (a.delivery_status ?? null),
+            operationStatus: a.operation_status?.code !== undefined ? String(a.operation_status.code) : (a.operation_status ?? null),
+            updatedAt: a.time_updated ? new Date(Number(a.time_updated) * 1000).toISOString() : null,
+          }));
+          return { success: true, count: audiences.length, audiences };
+        } catch (err: any) {
+          return fail(err);
+        }
+      },
+    }),
+
+    /**
+     * A custom audience you can actually target, built from data the business already has.
+     *
+     * Three shapes, because they are the three things an owner asks for:
+     *   crm_leads  — "put my Diwali audience into Meta" (phones come from the CRM, hashed here)
+     *   phones     — an explicit list (a CSV pasted into chat, a partner's list)
+     *   lookalike  — "find me more people like my buyers", from an existing audience
+     *
+     * Meta matches on SHA-256 hashes of normalised identifiers: the phone number must be digits with
+     * the country code and no punctuation, so `+91 98765 43210` is hashed as `919876543210`. Getting
+     * that wrong produces an audience that silently matches nobody, which is why the count is
+     * re-read after the upload and reported.
+     */
+    meta_custom_audience_create: tool({
+      description:
+        'Meta Ads: creates a CUSTOM AUDIENCE for ad targeting. source "crm_leads" uploads the phone numbers of a CRM audience group (or filters) as a hashed customer list; "phones" uploads an explicit list; "lookalike" builds a lookalike from an existing audience id. It spends no money and messages nobody, but it does send customer contact data to Meta, so it needs the owner\'s approval first. Returns the audience id, the number of identifiers uploaded and Meta\'s own count once it has matched them.',
+      inputSchema: z.object({
+        name: z.string().describe('Audience name the owner will recognise, e.g. "Diwali 3BHK buyers"'),
+        source: z.enum(['crm_leads', 'phones', 'lookalike']).describe('Where the audience comes from'),
+        description: z.string().optional().describe('One line describing the audience'),
+        audienceGroupName: z.string().optional().describe('source=crm_leads: a saved CRM audience group name'),
+        filters: z
+          .object({
+            matchMode: z.enum(['OR', 'AND']).optional(),
+            campaigns: z.array(z.string()).optional(),
+            forms: z.array(z.string()).optional(),
+            sources: z.array(z.string()).optional(),
+            pipelineStages: z.array(z.string()).optional(),
+            propertyIds: z.array(z.string()).optional(),
+            csvAudiences: z.array(z.string()).optional(),
+            dateRange: z.enum(['all', '7d', '30d', '90d', 'custom']).optional(),
+            startDate: z.string().optional(),
+            endDate: z.string().optional(),
+          })
+          .optional()
+          .describe('source=crm_leads: filters instead of a saved group'),
+        phones: z.array(z.string()).optional().describe('source=phones: numbers with country code'),
+        emails: z.array(z.string()).optional().describe('source=phones: emails, in addition to or instead of phones'),
+        countryCode: z.string().default('91').describe('Prepended to a 10-digit number that has no country code'),
+        originAudienceId: z.string().optional().describe('source=lookalike: the audience to model on'),
+        lookalikeCountry: z.string().default('IN').describe('source=lookalike: the country the lookalike is for'),
+        lookalikeRatio: z.number().default(0.01).describe('source=lookalike: 0.01 = 1% of the country population'),
+        customerFileSource: z
+          .enum(['USER_PROVIDED_ONLY', 'PARTNER_PROVIDED_ONLY', 'BOTH_USER_AND_PARTNER_PROVIDED'])
+          .default('USER_PROVIDED_ONLY')
+          .describe('How the business obtained this data — Meta requires an honest answer'),
+      }),
+      execute: async (input: any) => {
+        try {
+          const { token, adAccountId } = await creds();
+          const name = String(input?.name || '').trim();
+          if (!name) return { success: false, error: 'an audience needs a name' };
+          if (!adAccountId) return { success: false, error: 'no Meta ad account is connected to this profile' };
+
+          const countryCode = String(input?.countryCode || '91').replace(/\D/g, '') || '91';
+
+          // ── lookalike: one call, no upload
+          if (input?.source === 'lookalike') {
+            const originAudienceId = String(input?.originAudienceId || '').trim();
+            if (!originAudienceId) {
+              return { success: false, error: 'a lookalike needs originAudienceId — list audiences with meta_custom_audience_list' };
+            }
+            const body: any = {
+              name,
+              subtype: 'LOOKALIKE',
+              origin_audience_id: originAudienceId,
+              lookalike_spec: JSON.stringify({
+                type: 'similarity',
+                country: String(input?.lookalikeCountry || 'IN').toUpperCase(),
+                ratio: Number(input?.lookalikeRatio ?? 0.01),
+              }),
+            };
+            if (input?.description) body.description = String(input.description);
+            const created = await graphPost(`${adAccountId}/customaudiences`, body, token);
+            return {
+              success: true,
+              audienceId: created?.id ?? null,
+              name,
+              source: 'lookalike',
+              originAudienceId,
+              message:
+                `Lookalike audience "${name}" created from ${originAudienceId} (${body.lookalike_spec}). ` +
+                'Meta needs a few hours to populate it before it can be targeted.',
+            };
+          }
+
+          // ── customer list: create the container, then upload hashed identifiers
+          let phones: string[] = [];
+          let emails: string[] = [];
+
+          if (input?.source === 'crm_leads') {
+            const { fetchLeadsForAudience } = await import('@/lib/audiences/groups');
+            const { dateWindow, leadMatchesFilters, normaliseFilters } = await import('@/lib/audiences/filters');
+            const { findAudienceGroup } = await import('@/lib/audiences/groups');
+
+            let filters;
+            if (input?.audienceGroupName) {
+              const group = await findAudienceGroup(supabase, userId, { name: String(input.audienceGroupName) });
+              if (!group) {
+                const existing = await (await import('@/lib/audiences/groups')).listAudienceGroups(supabase, userId);
+                return {
+                  success: false,
+                  error: `there is no CRM audience group called "${input.audienceGroupName}"`,
+                  available: existing.map((g) => g.name),
+                };
+              }
+              filters = group.filters;
+            } else {
+              filters = normaliseFilters(input?.filters);
+            }
+
+            const { leads } = await fetchLeadsForAudience(supabase, userId);
+            const window = dateWindow(filters);
+            const matched = leads.filter((lead) => leadMatchesFilters(lead, filters, window));
+            phones = matched.map((l) => String(l.phone ?? '')).filter(Boolean);
+            emails = matched.map((l) => String(l.email ?? '')).filter(Boolean);
+            if (!phones.length && !emails.length) {
+              return {
+                success: false,
+                error: 'no lead in that CRM audience has a phone number or email, so the Meta audience would be empty',
+              };
+            }
+          } else {
+            phones = Array.isArray(input?.phones) ? input.phones.map((p: any) => String(p)) : [];
+            emails = Array.isArray(input?.emails) ? input.emails.map((e: any) => String(e)) : [];
+            if (!phones.length && !emails.length) {
+              return { success: false, error: 'give at least one phone number or email' };
+            }
+          }
+
+          const hashedPhones = normalisePhoneList(phones, countryCode);
+          const hashedEmails = normaliseEmailList(emails);
+          if (!hashedPhones.length && !hashedEmails.length) {
+            return { success: false, error: 'none of the identifiers were usable (empty or malformed), so nothing was uploaded' };
+          }
+
+          const createBody: any = {
+            name,
+            subtype: 'CUSTOM',
+            customer_file_source: String(input?.customerFileSource || 'USER_PROVIDED_ONLY'),
+            description: String(input?.description || 'Uploaded by the Nobogent agent').slice(0, 500),
+          };
+          const created = await graphPost(`${adAccountId}/customaudiences`, createBody, token);
+          const audienceId = created?.id ? String(created.id) : '';
+          if (!audienceId) {
+            return { success: false, error: 'Meta did not return an audience id' };
+          }
+
+          let uploaded = 0;
+          try {
+            if (hashedPhones.length) {
+              await graphPost(`${audienceId}/users`, {
+                payload: { schema: ['PHONE'], data: hashedPhones.map((h) => [h]) },
+              }, token);
+              uploaded += hashedPhones.length;
+            }
+            if (hashedEmails.length) {
+              await graphPost(`${audienceId}/users`, {
+                payload: { schema: ['EMAIL'], data: hashedEmails.map((h) => [h]) },
+              }, token);
+              uploaded += hashedEmails.length;
+            }
+          } catch (uploadError: any) {
+            return {
+              success: false,
+              audienceId,
+              error:
+                `the audience "${name}" was created but the upload failed: ${uploadError?.message || uploadError}. ` +
+                'It exists and is empty — delete it in Meta or re-run the upload.',
+            };
+          }
+
+          // Meta matches asynchronously; report its count so "uploaded 400" is never mistaken for
+          // "400 people will see this ad".
+          let matched: number | null = null;
+          try {
+            const detail = await graphGet(audienceId, {
+              fields: 'approximate_count_lower_bound,delivery_status,operation_status',
+            }, token);
+            matched = detail?.approximate_count_lower_bound ?? null;
+          } catch {
+            /* the audience exists; the count is a nicety */
+          }
+
+          return {
+            success: true,
+            audienceId,
+            name,
+            source: input?.source,
+            identifiersUploaded: uploaded,
+            phones: hashedPhones.length,
+            emails: hashedEmails.length,
+            matchedByMeta: matched,
+            message:
+              `Custom audience "${name}" created with ${uploaded} hashed identifier(s)` +
+              (matched !== null ? `; Meta currently matches about ${matched}.` : '; Meta matches them over the next few hours.') +
+              ' It can be used in ad set targeting once populated.',
+          };
         } catch (err: any) {
           return fail(err);
         }

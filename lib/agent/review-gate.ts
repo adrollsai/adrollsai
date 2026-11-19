@@ -110,6 +110,12 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   // ── reaching a real person
   nobogent_whatsapp_send_template: { actionType: 'whatsapp_broadcast', why: 'a real customer receives it' },
   nobogent_voice_dispatch_call: { actionType: 'bulk_call', why: 'a real customer is phoned and each call is billed' },
+  // A campaign is N sends, so it has the largest blast radius of any tool here: the approval card
+  // carries the template, the audience, and how many people are in it.
+  whatsapp_broadcast_to_audience: {
+    actionType: 'whatsapp_broadcast',
+    why: 'it queues a WhatsApp template to every reachable lead in an audience',
+  },
   publish_social_post: { actionType: 'whatsapp_broadcast', why: 'it publishes publicly in the business name' },
   site_publish_landing_page: { actionType: 'custom', why: 'it makes a page public in the business name' },
   build_website: { actionType: 'custom', why: 'it publishes a public website in the business name' },
@@ -117,9 +123,22 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   // exists. Creating one is therefore just as public as publishing one, and it was the only page tool
   // NOT behind this gate: the prompt claimed "creating a page stages it", and it did not stage anything.
   create_landing_page: { actionType: 'custom', why: 'the page is live at its slug the moment it is created' },
+  // The same reasoning one level down: editing a section of a live page changes what the public sees
+  // in the business's name, and there is no draft to change instead.
+  page_edit_section: { actionType: 'custom', why: 'it changes a page that is already public in the business name' },
+
+  // ── customer data leaving the building
+  //
+  // Uploading a hashed customer list to Meta spends nothing and messages nobody, but it hands a
+  // partner the business's contact data and Meta keeps it. One tap, with the size on the card.
+  meta_custom_audience_create: {
+    actionType: 'custom',
+    why: "it uploads the business's customer contact data to Meta as a custom audience",
+  },
 
   // ── irreversible
   delete_data: { actionType: 'delete_data', why: 'deleting cannot be undone' },
+  crm_delete_lead: { actionType: 'delete_data', why: 'a deleted lead and its history cannot be recovered' },
 
   // ── the machinery, reached through the sandbox or a raw database handle
   //
