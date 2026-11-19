@@ -19,6 +19,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing action' }, { status: 400 })
     }
 
+    /**
+     * Reject an unknown action HERE, before the per-action branches.
+     *
+     * The dispatch below is an `if/else` chain whose final `else` is the delete path, so an unknown
+     * action ("teleport") fell into it and answered "Missing propertyId" — a message about the wrong
+     * thing entirely. Listing the supported actions is the honest answer.
+     */
+    const ACTIONS = ['insert', 'update', 'delete', 'toggle-auto-generate', 'toggle-auto-generate-video'] as const
+    if (!(ACTIONS as readonly string[]).includes(String(action))) {
+      return NextResponse.json(
+        { error: `Invalid action "${action}". Supported actions: ${ACTIONS.join(', ')}.` },
+        { status: 400 }
+      )
+    }
+
+    // A product with no name cannot be found, listed, shared or edited afterwards, so it is refused
+    // with a readable message instead of being stored as an untitled row.
+    if (action === 'insert' && propertyData && !String(propertyData.title ?? '').trim()) {
+      return NextResponse.json(
+        { error: 'A product needs a name. Give the product/service a title and save again.' },
+        { status: 400 }
+      )
+    }
+
     // 2. Fetch requester profile for RBAC validation
     const { data: requesterProfile } = await supabase
       .from('profiles')
