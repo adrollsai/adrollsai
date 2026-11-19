@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { listWhatsAppTemplates, whatsAppCredentials, GRAPH } from './templates';
+import { explainMetaError } from './broadcast-progress';
 
 /**
  * Can this account actually deliver a WhatsApp campaign right now?
@@ -212,6 +213,34 @@ export async function whatsAppHealth(supabase: SupabaseClient, userId: string): 
           `${String((refused as any).pause_reason ?? '').slice(0, 240)} Resolve that with Meta first — ` +
           'another campaign will be refused the same way.'
       );
+    } else {
+      // Campaigns paused by the older worker recorded no reason, so read the failure rows themselves.
+      const { data: campaigns } = await supabase
+        .from('whatsapp_broadcasts')
+        .select('id, title, failed_count, created_at')
+        .eq('user_id', userId)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      const ids = (campaigns ?? []).map((c: any) => c.id);
+      if (ids.length) {
+        const { data: fatalRows } = await supabase
+          .from('whatsapp_broadcast_recipients')
+          .select('broadcast_id, error_code, error_message')
+          .in('broadcast_id', ids)
+          .eq('status', 'failed')
+          .in('error_code', ['131042', '190', '200', '368', '131031'])
+          .limit(1);
+        const fatal = fatalRows?.[0];
+        if (fatal) {
+          const campaign = (campaigns ?? []).find((c: any) => c.id === (fatal as any).broadcast_id);
+          blockers.push(
+            `A recent campaign ("${String((campaign as any)?.title ?? 'untitled').slice(0, 60)}") had sends ` +
+              `refused by Meta: ${explainMetaError((fatal as any).error_code, (fatal as any).error_message)} ` +
+              'Fix that with Meta before launching another campaign.'
+          );
+        }
+      }
     }
   } catch {
     /* history is an extra signal; never let it break the check */
