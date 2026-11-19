@@ -2118,6 +2118,8 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                   const callingLeads = c.stats ? c.stats.dialing : campaignLeads.filter(l => l.voice_call_status === 'calling').length
                   const pendingLeads = c.stats ? c.stats.queue : totalLeads - (completedLeads + failedLeads + callingLeads)
                   const progressPercent = totalLeads > 0 ? Math.round(((completedLeads + failedLeads) / totalLeads) * 100) : 0
+                  const perTick = c.stats?.perTick || 25
+                  const etaMinutes = c.stats?.etaMinutes ?? null
                   const interestedLeadsCount = campaignLeads.filter(isLeadInterested).length
                   const bookedLeadsCount = campaignLeads.filter(isLeadBooked).length
 
@@ -2342,6 +2344,14 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                                 style={{ width: `${progressPercent}%` }}
                               />
                             </div>
+                            {/* How fast this will actually finish. "Running" with 4,000 people left is
+                                not information; the rate and the remaining time are. */}
+                            {(c.status === 'running' || c.status === 'paused') && pendingLeads > 0 && (
+                              <p className="text-[10px] font-bold text-slate-500">
+                                {pendingLeads} still to dial · up to {perTick} per 5-minute run
+                                {etaMinutes !== null && c.status === 'running' ? ` · about ${etaMinutes >= 60 ? `${Math.round(etaMinutes / 60)}h ${etaMinutes % 60}m` : `${etaMinutes}m`} to finish` : ' · paused, so nothing is dialling'}
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap gap-2 text-[9px] font-extrabold pt-1">

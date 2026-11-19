@@ -72,6 +72,16 @@ export async function GET(req: Request) {
                     .eq('voice_campaign_id', c.id)
                     .or('voice_call_status.is.null,voice_call_status.eq.not_called,voice_call_status.eq.scheduled_retry')
 
+                // How long the queue will take at the caller's current rate.
+                //
+                // The rate is the thing that made a 235-lead campaign feel broken: at 8 calls per
+                // 5-minute run the last person was dialled two and a half hours later, and the card
+                // said only "running". This is the per-tick rate the dispatcher reads, so the estimate
+                // and the behaviour cannot disagree.
+                const perTick = Number(String(process.env.VOICE_MAX_CALLS_PER_TENANT_PER_RUN ?? '25').replace(/[^\d]/g, '')) || 25
+                const queued = (queueCount || 0) + (dialingCount || 0)
+                const etaMinutes = queued > 0 && perTick > 0 ? Math.ceil(queued / perTick) * 5 : null
+
                 campaignsWithStats.push({
                     ...c,
                     stats: {
@@ -79,7 +89,9 @@ export async function GET(req: Request) {
                         spoke: spokeCount || 0,
                         unreachable: unreachableCount || 0,
                         dialing: dialingCount || 0,
-                        queue: queueCount || 0
+                        queue: queueCount || 0,
+                        perTick,
+                        etaMinutes
                     }
                 })
             }

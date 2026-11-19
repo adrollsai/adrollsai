@@ -139,6 +139,26 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
   const [selectedStatsBroadcast, setSelectedStatsBroadcast] = useState<any>(null)
   const [loadingStats, setLoadingStats] = useState(false)
   const [statsData, setStatsData] = useState<any>(null)
+  /**
+   * Account health as Meta reports it, shown before the launch form.
+   *
+   * A campaign launched into an account Meta is refusing produced a 16,317-recipient queue, 122
+   * deliveries and 2,022 failures on 19 Nov. This is the one read that would have said so first.
+   */
+  const [broadcastHealth, setBroadcastHealth] = useState<any>(null)
+  const loadBroadcastHealth = async () => {
+    try {
+      const res = await fetch(buildUrl('/api/whatsapp/health'))
+      const data = await res.json()
+      if (res.ok && data?.success !== false) setBroadcastHealth(data)
+    } catch {
+      /* the banner is an aid, not a gate; the create route enforces the same check */
+    }
+  }
+  useEffect(() => {
+    void loadBroadcastHealth()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
   const [statsSearchQuery, setStatsSearchQuery] = useState('')
   const [statsFilterStatus, setStatsFilterStatus] = useState<'all' | 'clicked' | 'sent' | 'replied' | 'pending' | 'failed'>('all')
   const [resumingBroadcast, setResumingBroadcast] = useState(false)
@@ -195,6 +215,42 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
       }
     } catch (err: any) {
       toast.error('Failed to trigger worker: ' + err.message, { id: 'resume-broadcast' })
+    } finally {
+      setResumingBroadcast(false)
+    }
+  }
+
+  /**
+   * The four things an owner can do to a campaign that has stopped.
+   *
+   * "Resume" used to just poke the worker, which left the blocked rows blocked and the reason in the
+   * wrong place. These call the actions endpoint, which reports exactly what changed.
+   */
+  const handleBroadcastAction = async (broadcastId: string, action: 'pause' | 'resume' | 'retry_failed' | 'cancel') => {
+    const labels: Record<string, string> = {
+      pause: 'Pausing…',
+      resume: 'Resuming…',
+      retry_failed: 'Retrying failures…',
+      cancel: 'Cancelling…',
+    }
+    setResumingBroadcast(true)
+    toast.loading(labels[action], { id: 'broadcast-action' })
+    try {
+      const res = await fetch(buildUrl('/api/whatsapp/broadcasts/actions'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ broadcastId, action }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(data.message || 'Done', { id: 'broadcast-action' })
+      } else {
+        toast.error(data.error || 'That action failed', { id: 'broadcast-action' })
+      }
+      fetchBroadcastStats(broadcastId, true)
+      void fetchBroadcasts?.()
+    } catch (error: any) {
+      toast.error(String(error?.message || error), { id: 'broadcast-action' })
     } finally {
       setResumingBroadcast(false)
     }
@@ -2197,6 +2253,64 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               {isCreateBroadcastOpen && (
+                <div className="space-y-4">
+                  {/* ACCOUNT HEALTH, BEFORE THE FORM
+                      A campaign launched into an account Meta is refusing produces a queue, a progress
+                      screen and thousands of failure rows. One read says it up front. */}
+                  {broadcastHealth && (
+                    <div
+                      className={`rounded-3xl border px-4 py-3 ${
+                        broadcastHealth.ok
+                          ? 'border-emerald-200 bg-emerald-50'
+                          : 'border-rose-200 bg-rose-50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-0.5 text-sm ${broadcastHealth.ok ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {broadcastHealth.ok ? '●' : '⚠'}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-black ${broadcastHealth.ok ? 'text-emerald-800' : 'text-rose-800'}`}>
+                            {broadcastHealth.headline}
+                          </p>
+                          {broadcastHealth.ok && broadcastHealth.phone?.displayPhoneNumber && (
+                            <p className="text-[11px] font-semibold text-emerald-700 mt-0.5">
+                              Sending from {broadcastHealth.phone.verifiedName || 'this business'} ·{' '}
+                              {broadcastHealth.phone.displayPhoneNumber}
+                              {broadcastHealth.approvedTemplates ? ` · ${broadcastHealth.approvedTemplates} approved template(s)` : ''}
+                            </p>
+                          )}
+                          {!broadcastHealth.ok && (
+                            <ul className="mt-1 space-y-1">
+                              {broadcastHealth.blockers.map((blocker: string, index: number) => (
+                                <li key={index} className="text-[11px] font-semibold text-rose-800 leading-relaxed">
+                                  {blocker}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {broadcastHealth.warnings?.length > 0 && (
+                            <ul className="mt-1.5 space-y-0.5">
+                              {broadcastHealth.warnings.map((warning: string, index: number) => (
+                                <li key={index} className="text-[11px] font-medium text-slate-600 leading-relaxed">
+                                  · {warning}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={loadBroadcastHealth}
+                          className="shrink-0 text-[10px] font-black uppercase tracking-wider text-slate-500 hover:text-slate-800"
+                          title="Check again with Meta"
+                        >
+                          Check
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                 <form onSubmit={handleCreateBroadcast} className="bg-slate-50 border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4 max-h-[85vh] overflow-y-auto custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
                   <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                     <span className="text-xs font-black text-slate-800 uppercase tracking-widest">New Broadcast Configuration</span>
@@ -2743,6 +2857,7 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                     {newBroadcast.scheduledAt ? 'Schedule Broadcast' : `Launch Broadcast Blast Now (${audiencePreview?.validPhoneCount || 0} Leads)`}
                   </button>
                 </form>
+                </div>
               )}
 
               {loadingBroadcasts ? (
@@ -2755,8 +2870,11 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               ) : (
                 <div className="space-y-4">
                   {broadcasts.map(b => {
-                    const stats = b.stats || { total: 0, sent: 0, failed: 0 }
-                    const percent = stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0
+                    const stats: any = b.stats || { total: 0, sent: 0, failed: 0, pending: 0, blocked: 0, clicked: 0 }
+                    const percent =
+                      stats.total > 0
+                        ? Math.round(((stats.sent + (stats.failed || 0) + ((stats as any).blocked || 0)) / stats.total) * 100)
+                        : 0
                     return (
                       <div key={b.id} className="border border-slate-100 rounded-3xl p-5 bg-slate-50 space-y-3 shadow-sm">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2793,18 +2911,32 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
 
                             {(b.status === 'processing' || b.status === 'paused' || stats.total > stats.sent) && (
                               <button
-                                onClick={() => handleResumeBroadcast(b.id)}
+                                onClick={() => handleBroadcastAction(b.id, b.status === 'paused' ? 'resume' : 'resume')}
                                 disabled={resumingBroadcast}
                                 className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-black px-3 py-1.5 rounded-full transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-                                title="Dispatch remaining queue"
+                                title={
+                                  b.status === 'paused'
+                                    ? 'Put the remaining recipients back in the queue and start sending'
+                                    : 'Send the remaining queue now instead of waiting for the scheduler'
+                                }
                               >
                                 <Send size={11} className={resumingBroadcast ? 'animate-spin' : ''} />
-                                Dispatch Remaining ({Math.max(0, stats.total - stats.sent)})
+                                {b.status === 'paused' ? 'Resume' : 'Dispatch Remaining'} ({Math.max(0, stats.total - stats.sent - (stats.failed || 0) - ((stats as any).blocked || 0))})
                               </button>
                             )}
 
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase ${
-                              b.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : b.status === 'processing' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                              b.status === 'sent'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : b.status === 'processing'
+                                ? 'bg-blue-100 text-blue-700'
+                                : b.status === 'failed'
+                                ? 'bg-rose-100 text-rose-700'
+                                : b.status === 'partial'
+                                ? 'bg-amber-100 text-amber-800'
+                                : b.status === 'cancelled'
+                                ? 'bg-slate-200 text-slate-600'
+                                : 'bg-amber-100 text-amber-700'
                             }`}>
                               {b.status}
                             </span>
@@ -2815,12 +2947,27 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
                         {stats.total > 0 && (
                           <div className="space-y-1">
                             <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
-                              <span>Delivery status: {stats.sent} / {stats.total} Sent</span>
+                              <span>
+                                Delivered {stats.sent} of {stats.total}
+                                {(stats.failed || 0) > 0 && <span className="text-rose-600"> · {stats.failed} failed</span>}
+                                {((stats as any).blocked || 0) > 0 && <span className="text-amber-600"> · {(stats as any).blocked} blocked</span>}
+                                {(stats.pending || 0) > 0 && <span className="text-blue-600"> · {stats.pending} waiting</span>}
+                              </span>
                               <span>{percent}% Complete</span>
                             </div>
-                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                              <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${percent}%` }} />
+                            <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden flex">
+                              <div className="bg-emerald-500 h-full transition-all" style={{ width: `${stats.total ? (stats.sent / stats.total) * 100 : 0}%` }} />
+                              <div className="bg-rose-400 h-full transition-all" style={{ width: `${stats.total ? ((stats.failed || 0) / stats.total) * 100 : 0}%` }} />
+                              <div className="bg-amber-300 h-full transition-all" style={{ width: `${stats.total ? (((stats as any).blocked || 0) / stats.total) * 100 : 0}%` }} />
                             </div>
+                          </div>
+                        )}
+
+                        {/* Why it stopped — the reason Meta gave, on the campaign itself */}
+                        {(b as any).pause_reason && (
+                          <div className="flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2">
+                            <span className="text-rose-500 mt-0.5">⚠</span>
+                            <p className="text-[11px] font-semibold text-rose-800 leading-relaxed">{(b as any).pause_reason}</p>
                           </div>
                         )}
 
@@ -2898,24 +3045,56 @@ export default function WhatsAppSettings({ userId, onBack }: WhatsAppSettingsPro
               </div>
 
               <div className="flex items-center gap-2">
-                {statsData?.stats?.pending > 0 && (
+                {/* The four things that can be done to a campaign that has stopped. Each one reports
+                    exactly what it changed, so "Resume" cannot be mistaken for "Resent". */}
+                {statsData?.broadcast?.status === 'processing' && (
                   <button
-                    onClick={() => handleResumeBroadcast(selectedStatsBroadcast.id)}
+                    onClick={() => handleBroadcastAction(selectedStatsBroadcast.id, 'pause')}
+                    disabled={resumingBroadcast}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                    title="Stop sending; the queue is kept so it can be resumed"
+                  >
+                    Pause
+                  </button>
+                )}
+                {(statsData?.stats?.pending > 0 || statsData?.broadcast?.status === 'paused') && (
+                  <button
+                    onClick={() => handleBroadcastAction(selectedStatsBroadcast.id, 'resume')}
                     disabled={resumingBroadcast}
                     className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer transition-all disabled:opacity-50"
-                    title="Dispatch remaining pending leads via background worker"
+                    title="Put the remaining (and previously blocked) recipients back in the queue"
                   >
                     {resumingBroadcast ? (
                       <>
                         <Loader2 size={13} className="animate-spin" />
-                        <span>Dispatching...</span>
+                        <span>Working…</span>
                       </>
                     ) : (
                       <>
                         <Send size={13} />
-                        <span>Resume ({statsData.stats.pending})</span>
+                        <span>Resume ({(statsData?.stats?.pending || 0) + (statsData?.stats?.blocked || 0)})</span>
                       </>
                     )}
+                  </button>
+                )}
+                {(statsData?.stats?.failed || 0) > 0 && (
+                  <button
+                    onClick={() => handleBroadcastAction(selectedStatsBroadcast.id, 'retry_failed')}
+                    disabled={resumingBroadcast}
+                    className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                    title="Give the failed recipients another attempt"
+                  >
+                    <RefreshCw size={12} /> Retry failed ({statsData?.stats?.failed})
+                  </button>
+                )}
+                {statsData?.stats?.pending > 0 && (
+                  <button
+                    onClick={() => handleBroadcastAction(selectedStatsBroadcast.id, 'cancel')}
+                    disabled={resumingBroadcast}
+                    className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-full text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all disabled:opacity-50"
+                    title="Stop for good: unsent recipients will not be messaged"
+                  >
+                    Cancel
                   </button>
                 )}
                 <button

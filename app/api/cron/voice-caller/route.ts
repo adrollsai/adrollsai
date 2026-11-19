@@ -34,10 +34,23 @@ const supabaseAdmin = createClient(
   { auth: { persistSession: false } }
 )
 
-/** Never dial more than this per tenant per run (the cron runs every 5 min). */
-const MAX_CALLS_PER_TENANT_PER_RUN = 8
-/** Hard ceiling for one invocation. */
-const MAX_CALLS_PER_RUN = 60
+/**
+ * Per-tenant dial rate for one 5-minute run.
+ *
+ * 8 was far too low in practice: a 235-lead campaign needed about two and a half hours of ticks
+ * before the last person was dialled, with no visible progress and no way to speed it up. 25 per tick
+ * is roughly 300 calls an hour — a rate a live calling team can supervise — and it is env-tunable so
+ * a tenant whose provider allows more can go faster without a deploy. The daily cap in the automation
+ * policy still applies on top of this: autonomy must not be able to ring 200 people in a morning.
+ */
+function envCap(name: string, fallback: number): number {
+  const raw = Number(String(process.env[name] ?? '').replace(/[^\d]/g, ''))
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback
+}
+
+const MAX_CALLS_PER_TENANT_PER_RUN = envCap('VOICE_MAX_CALLS_PER_TENANT_PER_RUN', 25)
+/** Hard ceiling for one invocation (the function's maxDuration still bounds it). */
+const MAX_CALLS_PER_RUN = envCap('VOICE_MAX_CALLS_PER_RUN', 150)
 
 export async function GET(request: Request) {
   return handleDispatcher(request)

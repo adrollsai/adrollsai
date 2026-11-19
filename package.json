@@ -145,6 +145,7 @@
     "accept:ui-additions": "node scripts/accept-ui-additions.mjs",
     "accept:audience-agent": "esbuild scripts/accept-audience-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-audience-agent.mjs --log-level=warning && node .tmp-accept-audience-agent.mjs",
     "accept:capabilities": "esbuild scripts/accept-capabilities.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-capabilities.mjs --log-level=warning && node .tmp-accept-capabilities.mjs",
+    "verify:broadcast-progress": "esbuild scripts/verify-broadcast-progress.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-broadcast.mjs --log-level=warning && node .tmp-verify-broadcast.mjs",
     "verify:audiences": "esbuild scripts/verify-audiences.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-audiences.mjs --log-level=warning && node .tmp-verify-audiences.mjs",
     "verify:flow-delivery": "esbuild scripts/verify-flow-delivery.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-delivery.mjs --log-level=warning && node .tmp-flow-delivery.mjs",
     "probe:flow-delivery": "esbuild scripts/probe-flow-delivery.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probe-flow-delivery.mjs --log-level=warning && node .tmp-probe-flow-delivery.mjs",

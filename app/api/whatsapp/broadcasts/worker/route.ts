@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { canActForUser } from '@/utils/route-auth'
+import {
+    MAX_SEND_ATTEMPTS,
+    explainMetaError,
+    finalStatusFor,
+    isFatalError,
+    isRetryableError,
+    pauseBroadcast,
+    refreshBroadcastStats,
+} from '@/lib/whatsapp/broadcast-progress'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // Max 5 minutes for serverless processing
@@ -74,23 +83,42 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'WhatsApp credentials not configured for broadcast owner' }, { status: 400 })
         }
 
-        // Fetch pending recipients (up to 400 per run to stay well within timeout)
+        // ── CLAIM A SLICE
+        //
+        // Selecting `pending` rows and then working through them lets a cron tick and a manual kick
+        // pick the SAME rows up, which is how a recipient gets two "Sent Template" bubbles. Each row
+        // is flipped to `processing` with a conditional update first, and only the rows this run won
+        // are sent. `next_attempt_at` is honoured so a backoff is respected.
         const BATCH_LIMIT = 400
-        const { data: rawRecipients, error: rErr } = await supabaseAdmin
+        const nowIsoForClaim = new Date().toISOString()
+        const { data: candidates, error: rErr } = await supabaseAdmin
             .from('whatsapp_broadcast_recipients')
-            .select('*')
+            .select('id')
             .eq('broadcast_id', broadcastId)
             .eq('status', 'pending')
+            .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIsoForClaim}`)
+            .order('id', { ascending: true })
             .limit(BATCH_LIMIT)
 
         if (rErr) {
             return NextResponse.json({ error: rErr.message }, { status: 500 })
         }
 
-        const pendingRecipients: any[] = rawRecipients || []
+        const candidateIds = (candidates || []).map((r: any) => r.id)
+        let pendingRecipients: any[] = []
+
+        if (candidateIds.length > 0) {
+            const { data: claimed } = await supabaseAdmin
+                .from('whatsapp_broadcast_recipients')
+                .update({ status: 'processing', updated_at: new Date().toISOString() })
+                .in('id', candidateIds)
+                .eq('status', 'pending')
+                .select('*')
+            pendingRecipients = claimed || []
+        }
 
         if (pendingRecipients.length === 0) {
-            // Check if any recipients are still pending in total
+            // Nothing claimable. Either the campaign is finished or everything is waiting on a backoff.
             const { count: totalRemainingPending } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')
                 .select('id', { count: 'exact', head: true })
@@ -98,16 +126,19 @@ export async function POST(req: Request) {
                 .eq('status', 'pending')
 
             if (!totalRemainingPending || totalRemainingPending === 0) {
+                const counts = await refreshBroadcastStats(supabaseAdmin, broadcastId)
                 await supabaseAdmin
                     .from('whatsapp_broadcasts')
-                    .update({ status: 'sent', sent_at: new Date().toISOString() })
+                    .update({ status: finalStatusFor(counts), sent_at: new Date().toISOString() })
                     .eq('id', broadcastId)
             }
 
             return NextResponse.json({
                 success: true,
-                message: 'No pending recipients remaining for this broadcast.',
-                remainingPending: 0
+                message: totalRemainingPending
+                    ? `Nothing due yet; ${totalRemainingPending} recipient(s) are waiting out a retry backoff.`
+                    : 'No pending recipients remaining for this broadcast.',
+                remainingPending: totalRemainingPending || 0
             })
         }
 
@@ -217,8 +248,12 @@ export async function POST(req: Request) {
 
         let sentCount = 0
         let failedCount = 0
+        let retriedCount = 0
         let circuitBreakerTripped = false
-        const CONCURRENCY = 3
+        let breakerReason = ''
+        // Modest concurrency with a small throttle: Meta's own guidance is to stay well inside the
+        // account's throughput, and a stalled campaign costs far more than a few extra seconds.
+        const CONCURRENCY = 6
         let currIdx = 0
 
         async function worker() {
@@ -285,29 +320,61 @@ export async function POST(req: Request) {
                     if (metaData.error) {
                         const errCode = metaData.error.code
                         const errMsg = metaData.error.message || ''
+                        const friendly = explainMetaError(errCode, errMsg)
 
-                        // Circuit breaker: Business payment/eligibility or rate limit
-                        if (errCode === 131042 || errMsg.includes('131042') || errMsg.includes('payment') || errCode === 429 || errCode === 130429) {
-                            console.error(`[BROADCAST WORKER] ⚠️ Circuit breaker tripped! Meta returned ${errCode}: ${errMsg}. Pausing broadcast to preserve queue.`)
+                        if (isFatalError(errCode, errMsg)) {
+                            // NOT just this recipient: Meta is refusing the account, so every remaining
+                            // send fails the same way. Pause the campaign, mark what is left blocked
+                            // with the reason, and stop all workers (they share this flag).
+                            console.error(`[BROADCAST WORKER] ⚠️ Fatal Meta error ${errCode}: ${errMsg}. Pausing and blocking the remainder.`)
                             circuitBreakerTripped = true
+                            breakerReason = friendly
                             await supabaseAdmin
-                                .from('whatsapp_broadcasts')
-                                .update({ status: 'paused' })
-                                .eq('id', broadcastId)
+                                .from('whatsapp_broadcast_recipients')
+                                .update({ status: 'failed', error_message: friendly, error_code: String(errCode ?? ''), attempts: (r.attempts || 0) + 1, updated_at: new Date().toISOString() })
+                                .eq('id', r.id)
+                            failedCount++
                             break
+                        }
+
+                        if (isRetryableError(errCode, errMsg)) {
+                            const attempts = (r.attempts || 0) + 1
+                            if (attempts < MAX_SEND_ATTEMPTS) {
+                                // Backoff: 30s, then 2min. It goes back to pending, not failed.
+                                const delayMs = attempts === 1 ? 30_000 : 120_000
+                                retriedCount++
+                                await supabaseAdmin
+                                    .from('whatsapp_broadcast_recipients')
+                                    .update({
+                                        status: 'pending',
+                                        attempts,
+                                        error_message: friendly,
+                                        error_code: String(errCode ?? ''),
+                                        next_attempt_at: new Date(Date.now() + delayMs).toISOString(),
+                                        updated_at: new Date().toISOString(),
+                                    })
+                                    .eq('id', r.id)
+                                continue
+                            }
                         }
 
                         failedCount++
                         await supabaseAdmin
                             .from('whatsapp_broadcast_recipients')
-                            .update({ status: 'failed', error_message: errMsg || 'Meta error' })
+                            .update({
+                                status: 'failed',
+                                error_message: friendly,
+                                error_code: String(errCode ?? ''),
+                                attempts: (r.attempts || 0) + 1,
+                                updated_at: new Date().toISOString(),
+                            })
                             .eq('id', r.id)
                     } else {
                         sentCount++
                         const nowIso = new Date().toISOString()
                         await supabaseAdmin
                             .from('whatsapp_broadcast_recipients')
-                            .update({ status: 'sent', sent_at: nowIso, error_message: null })
+                            .update({ status: 'sent', sent_at: nowIso, error_message: null, error_code: null, attempts: (r.attempts || 0) + 1, updated_at: nowIso })
                             .eq('id', r.id)
 
                         // Update CRM inbox
@@ -367,31 +434,61 @@ export async function POST(req: Request) {
                         }
                     }
                 } catch (sendErr: any) {
+                    // A network/provider failure is worth another go; the row goes back to pending
+                    // with a backoff instead of being written off.
+                    const attempts = (r.attempts || 0) + 1
+                    if (attempts < MAX_SEND_ATTEMPTS) {
+                        retriedCount++
+                        await supabaseAdmin
+                            .from('whatsapp_broadcast_recipients')
+                            .update({
+                                status: 'pending',
+                                attempts,
+                                error_message: String(sendErr?.message || sendErr),
+                                next_attempt_at: new Date(Date.now() + (attempts === 1 ? 30_000 : 120_000)).toISOString(),
+                                updated_at: new Date().toISOString(),
+                            })
+                            .eq('id', r.id)
+                        continue
+                    }
                     failedCount++
                     await supabaseAdmin
                         .from('whatsapp_broadcast_recipients')
-                        .update({ status: 'failed', error_message: sendErr.message })
+                        .update({ status: 'failed', error_message: String(sendErr?.message || sendErr), attempts, updated_at: new Date().toISOString() })
                         .eq('id', r.id)
                 }
 
-                await new Promise(res => setTimeout(res, 120))
+                await new Promise(res => setTimeout(res, 80))
             }
         }
 
         const workers = Array.from({ length: Math.min(CONCURRENCY, pendingRecipients.length) }, () => worker())
         await Promise.all(workers)
 
-        // Check remaining pending recipients
-        const { count: remainingPending } = await supabaseAdmin
-            .from('whatsapp_broadcast_recipients')
-            .select('id', { count: 'exact', head: true })
-            .eq('broadcast_id', broadcastId)
-            .eq('status', 'pending')
+        // A campaign stopped by Meta is paused with the REASON ON THE CAMPAIGN and its untouched rows
+        // marked blocked — not left pending, which reads as "still working" for ever.
+        if (circuitBreakerTripped && breakerReason) {
+            const paused = await pauseBroadcast(supabaseAdmin, broadcastId, { reason: breakerReason, blockRemaining: true })
+            return NextResponse.json({
+                success: false,
+                broadcastId,
+                paused: true,
+                pauseReason: breakerReason,
+                processed: pendingRecipients.length,
+                sent: sentCount,
+                failed: failedCount,
+                retried: retriedCount,
+                blocked: paused.blocked,
+                message: `Campaign paused. ${breakerReason}`,
+            })
+        }
 
-        if (!remainingPending || remainingPending === 0) {
+        const counts = await refreshBroadcastStats(supabaseAdmin, broadcastId)
+
+        if (counts.pending === 0 && counts.processing === 0) {
             await supabaseAdmin
                 .from('whatsapp_broadcasts')
-                .update({ status: 'sent', sent_at: new Date().toISOString() })
+                .update({ status: finalStatusFor(counts), sent_at: new Date().toISOString() })
                 .eq('id', broadcastId)
         }
 
@@ -401,7 +498,9 @@ export async function POST(req: Request) {
             processed: pendingRecipients.length,
             sent: sentCount,
             failed: failedCount,
-            remainingPending: remainingPending || 0
+            retried: retriedCount,
+            remainingPending: counts.pending + counts.processing,
+            totals: counts,
         })
 
     } catch (err: any) {

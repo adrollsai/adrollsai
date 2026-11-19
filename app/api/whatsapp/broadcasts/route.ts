@@ -31,51 +31,41 @@ export async function GET(req: Request) {
 
             if (!broadcast) return NextResponse.json({ error: 'Broadcast not found' }, { status: 404 })
 
-            let { data: recipients } = await supabaseAdmin
-                .from('whatsapp_broadcast_recipients')
-                .select('*')
-                .eq('broadcast_id', broadcastId)
+            // ── EXACT COUNTS + A PAGED RECIPIENT LIST
+            //
+            // This branch used to load EVERY recipient with `.select('*')` and count them in JS. A
+            // PostgREST `.select()` stops at the database's max-rows (1,000 here), so a campaign with
+            // 16,317 recipients reported "1,000 recipients, 122 sent" — the number the owner saw and
+            // quite reasonably did not believe. Counts are exact head-counts now, and the list is
+            // paged on purpose.
+            const { exactCounts } = await import('@/lib/whatsapp/broadcast-progress')
+            const counts = await exactCounts(supabaseAdmin, broadcastId)
+            const wantsCsv = searchParams.get('export') === 'csv' || searchParams.get('format') === 'csv'
+            const requestedLimit = Number(searchParams.get('limit') ?? 200) || 200
+            const pageLimit = wantsCsv ? counts.total : Math.min(Math.max(requestedLimit, 1), 500)
+            const pageOffset = wantsCsv ? 0 : Math.max(Number(searchParams.get('offset') ?? 0) || 0, 0)
 
-            if ((!recipients || recipients.length === 0) && broadcast.status === 'sent') {
-                let leadQuery = supabaseAdmin
-                    .from('leads')
-                    .select('id, phone')
-                    .or(`user_id.eq.${broadcast.user_id},assigned_to.eq.${broadcast.user_id}`)
-                    .lte('created_at', broadcast.created_at || new Date().toISOString())
-                    .order('created_at', { ascending: true })
-
-                if (broadcast.recipient_stage && broadcast.recipient_stage !== 'All') {
-                    leadQuery = leadQuery.eq('pipeline_stage', broadcast.recipient_stage)
-                }
-
-                const { data: fallbackLeads } = await leadQuery
-                if (fallbackLeads && fallbackLeads.length > 0) {
-                    const fallbackPayloads = fallbackLeads.map(l => ({
-                        broadcast_id: broadcast.id,
-                        lead_id: l.id,
-                        user_id: broadcast.user_id,
-                        phone_number: l.phone || '',
-                        status: 'sent',
-                        sent_at: broadcast.sent_at || broadcast.created_at || new Date().toISOString()
-                    })).filter(r => !!r.phone_number)
-
-                    for (let i = 0; i < fallbackPayloads.length; i += 100) {
-                        const batch = fallbackPayloads.slice(i, i + 100)
-                        await supabaseAdmin.from('whatsapp_broadcast_recipients').insert(batch)
-                    }
-
-                    const { data: refetched } = await supabaseAdmin
-                        .from('whatsapp_broadcast_recipients')
-                        .select('*')
-                        .eq('broadcast_id', broadcastId)
-                    if (refetched) recipients = refetched
-                }
+            let recipients: any[] = []
+            const need = Math.min(pageLimit, Math.max(counts.total - pageOffset, 0))
+            for (let from = pageOffset; from < pageOffset + need; from += 1000) {
+                const to = Math.min(from + 999, pageOffset + need - 1)
+                const { data } = await supabaseAdmin
+                    .from('whatsapp_broadcast_recipients')
+                    .select('*')
+                    .eq('broadcast_id', broadcastId)
+                    .order('id', { ascending: true })
+                    .range(from, to)
+                recipients.push(...(data ?? []))
             }
 
-            const total = recipients?.length || 0
-            const sent = recipients?.filter(r => r.status === 'sent').length || 0
-            const failed = recipients?.filter(r => r.status === 'failed').length || 0
-            const pending = recipients?.filter(r => r.status === 'pending').length || 0
+            // A campaign that predates recipient tracking has no rows to show. Say that, rather than
+            // inventing "sent" rows for people we have no record of messaging.
+            const legacy = counts.total === 0
+
+            const total = counts.total
+            const sent = counts.sent
+            const failed = counts.failed
+            const pending = counts.pending + counts.processing
 
             const recipientPhones = (recipients || []).map(r => r.phone_number.replace(/\D/g, '')).filter(Boolean)
             
@@ -207,17 +197,37 @@ export async function GET(req: Request) {
 
             return NextResponse.json({
                 success: true,
-                broadcast,
+                broadcast: {
+                    ...broadcast,
+                    // The stored counters are authoritative for the list; these are live-exact.
+                    total_recipients: total,
+                    sent_count: sent,
+                    failed_count: failed,
+                    pending_count: pending,
+                    blocked_count: counts.blocked,
+                    pause_reason: broadcast.pause_reason ?? null,
+                },
+                legacy,
                 stats: {
                     total,
                     sent,
                     failed,
                     pending,
+                    blocked: counts.blocked,
+                    completed: counts.done,
+                    percentComplete: counts.percentComplete,
                     replyCount,
                     buttonClickCount,
                     deliveryRate,
                     responseRate,
-                    clickRate
+                    clickRate,
+                },
+                page: {
+                    offset: pageOffset,
+                    limit: pageLimit,
+                    returned: recipientDetails.length,
+                    total,
+                    hasMore: pageOffset + recipientDetails.length < total,
                 },
                 recipients: recipientDetails
             })
@@ -235,37 +245,63 @@ export async function GET(req: Request) {
             return NextResponse.json({ error: bErr.message }, { status: 500 })
         }
 
-        // Batch fetch status stats for all broadcasts in a single indexed query (prevents N+1 DB connection floods)
+        // ── PER-CAMPAIGN PROGRESS, WITHOUT SCANNING RECIPIENTS
+        //
+        // This used to pull every recipient row for every listed campaign in one query and count them
+        // in JS. `.in('broadcast_id', …)` is still capped at the database's max-rows (1,000), so a
+        // tenant with 16,317 recipients in flight had its counts computed from a truncated sample —
+        // the "1,000 recipients" the owner saw. The counters written by the worker (and backfilled by
+        // migration 20261120030000) are exact and cost one row per campaign.
         const broadcastIds = (broadcasts || []).map(b => b.id).filter(Boolean)
-        let recipientsMap = new Map<string, { total: number; sent: number; failed: number; clicked: number }>()
+        let recipientsMap = new Map<string, { total: number; sent: number; failed: number; pending: number; blocked: number; clicked: number }>()
 
+        const missingCounters = (broadcasts || []).filter(b => b.total_recipients === null || b.total_recipients === undefined)
+        if (missingCounters.length > 0 && broadcastIds.length > 0) {
+            // Legacy rows written before the counters existed: fall back to a head-count per campaign,
+            // which is exact even though it costs a query each.
+            for (const b of missingCounters) {
+                const { count } = await supabaseAdmin
+                    .from('whatsapp_broadcast_recipients')
+                    .select('id', { count: 'exact', head: true })
+                    .eq('broadcast_id', b.id)
+                recipientsMap.set(b.id, { total: count ?? 0, sent: b.sent_count ?? 0, failed: b.failed_count ?? 0, pending: b.pending_count ?? 0, blocked: b.blocked_count ?? 0, clicked: 0 })
+            }
+        }
+
+        // Clicked counts still come from one small aggregate query (a click is a rare status).
         if (broadcastIds.length > 0) {
-            const { data: allRecipients } = await supabaseAdmin
+            const { data: clickedRows } = await supabaseAdmin
                 .from('whatsapp_broadcast_recipients')
-                .select('broadcast_id, status')
+                .select('broadcast_id')
                 .in('broadcast_id', broadcastIds)
-
-            if (allRecipients) {
-                allRecipients.forEach(r => {
-                    let st = recipientsMap.get(r.broadcast_id) || { total: 0, sent: 0, failed: 0, clicked: 0 }
-                    st.total++
-                    if (r.status === 'sent') st.sent++
-                    if (r.status === 'failed') st.failed++
-                    if (r.status === 'clicked') st.clicked++
-                    recipientsMap.set(r.broadcast_id, st)
-                })
+                .eq('status', 'clicked')
+            for (const row of clickedRows ?? []) {
+                const st = recipientsMap.get(row.broadcast_id) || { total: 0, sent: 0, failed: 0, pending: 0, blocked: 0, clicked: 0 }
+                st.clicked += 1
+                recipientsMap.set(row.broadcast_id, st)
             }
         }
 
         const resolvedBroadcasts = (broadcasts || []).map(b => {
-            const st = recipientsMap.get(b.id) || { total: 0, sent: 0, failed: 0, clicked: 0 }
+            const stored = recipientsMap.get(b.id)
+            const st = {
+                total: b.total_recipients ?? stored?.total ?? 0,
+                sent: b.sent_count ?? stored?.sent ?? 0,
+                failed: b.failed_count ?? stored?.failed ?? 0,
+                pending: b.pending_count ?? stored?.pending ?? 0,
+                blocked: b.blocked_count ?? stored?.blocked ?? 0,
+                clicked: stored?.clicked ?? 0,
+            }
             const ctr = st.total > 0 ? ((st.clicked / st.total) * 100).toFixed(1) : '0'
+            const done = st.sent + st.failed + st.blocked
             return {
                 ...b,
                 stats: {
                     ...st,
-                    clickRate: ctr
-                }
+                    clickRate: ctr,
+                    completed: done,
+                    percentComplete: st.total > 0 ? Math.round((done / st.total) * 100) : 0,
+                },
             }
         })
 
@@ -305,6 +341,36 @@ export async function POST(req: Request) {
             return NextResponse.json({ 
                 error: 'WhatsApp credentials not connected for the target profile.' 
             }, { status: 400 })
+        }
+
+        /**
+         * PRE-FLIGHT: is this account actually able to deliver right now?
+         *
+         * A Blue Square Infra campaign created 16,317 recipients, delivered 122 and then had every
+         * remaining send refused with 131042 (payment/eligibility). The blocking condition was already
+         * knowable from Meta before the campaign was created — this reads it and refuses, so a doomed
+         * campaign is never built. `force` is available for a false positive, and every warning is
+         * returned either way so the screen can show it.
+         */
+        const { whatsAppHealth } = await import('@/lib/whatsapp/health')
+        const health = await whatsAppHealth(supabaseAdmin, targetUserId)
+        const force = Boolean(body.force)
+        if (!health.ok && !force) {
+            return NextResponse.json(
+                {
+                    error:
+                        'This campaign was not started: ' +
+                        health.blockers.join(' ') +
+                        ' Nothing has been queued. Fix that, then launch again.',
+                    blockers: health.blockers,
+                    warnings: health.warnings,
+                    health,
+                },
+                { status: 409 }
+            )
+        }
+        if (!health.ok && force) {
+            console.warn('[BROADCAST API] launching despite health blockers (force=true):', health.blockers)
         }
 
         // Create the broadcast record with fallback
@@ -545,14 +611,45 @@ export async function POST(req: Request) {
             })
         }
 
-        // Otherwise execute immediately in background (don't block the HTTP response)
-        executeBroadcastImmediately(broadcast.id, targetUserId, profile, templateName, selectedLeads, recipientPayloads, variableMappings, effectiveHeaderMediaUrl).catch(console.error)
+        // ── HAND THE CAMPAIGN TO THE WORKER, DO NOT SEND FROM THIS REQUEST
+        //
+        // This used to run `executeBroadcastImmediately(...)` inline: one request with a 300-second
+        // budget trying to send thousands of template messages. When it ran out of time the campaign
+        // sat half-sent until the 10-minute cron picked it up, and a crash mid-flight left rows in
+        // limbo. The worker (which claims rows, retries with backoff, and trips a real circuit
+        // breaker) is the only sender now, and it is kicked immediately so the campaign starts now
+        // rather than at the next tick.
+        await supabaseAdmin
+            .from('whatsapp_broadcasts')
+            .update({
+                status: 'processing',
+                total_recipients: recipientPayloads.length,
+                pending_count: recipientPayloads.length,
+                sent_count: 0,
+                failed_count: 0,
+                blocked_count: 0,
+                pause_reason: null,
+                last_progress_at: new Date().toISOString(),
+            })
+            .eq('id', broadcast.id)
+
+        const base = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
+        void fetch(`${base}/api/whatsapp/broadcasts/worker`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(process.env.CRON_SECRET ? { authorization: `Bearer ${process.env.CRON_SECRET}` } : {}),
+            },
+            body: JSON.stringify({ broadcastId: broadcast.id }),
+        }).catch((kickErr) => console.warn('[BROADCAST API] worker kick failed (the cron will pick it up):', kickErr))
 
         return NextResponse.json({ 
             success: true, 
             broadcast, 
             recipientsCount: recipientPayloads.length,
-            message: 'Broadcast started successfully and is executing in the background.'
+            message:
+                `Campaign queued for ${recipientPayloads.length} recipient(s). The worker sends them in ` +
+                'batches and records each result; open the campaign to watch progress.'
         })
 
     } catch (e: any) {
@@ -560,331 +657,13 @@ export async function POST(req: Request) {
     }
 }
 
-// Background async delivery execution function
-async function executeBroadcastImmediately(
-    broadcastId: string, 
-    userId: string, 
-    profile: any, 
-    templateName: string, 
-    leads: any[], 
-    recipients: any[],
-    variableMappings?: Record<string, string>,
-    headerMediaUrl?: string | null
-) {
-    console.log(`[BROADCAST EXECUTION] Starting Broadcast ID ${broadcastId} for ${recipients.length} recipients...`)
-    
-    // Fetch user properties context for template variables
-    const { data: properties } = await supabaseAdmin
-        .from('properties')
-        .select('id, title')
-        .eq('user_id', userId)
-
-    const accessToken = profile.whatsapp_access_token
-    const phoneId = profile.whatsapp_phone_number_id
-    const businessName = profile.business_name || 'Adrolls Partner'
-    const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`
-
-    // Fetch template details to get exact language, header format, and parameter count
-    let templateLanguageCode = 'en_US'
-    let templateVarCount = 0
-    let headerFormat: string | null = null
-
-    try {
-        const wabaId = profile.whatsapp_waba_id || profile.whatsapp_business_account_id || process.env.DEV_WHATSAPP_WABA_ID
-        if (wabaId && accessToken) {
-            const tplRes = await fetch(`https://graph.facebook.com/v20.0/${wabaId}/message_templates?name=${templateName}`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
-            })
-            if (tplRes.ok) {
-                const tplData = await tplRes.json()
-                const foundTpl = (tplData.data || []).find((t: any) => t.name === templateName)
-                if (foundTpl) {
-                    if (foundTpl.language) templateLanguageCode = foundTpl.language
-                    const bodyComp = (foundTpl.components || []).find((c: any) => c.type === 'BODY')
-                    if (bodyComp && bodyComp.text) {
-                        const matches = bodyComp.text.match(/\{\{(\d+)\}\}/g) || []
-                        const parsed = matches.map((m: string) => parseInt(m.replace(/\D/g, '')))
-                        templateVarCount = new Set(parsed).size
-                    }
-
-                    const headerComp = (foundTpl.components || []).find((c: any) => c.type === 'HEADER')
-                    if (headerComp && headerComp.format) {
-                        headerFormat = headerComp.format.toUpperCase()
-                    }
-                }
-            }
-        }
-    } catch (tplErr) {
-        console.error('[BROADCAST EXECUTION] Error fetching template info from Meta:', tplErr)
-    }
-
-    // Resolve header media URL if template requires a media header
-    let resolvedHeaderUrl = headerMediaUrl || null
-    if (headerFormat && !resolvedHeaderUrl) {
-        try {
-            const { data: flow } = await supabaseAdmin
-                .from('whatsapp_flows')
-                .select('header_media_url')
-                .eq('user_id', userId)
-                .eq('template_name', templateName)
-                .maybeSingle()
-            if (flow?.header_media_url) resolvedHeaderUrl = flow.header_media_url
-        } catch (flowErr) {
-            console.warn('[BROADCAST EXECUTION] Could not query flow for header media:', flowErr)
-        }
-
-        if (!resolvedHeaderUrl) {
-            if (headerFormat === 'IMAGE') {
-                resolvedHeaderUrl = templateName === 'webinar_thursday'
-                    ? 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png'
-                    : (profile.avatar_url || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/templates/bc63c065-9bcc-4793-bedc-f0960406425b/webinar_thursday_official.png')
-            } else if (headerFormat === 'VIDEO') {
-                resolvedHeaderUrl = 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/generated/42d2e0c5-4fe6-4738-8a9f-63f09be01f12/stitched_1785757278763.mp4'
-            }
-        }
-    }
-
-    const CONCURRENCY = 3
-    let currIdx = 0
-    let circuitBreakerTripped = false
-
-    async function dispatchWorker() {
-        while (currIdx < recipients.length && !circuitBreakerTripped) {
-            const index = currIdx++
-            const r = recipients[index]
-            if (!r) break
-            const lead = leads.find(l => l.id === r.lead_id)
-            if (!lead) continue
-
-            let cleanPhone = r.phone_number.replace(/\D/g, '')
-            if (!cleanPhone) continue
-            if (cleanPhone.length === 10) {
-                cleanPhone = '91' + cleanPhone; // Auto-format 10-digit Indian numbers with country code
-            }
-
-            // Resolve property title
-            const property = (properties || []).find(p => p.id === lead.property_id)
-            const propertyTitle = property ? property.title : 'Premium Listings'
-
-            // Map template variables dynamically ONLY if template requires variables
-            let bodyParameters: any[] = []
-            
-            if (templateVarCount > 0) {
-                for (let i = 1; i <= templateVarCount; i++) {
-                    const k = i.toString()
-                    const mappedField = variableMappings?.[k] || (i === 1 ? 'name' : i === 2 ? 'property_title' : 'business_name')
-                    
-                    let val = ''
-                    if (mappedField === 'name') val = lead.name || 'Valued Customer'
-                    else if (mappedField === 'phone') val = lead.phone || ''
-                    else if (mappedField === 'email') val = lead.email || ''
-                    else if (mappedField === 'property_title') val = propertyTitle
-                    else if (mappedField === 'business_name') val = businessName
-                    else if (mappedField === 'csv_audience') val = lead.csv_audience || ''
-                    else if (mappedField === 'pipeline_stage') val = lead.pipeline_stage || ''
-                    else val = mappedField || 'Valued Customer'
-
-                    // Strip non-printable unicode whitespace (e.g. U+3164) that triggers Meta Error #132018
-                    val = val.replace(/[\u3164\u200B-\u200D\uFEFF]/g, '').trim() || 'Valued Customer'
-                    
-                    bodyParameters.push({ type: 'text', text: val })
-                }
-            }
-
-            const components: any[] = []
-
-            // 1. Header Component (IMAGE, VIDEO, DOCUMENT)
-            if (headerFormat && resolvedHeaderUrl) {
-                if (headerFormat === 'IMAGE') {
-                    components.push({
-                        type: 'header',
-                        parameters: [
-                            {
-                                type: 'image',
-                                image: { link: resolvedHeaderUrl }
-                            }
-                        ]
-                    })
-                } else if (headerFormat === 'VIDEO') {
-                    components.push({
-                        type: 'header',
-                        parameters: [
-                            {
-                                type: 'video',
-                                video: { link: resolvedHeaderUrl }
-                            }
-                        ]
-                    })
-                } else if (headerFormat === 'DOCUMENT') {
-                    components.push({
-                        type: 'header',
-                        parameters: [
-                            {
-                                type: 'document',
-                                document: { link: resolvedHeaderUrl }
-                            }
-                        ]
-                    })
-                }
-            }
-
-            // 2. Body Component (ONLY when template has {{1}} parameters)
-            if (templateVarCount > 0 && bodyParameters.length > 0) {
-                components.push({
-                    type: 'body',
-                    parameters: bodyParameters
-                })
-            }
-
-            const templatePayload: any = {
-                name: templateName,
-                language: { code: templateLanguageCode }
-            }
-
-            if (components.length > 0) {
-                templatePayload.components = components
-            }
-
-            const messagePayload = {
-                messaging_product: 'whatsapp',
-                to: cleanPhone,
-                type: 'template',
-                template: templatePayload
-            }
-
-            try {
-                const metaRes = await fetch(metaUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(messagePayload)
-                })
-
-                const metaData = await metaRes.json()
-
-                if (metaData.error) {
-                    const errCode = metaData.error.code
-                    const errMsg = metaData.error.message || ''
-
-                    // Circuit breaker: Business payment/eligibility or rate limit
-                    if (errCode === 131042 || errMsg.includes('131042') || errMsg.includes('payment') || errCode === 429 || errCode === 130429) {
-                        console.error(`[BROADCAST EXECUTION] ⚠️ Circuit breaker tripped! Meta returned ${errCode}: ${errMsg}. Pausing broadcast to preserve queue.`)
-                        circuitBreakerTripped = true
-                        await supabaseAdmin
-                            .from('whatsapp_broadcasts')
-                            .update({ status: 'paused' })
-                            .eq('id', broadcastId)
-                        break
-                    }
-
-                    console.error(`[BROADCAST EXECUTION] Meta API send failed for phone ${cleanPhone}:`, metaData.error)
-                    await supabaseAdmin
-                        .from('whatsapp_broadcast_recipients')
-                        .update({ 
-                            status: 'failed', 
-                            error_message: errMsg || 'Meta API returned error' 
-                        })
-                        .eq('broadcast_id', broadcastId)
-                        .eq('lead_id', r.lead_id)
-                } else {
-                    const nowIso = new Date().toISOString()
-                    await supabaseAdmin
-                        .from('whatsapp_broadcast_recipients')
-                        .update({ 
-                            status: 'sent', 
-                            sent_at: nowIso 
-                        })
-                        .eq('broadcast_id', broadcastId)
-                        .eq('lead_id', r.lead_id)
-
-                    // Log outbound chat & message in WhatsApp CRM tab
-                    try {
-                        const recipientName = lead.name || 'Prospect'
-                        const summaryText = `Sent Template: ${templateName}`
-
-                        let { data: chat } = await supabaseAdmin
-                            .from('whatsapp_chats')
-                            .select('id')
-                            .eq('user_id', userId)
-                            .eq('recipient_phone', cleanPhone)
-                            .maybeSingle()
-
-                        if (!chat) {
-                            const { data: newChat } = await supabaseAdmin
-                                .from('whatsapp_chats')
-                                .insert({
-                                    user_id: userId,
-                                    recipient_phone: cleanPhone,
-                                    recipient_name: recipientName,
-                                    lead_id: lead.id,
-                                    last_message_text: summaryText,
-                                    unread_count: 0,
-                                    flow_answers: {},
-                                    flow_completed: false,
-                                    updated_at: nowIso
-                                })
-                                .select('id')
-                                .maybeSingle()
-
-                            chat = newChat
-                        } else {
-                            await supabaseAdmin
-                                .from('whatsapp_chats')
-                                .update({
-                                    last_message_text: summaryText,
-                                    lead_id: lead.id,
-                                    recipient_name: recipientName,
-                                    updated_at: nowIso
-                                })
-                                .eq('id', chat.id)
-                        }
-
-                        if (chat) {
-                            await supabaseAdmin
-                                .from('whatsapp_messages')
-                                .insert({
-                                    chat_id: chat.id,
-                                    direction: 'outbound',
-                                    message_text: summaryText,
-                                    media_url: resolvedHeaderUrl || null,
-                                    media_type: headerFormat === 'IMAGE' ? 'image' : headerFormat === 'VIDEO' ? 'video' : null,
-                                    created_at: nowIso
-                                })
-                        }
-                    } catch (chatErr) {
-                        console.error('[BROADCAST EXECUTION] Error syncing chat message:', chatErr)
-                    }
-                }
-            } catch (sendErr: any) {
-                console.error(`[BROADCAST EXECUTION] Exception sending to phone ${cleanPhone}:`, sendErr)
-                await supabaseAdmin
-                    .from('whatsapp_broadcast_recipients')
-                    .update({ 
-                        status: 'failed', 
-                        error_message: sendErr.message || 'HTTP fetch exception' 
-                    })
-                    .eq('broadcast_id', broadcastId)
-                    .eq('lead_id', r.lead_id)
-            }
-
-            // Small throttle per worker (40ms) to ensure smooth outbound rate
-            await new Promise(res => setTimeout(res, 40))
-        }
-    }
-
-    const workers = Array.from({ length: Math.min(CONCURRENCY, recipients.length) }, () => dispatchWorker())
-    await Promise.all(workers)
-
-    // Mark broadcast complete
-    await supabaseAdmin
-        .from('whatsapp_broadcasts')
-        .update({ 
-            status: 'sent', 
-            sent_at: new Date().toISOString() 
-        })
-        .eq('id', broadcastId)
-        
-    console.log(`[BROADCAST EXECUTION] Broadcast ID ${broadcastId} finished executing.`)
-}
+// The inline sender that lived here (`executeBroadcastImmediately`) is gone.
+//
+// It sent template messages from inside the HTTP request: a 300-second budget trying to deliver a
+// whole campaign, a 3-way loop that paused the campaign on a Meta refusal while the other two loops
+// kept sending, and no retry bookkeeping. When it ran out of time the campaign sat half-sent until a
+// cron tick, and a crash left rows in limbo.
+//
+// app/api/whatsapp/broadcasts/worker is the only sender now: it claims a slice by flipping rows to
+// `processing`, retries a recoverable failure with backoff, trips a breaker that pauses the campaign
+// AND blocks the untouched rows with Meta's own reason, and leaves exact counters behind.
