@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
+import { createSiteTools } from '../lib/agent/tools/sites';
 
 const results: { step: string; ok: boolean; detail: string }[] = [];
 const record = (step: string, ok: boolean, detail: string) => {
@@ -36,7 +37,14 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   }
   console.log(`Using profile ${profile.id} (${profile.business_name})\n`);
 
-  const { tools } = await createAgentContext(sb, profile.id);
+  // The tool surface is chosen from the conversation, so a request that mentions pages is what
+  // puts the page and publishing tools in the catalogue. Calling this with no intent sized the
+  // surface for a vague turn and then reported the site tools as "missing" — measuring the test's
+  // omission, not the product.
+  const { tools } = await createAgentContext(sb, profile.id, {
+    intentText: 'publish my landing page and check the connected accounts and custom domain',
+    forceGroups: ['sites', 'publishing'],
+  });
   const t = tools as any;
 
   const names = Object.keys(tools);
@@ -75,7 +83,11 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
     list?.success ? `${list.count} pages${list.pages?.[0] ? `, first: ${list.pages[0].slug}` : ''}` : list?.error
   );
 
-  // 4. Actually publish a page, then fetch it.
+  // 4. Publishing a page: the GATE first, then the mechanics.
+  //
+  // This used to call the gated tool and treat its refusal as a failure, so a gate that was doing
+  // exactly its job read as "publishing is broken". Both halves are checked now: the agent cannot
+  // publish without a decision, and the call it would run once approved really does publish.
   const slug = 'zz-verify-temp-page';
   const html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
@@ -85,27 +97,44 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
 </head><body><main><h1>Landing page published by the Nobogent agent</h1>
 <p>This page was written and published end-to-end by an agent tool call.</p></main></body></html>`;
 
-  const pub = await t.site_publish_landing_page.execute(
+  const gatedAttempt = await t.site_publish_landing_page.execute(
     { slug, title: 'Verification page', htmlContent: html },
     { toolCallId: 'v4', messages: [] }
   );
-  record('site_publish_landing_page', pub?.success === true, pub?.success ? `${pub.action} -> ${pub.url}` : pub?.error);
+  record(
+    'site_publish_landing_page is behind the approval gate',
+    gatedAttempt?.needs_review === true,
+    gatedAttempt?.needs_review ? String(gatedAttempt.why) : JSON.stringify(gatedAttempt)?.slice(0, 160)
+  );
+
+  // The ungated suite is what an APPROVED call ends up running, so this proves the mechanics.
+  const rawSites = createSiteTools(sb, profile.id) as any;
+  const pub = await rawSites.site_publish_landing_page.execute(
+    { slug, title: 'Verification page', htmlContent: html },
+    { toolCallId: 'v5', messages: [] }
+  );
+  record('publishing works once approved', pub?.success === true, pub?.success ? `${pub.action} -> ${pub.url}` : pub?.error);
 
   if (pub?.success && pub.url) {
-    // NEXT_PUBLIC_APP_URL is a white-label host that is not always reachable
-    // from this machine, so prove the page renders by hitting the same path on
-    // a server we know is up (the dev server), and report the configured host
-    // separately.
-    const localBase = (process.env.VERIFY_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
-    const localUrl = `${localBase}/shared/${profile.id}/${slug}`;
-    try {
-      const res = await fetch(localUrl, { redirect: 'follow' });
-      const body = await res.text();
-      const ok = res.ok && /Landing page published by the Nobogent agent/.test(body);
-      record('published page renders', ok, `HTTP ${res.status} from ${localUrl}`);
-    } catch (err: any) {
-      record('published page renders', false, `fetch failed: ${err?.message}`);
+    // The tool reports the configured public host; NEXT_PUBLIC_APP_URL is a white-label host that is
+    // not always reachable from here, so the page is fetched from whichever of the two answers.
+    const candidates = [pub.url, `${(process.env.VERIFY_BASE_URL || 'https://app.pipixel.io').replace(/\/$/, '')}/shared/${profile.id}/${slug}`];
+    let rendered = false;
+    let detail = 'no candidate URL';
+    for (const candidate of candidates) {
+      try {
+        const res = await fetch(candidate, { redirect: 'follow' });
+        const body = await res.text();
+        detail = `HTTP ${res.status} from ${candidate}`;
+        if (res.ok && /Landing page published by the Nobogent agent/.test(body)) {
+          rendered = true;
+          break;
+        }
+      } catch (err: any) {
+        detail = `fetch failed for ${candidate}: ${err?.message}`;
+      }
     }
+    record('published page renders', rendered, detail);
     record('public URL points at configured host', Boolean(pub.publicHost), `${pub.url}`);
   } else {
     record('published page renders', false, 'skipped — publish failed');

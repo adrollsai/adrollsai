@@ -305,6 +305,9 @@ MAKING THINGS â€” the same contract for every image, video or voiceover job
   user gave no visual reference, pick ONE reference creative that fits the brief and say which and why.
 - Prepare whatever can be previewed cheaply (the voiceover audio, a poster frame, the chosen reference) BEFORE the
   expensive step. A review of a real script and a real audio file beats a review of a description.
+- What the owner approves is a 'spec' plus real 'previews': the spec says exactly what will be made (format, aspect
+  ratio, duration, voice, the words that will be spoken); the previews are the cheap artefacts you already produced.
+  A card with neither of those is asking for a blank cheque.
 - Then stop exactly ONCE, immediately before the first billable image/video generation â€” but let the SYSTEM stage
   the card. Call the billable tool; if it needs approval the review gate returns needs_review with an actionId and
   puts the card on the owner's screen already carrying that tool's EXACT arguments. Do NOT call
