@@ -253,24 +253,54 @@ async function main() {
       })()`).catch(() => 'error');
       await sleep(900);
       const multi = await evaluate(`(() => {
-        // In multi-select mode every row carries a tick box; in single-select mode none do.
-        const boxes = document.querySelectorAll('span[aria-hidden].rounded-md.border');
-        const rows = Array.from(document.querySelectorAll('button')).filter(b => /👤|🌐/.test(b.innerText || ''));
-        const names = rows.map(r => (r.innerText || '').trim()).filter(Boolean);
-        if (rows.length >= 2) { rows[1].click(); rows[2] ? rows[2].click() : rows[1].click(); }
-        return { tickBoxes: boxes.length, rowCount: rows.length, names: names.slice(0, 4) };
+        // Walk UP from the search input to the panel card: the input's own wrapper also contains the
+        // input, so "the last div containing it" is the wrong node. The card is the nearest ancestor
+        // that holds the option rows.
+        const input = Array.from(document.querySelectorAll('input')).find(i => (i.placeholder || '').includes('Search team'));
+        if (!input) return { error: 'no search box' };
+        let node = input;
+        for (let i = 0; i < 6 && node; i++) {
+          node = node.parentElement;
+          if (!node) break;
+          const rows = Array.from(node.querySelectorAll('button')).filter(b => /👤/.test(b.innerText || ''));
+          if (rows.length >= 2) {
+            const tickBoxes = node.querySelectorAll('span[aria-hidden].rounded-md.border').length;
+            rows[0].click();
+            return { tickBoxes, rowCount: rows.length, firstName: (rows[0].innerText || '').trim() };
+          }
+        }
+        return { error: 'no option rows found' };
       })()`).catch(() => null);
       await sleep(600);
+      const secondPick = await evaluate(`(() => {
+        const input = Array.from(document.querySelectorAll('input')).find(i => (i.placeholder || '').includes('Search team'));
+        if (!input) return { error: 'panel closed after the first pick' };
+        let node = input;
+        for (let i = 0; i < 6 && node; i++) {
+          node = node.parentElement;
+          if (!node) break;
+          const rows = Array.from(node.querySelectorAll('button')).filter(b => /👤/.test(b.innerText || ''));
+          if (rows.length >= 2) {
+            const notYet = rows.find(b => !b.querySelector('span[aria-hidden].bg-blue-600'));
+            if (!notYet) return { error: 'no unselected row left', rowCount: rows.length };
+            notYet.click();
+            return { second: (notYet.innerText || '').trim(), rowCount: rows.length };
+          }
+        }
+        return { error: 'panel lost' };
+      })()`).catch(() => null);
+      await sleep(700);
       const triggerLabel = await evaluate(`(() => {
         const btns = Array.from(document.querySelectorAll('button'));
-        const hit = btns.find(b => /selected$|team member/i.test((b.innerText || '').trim()));
+        const hit = btns.find(b => /selected$/i.test((b.innerText || '').trim()));
         return hit ? (hit.innerText || '').trim() : null;
       })()`).catch(() => null);
       check('the source control renders multi-select tick boxes', (multi?.tickBoxes ?? 0) > 0, multi);
+      check('the panel stays open while picking', !secondPick?.error, secondPick);
       check(
         'picking two sources keeps both',
         /2 selected/.test(String(triggerLabel ?? '')),
-        triggerLabel ?? multi
+        triggerLabel ?? JSON.stringify({ multi, secondPick })
       );
     }
 
@@ -284,31 +314,30 @@ async function main() {
     const distributionOpen = /distribution groups|weighted round-robin/i.test(await text());
     check('the distribution modal opens', distributionOpen);
     if (distributionOpen) {
-      // Open a campaign picker so both the picker rows and the linked pills are on screen.
-      const openedPicker = await evaluate(`(() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        const hit = btns.find(b => /add \\/ select campaigns/i.test(b.innerText || ''));
-        if (!hit) return false;
-        hit.click();
-        return true;
-      })()`).catch(() => false);
-      await sleep(1500);
-      const dots = await evaluate(`(() => {
-        const green = document.querySelectorAll('span.bg-emerald-500.rounded-full').length;
-        const red = document.querySelectorAll('span.bg-rose-500.rounded-full').length;
-        const withTitle = Array.from(document.querySelectorAll('span.rounded-full[title]'))
-          .map(s => s.getAttribute('title'))
-          .filter(Boolean)
-          .slice(0, 4);
-        return { green, red, withTitle };
-      })()`).catch(() => null);
+      // The modal paints its groups after its fetch, so poll rather than sleeping a fixed amount:
+      // open the campaign picker (it shows the most dots) and look for a typed status dot.
+      const dotProbe = `(() => {
+        const labelled = Array.from(document.querySelectorAll('span.rounded-full[title]'));
+        const green = labelled.filter(s => String(s.className).includes('bg-emerald-500')).length;
+        const red = labelled.filter(s => String(s.className).includes('bg-rose-500')).length;
+        return { green, red, titles: labelled.map(s => s.getAttribute('title')).slice(0, 4) };
+      })()`;
+      let dots = await evaluate(dotProbe).catch(() => null);
+      for (let attempt = 0; attempt < 8 && ((dots?.green ?? 0) + (dots?.red ?? 0)) === 0; attempt++) {
+        await evaluate(`(() => {
+          const btn = Array.from(document.querySelectorAll('button')).find(b => /add .*campaign/i.test(b.innerText || ''));
+          if (btn) btn.click();
+          return true;
+        })()`).catch(() => false);
+        await sleep(1200);
+        dots = await evaluate(dotProbe).catch(() => null);
+      }
       check('campaign status dots are rendered', (dots?.green ?? 0) + (dots?.red ?? 0) > 0, dots);
       check(
         'the dots say what they mean',
-        (dots?.withTitle ?? []).some((t) => /delivering/i.test(String(t))),
-        dots?.withTitle
+        (dots?.titles ?? []).some((t) => /delivering/i.test(String(t))),
+        dots?.titles
       );
-      void openedPicker;
     }
 
     // ── 3. team member editing
@@ -346,13 +375,54 @@ async function main() {
       check('cancel closes without saving', closed);
     }
 
-    // The route's own guards, without touching a real member.
+    // The route's own guards, without touching a real member's login.
     const unauthorised = await fetch(`${BASE}/api/team/update`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ memberId: OWNER, name: 'nope' }),
     });
     check('the update route refuses an anonymous caller', unauthorised.status === 401, unauthorised.status);
+
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    const callUpdate = async (payload) => {
+      const res = await fetch(`${BASE}/api/team/update`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', cookie: cookieHeader },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      return { status: res.status, body };
+    };
+
+    const self = await callUpdate({ memberId: OWNER, name: 'Owner Renamed By Test' });
+    check('an admin cannot edit their own login from here', self.status === 400 && /account settings/i.test(String(self.body?.error ?? '')), self);
+
+    const shortPassword = await callUpdate({ memberId: OWNER, password: 'short' });
+    check('a password under 8 characters is refused', shortPassword.status === 400, shortPassword);
+
+    const badEmail = await callUpdate({ memberId: OWNER, email: 'not-an-email' });
+    check('a malformed email is refused before anything is written', badEmail.status === 400, badEmail);
+
+    // A real member of this workspace, asked to keep the name they already have: this exercises the
+    // authorisation and the profile write without changing a single value, and never touches auth.
+    const { data: memberRow } = await admin
+      .from('profiles')
+      .select('id, full_name, business_name, parent_id')
+      .eq('parent_id', OWNER)
+      .in('role', ['admin', 'agent'])
+      .limit(1)
+      .maybeSingle();
+    if (memberRow?.id) {
+      const sameName = String(memberRow.full_name || memberRow.business_name || '').trim();
+      const noop = await callUpdate({ memberId: memberRow.id, name: sameName });
+      check(
+        'the update route accepts a real member and reports what it wrote',
+        noop.status === 200 && Array.isArray(noop.body?.changed) && noop.body.changed.includes('name'),
+        noop
+      );
+    } else {
+      console.log('  skip  no team member in this workspace to exercise the write path against');
+    }
   } finally {
     try {
       cdp?.close();
