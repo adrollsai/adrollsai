@@ -191,8 +191,6 @@ export async function createAgentContext(
     // questions a human must answer. Pure; the measurement half is a sandbox adapter and
     // deliberately not reachable from a tool until it can be proven against a real sandbox.
     ...(has('media') ? createReverseSkillTools() : {}),
-    // create_landing_page, which `sites` alone could only publish.
-    ...(has('sites') ? createPageAuthoringTools(supabase, userId) : {}),
     // Composition sits on top of the media primitives: it applies the business's
     // recipe (what a good artefact looks like, and the degraded path when the
     // ideal is not achievable) so the agent composes rather than being sequenced.
@@ -414,7 +412,7 @@ BRIEF DISCIPLINE â€” how a thin request still becomes work worth paying for
 ${referenceStep}
 2. The owner will often say one line ("make me a video about the offer"). That is enough to START, not enough to be relevant, so establish the subject BEFORE you design anything:
    - If the business sells offerings, ask which one this is for â€” or whether it is brand-level/custom. One question, with the offerings named, is better than a guess; then call product_media to see the photos/footage it already has, and use them.
-   - Never invent a price, a percentage, a date, a phone number, an address, a RERA number or a claim. Take them from the brand profile, the catalogue, or the owner's words. If a number is missing and it matters, ask â€” or design so the missing fact is not needed.
+   - Never invent a price, a percentage, a date, a phone number, an address, an approval or registration number or a claim. Take them from the brand profile, the catalogue, or the owner's words. If a number is missing and it matters, ask â€” or design so the missing fact is not needed.
 3. Ground the look in what the business actually is: ${layoutSources}. Copy their colours, type and tone instead of defaulting to generic dark-navy-plus-gold.
 4. Ask at most two questions in one message, and only questions whose answers change the work (which product, which offer, what should the viewer do next). Everything else, decide and say what you decided.
 5. When you have little to work with, make the honest version: on-brand, factually empty where facts are missing, and then state plainly what you assumed and what you left out. A tasteful piece that admits its gaps is better than a confident one that invents a discount.

@@ -1,6 +1,5 @@
 import {
   campaignNameOf,
-  groupsOf,
   isInGroup,
   normalisePhone,
   type AudienceLead,
@@ -79,12 +78,10 @@ export function matchesAudienceTarget(lead: AudienceLead, criteria: RecipientCri
   }
   if (criteria.recipientPropertyId && String(lead.property_id ?? '') !== criteria.recipientPropertyId) return false;
   if (criteria.recipientCsvAudience) {
-    const csvs = String(lead.csv_audience ?? '')
-      .split(',')
-      .map((s) => s.trim());
-    if (!csvs.includes(criteria.recipientCsvAudience)) return false;
-    // A lead tagged only through custom_fields.audience_groups still belongs to the group.
-    if (!csvs.includes(criteria.recipientCsvAudience) && !groupsOf(lead).includes(criteria.recipientCsvAudience)) return false;
+    // Either storage counts. This used to require the csv list FIRST and only then consider
+    // custom_fields, so a lead tagged through custom_fields.audience_groups alone was silently
+    // missing from every campaign targeted by the older single-value filter.
+    if (!isInGroup(lead, criteria.recipientCsvAudience)) return false;
   }
   return true;
 }

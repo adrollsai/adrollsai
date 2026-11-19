@@ -21,6 +21,7 @@ import { createSession, deleteSession, isAvailable, __resetAvailabilityCacheForT
 import {
   enqueueRun,
   claimRun,
+  claimRunById,
   finishRun,
   requestCancel,
   isCancelRequested,
@@ -85,17 +86,50 @@ async function main() {
   check('three runs queued', Boolean(r1 && r2 && r3));
   check('all start as queued', r1?.status === 'queued' && r2?.status === 'queued' && r3?.status === 'queued');
 
-  console.log('\n▸ concurrent claims never collide (SKIP LOCKED)');
-  const [a, b] = await Promise.all([claimRun(admin, WORKER_A, 300, 10), claimRun(admin, WORKER_B, 300, 10)]);
-  check('both workers got a run', Boolean(a && b), { a: a?.id, b: b?.id });
-  check('the two claims are different runs', a?.id !== b?.id, { a: a?.id, b: b?.id });
-  check('claims are marked running', a?.status === 'running' && b?.status === 'running');
-  check('lease owner recorded', a?.lease_owner === WORKER_A && b?.lease_owner === WORKER_B);
+  /**
+   * The queue is GLOBAL, so another session's runs may be sitting in it (a live agent turn, another
+   * developer's session, this same workspace's second agent). The old version of this file assumed
+   * an empty queue and its ownership assertions pointed at whatever `claimRun` happened to return —
+   * so with real traffic in the table it failed (27/28) and, worse, the later transitions would have
+   * finished a FOREIGN run. Everything ownership-dependent below therefore claims THIS test's runs by
+   * id, and anything the queue test picks up that is not ours is put straight back the way it was.
+   */
+  const ours = new Set([r1!.id, r2!.id, r3!.id]);
+  const handBack = async (run: { id?: string } | null) => {
+    if (!run?.id) return;
+    await admin
+      .from('harness_runs')
+      .update({ status: 'queued', lease_owner: null, lease_expires_at: null })
+      .eq('id', run.id)
+      .eq('status', 'running');
+  };
 
-  const third = await claimRun(admin, WORKER_A, 300, 10);
-  check('third run claimed', Boolean(third) && ![a?.id, b?.id].includes(third?.id), third?.id);
-  const none = await claimRun(admin, WORKER_A, 300, 10);
-  check('idle queue returns null (no lease available)', none === null, none?.id);
+  console.log('\n▸ concurrent claims never collide (SKIP LOCKED)');
+  const [c1, c2] = await Promise.all([claimRun(admin, WORKER_A, 300, 10), claimRun(admin, WORKER_B, 300, 10)]);
+  check('both workers got a run', Boolean(c1 && c2), { a: c1?.id, b: c2?.id });
+  check('the two claims are different runs', c1?.id !== c2?.id, { a: c1?.id, b: c2?.id });
+  check('claims are marked running', c1?.status === 'running' && c2?.status === 'running');
+  check('lease owner recorded', c1?.lease_owner === WORKER_A && c2?.lease_owner === WORKER_B);
+  // Give back anything that was not ours before touching another assertion.
+  await handBack(c1);
+  await handBack(c2);
+
+  console.log('\n▸ this test\'s own runs are claimable, one lease each');
+  const a = await claimRunById(admin, r1!.id, WORKER_A, 300);
+  const b = await claimRunById(admin, r2!.id, WORKER_A, 300);
+  const third = await claimRunById(admin, r3!.id, WORKER_A, 300);
+  check('all three were claimed by id', Boolean(a && b && third), { a: a?.id, b: b?.id, c: third?.id });
+  check('a second claim of a running run is refused', (await claimRunById(admin, r1!.id, WORKER_B, 300)) === null);
+
+  // Only meaningful when nothing else is queued; say so instead of failing on somebody else's work.
+  const { count: queuedElsewhere } = await admin.from('harness_runs').select('id', { count: 'exact', head: true }).eq('status', 'queued');
+  const idle = await claimRun(admin, WORKER_A, 300, 10);
+  if ((queuedElsewhere ?? 0) === 0) {
+    check('idle queue returns null (no lease available)', idle === null, idle?.id);
+  } else {
+    await handBack(idle);
+    console.log(`  skip idle-queue check: ${queuedElsewhere} run(s) queued by other sessions`);
+  }
 
   console.log('\n▸ re-queue sends a run to the back');
   const requeued = await finishRun(admin, a!.id, WORKER_A, {
@@ -107,17 +141,27 @@ async function main() {
   check('continuation counted', requeued?.continuations === 1, requeued?.continuations);
   check('checkpoint persisted', Boolean(requeued?.checkpoint), requeued?.checkpoint);
 
-  // r2/r3 are still 'running' with live leases, so the only claimable run is r1.
-  const afterRequeue = await claimRun(admin, WORKER_B, 300, 10);
+  const afterRequeue = await claimRunById(admin, a!.id, WORKER_B, 300);
   check('the re-queued run is claimable again', afterRequeue?.id === a!.id, afterRequeue?.id);
   check('resumed run keeps its checkpoint', afterRequeue?.checkpoint !== null);
 
   console.log('\n▸ crash recovery: expired lease is reclaimed');
-  // Simulate WORKER_B dying while holding r2: push its lease into the past.
+  // Simulate WORKER_B dying while holding r2: push its lease into the past. Reclaiming an expired
+  // lease is the RPC's job (claimRunById only takes a `queued` row), so this one searches for OUR
+  // run among whatever the queue returns, and hands every other run back untouched.
   const past = new Date(Date.now() - 60_000).toISOString();
   await admin.from('harness_runs').update({ lease_expires_at: past }).eq('id', b!.id);
-  const reclaimed = await claimRun(admin, WORKER_A, 300, 10);
-  check('expired-lease run reclaimed first', reclaimed?.id === b!.id, reclaimed?.id);
+  let reclaimed: Awaited<ReturnType<typeof claimRun>> = null;
+  for (let attempt = 0; attempt < 8 && !reclaimed; attempt++) {
+    const got = await claimRun(admin, WORKER_A, 300, 10, 25);
+    if (!got) break;
+    if (got.id === b!.id) {
+      reclaimed = got;
+      break;
+    }
+    await handBack(got);
+  }
+  check('the expired-lease run is reclaimed', reclaimed?.id === b!.id, reclaimed?.id ?? `not among ${ours.size} own runs`);
   check('new worker owns it', reclaimed?.lease_owner === WORKER_A, reclaimed?.lease_owner);
 
   console.log('\n▸ cancellation is visible to the worker');

@@ -181,6 +181,16 @@ async function main() {
     );
     if (queued?.broadcastId) {
       const broadcastId = String(queued.broadcastId);
+      const { data: broadcastRow } = await admin
+        .from('whatsapp_broadcasts')
+        .select('recipient_csv_audience, template_name, status')
+        .eq('id', broadcastId)
+        .maybeSingle();
+      check(
+        'the campaign records which audience it targets, so analytics can say so',
+        String((broadcastRow as any)?.recipient_csv_audience ?? '') === groupName,
+        broadcastRow
+      );
       const { data: recipients } = await admin
         .from('whatsapp_broadcast_recipients')
         .select('id, lead_id, status')

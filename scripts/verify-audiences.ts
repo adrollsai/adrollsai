@@ -167,6 +167,18 @@ check(
   taggedSelection.unreachable.map((u) => u.reason)
 );
 check('a limit caps the campaign', selectCampaignRecipients([lead({ csv_audience: 'G' }), lead({ id: 'z', csv_audience: 'G' })], { audienceFilter: { targetType: 'audience_group', audienceGroupName: 'G' } }, { limit: 1 }).selected.length === 1);
+// The older single-value filter used to require the csv list FIRST and only then look at
+// custom_fields, so a member tagged only through custom_fields was silently skipped.
+check(
+  'the legacy single-value filter accepts either storage',
+  matchesAudienceTarget(lead({ csv_audience: null, custom_fields: { audience_groups: ['Legacy group'] } }), {
+    recipientCsvAudience: 'Legacy group',
+  })
+);
+check(
+  'and still rejects a lead in a different group',
+  !matchesAudienceTarget(lead({ csv_audience: 'Other' }), { recipientCsvAudience: 'Legacy group' })
+);
 check('the audience is named in plain words', describeTarget(groupTarget).includes('Diwali buyers'));
 check('no target means the whole book, and says so', describeTarget({}).includes('every lead'));
 

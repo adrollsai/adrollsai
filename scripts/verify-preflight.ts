@@ -404,6 +404,16 @@ async function testBulkAndToolDescription() {
   const sb = fakeSupabase({ profiles: { ...PROFILE, facebook_token: null, ad_account_id: null }, leads: null });
 
   const whatsapp: any = createWhatsAppTools(sb, 'user-1');
+  // Removed, and must stay removed: these two reported success without doing anything.
+  //   create_whatsapp_template     claimed a Meta submission that never happened
+  //   send_single_whatsapp_message claimed status: 'sent' and messaged nobody
+  // The real ones are whatsapp_create_template (lib/whatsapp/templates.ts) and
+  // nobogent_whatsapp_send_template (lib/agent/tools/outbound.ts).
+  check(
+    'the fake template and send tools are gone',
+    !('create_whatsapp_template' in whatsapp) && !('send_single_whatsapp_message' in whatsapp),
+    Object.keys(whatsapp).join(', ')
+  );
   const noTiming: any = await whatsapp.prepare_whatsapp_broadcast.execute({
     leadIds: ['lead-1', 'lead-2'],
     messageText: 'The March intake is open.',
@@ -455,7 +465,7 @@ function testWiring() {
   const orchestrator = read('lib/agent/orchestrator.ts');
   check('the orchestrator imports the rule', /preflightPromptSection/.test(orchestrator));
   check('the orchestrator renders the rule into the prompt', /parts\.push\(preflightPromptSection\(/.test(orchestrator));
-  check('the rule is rendered with the tenant\'s industry', /preflightPromptSection\(profile\?\.industry\)/.test(orchestrator));
+  // The call gained an options argument ({ adTools }), so this asserts the industry is passed rather\n  // than pinning the exact call shape — the old pattern failed on a correct refactor.\n  check('the rule is rendered with the tenant\'s industry', /preflightPromptSection\(\s*profile\?\.industry\b/.test(orchestrator));
 
   const launcher = read('lib/agent/mcp/meta-ads-mcp.ts');
   check('the lead-gen launcher runs the campaign guard', /campaignLaunchRefusal\(/.test(launcher));
