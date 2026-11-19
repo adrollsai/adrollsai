@@ -433,9 +433,34 @@ function CRMPageContent() {
     }
   }, [activeSection, availableStagesForSection, selectedSpecificStage])
 
-  const [searchQuery, setSearchQuery] = useState('')
+  /**
+   * The search box, the campaign picker, the form picker and the CSV/list picker were the filters
+   * that did NOT survive leaving the CRM. Opening a lead unmounts this page; coming back re-mounted
+   * it with these four at their defaults while the agent/stage/DNP filters (which are persisted)
+   * came back — so a filtered list appeared to "lose the filter" the moment you looked at a lead.
+   * They read from storage on mount now, and the persist effect below writes them like the rest.
+   */
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_search') ?? sessionStorage.getItem('crm_filter_search') ?? ''
+    }
+    return ''
+  })
   const [fullRemarkModal, setFullRemarkModal] = useState<{ leadName: string; remark: string; attemptDate?: Date | null } | null>(null)
-  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>([])
+  const [selectedCampaigns, setSelectedCampaigns] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const raw = localStorage.getItem('crm_filter_campaigns') ?? sessionStorage.getItem('crm_filter_campaigns')
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed)) return parsed.filter((v): v is string => typeof v === 'string')
+        } catch {
+          /* a corrupt value is not worth a broken page */
+        }
+      }
+    }
+    return []
+  })
   const [isCampaignFilterOpen, setIsCampaignFilterOpen] = useState(false)
   const [campaignFilterSearch, setCampaignFilterSearch] = useState('')
   const campaignFilterRef = useRef<HTMLDivElement>(null)
@@ -455,7 +480,12 @@ function CRMPageContent() {
     }
   }, [isCampaignFilterOpen])
 
-  const [selectedForm, setSelectedForm] = useState('')
+  const [selectedForm, setSelectedForm] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_form') ?? sessionStorage.getItem('crm_filter_form') ?? ''
+    }
+    return ''
+  })
   const [isFormFilterOpen, setIsFormFilterOpen] = useState(false)
   const [formFilterSearch, setFormFilterSearch] = useState('')
   const formFilterRef = useRef<HTMLDivElement>(null)
@@ -474,7 +504,12 @@ function CRMPageContent() {
    * stale persisted value silently hid leads with no way to clear it. It lives in
    * component state and shows as a chip in the active-filters bar.
    */
-  const [selectedCsvAudience, setSelectedCsvAudience] = useState('')
+  const [selectedCsvAudience, setSelectedCsvAudience] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('crm_filter_csv') ?? sessionStorage.getItem('crm_filter_csv') ?? ''
+    }
+    return ''
+  })
 
   /** Split a lead's csv_audience into its tags, trimmed and de-duplicated. */
   const csvAudienceTags = (lead: any): string[] => {
@@ -504,7 +539,14 @@ function CRMPageContent() {
       document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [isFormFilterOpen])
-  const [showFilters, setShowFilters] = useState(false)
+  // Whether the filter panel is open survives too: coming back to a filtered list with the panel
+  // collapsed makes it look as though nothing is filtered.
+  const [showFilters, setShowFilters] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('crm_show_filters') ?? sessionStorage.getItem('crm_show_filters')) === 'true'
+    }
+    return false
+  })
   const [isMobileControlsCollapsed, setIsMobileControlsCollapsed] = useState(true)
 
   // --- VIEW MODE & DNP MANAGER STATE ---
@@ -769,6 +811,18 @@ function CRMPageContent() {
       localStorage.setItem('crm_sort_order', sortOrder)
       sessionStorage.setItem('crm_sort_order', sortOrder)
 
+      // The four filters that used to be forgotten on the way back from a lead.
+      localStorage.setItem('crm_filter_search', searchQuery)
+      sessionStorage.setItem('crm_filter_search', searchQuery)
+      localStorage.setItem('crm_filter_campaigns', JSON.stringify(selectedCampaigns))
+      sessionStorage.setItem('crm_filter_campaigns', JSON.stringify(selectedCampaigns))
+      localStorage.setItem('crm_filter_form', selectedForm)
+      sessionStorage.setItem('crm_filter_form', selectedForm)
+      localStorage.setItem('crm_filter_csv', selectedCsvAudience)
+      sessionStorage.setItem('crm_filter_csv', selectedCsvAudience)
+      localStorage.setItem('crm_show_filters', String(showFilters))
+      sessionStorage.setItem('crm_show_filters', String(showFilters))
+
       if (crmCustomDate) {
         localStorage.setItem('crm_filter_custom_date', crmCustomDate)
       } else {
@@ -787,7 +841,8 @@ function CRMPageContent() {
   }, [
     selectedAgentFilter, selectedSpecificStage, selectedDateRange, selectedDnpFilter,
     selectedNextActionFilter, selectedNextActionType, sortOrder, crmCustomDate,
-    crmStartDate, crmEndDate
+    crmStartDate, crmEndDate, searchQuery, selectedCampaigns, selectedForm, selectedCsvAudience,
+    showFilters
   ])
 
   // Selected From Agent Filter State in Bulk Actions Modal
@@ -5393,15 +5448,19 @@ END:VCARD\n`
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     
-                    {/* From Agent Filter (searchable) */}
+                    {/* From Agent Filter (searchable, MULTI-select) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">From Owner / Agent</label>
                       <SearchableSelect
-                        value={filteredTransferFromIds[0] || 'ALL'}
-                        onChange={(next) => {
-                          if (next === 'ALL') setFilteredTransferFromIds(['ALL'])
-                          else setFilteredTransferFromIds([next])
+                        multiple
+                        multiValue={filteredTransferFromIds.filter((id) => id && id !== 'ALL')}
+                        onMultiChange={(ids) => {
+                          // An empty selection means "every source", which is what the All row means;
+                          // storing ['ALL'] keeps the request payload identical to before.
+                          setFilteredTransferFromIds(ids.length ? ids : ['ALL'])
                         }}
+                        value={'ALL'}
+                        onChange={() => {}}
                         allLabel="🌐 All Team Members"
                         searchPlaceholder="Search team members..."
                         placeholder="All Team Members"
@@ -5415,6 +5474,11 @@ END:VCARD\n`
                         ]}
                         buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
                       />
+                      {filteredTransferFromIds.filter((id) => id && id !== 'ALL').length > 1 && (
+                        <p className="text-[10px] font-bold text-indigo-600 mt-1">
+                          {filteredTransferFromIds.filter((id) => id && id !== 'ALL').length} sources selected
+                        </p>
+                      )}
                     </div>
 
                     {/* Pipeline Stage Filter (searchable) */}
@@ -5600,7 +5664,22 @@ END:VCARD\n`
                     </div>
                     <p className="text-xs font-bold text-slate-800 leading-relaxed">
                       Reassigning <span className="font-extrabold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">{previewCount !== null ? previewCount.toLocaleString() : 0} leads</span> from <span className="font-extrabold text-indigo-700">
-                        {filteredTransferFromIds[0] === 'ALL' ? 'All Team Members' : filteredTransferFromIds[0] === 'UNASSIGNED' ? 'Unassigned Only' : (team.find(t=>t.id===filteredTransferFromIds[0])?.business_name || 'Selected Agent')}
+                        {(() => {
+                          // The source side is a selection now, so the sentence has to say which
+                          // one(s) — naming only the first would be wrong the moment two are picked.
+                          const picked = filteredTransferFromIds.filter((id) => id && id !== 'ALL');
+                          if (picked.length === 0) return 'All Team Members';
+                          if (picked.length === 1) {
+                            return picked[0] === 'UNASSIGNED'
+                              ? 'Unassigned Only'
+                              : team.find((t) => t.id === picked[0])?.business_name || 'Selected Agent';
+                          }
+                          const names = picked
+                            .slice(0, 2)
+                            .map((id) => (id === 'UNASSIGNED' ? 'Unassigned' : team.find((t) => t.id === id)?.business_name || 'Agent'))
+                            .join(', ');
+                          return `${picked.length} sources (${names}${picked.length > 2 ? '…' : ''})`;
+                        })()}
                       </span> to <span className="font-extrabold text-purple-700">
                         {team.find(t=>t.id===filteredTransferTargetAgentId)?.business_name || 'Target Agent'}
                       </span>

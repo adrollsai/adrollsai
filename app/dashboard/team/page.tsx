@@ -19,6 +19,8 @@ import {
   History,
   Clock,
   CheckCircle2,
+  Pencil,
+  KeyRound,
   X
 } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
@@ -64,6 +66,30 @@ export default function TeamPage() {
     transferWithScheduledActions: true,
     isDeleting: false,
     isLoadingCount: false
+  })
+
+  /**
+   * Editing a member's own details.
+   *
+   * The page could add and remove people and nothing in between, so fixing a typo in an agent's
+   * email — the difference between them being able to sign in and not — needed a database console.
+   * Name and email are the profile row; email and password are also the LOGIN, which is why this
+   * posts to /api/team/update rather than writing to Supabase from the browser.
+   */
+  const [editModal, setEditModal] = useState<{
+    isOpen: boolean;
+    member: any | null;
+    name: string;
+    email: string;
+    password: string;
+    isSaving: boolean;
+  }>({
+    isOpen: false,
+    member: null,
+    name: '',
+    email: '',
+    password: '',
+    isSaving: false
   })
 
   const fetchData = async () => {
@@ -219,6 +245,78 @@ export default function TeamPage() {
       }))
     } catch (e) {
       setDeleteModal(prev => ({ ...prev, isLoadingCount: false }))
+    }
+  }
+
+  const openEditModal = (member: any) => {
+    setEditModal({
+      isOpen: true,
+      member,
+      name: member.full_name || member.business_name || '',
+      email: member.email || '',
+      password: '',
+      isSaving: false
+    })
+  }
+
+  const handleSaveMemberEdit = async () => {
+    const member = editModal.member
+    if (!member?.id) return
+    const name = editModal.name.trim()
+    const email = editModal.email.trim().toLowerCase()
+    const password = editModal.password
+
+    if (!name && !email && !password) {
+      toast.error('Nothing to change')
+      return
+    }
+    if (password && password.length < 8) {
+      toast.error('The password must be at least 8 characters')
+      return
+    }
+
+    setEditModal(prev => ({ ...prev, isSaving: true }))
+    try {
+      const response = await fetch('/api/team/update', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: member.id,
+          // Only send what actually changed, so an untouched password is never rewritten and an
+          // untouched email is never re-confirmed.
+          ...(name && name !== (member.full_name || member.business_name || '') ? { name } : {}),
+          ...(email && email !== String(member.email || '').toLowerCase() ? { email } : {}),
+          ...(password ? { password } : {})
+        })
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        toast.error(data?.error || 'Could not save the member')
+        return
+      }
+      if (Array.isArray(data.changed) && data.changed.includes('password')) {
+        toast.success('Saved — they can sign in with the new password now')
+      } else {
+        toast.success(data?.message || 'Member updated')
+      }
+      // Optimistic: the card shows the new details immediately, then the reload confirms them.
+      setTeam(prev =>
+        prev.map((m: any) =>
+          m.id === member.id
+            ? {
+                ...m,
+                ...(name ? { full_name: name, business_name: name } : {}),
+                ...(email ? { email } : {})
+              }
+            : m
+        )
+      )
+      setEditModal(prev => ({ ...prev, isOpen: false, isSaving: false, member: null, password: '' }))
+      void fetchData()
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not save the member')
+    } finally {
+      setEditModal(prev => ({ ...prev, isSaving: false }))
     }
   }
 
@@ -384,6 +482,14 @@ export default function TeamPage() {
                         </button>
                       </div>
 
+                      <button
+                          onClick={() => openEditModal(member)}
+                          className="text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all p-1.5 cursor-pointer"
+                          title="Edit name, email or password"
+                      >
+                          <Pencil size={15} />
+                      </button>
+
                       <button 
                           onClick={() => openDeleteModal(member)}
                           className="text-slate-300 hover:text-red-500 hover:bg-rose-50 rounded-lg transition-all p-1.5 cursor-pointer"
@@ -408,6 +514,112 @@ export default function TeamPage() {
           </div>
         )}
       </div>
+
+      {/* Edit member: name, sign-in email, password */}
+      {editModal.isOpen && editModal.member && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => !editModal.isSaving && setEditModal(prev => ({ ...prev, isOpen: false }))}
+          />
+          <div className="bg-white rounded-[2.5rem] w-full max-w-lg relative shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 border border-slate-100">
+            <div className="p-6 sm:p-8">
+              <div className="flex items-start justify-between gap-4 mb-6">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0">
+                    <Pencil size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900">Edit Team Member</h3>
+                    <p className="text-xs text-slate-500 font-semibold">
+                      {editModal.member.role === 'admin' ? 'Admin' : 'Agent'} · joined{' '}
+                      {editModal.member.created_at && !isNaN(new Date(editModal.member.created_at).getTime())
+                        ? new Date(editModal.member.created_at).toLocaleDateString()
+                        : 'recently'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  disabled={editModal.isSaving}
+                  onClick={() => setEditModal(prev => ({ ...prev, isOpen: false }))}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Name</label>
+                  <input
+                    type="text"
+                    disabled={editModal.isSaving}
+                    value={editModal.name}
+                    onChange={(e) => setEditModal(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Full name shown across the workspace"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-sm focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Sign-in Email</label>
+                  <input
+                    type="email"
+                    disabled={editModal.isSaving}
+                    value={editModal.email}
+                    onChange={(e) => setEditModal(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="name@business.com"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 px-4 text-sm focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-800"
+                  />
+                  <p className="text-[11px] text-slate-400 font-semibold mt-1.5">
+                    Changing this changes the address they log in with. No confirmation email is sent —
+                    this is the address you are asserting.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
+                    New Password <span className="text-slate-300 normal-case font-bold">(optional)</span>
+                  </label>
+                  <div className="relative">
+                    <KeyRound size={15} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      disabled={editModal.isSaving}
+                      value={editModal.password}
+                      onChange={(e) => setEditModal(prev => ({ ...prev, password: e.target.value }))}
+                      placeholder="Leave blank to keep the current password"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-11 pr-4 text-sm focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold text-slate-800"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-semibold mt-1.5">
+                    At least 8 characters. They can sign in with it immediately; you never have to send it anywhere.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-6">
+                <button
+                  disabled={editModal.isSaving}
+                  onClick={() => setEditModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-2xl text-sm transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={editModal.isSaving}
+                  onClick={handleSaveMemberEdit}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-2xl text-sm transition-all shadow-lg shadow-blue-600/20 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {editModal.isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                  {editModal.isSaving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Offboard & Reassign Leads Modal */}
       {deleteModal.isOpen && deleteModal.member && (

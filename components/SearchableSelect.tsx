@@ -25,6 +25,18 @@ export interface SearchableSelectProps {
   value: string
   onChange: (value: string) => void
 
+  /**
+   * Multi-select mode.
+   *
+   * The bulk-transfer modal could only pick ONE source owner/agent even though both the modal's
+   * state and the API already carried an array — so "move leads from three agents" meant three
+   * passes. With `multiple`, rows toggle and the panel stays open; `multiValue` is the selection and
+   * `onMultiChange` is called with it. `[]` means "everything", which is what the All row selects.
+   */
+  multiple?: boolean
+  multiValue?: string[]
+  onMultiChange?: (values: string[]) => void
+
   /** When provided a "reset to everything" row is rendered at the top of the list. */
   allLabel?: string
   /** Value emitted by the reset row. Defaults to 'ALL'. */
@@ -87,6 +99,9 @@ export default function SearchableSelect({
   options,
   value,
   onChange,
+  multiple = false,
+  multiValue,
+  onMultiChange,
   allLabel,
   allValue = 'ALL',
   placeholder = 'Select...',
@@ -157,13 +172,39 @@ export default function SearchableSelect({
     [options, value]
   )
 
-  const isAllSelected = allLabel !== undefined && value === allValue
-  const triggerLabel = selectedOption?.label
-    || (isAllSelected ? allLabel : placeholder)
+  // ── multi-select bookkeeping
+  const selectedValues = multiple ? (multiValue ?? []) : [];
+  const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
+  const multiSelectedOptions = useMemo(
+    () => options.filter((opt) => selectedSet.has(opt.value)),
+    [options, selectedSet]
+  );
 
-  const hasActiveSelection = Boolean(selectedOption) && !isAllSelected
+  const isAllSelected = allLabel !== undefined && (multiple ? selectedValues.length === 0 : value === allValue);
+  const triggerLabel = multiple
+    ? multiSelectedOptions.length === 0
+      ? allLabel || placeholder
+      : multiSelectedOptions.length === 1
+        ? multiSelectedOptions[0].label
+        : `${multiSelectedOptions.length} selected`
+    : selectedOption?.label || (isAllSelected ? allLabel : placeholder)
+
+  const hasActiveSelection = multiple ? selectedValues.length > 0 : Boolean(selectedOption) && !isAllSelected
 
   const handleSelect = (nextValue: string) => {
+    if (multiple) {
+      // Toggling keeps the panel open: picking three owners should not mean opening it three times.
+      const isAll = nextValue === allValue && allLabel !== undefined;
+      if (isAll) {
+        onMultiChange?.([]);
+        return;
+      }
+      const next = selectedSet.has(nextValue)
+        ? selectedValues.filter((v) => v !== nextValue)
+        : [...selectedValues, nextValue];
+      onMultiChange?.(next);
+      return;
+    }
     onChange(nextValue)
     setIsOpen(false)
     setSearch('')
@@ -199,6 +240,10 @@ export default function SearchableSelect({
               tabIndex={-1}
               onClick={(e) => {
                 e.stopPropagation()
+                if (multiple) {
+                  onMultiChange?.([])
+                  return
+                }
                 onChange(allLabel !== undefined ? allValue : '')
               }}
               className="p-0.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
@@ -258,9 +303,8 @@ export default function SearchableSelect({
                 {isAllSelected && <Check size={13} className="shrink-0" />}
               </button>
             )}
-
             {filteredOptions.map((opt) => {
-              const isSelected = opt.value === value && !isAllSelected
+              const isSelected = multiple ? selectedSet.has(opt.value) : opt.value === value && !isAllSelected
               return (
                 <button
                   key={opt.value}
@@ -276,15 +320,27 @@ export default function SearchableSelect({
                         : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-transparent cursor-pointer'
                   }`}
                 >
-                  <span className="flex flex-col min-w-0 flex-1">
-                    <span className="break-words leading-relaxed">{opt.label}</span>
-                    {opt.hint && (
-                      <span className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{opt.hint}</span>
+                  <span className="flex items-center gap-2 min-w-0 flex-1">
+                    {multiple && (
+                      <span
+                        className={`w-4 h-4 rounded-md border shrink-0 flex items-center justify-center transition-colors ${
+                          isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300'
+                        }`}
+                        aria-hidden
+                      >
+                        {isSelected && <Check size={11} />}
+                      </span>
                     )}
+                    <span className="flex flex-col min-w-0 flex-1">
+                      <span className="break-words leading-relaxed">{opt.label}</span>
+                      {opt.hint && (
+                        <span className="text-[10px] font-medium text-slate-400 truncate mt-0.5">{opt.hint}</span>
+                      )}
+                    </span>
                   </span>
                   <span className="flex items-center gap-1.5 shrink-0">
                     {opt.badge && <Badge label={opt.badge} tone={opt.badgeTone || 'emerald'} />}
-                    {isSelected && <Check size={13} />}
+                    {isSelected && !multiple && <Check size={13} />}
                   </span>
                 </button>
               )

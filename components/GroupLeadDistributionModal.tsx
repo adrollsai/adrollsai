@@ -10,6 +10,29 @@ import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
 import { matchesCampaignRule } from '@/utils/campaign-matcher';
 
+/** Meta statuses that mean the campaign is actually delivering. Anything else is not. */
+const ACTIVE_CAMPAIGN_STATUSES = ['ACTIVE', 'ENABLED', 'IN_PROCESS', 'RUNNING'];
+
+export function isCampaignActive(status: string | null | undefined): boolean {
+  return ACTIVE_CAMPAIGN_STATUSES.includes(String(status ?? '').trim().toUpperCase());
+}
+
+/** The dot itself: green when delivering, red when not. Rendered only when the status is known. */
+function CampaignStatusDot({ status, size = 'sm' }: { status: string | null | undefined; size?: 'sm' | 'xs' }) {
+  const known = String(status ?? '').trim();
+  if (!known) return null;
+  const active = isCampaignActive(known);
+  return (
+    <span
+      className={`${size === 'xs' ? 'w-1.5 h-1.5' : 'w-2 h-2'} rounded-full shrink-0 ${
+        active ? 'bg-emerald-500' : 'bg-rose-500'
+      }`}
+      title={active ? `${known} — delivering leads` : `${known} — not delivering leads`}
+      aria-label={active ? 'active' : 'inactive'}
+    />
+  );
+}
+
 export interface DistributionGroupMember {
   userId: string;
   name: string;
@@ -291,6 +314,36 @@ export default function GroupLeadDistributionModal({
 
     return { idMap, campaignNameMap, formNameMap, sourceNameMap, nameMap };
   }, [metaCampaigns, dbCampaigns, metaForms, campaigns, forms, leads, dbSources]);
+
+  /**
+   * Delivery status per campaign, by name AND id.
+   *
+   * A group can hold campaigns that are paused at Meta, and until now every one of them looked the
+   * same in this modal: a link in a distribution rule that looks live but delivers nothing, because
+   * Meta has stopped the campaign. The dot in the UI is driven from this map, and an unknown status
+   * deliberately renders NO dot — "we have not been told" is not the same as "paused".
+   */
+  const campaignStatusMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const put = (key: unknown, status: unknown) => {
+      const k = String(key ?? '').trim().toLowerCase();
+      const v = String(status ?? '').trim().toUpperCase();
+      if (!k || !v) return;
+      if (!map.has(k)) map.set(k, v);
+    };
+    [...metaCampaigns, ...dbCampaigns].forEach((c: any) => {
+      const status = c?.status || c?.effective_status;
+      put(c?.name, status);
+      put(c?.id, status);
+    });
+    return map;
+  }, [metaCampaigns, dbCampaigns]);
+
+  const campaignStatusFor = (nameOrId: string | null | undefined): string | null => {
+    const key = String(nameOrId ?? '').trim().toLowerCase();
+    if (!key) return null;
+    return campaignStatusMap.get(key) ?? null;
+  };
 
   // Consolidate all available campaigns & forms into a structured selectable catalog
   const allSelectableSources = useMemo<SelectableSourceItem[]>(() => {
@@ -969,6 +1022,10 @@ export default function GroupLeadDistributionModal({
     const isSource = resolvedType === 'source';
     const isForm = resolvedType === 'form';
     const isCamp = resolvedType === 'campaign';
+    // The pill is the only place a linked campaign is visible, so the dot belongs here: a rule that
+    // points at a paused campaign reads as "leads from this campaign go to these people" when Meta
+    // is delivering nothing.
+    const campStatus = isCamp ? campaignStatusFor(displayName) ?? campaignStatusFor(rawClean) : null;
 
     return (
       <span
@@ -984,6 +1041,7 @@ export default function GroupLeadDistributionModal({
         }`}
         title={idSubtitle ? `${displayName} (${idSubtitle})` : displayName}
       >
+        {isCamp && <CampaignStatusDot status={campStatus} />}
         <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md flex items-center gap-0.5 ${
           isSource
             ? 'bg-amber-200 text-amber-900'
@@ -1739,6 +1797,7 @@ export default function GroupLeadDistributionModal({
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
+                              {item.type !== 'source' && <CampaignStatusDot status={item.status} />}
                               <span className="font-extrabold text-slate-900 truncate">{item.displayLabel}</span>
                               <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
                                 isSource ? 'bg-amber-100 text-amber-900' : isForm ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
@@ -1746,9 +1805,16 @@ export default function GroupLeadDistributionModal({
                                 {isSource ? 'Lead Source' : isForm ? 'Lead Form' : 'Campaign'}
                               </span>
                               {item.status && (
-                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
-                                  item.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                }`}>
+                                <span
+                                  className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded-md ${
+                                    isCampaignActive(item.status) ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'
+                                  }`}
+                                  title={
+                                    isCampaignActive(item.status)
+                                      ? 'This campaign is delivering, so its leads can reach the group'
+                                      : 'This campaign is not delivering at Meta, so it will not send leads here'
+                                  }
+                                >
                                   {item.status}
                                 </span>
                               )}
