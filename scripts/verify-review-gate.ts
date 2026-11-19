@@ -96,6 +96,42 @@ check(
   'each has a sentence',
 );
 
+head('1b. The generic passthroughs cannot be used to walk around the named tools');
+
+// A gate that only covers the friendly names is decoration: both of these can do everything the
+// named tools can, under a different name, so they are judged by what the call WOULD do.
+const graphQueryWhen = reviewPolicyFor('meta_graph_query')?.when;
+const officialWhen = reviewPolicyFor('meta_official_call_tool')?.when;
+check(
+  'the raw Graph escape hatch is gated on its method, not its name',
+  Boolean(graphQueryWhen) &&
+    graphQueryWhen!({ method: 'POST', path: 'act_1/campaigns' }) === true &&
+    graphQueryWhen!({ method: 'DELETE', path: 'act_1/campaigns/9' }) === true &&
+    graphQueryWhen!({ method: 'GET', path: 'act_1/insights' }) === false,
+  'POST/DELETE needs approval, GET does not',
+);
+check(
+  'the official Meta MCP passthrough is gated for anything that mutates',
+  Boolean(officialWhen) &&
+    officialWhen!({ toolName: 'ads_create_campaign' }) === true &&
+    officialWhen!({ toolName: 'ads_update_adset' }) === true &&
+    officialWhen!({ toolName: 'ads_activate_campaign' }) === true,
+  'create/update/activate are all writes',
+);
+check(
+  'and reads through it still run freely, so a report does not need a permission',
+  Boolean(officialWhen) &&
+    officialWhen!({ toolName: 'ads_get_ad_accounts' }) === false &&
+    officialWhen!({ toolName: 'ads_insights_campaign' }) === false &&
+    officialWhen!({ toolName: 'list_campaigns' }) === false,
+  'list/get/insights are reads',
+);
+check(
+  'an unknown Meta MCP tool name is treated as a write, never as a read',
+  Boolean(officialWhen) && officialWhen!({ toolName: 'something_new' }) === true && officialWhen!({ toolName: '' }) === true,
+  'ambiguous means gated',
+);
+
 head('2. An unapproved call does NOT run');
 
 {

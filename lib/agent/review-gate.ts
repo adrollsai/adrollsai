@@ -87,6 +87,26 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   meta_graph_set_status: { actionType: 'ad_spend', why: 'it can start or stop live spending' },
   meta_graph_update: { actionType: 'ad_spend', why: 'it can change a live campaign budget' },
 
+  // THE TWO ESCAPE HATCHES.
+  //
+  // Gating the named tools is not enough when a generic passthrough can do the same work under a
+  // different name — a gate you can walk around is a gate that only stops the honest path.
+  //   meta_graph_query      takes a raw method and path: GET is a read, POST/DELETE is the whole
+  //                         ad account.
+  //   meta_official_call_tool calls ANY tool on Meta's official ads MCP server, so its blast radius
+  //                         is whatever the owner's token can reach.
+  // So these are gated by what the call WOULD do, not by the tool's name.
+  meta_graph_query: {
+    actionType: 'ad_spend',
+    why: 'this writes to the ad account through the raw Graph escape hatch',
+    when: (input: any) => String(input?.method ?? 'GET').trim().toUpperCase() !== 'GET',
+  },
+  meta_official_call_tool: {
+    actionType: 'ad_spend',
+    why: 'that Meta MCP tool can change the ad account, and only reads run unreviewed',
+    when: (input: any) => !isReadOnlyMetaTool(String(input?.toolName ?? '')),
+  },
+
   // ── reaching a real person
   nobogent_whatsapp_send_template: { actionType: 'whatsapp_broadcast', why: 'a real customer receives it' },
   nobogent_voice_dispatch_call: { actionType: 'bulk_call', why: 'a real customer is phoned and each call is billed' },
@@ -155,8 +175,28 @@ export function looksLikeSecretProbe(command: string): boolean {
   return secretWord.test(cmd) && readerish.test(cmd);
 }
 
-/** Stable fingerprint of a tool's input, so "what you saw" can be compared to "what runs". */
-export function approveFingerprint(input: unknown): string {
+/**
+ * Is this Meta MCP tool name a READ?
+ *
+ * The official ads MCP server exposes dozens of tools and their names are the only thing we can
+ * judge before the call: `ads_get_ad_accounts`, `ads_get_campaigns`, `ads_insights_*` are reads;
+ * `ads_create_campaign`, `ads_update_adset`, `ads_activate_*` are not.
+ *
+ * Reads run freely — an agent that needs a permission for every report is useless. Anything that
+ * names a mutation is gated, and so is anything ambiguous: an unknown name is treated as a write,
+ * because guessing "probably a read" is how a budget gets spent.
+ */
+export function isReadOnlyMetaTool(toolName: string): boolean {
+  const name = String(toolName || '').trim().toLowerCase();
+  if (!name) return false;
+  // A write verb anywhere in the name settles it, whatever the prefix says.
+  if (/(create|update|delete|remove|pause|unpause|activate|deactivate|enable|disable|launch|publish|promote|boost|duplicate|archive|add|edit|set_?|upload|schedule|budget|bid|spend|invite|grant)/.test(name)) {
+    return false;
+  }
+  return /^(ads?_)?(get|list|read|search|show|fetch|describe|find|preview|inspect|insights|report|export|check|status|query|validate)/.test(name);
+}
+
+/** Stable fingerprint of a tool's input, so "what you saw" can be compared to "what runs". */export function approveFingerprint(input: unknown): string {
   const normalise = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(normalise);
     if (value && typeof value === 'object') {

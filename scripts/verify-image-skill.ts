@@ -818,9 +818,13 @@ const quiet = () => {};
     ],
   ]);
 
-  const OVERLAY_CONSTRUCTS: { label: string; re: RegExp }[] = [
+  const OVERLAY_CONSTRUCTS: { label: string; re: RegExp; requires?: RegExp }[] = [
     { label: 'sharp .composite(', re: /\.composite\s*\(/ },
-    { label: 'sharp .extend(', re: /\.extend\s*\(\s*\{/ },
+    // `.extend({...})` is also how a zod schema grows a field — `withApprovalId` in the review gate
+    // does exactly that — so the construct only means "a drawn overlay" in a file that renders
+    // pixels with sharp. Without this qualifier the approval plumbing read as an image overlay and
+    // the check sat red.
+    { label: 'sharp .extend(', re: /\.extend\s*\(\s*\{/, requires: /\bsharp\b/ },
     { label: 'drawText', re: /\bdrawText\b/ },
     { label: 'createCanvas', re: /\bcreateCanvas\b/ },
     { label: 'satori', re: /\bsatori\b/ },
@@ -838,6 +842,8 @@ const quiet = () => {};
         continue;
       }
       if (!construct.re.test(text)) continue;
+      // A construct that only means something in a particular kind of file: skip the rest.
+      if (construct.requires && !construct.requires.test(text)) continue;
       const lines = text.split('\n');
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
