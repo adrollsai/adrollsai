@@ -143,7 +143,7 @@ export async function whatsAppHealth(supabase: SupabaseClient, userId: string): 
   let account: WhatsAppHealth['account'] = null;
   try {
     const res = await fetch(
-      `${GRAPH}/${credentials.wabaId}?fields=health_status,account_review_status,business_verification_status`,
+      `${GRAPH}/${credentials.wabaId}?fields=health_status,account_review_status,business_verification_status,messaging_limit_tier`,
       { headers: { Authorization: `Bearer ${credentials.token}` } }
     );
     const body: any = await res.json().catch(() => ({}));
@@ -156,6 +156,9 @@ export async function whatsAppHealth(supabase: SupabaseClient, userId: string): 
         accountReviewStatus: body.account_review_status ?? null,
         businessVerificationStatus: body.business_verification_status ?? null,
       };
+      // The tier is a WABA field on most API versions and a phone-number field on some; take whichever
+      // answers rather than reporting "unknown" while the account is actually capped at 250 a day.
+      if (!tier && body.messaging_limit_tier) tier = String(body.messaging_limit_tier);
 
       const canSend = String(account.healthStatus ?? '').toUpperCase();
       if (canSend && !['AVAILABLE', 'APPROVED', 'ACTIVE'].includes(canSend)) {
@@ -178,6 +181,40 @@ export async function whatsAppHealth(supabase: SupabaseClient, userId: string): 
     }
   } catch (error: any) {
     warnings.push(`Could not read the WhatsApp Business account health (${String(error?.message || error)}).`);
+  }
+
+  /**
+   * THE SIGNAL META DOES NOT GIVE US: has this account just had every send refused?
+   *
+   * Meta's 131042 (payment/eligibility) is not exposed on any readable node — the account looks
+   * HEALTHY and GREEN while every send is refused. What we do have is history: if an earlier campaign
+   * on this account was paused with that refusal, the next launch will fail the same way until the
+   * owner fixes it at Meta. This is how the Blue Square Infra campaign's state becomes a blocker
+   * BEFORE the next campaign is built, instead of 16,317 rows later.
+   */
+  try {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await supabase
+      .from('whatsapp_broadcasts')
+      .select('id, title, pause_reason, last_progress_at, created_at, failed_count')
+      .eq('user_id', userId)
+      .not('pause_reason', 'is', null)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    const refused = (recent ?? []).find((row: any) =>
+      /payment|eligibility|131042|invalid.*token|190|permission/i.test(String(row.pause_reason ?? ''))
+    );
+    if (refused) {
+      blockers.push(
+        `A recent campaign ("${String((refused as any).title ?? 'untitled').slice(0, 60)}") was stopped by Meta: ` +
+          `${String((refused as any).pause_reason ?? '').slice(0, 240)} Resolve that with Meta first — ` +
+          'another campaign will be refused the same way.'
+      );
+    }
+  } catch {
+    /* history is an extra signal; never let it break the check */
   }
 
   let approvedTemplates = 0;
