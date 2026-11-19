@@ -132,7 +132,7 @@ async function main() {
     health?.messagingLimitTier
   );
   check(
-    'and it names the account's refusal, which Meta does not surface as a health field',
+    'and it names the refusal that Meta does not surface as a health field',
     Array.isArray(health?.blockers) && health.blockers.some((b: string) => /131042|payment|eligibility/i.test(b)),
     health?.blockers
   );
