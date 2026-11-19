@@ -142,6 +142,7 @@
     "accept:stream-ui": "node scripts/accept-turn-stream-ui.mjs",
     "diagnose:pwa": "node scripts/diagnose-pwa.mjs",
     "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",
+    "accept:audience-agent": "esbuild scripts/accept-audience-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-audience-agent.mjs --log-level=warning && node .tmp-accept-audience-agent.mjs",
     "accept:capabilities": "esbuild scripts/accept-capabilities.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-capabilities.mjs --log-level=warning && node .tmp-accept-capabilities.mjs",
     "verify:audiences": "esbuild scripts/verify-audiences.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-audiences.mjs --log-level=warning && node .tmp-verify-audiences.mjs",
     "verify:flow-delivery": "esbuild scripts/verify-flow-delivery.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-delivery.mjs --log-level=warning && node .tmp-flow-delivery.mjs",

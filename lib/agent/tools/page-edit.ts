@@ -34,6 +34,25 @@ import {
 export const MAX_SECTION_CHARS = 20_000;
 
 export function createPageEditTools(supabase: SupabaseClient, userId: string) {
+  /**
+   * The tenant's industry, read once per tool instance.
+   *
+   * The industry rule ("a film academy's page may not have floor plans") is enforced on the way out
+   * of an edit, and it needs the industry to enforce it. Passing null would silently switch the rule
+   * OFF for agent edits — the same class of bug as publishing without it.
+   */
+  let industry: string | null | undefined;
+  const industryFor = async (): Promise<string | null> => {
+    if (industry !== undefined) return industry;
+    try {
+      const { data } = await supabase.from('profiles').select('industry').eq('id', userId).maybeSingle();
+      industry = (data as any)?.industry ? String((data as any).industry) : null;
+    } catch {
+      industry = null;
+    }
+    return industry ?? null;
+  };
+
   const loadPage = async (ref: { pageId?: string | null; slug?: string | null }) => {
     const pageId = String(ref.pageId ?? '').trim();
     const slug = String(ref.slug ?? '').trim();
@@ -175,7 +194,8 @@ export function createPageEditTools(supabase: SupabaseClient, userId: string) {
 
           // The industry rule, applied on the way out (a page must not gain sections its industry
           // may not have). Stripping is reported, never silent.
-          const strip = stripDisallowedSections(nextHtml, null);
+          const tenantIndustry = await industryFor();
+          const strip = stripDisallowedSections(nextHtml, tenantIndustry);
           if (strip.removed.length) {
             nextHtml = strip.html;
             after = ensureSections(nextHtml);
@@ -200,7 +220,11 @@ export function createPageEditTools(supabase: SupabaseClient, userId: string) {
             return { success: false, error: `the edit was applied but could not be saved: ${writeError.message}` };
           }
 
-          const sections = after.sections.map((s) => ({ id: s.id, kind: s.kind, allowed: s.kind === 'unknown' ? null : isSectionAllowed(null, s.kind) }));
+          const sections = after.sections.map((s) => ({
+            id: s.id,
+            kind: s.kind,
+            allowed: s.kind === 'unknown' ? null : isSectionAllowed(tenantIndustry, s.kind),
+          }));
           return {
             success: true,
             pageId: page.id,
