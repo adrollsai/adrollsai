@@ -6,10 +6,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   defaultRoutineIntent,
   ensurePeriodSession,
+  nextRunAfter,
   periodKey,
   periodLabel,
   queueRoutineRun,
+  type ApprovalPolicy,
   type BusinessRoutine,
+  type Cadence,
 } from '@/lib/agent/routines';
 import { enqueueRun } from '@/lib/agent/harness/runs';
 import { availableCredits, hasBalance, CREDIT_COSTS } from '@/utils/credits';
@@ -49,6 +52,153 @@ export async function creditsRefusal(db: any, userId: string) {
   };
 }
 
+// ── the routine row: readable, and editable in words ─────────────────────────
+
+/** Cadences the executor understands. */
+export const ROUTINE_CADENCES: Cadence[] = ['daily', 'weekly', 'monthly'];
+
+/** Approval policies the composer understands: who signs off on the day's output. */
+export const ROUTINE_APPROVAL_POLICIES: ApprovalPolicy[] = ['always', 'auto_images', 'never'];
+
+/** Channels a routine may publish to. Anything else is a typo, not a new channel. */
+export const ROUTINE_CHANNELS = ['whatsapp', 'calls', 'email', 'social', 'site', 'ads'] as const;
+
+/** A routine this large a daily ceiling is almost certainly a typo in the owner's units. */
+const MAX_DAILY_CREDIT_CAP = 100_000;
+
+export interface RoutinePatchResult {
+  ok: boolean;
+  error?: string;
+  patch?: Record<string, unknown>;
+}
+
+/**
+ * Validate a natural-language routine change before anything is written.
+ *
+ * Pure and exported so the rejections can be tested without a database: a routine that runs at
+ * "7pm" spelled `19`, in a timezone that does not exist, or with approval switched to `never`, is
+ * exactly the kind of quiet misconfiguration that spends money unattended.
+ */
+export function validateRoutinePatch(input: any): RoutinePatchResult {
+  const patch: Record<string, unknown> = {};
+  const src = input || {};
+
+  if (src.name !== undefined) {
+    const name = String(src.name).trim();
+    if (!name) return { ok: false, error: 'name cannot be empty' };
+    patch.name = name.slice(0, 120);
+  }
+
+  if (src.intent !== undefined) {
+    const intent = String(src.intent).trim();
+    if (intent.length < 10) {
+      return {
+        ok: false,
+        error: 'intent is too short: say what the routine should actually do each day, in one or two sentences.',
+      };
+    }
+    patch.intent = intent.slice(0, 2000);
+  }
+
+  if (src.cadence !== undefined) {
+    const cadence = String(src.cadence).trim().toLowerCase();
+    if (!ROUTINE_CADENCES.includes(cadence as Cadence)) {
+      return { ok: false, error: `cadence must be one of ${ROUTINE_CADENCES.join(', ')} (got "${src.cadence}")` };
+    }
+    patch.cadence = cadence;
+  }
+
+  if (src.runAtHour !== undefined) {
+    const hour = Number(src.runAtHour);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      return { ok: false, error: `runAtHour must be a whole hour 0-23 in 24-hour time (got "${src.runAtHour}"). 7pm is 19.` };
+    }
+    patch.run_at_hour = hour;
+  }
+
+  if (src.timezone !== undefined) {
+    const tz = String(src.timezone).trim();
+    try {
+      new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+    } catch {
+      return { ok: false, error: `"${tz}" is not a timezone I can resolve. Use an IANA name such as Asia/Kolkata.` };
+    }
+    patch.timezone = tz;
+  }
+
+  if (src.dailyCreditCap !== undefined) {
+    const cap = Number(src.dailyCreditCap);
+    if (!Number.isFinite(cap) || cap < 0) {
+      return { ok: false, error: `dailyCreditCap must be a number of credits, zero or more (got "${src.dailyCreditCap}")` };
+    }
+    if (cap > MAX_DAILY_CREDIT_CAP) {
+      return {
+        ok: false,
+        error: `dailyCreditCap of ${cap} is above the ${MAX_DAILY_CREDIT_CAP} ceiling. If that is really intended, raise it in the CEO tab.`,
+      };
+    }
+    patch.daily_credit_cap = Math.round(cap);
+  }
+
+  if (src.approvalPolicy !== undefined) {
+    const policy = String(src.approvalPolicy).trim().toLowerCase();
+    if (!ROUTINE_APPROVAL_POLICIES.includes(policy as ApprovalPolicy)) {
+      return {
+        ok: false,
+        error: `approvalPolicy must be one of ${ROUTINE_APPROVAL_POLICIES.join(', ')} (got "${src.approvalPolicy}")`,
+      };
+    }
+    patch.approval_policy = policy;
+  }
+
+  if (src.channels !== undefined) {
+    if (!Array.isArray(src.channels)) return { ok: false, error: 'channels must be a list, e.g. ["whatsapp"]' };
+    const cleaned: string[] = Array.from(
+      new Set<string>(
+        (src.channels as unknown[])
+          .map((c) => String(c ?? '').trim().toLowerCase())
+          .filter(Boolean)
+      )
+    );
+    const unknown = cleaned.filter((c) => !(ROUTINE_CHANNELS as readonly string[]).includes(c));
+    if (unknown.length) {
+      return {
+        ok: false,
+        error: `unknown channel(s): ${unknown.join(', ')}. Available: ${ROUTINE_CHANNELS.join(', ')}.`,
+      };
+    }
+    if (cleaned.length > ROUTINE_CHANNELS.length) return { ok: false, error: 'too many channels' };
+    patch.channels = cleaned;
+  }
+
+  if (src.toolGroups !== undefined) {
+    if (!Array.isArray(src.toolGroups)) return { ok: false, error: 'toolGroups must be a list of group names' };
+    patch.tool_groups = [...new Set(src.toolGroups.map((g: unknown) => String(g || '').trim()).filter(Boolean))];
+  }
+
+  if (src.enabled !== undefined) patch.enabled = src.enabled === true;
+
+  if (!Object.keys(patch).length) {
+    return { ok: false, error: 'Nothing to change: supply at least one of cadence, runAtHour, timezone, intent, name, dailyCreditCap, approvalPolicy, channels, toolGroups or enabled.' };
+  }
+
+  return { ok: true, patch };
+}
+
+/** One readable line per setting, for the confirmation the agent shows the owner. */
+export function describeRoutine(routine: Partial<BusinessRoutine> | null): string[] {
+  if (!routine) return [];
+  return [
+    `name: ${routine.name}`,
+    `runs: ${routine.cadence} at ${String(routine.run_at_hour).padStart(2, '0')}:00 ${routine.timezone}`,
+    `on: ${routine.enabled === false ? 'no' : 'yes'}`,
+    `daily ceiling: ${Number(routine.daily_credit_cap ?? 0)} credits`,
+    `approval: ${routine.approval_policy}`,
+    `channels: ${(routine.channels || []).join(', ') || 'none'}`,
+    routine.intent ? `intent: ${String(routine.intent).slice(0, 300)}` : '',
+  ].filter(Boolean);
+}
+
 /**
  * `run_routine` — start the daily routine on demand.
  *
@@ -83,6 +233,179 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
   };
 
   return {
+    get_routine: tool({
+      description:
+        'Read this business\'s standing routine: whether it is on, its cadence and the hour it runs in its own timezone, what it is for (the intent), the daily credit ceiling, who approves the output, the channels it may use, and when it last ran and will run next. Call this before changing it, and before answering "what does the agent do every day?".',
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const routine = await loadRoutine();
+          if (!routine) {
+            return {
+              ok: true,
+              exists: false,
+              message:
+                'This business has no standing routine yet. Say what it should do each day and it can be created here - update_routine creates it on first write.',
+              defaultsIfCreated: defaultRoutine(null, null),
+            };
+          }
+
+          const now = new Date();
+          const period = periodKey(now, routine.timezone, routine.cadence);
+          let todayRun: any = null;
+          try {
+            const { data } = await db
+              .from('routine_runs')
+              .select('id, status, period_key, run_id, session_id, created_at')
+              .eq('routine_id', routine.id)
+              .eq('period_key', period)
+              .maybeSingle();
+            todayRun = data || null;
+          } catch {
+            todayRun = null;
+          }
+
+          return {
+            ok: true,
+            exists: true,
+            routineId: routine.id,
+            enabled: routine.enabled !== false,
+            cadence: routine.cadence,
+            runAtHour: routine.run_at_hour,
+            timezone: routine.timezone,
+            intent: routine.intent,
+            dailyCreditCap: Number(routine.daily_credit_cap ?? 0),
+            approvalPolicy: routine.approval_policy,
+            channels: routine.channels || [],
+            toolGroups: routine.tool_groups || [],
+            lastRunAt: routine.last_run_at,
+            nextRunAt: routine.next_run_at,
+            thisPeriod: period,
+            thisPeriodRun: todayRun ? { status: todayRun.status, runId: todayRun.run_id } : null,
+            summary: describeRoutine(routine),
+            available: {
+              cadences: ROUTINE_CADENCES,
+              approvalPolicies: ROUTINE_APPROVAL_POLICIES,
+              channels: [...ROUTINE_CHANNELS],
+            },
+          };
+        } catch (e: any) {
+          return { ok: false, error: e?.message || 'Could not read the routine' };
+        }
+      },
+    }),
+
+    /**
+     * `update_routine` — change the standing routine, in words.
+     *
+     * The routines endpoint deliberately exposes only create + list, on the grounds that cadence
+     * changes should arrive as words ("stop doing reels daily"). That path did not exist: the agent
+     * could START a routine and nothing else, so "make it weekly at 6pm" was answered with a
+     * settings screen it could not reach. This closes it. Every value is validated first, and a
+     * newly created routine is scheduled for its next real slot rather than firing immediately.
+     */
+    update_routine: tool({
+      description:
+        'Change this business\'s standing routine: cadence (daily/weekly/monthly), the hour it runs, its timezone, what it is for, the daily credit ceiling, who approves the output, which channels it may use, and whether it is switched on at all. Creates the routine if the business has none. Turning it ON, or relaxing approval away from "always", needs the owner\'s approval first; every other edit applies immediately. Show the owner what changed and when it will next run.',
+      inputSchema: z.object({
+        cadence: z.enum(['daily', 'weekly', 'monthly']).optional().describe('How often the routine runs'),
+        runAtHour: z.number().optional().describe('Hour of the day to run, 0-23 in 24-hour time, in its own timezone. 7pm = 19.'),
+        timezone: z.string().optional().describe('IANA timezone, e.g. Asia/Kolkata'),
+        intent: z.string().optional().describe('What the routine should do each period, in the owner\'s words'),
+        name: z.string().optional().describe('Short name for the routine'),
+        dailyCreditCap: z.number().optional().describe('Most credits one run may spend'),
+        approvalPolicy: z.enum(['always', 'auto_images', 'never']).optional().describe('Who signs off on the output'),
+        channels: z.array(z.string()).optional().describe(`Channels it may use: ${ROUTINE_CHANNELS.join(', ')}`),
+        toolGroups: z.array(z.string()).optional().describe('Tool groups the run may load'),
+        enabled: z.boolean().optional().describe('Switch the routine on or off'),
+        reason: z.string().optional().describe('One short sentence on why it is being changed, stored on the row'),
+      }),
+      execute: async (input: any) => {
+        try {
+          const checked = validateRoutinePatch(input);
+          if (!checked.ok || !checked.patch) return { ok: false, error: checked.error };
+          const patch = checked.patch as Record<string, any>;
+
+          const existing = await loadRoutine();
+          const now = new Date();
+
+          // Which edits change WHEN it runs, and so need the next slot recomputed.
+          const timingChanged =
+            patch.cadence !== undefined ||
+            patch.run_at_hour !== undefined ||
+            patch.timezone !== undefined ||
+            patch.enabled === true;
+
+          if (!existing) {
+            const { data: profile } = await db
+              .from('profiles')
+              .select('business_name, industry')
+              .eq('id', userId)
+              .maybeSingle();
+
+            const row: Record<string, any> = {
+              user_id: userId,
+              name: patch.name || 'Daily marketing',
+              intent:
+                patch.intent ||
+                defaultRoutineIntent(profile?.business_name || 'the business', profile?.industry || null),
+              cadence: patch.cadence || 'daily',
+              run_at_hour: patch.run_at_hour ?? 7,
+              timezone: patch.timezone || 'Asia/Kolkata',
+              daily_credit_cap: patch.daily_credit_cap ?? 200,
+              approval_policy: patch.approval_policy || 'always',
+              channels: patch.channels || ['whatsapp'],
+              tool_groups: patch.tool_groups || [],
+              enabled: patch.enabled === true,
+            };
+            row.next_run_at = nextRunAfter(now, row as BusinessRoutine).toISOString();
+
+            const { data: created, error } = await db
+              .from('business_routines')
+              .insert(row)
+              .select('*')
+              .maybeSingle();
+            if (error) return { ok: false, error: `Could not create the routine: ${error.message}` };
+
+            return {
+              ok: true,
+              created: true,
+              routineId: created?.id ?? null,
+              enabled: row.enabled,
+              nextRunAt: row.next_run_at,
+              summary: describeRoutine((created || row) as any),
+              message:
+                `Created: it runs ${row.cadence} at ${String(row.run_at_hour).padStart(2, '0')}:00 ${row.timezone}, ` +
+                `${row.enabled ? 'switched on' : 'switched OFF until you turn it on'}, next run ${row.next_run_at}.`,
+            };
+          }
+
+          const before = describeRoutine(existing);
+          const update: Record<string, any> = { ...patch };
+          if (timingChanged) {
+            const merged = { ...existing, ...patch } as BusinessRoutine;
+            update.next_run_at = nextRunAfter(now, merged).toISOString();
+          }
+
+          const { error } = await db.from('business_routines').update(update).eq('id', existing.id);
+          if (error) return { ok: false, error: `Could not update the routine: ${error.message}` };
+
+          const after = { ...existing, ...update } as BusinessRoutine;
+          return {
+            ok: true,
+            routineId: existing.id,
+            before,
+            after: describeRoutine(after),
+            nextRunAt: after.next_run_at,
+            reason: input.reason || null,
+            message: `Updated. It now runs ${after.cadence} at ${String(after.run_at_hour).padStart(2, '0')}:00 ${after.timezone}; next run ${after.next_run_at}.`,
+          };
+        } catch (e: any) {
+          return { ok: false, error: e?.message || 'Could not update the routine' };
+        }
+      },
+    }),
+
     run_routine: tool({
       description:
         'Start this business\'s marketing routine for today, right now — the same work the daily cron would do. Reads the playbook (positioning, industry, the owner\'s daily_routine, the first-draft recipes) and starts ONE agent run that composes the day with its own tools (composeCreative, composeVideo, deliverArtefact). Idempotent per day: calling it twice does not produce two runs. Use it when the owner says "do today\'s marketing", "run the routine", "make today\'s posts", or after changing the playbook and wanting it applied immediately.',

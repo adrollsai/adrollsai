@@ -107,6 +107,46 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
     when: (input: any) => !isReadOnlyMetaTool(String(input?.toolName ?? '')),
   },
 
+  // ── the standing behaviour of the business
+  //
+  // Both of these are CONDITIONAL on purpose. Rewording your own routine, or changing which voice
+  // answers the phone, is a configuration edit the owner just asked for in words - gating that
+  // would make the agent ask permission to do what it was told. What must not happen unreviewed is
+  // the part that acts on its own afterwards:
+  //   update_routine                -> switching it ON, or letting output through without approval
+  //   update_default_voice_settings -> turning auto-calling ON, or rewriting the words a stranger
+  //                                    will hear on the next call
+  update_routine: {
+    actionType: 'custom',
+    why: 'it switches on work that runs and spends on its own, without a human in the loop',
+    when: (input: any) =>
+      input?.enabled === true ||
+      (input?.approvalPolicy !== undefined && String(input.approvalPolicy) !== 'always'),
+  },
+  update_default_voice_settings: {
+    actionType: 'custom',
+    why: 'it changes what a real customer hears on the next call',
+    when: (input: any) =>
+      input?.systemPromptScript !== undefined ||
+      input?.firstMessage !== undefined ||
+      input?.autoCallNewLeads === true,
+  },
+  // THE OTHER DOOR TO THE SAME WORDS.
+  //
+  // The calling script and the follow-up journey live on the playbook, so `update_playbook` could
+  // rewrite what a stranger hears on the next call without ever touching the tool above — measured:
+  // "rewrite my calling script" went straight through this tool and the playbook jumped a version
+  // with no card. Gating one door and not the other is not a gate. Sections that are only copy or
+  // planning stay free; the two that act on a customer do not.
+  update_playbook: {
+    actionType: 'custom',
+    why: 'it changes the words a customer hears on a call, or when follow-ups reach them',
+    when: (input: any) => {
+      const section = String(input?.section ?? '');
+      return section === 'call_script' || section === 'cadence';
+    },
+  },
+
   // ── reaching a real person
   nobogent_whatsapp_send_template: { actionType: 'whatsapp_broadcast', why: 'a real customer receives it' },
   nobogent_voice_dispatch_call: { actionType: 'bulk_call', why: 'a real customer is phoned and each call is billed' },

@@ -126,6 +126,7 @@
     "verify:transfer-columns": "esbuild scripts/verify-transfer-columns.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-transfer-cols.mjs --log-level=warning && node .tmp-transfer-cols.mjs",
     "verify:artefact-qa": "esbuild scripts/verify-artefact-qa.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-artefact-qa.mjs --log-level=warning && node .tmp-artefact-qa.mjs",
     "verify:call-queue": "esbuild scripts/verify-call-queue.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-call-queue.mjs --log-level=warning && node .tmp-call-queue.mjs",
+    "verify:behaviour": "esbuild scripts/verify-behaviour-controls.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-behaviour.mjs --log-level=warning && node .tmp-verify-behaviour.mjs",
     "verify:voice-pipeline": "esbuild scripts/verify-voice-pipeline.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-voice-pipeline.mjs --log-level=warning && node .tmp-voice-pipeline.mjs",
     "verify:whatsapp-templates": "esbuild scripts/verify-whatsapp-templates.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-wa-templates.mjs --log-level=warning && node .tmp-wa-templates.mjs",
     "proof:funnel-assets": "esbuild scripts/funnel-nobogent-assets.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-funnel-assets.mjs --log-level=warning && node .tmp-funnel-assets.mjs",
@@ -141,7 +142,8 @@
     "verify:turn-stream": "esbuild scripts/verify-turn-stream.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-turn-stream.mjs --log-level=warning && node .tmp-turn-stream.mjs",
     "accept:stream-ui": "node scripts/accept-turn-stream-ui.mjs",
     "diagnose:pwa": "node scripts/diagnose-pwa.mjs",
-    "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",
+    "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",    "accept:behaviour": "esbuild scripts/accept-behaviour-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-behaviour.mjs --log-level=warning && node .tmp-accept-behaviour.mjs",
+
     "accept:agent-capabilities": "esbuild scripts/accept-agent-capabilities.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-agent-caps.mjs --log-level=warning && node .tmp-accept-agent-caps.mjs",
     "accept:catalog": "esbuild scripts/accept-catalog.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-catalog.mjs --log-level=warning && node .tmp-accept-catalog.mjs",
     "accept:campaign-tabs": "esbuild scripts/accept-campaign-tabs.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-campaign-tabs.mjs --log-level=warning && node .tmp-accept-campaign-tabs.mjs",

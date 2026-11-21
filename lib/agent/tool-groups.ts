@@ -63,6 +63,14 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
       /\b(meta|facebook ads?|fb ads?|instagram ads?|ad account|campaign|adset|ad set|ads?|budget|spend|cpl|cpa|ctr|impressions|reach|pixel|lead form|audience|targeting|boost)\b/i,
   },
   sites: {
+    // `research` and `vision` ride along because a page request almost always arrives
+    // with a reference: "make a landing page like this https://…", "same as our site",
+    // "copy the style of this one". Without the web tools the agent cannot open that
+    // URL, cannot screenshot it, and cannot read its design tokens — so it answers
+    // "like this" from the URL's title alone and quietly invents the rest. Measured on
+    // a real test: `sites` alone = 30 tools and no fetch, and the built page did not
+    // resemble the reference at all.
+    with: ['research', 'vision'],
     signals:
       /\b(landing pages?|websites?|web ?pages?|slugs?|custom domains?|domains?|sites?|urls?|published pages?)\b/i,
   },
@@ -82,8 +90,13 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
     // Audience groups and CRM writes belong here too: "make an audience of Diwali buyers",
     // "message that group", "move them to site visit" are follow-up work on leads, and the
     // tools for it were unreachable.
+    //
+    // The routine and the calling defaults belong here for the same reason: "make the routine
+    // weekly", "stop calling new leads automatically" and "change the calling script" are all
+    // changes to how the business behaves on its own, and without these words the turn loaded no
+    // automation tool and the agent answered that it could not change them.
     signals:
-      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?|audiences?|segments?|broadcasts?|campaigns?|move|stage|archiv\w+|tags?|crm)\b/i,
+      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?|audiences?|segments?|broadcasts?|campaigns?|move|stage|archiv\w+|tags?|crm|routines?|daily (?:routine|plan|brief|standup)|every day|each day|call(?:ing)? script|script (?:for|on) (?:the |my )?calls?|calling defaults?|calling voice|auto[- ]?call\w*|automatically|call(?:ing)? (?:new )?leads?|default voice|speaking voice|voice (?:agent|caller)|greeting)\b/i,
   },
   research: {
     signals:
@@ -132,6 +145,21 @@ export function selectToolGroups(text: string): GroupSelection {
       if (!chosen.has(dep)) {
         chosen.add(dep);
         reasons.push(`${dep}: pulled in by ${group}`);
+      }
+    }
+  }
+
+  // BUILDING a page is heavier than reading one. A "landing page" question needs the
+  // page tools and nothing else; "make / build / design me a page" needs somewhere to
+  // write, render and screenshot it (the sandbox) and the ability to produce or fix
+  // its imagery (media). Measured: with the sandbox the agent reverse-engineered a
+  // reference site (screenshots + design tokens) and self-checked its own build at
+  // desktop and phone widths; without it, the same request shipped blind.
+  if (chosen.has('sites') && /\b(make|build|create|design|redesign|rebuild|write|draft|new)\b[\s\S]{0,40}\b(page|site|website|landing)\b|\b(page|site|website|landing)\b[\s\S]{0,40}\b(make|build|create|design|redesign|write|draft)\b/i.test(haystack)) {
+    for (const extra of ['sandbox', 'media'] as ToolGroup[]) {
+      if (!chosen.has(extra)) {
+        chosen.add(extra);
+        reasons.push(`${extra}: a page is being BUILT, not just read`);
       }
     }
   }

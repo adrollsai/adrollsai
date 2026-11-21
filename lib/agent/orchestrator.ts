@@ -17,6 +17,7 @@ import { createVideoVisionTools } from './tools/video_vision';
 import { createMediaStudioTools } from './tools/media_studio';
 import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
+import { createRegisteredVoiceTools } from './tools/voice';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
@@ -247,6 +248,11 @@ export async function createAgentContext(
     ...(has('automation') ? createFlowAuthoringTools(supabase, userId) : {}),
     // run_routine / run_one_off: starting the day, or one piece of it, on demand.
     ...(has('automation') || has('media') ? createRoutineTools(supabase, userId) : {}),
+    // The default calling agent: which voice answers, in which language, whether new leads are
+    // called automatically, and the script it speaks. `createVoiceTools` was written a long time ago
+    // and NEVER registered here, so "change my calling voice" and "rewrite the calling script" were
+    // answered as impossible. Only the registered subset is spread in - see REGISTERED_VOICE_TOOLS.
+    ...(has('automation') || has('reporting') ? createRegisteredVoiceTools(supabase, userId) : {}),
     ...(has('recipes') ? createRecipeTools() : {}),
     ...(has('meta') ? createMetaOfficialMcpTools(supabase, userId) : {}),
     ...(has('meta') ? createMetaGraphTools(supabase, userId) : {}),
@@ -293,6 +299,9 @@ ALWAYS AVAILABLE â€” the business's own data:
 - 'request_human_approval': the gate for irreversible or high-stakes actions (real ad spend, anything bulk) and
   for the pre-flight review of any billable creative job. It is not only for dangerous things.
 - 'request_user_input': when essential missing assets (such as user-recorded video clips) or instructions are needed.
+- 'get_playbook' / 'update_playbook': read and change how this business behaves - the call script, the
+  WhatsApp replies, the lead journey (first reply, follow-ups, opt-out, handoff), the daily routine, the
+  positioning and the first-draft recipes. Changing your own behaviour is a normal request you can serve.
   Ask for every missing item in ONE 'questions' batch â€” see the PRE-FLIGHT CONTRACT below.
 SAFETY â€” these hold in every conversation, whatever the task:
 - NEVER FIRE BULK MESSAGING, BULK CALLING OR A BROADCAST DIRECTLY. Anything that touches more than one lead at once â€” a WhatsApp broadcast, a bulk call campaign, a sequence that fans out to a segment â€” must go through 'request_human_approval' and wait for the user. This rule does not depend on the task looking like an 'automation'.
@@ -442,7 +451,7 @@ TESTED RECIPES â€” known-good pipelines, adapt instead of reinventing:
   if (has('media')) parts.push(`
 MEDIA STUDIO â€” the app's own generation models, for actually creating media:
 - 'generate_voiceover': real spoken narration with Gemini TTS. Write the exact words to speak, pick a voice and language (english, hinglish, hindi, punjabi, tamil, telugu, kannada, marathi, bengali, gujarati, american_english). Returns a permanent MP3 URL.
-- 'generate_grok_video': Grok Imagine 1.5 clip. Pass only a prompt for TEXT-TO-VIDEO, or add 1-7 public image URLs for IMAGE-TO-VIDEO (animate the user's own photos, a product, a person, a generated image). Up to 15s, 9:16 / 16:9 / 1:1.
+- 'generate_grok_video': Grok Imagine 1.5 clip. Pass only a prompt for TEXT-TO-VIDEO, or add 1-7 public image URLs for IMAGE-TO-VIDEO (animate the user's own photos, a product, a person, a generated image). Up to 15s, 9:16 / 16:9 / 1:1. THE CLIP CAN ALSO SPEAK: pass a resolution and a prompt containing the exact line ("says exactly this line, word for word: …") and the returned MP4 arrives WITH that speech and matching lip movement. That is how a talking shot is made — a silent clip plus TTS is a dub, and a dub cannot be fixed afterwards. Always keep the returned file's audio if you asked it to speak, and never mute it in the composition.
 - 'generate_ai_image': photorealistic ad creative, banner, product shot, festive graphic â€” or an edit/restyle of supplied reference images.
 - 'check_media_task': collect the result of any of the above that returned status "processing_in_background".
 - 'list_reference_creatives': the app's built-in reference creatives (35 finished ad designs, each with a public image URL). Use when the user says "like this one", "in that style", or asks what templates exist. Pass the chosen url to generate_ai_image as referenceImageUrls â€” and be clear the reference is a style guide, never their own asset.
@@ -475,6 +484,19 @@ getting worse. So for any ad, poster, offer card, campaign creative or reel:
   contrast number passes, nothing clipped by the safe area). If a check fails, fix it and say what you changed.
 - A video the owner supplies as a reference is WATCHED FIRST, before anything else happens: ${has('vision') ? "call 'analyze_video_with_gemini' on it, report" : 'report'} its hook, pacing, shot list, captions and end card, and only then decide what to build. Never design a film for a reference you have not looked at.
 REFERENCE-FIRST VIDEO — how a video gets made here, in this order. Do not skip a step and do not reorder them:
+0. IF THE BRIEF IS ONE LINE — "make a video like this for my project", "something like this for us", a reference
+   film and nothing else — the first move is NOT a script and not a render: it is the intake. Call
+   'video_intake' with what you actually know (their words, that a reference exists, and what its audio turned
+   out to be from ${has('vision') ? "the probe or 'analyze_video_with_gemini'" : 'the audio probe'}). It tells you which SPEECH MODE the film needs, and
+   returns exactly the questions that are still open with a fallback for each.
+   - Ask those questions in ONE message, in plain language, with your recommendation first. Never ask one at a
+     time, never ask what they already told you, and never fill a gap with something plausible — a phone
+     number, a brand name or a price invented on the owner's behalf is a real-world problem, not a creative one.
+   - The answers that change the film: does anyone speak on camera; who and in which language; the phone/brand;
+     the aspect; roughly how long. Everything else you can decide and say what you decided.
+   - A reference film is WATCHED before it is copied: probe it (does it carry speech? is there a music bed?), look
+     at it, and report the hook, the pacing, the shot list, the type and the end card in a couple of lines. Its
+     LOOK is the brief; its argument usually is not.
 0. LOAD THE SHOT-DESIGN SKILL BEFORE YOU DESIGN ANY FILM. Call get_skill('video-shotcraft'). It is a vendored
    Apache-2.0 skill (Vincentwei1021/video-shotcraft) carrying 124 shot recipe cards, 150 motion previews, beat
    sync and sound design for cinematic product promos. HyperFrames gives you the ability to render motion; THIS
@@ -501,14 +523,36 @@ REFERENCE-FIRST VIDEO — how a video gets made here, in this order. Do not skip
    - The strongest film mixes all three: the business's own photographs, generated motion for the offer, stock for
      the world around it. Then 'generate_voiceover' for the narration, the sandbox for the cut, music, mix and
      captions, and a HyperFrames composition for the typography, offers and end card.
-4. THE VOICE IS NARRATION, NOT A PRESENTER — this is the default you should assume.
-   - Use TTS: 'generate_voiceover' (Gemini 3.8 Flash) for the narration. That is what most films here are: footage,
-     typography and a voice. Nobody appears on camera and nobody is generated to speak.
-   - DO NOT put a speaking person in the video unless the owner explicitly asks for it. Not a synthetic presenter,
-     not a generated face delivering the lines, not an avatar standing in for the owner.
-   - If they DO explicitly ask for a person on camera or an avatar, then generate that person with Grok inside the
-     film — that is the case where a generated speaker belongs, and only that case.
-   - If they supply their own clips, use those clips and lay the voiceover over them.
+4. SPEECH HAS TWO MODES, AND THEY ARE NOT INTERCHANGEABLE — decide which the film needs, and say which:
+   4a. NARRATION (the default): nobody appears on camera. 'generate_voiceover' (Gemini 3.8 Flash) reads the
+      script over footage, typography and the end card. Most films here are this.
+   4b. ON-CAMERA DIALOGUE (only when the owner asks for a person speaking — a host, a founder, a two-person
+      podcast, a testimonial, or a reference video where people talk): the LINE GOES IN THE VIDEO PROMPT and
+      Grok generates the voice and the lip movement in ONE generation. That is the only way to get lip-sync.
+      - NEVER pair a silent talking shot with a TTS track. The mouths move on their own and the words arrive
+        from somewhere else; it reads as a badly dubbed film and it is the single most common way this goes wrong.
+      - Put the exact words in the prompt, verbatim, in the spoken language and script: "she says exactly this
+        line, word for word: \"…\"". Name the voice quality ("young Indian woman, bright, close microphone").
+        Add "perfectly lip-synced", "no music, no other voices, no captions".
+      - One clip = one speaker = one line. Ask for 15s when the line is long; the model's ceiling is 15s.
+      - THEN MEASURE THE CLIP, do not retime it: find its speech with silencedetect, cut the clip to that, and
+        build the film around what the model actually said.
+      - VERIFY IT: transcribe the clip and compare the words with the line you asked for. A model that
+        improvises a different sentence is a wrong SHOT, not a wrong take — nothing downstream can fix it. If
+        a line is under ~40% of the words you asked for, regenerate that clip with a shorter line or a still
+        reference; do not ship it.
+      - A mix is fine (dialogue for the host, TTS for the packshot voice), but one line is never both.
+   4c. NOBODY IS INVENTED. Do not put a generated speaker in a film unless the owner or the reference asks for
+      a speaker. When they do, the host is a generated person and the business's real people appear ONLY as
+      their own photographs (animated, never re-drawn).
+4d. THE STRUCTURED PATH IS A CONVENIENCE, NOT A CAGE. plan_video + composeVideo cover a hook/list/cta film
+   with measured timing, and they are the fastest route to a correct one. When the cut you need does not fit
+   the emitter — an edit with a dozen cutaways over one continuous take, a beat sheet derived from a
+   generated clip's own audio, a score ducked against the voices — build it directly instead of bending the
+   brief: write the HyperFrames project with 'sandbox_write_file', do the media work with 'sandbox_bash_run'
+   (ffmpeg/ffprobe/node are there), render with 'sandbox_render_hyperframes', publish with
+   'sandbox_publish_artifact'. In your own composition a <video data-has-audio="true"> keeps its own
+   speech and a muted one does not; music is a separate <audio> element. That is a supported path, not a hack.
 5. AIM IT AT CONVERSION, not at prettiness: the offer stated plainly, the reason to believe shown rather than claimed, one call to action held on screen long enough to read and act on, and the business's real phone number where the owner gave one. Say what the viewer should do next, and make the last frame say it too.
 6. EVERY FILM GETS MOVEMENT AND A BED, and you make both yourself.   - Movement: animate the business's OWN photographs with 'generate_grok_video' image-to-video (pass 1-7 of
      their public image URLs), or generate B-roll text-to-video. A film built only from stills that never move is
@@ -583,6 +627,18 @@ AUTOMATIONS â€” CHECK BEFORE YOU PROPOSE:
 - 'check_flow_conflicts': whether an active flow would already fire on the trigger you are about to use.
 - Two active flows on one trigger message and call the same lead twice. Never propose a new flow on a trigger that is already taken: modify or consolidate the existing one and say which flow you are changing.
 - Long delays do NOT belong in a flow step â€” the executor caps a delay node at 10 seconds. "Call after 2 hours / follow up after 2 days" runs through the lead's scheduling fields and the follow-up engine, so explain that instead of building a delay step.
+`);
+
+  // HOW THE BUSINESS BEHAVES IS EDITABLE. The playbook could already be patched, but the routine row
+  // and the calling defaults had no path at all, so "make the routine weekly", "stop calling new leads
+  // automatically" and "change the calling voice" were answered as if they were impossible.
+  if (has('automation')) parts.push(`
+HOW THIS BUSINESS BEHAVES - you can change these yourself, in your own words:
+- 'get_routine' / 'update_routine': the standing routine. Cadence (daily / weekly / monthly), the hour it runs, its timezone, what it is for, the daily credit ceiling, who approves the output, the channels it may use, and whether it is switched on. update_routine creates the routine if the business has none. Switching it ON, or moving approval away from "always", comes back as an approval card - everything else applies immediately.
+- 'get_calling_defaults' / 'update_default_voice_settings': the default calling agent. The voice (Aoede, Kore, Charon, Fenrir, Puck), the starting language, whether a new lead is phoned automatically, and the calling script itself. Read them first, then change only what the owner asked for.
+  The script is stored on the playbook as call_script.script - never in a profile field, and never by touching the brand's visual style prompt.
+  Rewriting the script or switching auto-calling on comes back as an approval card, because that is what a real customer hears next. Voice and language changes apply immediately.
+- When the owner says "from now on", "instead of that, do this", or "stop doing X daily": make the change, then state exactly what changed and when it takes effect. Never reply that you cannot change your own routine, script or voice - you can.
 `);
 
   if (has('meta')) parts.push(`

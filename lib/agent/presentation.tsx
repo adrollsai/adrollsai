@@ -180,6 +180,9 @@ export const TOOL_PRESENTATION: Record<string, Row> = {
   launch_bulk_calling_campaign: row('Launch call campaign', 'voice', Rocket),
   get_call_history: row('Call history', 'voice', PhoneCall),
   update_default_voice_settings: row('Voice settings', 'voice', PhoneCall),
+  get_calling_defaults: row('Calling defaults', 'voice', PhoneCall),
+  get_routine: row('Read routine', 'schedule', CalendarClock),
+  update_routine: row('Change routine', 'schedule', CalendarClock),
 
   // ── Meta ads ─────────────────────────────────────────────────────────
   meta_mcp_list_campaigns: row('List campaigns', 'ads', Megaphone),
