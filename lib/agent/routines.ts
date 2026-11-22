@@ -3,6 +3,7 @@ import { enqueueRun } from './harness/runs';
 import { getActivePlaybook } from '@/lib/automation/ceo';
 import { availableCredits } from '@/lib/automation/billing';
 import { composeRoutineBrief } from '@/lib/automation/routine-composer';
+import { nextRunAt } from './routine-schedule';
 
 /**
  * Business routines — the daily loop.
@@ -78,10 +79,14 @@ export function periodLabel(now: Date, timezone: string): string {
 }
 
 export function nextRunAfter(now: Date, routine: BusinessRoutine): Date {
-  const next = new Date(now.getTime());
-  const stepDays = routine.cadence === 'daily' ? 1 : routine.cadence === 'weekly' ? 7 : 30;
-  next.setUTCDate(next.getUTCDate() + stepDays);
-  return next;
+  // Delegates to the real scheduler. The version this replaces added days to `now` and read neither
+  // `run_at_hour` nor `timezone`, so a routine whose row said "weekly at 18:00" fired at whatever
+  // clock time it happened to be created or last bumped - the hour was decoration.
+  return nextRunAt(now, {
+    cadence: routine.cadence,
+    run_at_hour: routine.run_at_hour,
+    timezone: routine.timezone,
+  });
 }
 
 // ---------------------------------------------------------------- the brief

@@ -229,13 +229,13 @@ check(
   'custom_prompt is the brand VISUAL STYLE for creatives; writing the script there would repaint every future image',
 );
 check(
-  'the routine write recomputes next_run_at from the routine itself',
-  /nextRunAfter\(/.test(routine) && /next_run_at\s*=/.test(routine),
-  'otherwise a cadence change keeps the old slot',
+  'the routine write recomputes next_run_at from the routine\'s own hour and zone',
+  /nextRunAt\(now, \{/.test(routine) && /run_at_hour:/.test(routine) && /timezone:/.test(routine),
+  'nextRunAfter ignored run_at_hour and timezone — see verify:schedule',
 );
 check(
-  'a new routine is not fired at the moment it is created',
-  /next_run_at = nextRunAfter\(now,/.test(routine),
+  'a new routine is scheduled from that helper, not "now + 12h"',
+  /const next = nextRunAt\(now,/.test(routine) && /row\.next_run_at = next\.toISOString\(\)/.test(routine),
 );
 
 // ── 4. the two writes that act afterwards still need a human

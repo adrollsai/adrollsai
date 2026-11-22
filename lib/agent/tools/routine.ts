@@ -6,7 +6,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   defaultRoutineIntent,
   ensurePeriodSession,
-  nextRunAfter,
   periodKey,
   periodLabel,
   queueRoutineRun,
@@ -14,6 +13,7 @@ import {
   type BusinessRoutine,
   type Cadence,
 } from '@/lib/agent/routines';
+import { describeSchedule, nextRunAt } from '@/lib/agent/routine-schedule';
 import { enqueueRun } from '@/lib/agent/harness/runs';
 import { availableCredits, hasBalance, CREDIT_COSTS } from '@/utils/credits';
 
@@ -358,7 +358,14 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
               tool_groups: patch.tool_groups || [],
               enabled: patch.enabled === true,
             };
-            row.next_run_at = nextRunAfter(now, row as BusinessRoutine).toISOString();
+            // The hour and the timezone are honoured here, not just stored: the schedule resolves the
+            // routine's own wall-clock hour in its own zone (see lib/agent/routine-schedule.ts).
+            const next = nextRunAt(now, {
+              cadence: row.cadence,
+              run_at_hour: row.run_at_hour,
+              timezone: row.timezone,
+            });
+            row.next_run_at = next.toISOString();
 
             const { data: created, error } = await db
               .from('business_routines')
@@ -373,32 +380,46 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
               routineId: created?.id ?? null,
               enabled: row.enabled,
               nextRunAt: row.next_run_at,
+              schedule: describeSchedule({ cadence: row.cadence, run_at_hour: row.run_at_hour, timezone: row.timezone }, next),
               summary: describeRoutine((created || row) as any),
               message:
-                `Created: it runs ${row.cadence} at ${String(row.run_at_hour).padStart(2, '0')}:00 ${row.timezone}, ` +
-                `${row.enabled ? 'switched on' : 'switched OFF until you turn it on'}, next run ${row.next_run_at}.`,
+                `Created: ${describeSchedule({ cadence: row.cadence, run_at_hour: row.run_at_hour, timezone: row.timezone }, next)}. ` +
+                `${row.enabled ? 'It is switched ON' : 'It is switched OFF until you turn it on'}, ` +
+                `daily ceiling ${row.daily_credit_cap} credits, approval ${row.approval_policy}.`,
             };
           }
 
           const before = describeRoutine(existing);
           const update: Record<string, any> = { ...patch };
+          let nextDate: Date | null = null;
           if (timingChanged) {
             const merged = { ...existing, ...patch } as BusinessRoutine;
-            update.next_run_at = nextRunAfter(now, merged).toISOString();
+            nextDate = nextRunAt(now, {
+              cadence: merged.cadence,
+              run_at_hour: merged.run_at_hour,
+              timezone: merged.timezone,
+            });
+            update.next_run_at = nextDate.toISOString();
           }
 
           const { error } = await db.from('business_routines').update(update).eq('id', existing.id);
           if (error) return { ok: false, error: `Could not update the routine: ${error.message}` };
 
           const after = { ...existing, ...update } as BusinessRoutine;
+          const schedule = describeSchedule(
+            { cadence: after.cadence, run_at_hour: after.run_at_hour, timezone: after.timezone },
+            nextDate || new Date(String(after.next_run_at || now.toISOString()))
+          );
           return {
             ok: true,
             routineId: existing.id,
             before,
             after: describeRoutine(after),
             nextRunAt: after.next_run_at,
+            schedule,
+            timingChanged,
             reason: input.reason || null,
-            message: `Updated. It now runs ${after.cadence} at ${String(after.run_at_hour).padStart(2, '0')}:00 ${after.timezone}; next run ${after.next_run_at}.`,
+            message: `Updated. ${schedule}.`,
           };
         } catch (e: any) {
           return { ok: false, error: e?.message || 'Could not update the routine' };
