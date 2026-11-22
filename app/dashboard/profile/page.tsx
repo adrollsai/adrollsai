@@ -4079,6 +4079,33 @@ export default function ProfilePage() {
 
             {/* AI CALL DEMO STUDIO LINK - Super Admin Exclusive (Opens in new page) */}
             {authRole === 'super_admin' && (
+              <div className="bg-white rounded-[2rem] shadow-sm border border-teal-200/80 overflow-hidden transition-all hover:shadow-md hover:border-teal-300">
+                <a
+                  href={`/dashboard/inbound-demo${impersonateId ? `?impersonate=${impersonateId}` : ''}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full p-6 sm:p-7 flex items-center justify-between hover:bg-teal-50/30 transition-all group block"
+                >
+                  <div className="flex items-center gap-4 text-left">
+                    <div className="bg-gradient-to-tr from-teal-600 to-emerald-600 text-white p-3.5 rounded-2xl group-hover:scale-105 transition-transform shadow-md shadow-teal-500/20">
+                      <PhoneCall size={22} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-base text-slate-900 flex items-center gap-2">
+                        Inbound Receptionist Test
+                        <span className="bg-teal-50 text-teal-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Super Admin</span>
+                        <span className="bg-sky-50 text-sky-600 text-[8px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">Call Forwarding</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Forward your own phone to a Nobogent number and the AI answers as the business — with your voice, language, greeting and catalogue.
+                      </p>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            )}
+
+            {authRole === 'super_admin' && (
               <div className="bg-white rounded-[2rem] shadow-sm border border-purple-200/80 overflow-hidden transition-all hover:shadow-md hover:border-purple-300">
                 <a 
                   href={`/dashboard/ai-call-demo${impersonateId ? `?impersonate=${impersonateId}` : ''}`}

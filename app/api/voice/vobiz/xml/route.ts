@@ -66,6 +66,46 @@ async function handleRequest(req: Request) {
         console.log(`[VOBIZ XML] Answer callback received. leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}, CallUUID: ${callUuid}`)
 
         let isInbound = false
+        // INBOUND LINE FIRST: does this dialled number belong to a configured receptionist?
+        //
+        // A forwarded call carries no leadId and no campaign, so the old path guessed the tenant by
+        // matching the DIALED number against profiles.voice_twilio_number and then fell back to
+        // "whichever super-admin comes first" - a forwarded call could be answered as the wrong
+        // business, with no script behind it. A configured inbound line now resolves to its owner
+        // before any guessing, and brings its greeting, voice, language and script with it.
+        let receptionistCampaignId: string | null = null
+        let receptionistVoice: string | null = null
+        if (!profileId && toNumber) {
+            try {
+                const { resolveDidOwner, ensureInboundCampaign } = await import('@/lib/inbound/receptionist')
+                const owner = await resolveDidOwner(supabaseAdmin, toNumber)
+                if (owner) {
+                    profileId = owner.userId
+                    receptionistVoice = owner.config.voiceName || null
+                    isInbound = true
+
+                    // Re-derive the script on every call: a greeting edited after the first call
+                    // must be what the next caller hears.
+                    const { data: prof } = await supabaseAdmin
+                        .from('profiles')
+                        .select('business_name, industry')
+                        .eq('id', owner.userId)
+                        .maybeSingle()
+                    const ensured = await ensureInboundCampaign(supabaseAdmin, owner.userId, owner.config, {
+                        businessName: prof?.business_name,
+                        industry: prof?.industry,
+                    })
+                    receptionistCampaignId = ensured.campaignId || owner.config.campaignId || null
+                    console.log(
+                        `[VOBIZ XML] Inbound line ${toNumber} -> business ${owner.userId} ` +
+                        `(voice ${receptionistVoice}, campaign ${receptionistCampaignId})`
+                    )
+                }
+            } catch (e: any) {
+                console.warn('[VOBIZ XML] Inbound line lookup failed, falling back to the old path:', e?.message)
+            }
+        }
+
         // If inbound call without leadId, resolve by phone
         if (!profileId && toNumber) {
             isInbound = true
@@ -139,7 +179,22 @@ async function handleRequest(req: Request) {
         }
 
         const effectiveProfileId = lead?.user_id || profileId
-        const effectiveCampaignId = campaignId || lead?.voice_campaign_id
+        // The receptionist's campaign wins on an inbound line: it carries THIS business's greeting
+        // and script. `lead.voice_campaign_id` may belong to an outbound campaign, or be null when
+        // the call arrived before any campaign existed.
+        let effectiveCampaignId = campaignId || lead?.voice_campaign_id
+
+        if (receptionistCampaignId && leadId) {
+            effectiveCampaignId = receptionistCampaignId
+            try {
+                await supabaseAdmin
+                    .from('leads')
+                    .update({ voice_campaign_id: receptionistCampaignId })
+                    .eq('id', leadId)
+            } catch (uErr: any) {
+                console.warn('[VOBIZ XML] Could not link the receptionist campaign to the inbound lead:', uErr?.message)
+            }
+        }
 
         // Prewarm voice bridge session
         warmupVoiceBridge(leadId, effectiveProfileId, effectiveCampaignId || undefined)
@@ -163,7 +218,7 @@ async function handleRequest(req: Request) {
             if (!searchParams.get('vobizAuthToken')) { authToken = bi?.voice_vobiz_auth_token || authToken; }
         } catch (pErr) {}
 
-        let voiceName = searchParams.get('voiceName') || prof?.voice_name || 'Aoede'
+        let voiceName = searchParams.get('voiceName') || receptionistVoice || prof?.voice_name || 'Aoede'
         if (effectiveCampaignId) {
             try {
                 const { data: camp } = await supabaseAdmin
