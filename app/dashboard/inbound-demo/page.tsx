@@ -46,9 +46,11 @@ interface Config {
 
 interface Readiness {
   bridge: { ok: boolean; url: string; detail: string };
+  did: { number: string; claimedByOtherTenant: boolean; claimedByBusinessName: string | null; detail: string };
   config: { stored: boolean; enabled: boolean; campaignId: string | null };
   canAnswer: boolean;
   blockers: string[];
+  warnings: string[];
 }
 
 interface Payload {
@@ -325,6 +327,31 @@ export default function InboundDemoPage() {
             ))}
           </ul>
         )}
+
+        {!!data?.readiness.warnings?.length && (
+          <ul className="mt-3 space-y-1.5">
+            {data.readiness.warnings.map((w, i) => (
+              <li
+                key={i}
+                className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2"
+              >
+                <AlertTriangle size={13} className="mt-0.5 shrink-0" /> {w}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">
+          <strong className="text-slate-800">The step that is easy to miss in Vobiz:</strong> creating the
+          application is only half of it. Open <em>Numbers</em>, select this DID, and link it to the
+          application you just made — otherwise a call to the number never reaches this webhook and goes to
+          whatever that number was already doing.
+          {data?.readiness.did?.claimedByOtherTenant && data.readiness.did.claimedByBusinessName && (
+            <span className="block mt-1 text-amber-700">
+              {data.readiness.did.number} is registered to {data.readiness.did.claimedByBusinessName}.
+            </span>
+          )}
+        </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
           <button

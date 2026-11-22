@@ -76,7 +76,7 @@ async function main() {
   try {
     // ---- 0. sanity of the pure layer
     console.log('\n▸ the receptionist config itself');
-    const did = DEFAULT_INBOUND_DID;
+    const did = arg('did', DEFAULT_INBOUND_DID || '+917965480715');
     const base = defaultReceptionist({ businessName: (before as any)?.business_name, industry: 'real_estate' });
     const bad = sanitiseConfig({ voiceName: 'Barry' }, base);
     check('an unknown voice is refused', bad.ok === false, bad.error);

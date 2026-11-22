@@ -37,8 +37,16 @@ export const INBOUND_LANGUAGES = [
   'bengali',
 ] as const;
 
-/** The line the platform hands out when a business has not chosen one. */
-export const DEFAULT_INBOUND_DID = process.env.INBOUND_TEST_DID || '+917965480539';
+/**
+ * A line for a business that has not chosen one.
+ *
+ * DELIBERATELY NOT A HARD-CODED NUMBER. This used to default to `+917965480539`, which is a live
+ * tenant's business line - so a "test" line pointed at somebody else's phone number, and attaching a
+ * voice application to it would silently take over that tenant's inbound calls. The only honest
+ * default is the business's OWN claimed number, and when it has none, no number at all: the owner
+ * must choose one, which is what the page asks for.
+ */
+export const DEFAULT_INBOUND_DID = process.env.INBOUND_TEST_DID || '';
 
 export interface InboundReceptionistConfig {
   /** The Nobogent DID the owner forwards their own phone to. */
@@ -185,6 +193,10 @@ export async function loadReceptionist(
   const bi = parseBusinessInfo(profile?.business_info);
   const stored = bi.inbound_receptionist;
 
+  // A business that has never configured this line starts on the number IT already owns - never on
+  // somebody else's line, which is what the old hard-coded default did.
+  const ownNumber = normaliseDid(bi?.voice_vobiz_number) || normaliseDid(profile?.voice_twilio_number) || '';
+
   if (stored && typeof stored === 'object') {
     const base = defaultReceptionist({
       businessName: profile?.business_name,
@@ -196,7 +208,7 @@ export async function loadReceptionist(
       config: {
         ...base,
         ...stored,
-        did: normaliseDid(stored.did) || base.did,
+        did: normaliseDid(stored.did) || base.did || ownNumber,
       },
       profile,
       stored: true,
@@ -204,12 +216,15 @@ export async function loadReceptionist(
   }
 
   return {
-    config: defaultReceptionist({
-      businessName: profile?.business_name,
-      industry: profile?.industry,
-      voiceName: profile?.voice_name,
-      language: bi.default_calling_language,
-    }),
+    config: {
+      ...defaultReceptionist({
+        businessName: profile?.business_name,
+        industry: profile?.industry,
+        voiceName: profile?.voice_name,
+        language: bi.default_calling_language,
+      }),
+      did: ownNumber,
+    },
     profile,
     stored: false,
   };
@@ -419,10 +434,71 @@ export async function ensureInboundCampaign(
 
 export interface ReadinessReport {
   bridge: { ok: boolean; url: string; detail: string };
-  did: { number: string; owned: boolean | null; detail: string };
+  did: {
+    number: string;
+    /** Set when the number is a DIFFERENT tenant's line: attaching an app there hijacks their calls. */
+    claimedByOtherTenant: boolean;
+    claimedByBusinessName: string | null;
+    detail: string;
+  };
   config: { stored: boolean; enabled: boolean; campaignId: string | null };
   canAnswer: boolean;
   blockers: string[];
+  /** Things the owner should know but that do not stop the line: e.g. a deliberately reused DID. */
+  warnings: string[];
+}
+
+/**
+ * Does this DID already belong to a different business?
+ *
+ * The reason this exists: the first version of this page opened with a tenant's live number
+ * pre-filled, and a forwarded test call rang that tenant's staff instead of the AI. A number that
+ * answers for somebody else must be flagged BEFORE an application is attached to it, not discovered
+ * when a stranger picks up.
+ */
+export async function didOwnership(
+  db: any,
+  did: string,
+  currentUserId: string
+): Promise<{ claimedByOtherTenant: boolean; businessName: string | null; ownerId: string | null }> {
+  const wanted = normaliseDid(did);
+  if (!wanted) return { claimedByOtherTenant: false, businessName: null, ownerId: null };
+  const digits = wanted.replace(/\D/g, '');
+  const spaced = `+${digits.slice(0, 2)} ${digits.slice(2, 7)} ${digits.slice(7)}`;
+
+  const { data } = await db
+    .from('profiles')
+    .select('id, business_name, voice_twilio_number, business_info')
+    .or(`voice_twilio_number.eq.${wanted},voice_twilio_number.eq.${digits},voice_twilio_number.eq.${spaced}`)
+    .limit(10);
+
+  for (const row of (data || []) as any[]) {
+    const bi = parseBusinessInfo(row.business_info);
+    const claimed =
+      normaliseDid(row.voice_twilio_number) === wanted || normaliseDid(bi?.voice_vobiz_number) === wanted;
+    if (claimed && row.id !== currentUserId) {
+      return { claimedByOtherTenant: true, businessName: row.business_name || null, ownerId: row.id };
+    }
+    if (claimed) return { claimedByOtherTenant: false, businessName: row.business_name || null, ownerId: row.id };
+  }
+
+  // Numbers are also stored inside business_info JSON, which the query above cannot match on.
+  const { data: blobs } = await db
+    .from('profiles')
+    .select('id, business_name, business_info')
+    .like('business_info', `%${digits}%`)
+    .limit(20);
+  for (const row of (blobs || []) as any[]) {
+    const bi = parseBusinessInfo(row.business_info);
+    if (normaliseDid(bi?.voice_vobiz_number) === wanted) {
+      if (row.id !== currentUserId) {
+        return { claimedByOtherTenant: true, businessName: row.business_name || null, ownerId: row.id };
+      }
+      return { claimedByOtherTenant: false, businessName: row.business_name || null, ownerId: row.id };
+    }
+  }
+
+  return { claimedByOtherTenant: false, businessName: null, ownerId: null };
 }
 
 /**
@@ -437,9 +513,10 @@ export async function checkReadiness(
   userId: string,
   config: InboundReceptionistConfig,
   stored: boolean,
-  opts: { probeModel?: boolean } = {}
+  opts: { probeModel?: boolean; allowForeignDid?: boolean } = {}
 ): Promise<ReadinessReport> {
   const blockers: string[] = [];
+  const warnings: string[] = [];
 
   const bridgeUrl = resolveVoiceBridgeHttpUrl();
   let bridgeOk = false;
@@ -457,6 +534,29 @@ export async function checkReadiness(
   if (!stored) blockers.push('Nothing is saved yet: the line is running on the built-in defaults. Save it before forwarding your phone.');
   if (!config.enabled) blockers.push('The line is switched off.');
   if (!config.campaignId) blockers.push('No receptionist script has been prepared yet (press Save).');
+
+  if (!config.did) {
+    blockers.push('No number is chosen. Pick a Nobogent DID that this business owns, otherwise nothing can be forwarded to it.');
+  }
+
+  const ownership = config.did
+    ? await didOwnership(db, config.did, userId)
+    : { claimedByOtherTenant: false, businessName: null, ownerId: null };
+  if (ownership.claimedByOtherTenant) {
+    const message =
+      `${config.did} is already the business line for ${ownership.businessName || 'another account'}. ` +
+      'Attaching a voice application to it would take over their inbound calls - choose a number that belongs to this business.';
+    // A platform operator may deliberately reuse a line they control. That is their call to make,
+    // so it becomes a warning they must have read - not a silent success and not a dead end.
+    if (opts.allowForeignDid) {
+      warnings.push(
+        `${config.did} is registered to ${ownership.businessName || 'another account'}. Calls to it will be answered ` +
+          `as ${config.enabled ? 'this business' : 'nobody'}, and that account loses whatever answered this number before.`
+      );
+    } else {
+      blockers.push(message);
+    }
+  }
 
   // The model behind the stream is the thing that actually fails silently.
   if (opts.probeModel) {
@@ -489,11 +589,14 @@ export async function checkReadiness(
     bridge: { ok: bridgeOk, url: bridgeUrl, detail: bridgeDetail },
     did: {
       number: config.did,
-      owned: null,
-      detail: 'The DID must belong to this Vobiz account and be routed to our answer URL once, in the Vobiz console.',
+      claimedByOtherTenant: ownership.claimedByOtherTenant,
+      claimedByBusinessName: ownership.businessName,
+      detail:
+        'In the Vobiz console the number itself must be linked to the application - creating the application is not enough. Until then a call to this number never reaches this webhook.',
     },
     config: { stored, enabled: config.enabled, campaignId: config.campaignId || null },
     canAnswer: blockers.length === 0,
     blockers,
+    warnings,
   };
 }

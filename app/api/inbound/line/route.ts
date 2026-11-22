@@ -44,6 +44,13 @@ async function didCandidates(userId: string, currentDid: string) {
   return Array.from(numbers).filter(Boolean);
 }
 
+/** Platform operators may deliberately point a line they control at a receptionist. */
+async function isOperator(userId: string) {
+  const { data } = await admin.from('profiles').select('role, email').eq('id', userId).maybeSingle();
+  return ['super_admin', 'admin', 'agency'].includes(String((data as any)?.role || '')) ||
+    String((data as any)?.email || '').toLowerCase() === 'rchopra489@gmail.com';
+}
+
 export async function GET(req: Request) {
   const supabase = await createClient();
   const {
@@ -53,9 +60,13 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const probe = url.searchParams.get('probe') === '1';
+  const operator = await isOperator(user.id);
 
   const { config, profile, stored } = await loadReceptionist(admin, user.id);
-  const readiness = await checkReadiness(admin, user.id, config, stored, { probeModel: probe });
+  const readiness = await checkReadiness(admin, user.id, config, stored, {
+    probeModel: probe,
+    allowForeignDid: operator,
+  });
 
   const { data: calls } = await admin
     .from('leads')
@@ -106,7 +117,10 @@ export async function POST(req: Request) {
     const saved = await saveReceptionist(admin, user.id, next);
     if (!saved.ok) return NextResponse.json({ error: saved.error }, { status: 500 });
 
-    const readiness = await checkReadiness(admin, user.id, next, true, { probeModel: body?.probe === true });
+    const readiness = await checkReadiness(admin, user.id, next, true, {
+      probeModel: body?.probe === true,
+      allowForeignDid: await isOperator(user.id),
+    });
 
     return NextResponse.json({
       ok: true,
