@@ -479,5 +479,43 @@ console.log('\n▸ the catalogue has a write path, against the real columns');
   );
 }
 
+// ── 8. the agent's own models, and its fallback
+console.log('\n▸ the agent runs on the model it says it does');
+{
+  const { VIDEO_ANALYSIS_MODEL } = await import('../lib/agent/models');
+  const deepseek = codeOf('lib/agent/deepseek.ts');
+  const fallback = deepseek.match(/const AGENT_FALLBACK_MODEL = '([^']+)'/)?.[1] || '';
+
+  check(
+    'the agent model is the pinned DeepSeek flash, not an alias and not the reasoner',
+    /provider\.chat\(DEEPSEEK_MODELS\.flash\)/.test(deepseek) && !/DEEPSEEK_MODELS\.pro/.test(deepseek),
+  );
+  check(
+    'its Gemini fallback is the current Flash generation',
+    fallback === 'gemini-3.8-flash',
+    fallback || '(no fallback constant found)',
+  );
+  check(
+    'and it matches the id the rest of the codebase uses, so the two cannot drift',
+    fallback === VIDEO_ANALYSIS_MODEL,
+    `models.ts says ${VIDEO_ANALYSIS_MODEL}`,
+  );
+  check(
+    'the two-generations-old fallback is gone',
+    !/google\('gemini-2\.5-flash'\)/.test(deepseek),
+  );
+  check(
+    'a fallback is announced rather than silent',
+    /falling back to \$\{AGENT_FALLBACK_MODEL\}/.test(deepseek),
+    'the owner can be told which model answered',
+  );
+  check(
+    'the frozen model registry was not edited to do this',
+    /pro: 'deepseek-v4-pro'/.test(rawOf('lib/agent/models.ts')) &&
+      /flash: 'deepseek-flash'/.test(rawOf('lib/agent/models.ts')),
+    'lib/agent/models.ts is untouched',
+  );
+}
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

@@ -11,6 +11,23 @@ export { DEEPSEEK_MODELS, DEEPSEEK_BASE_URL };
 export type { DeepseekModelId } from './models';
 
 /**
+ * The model the agent falls back to when the DeepSeek key is unusable.
+ *
+ * `gemini-2.5-flash` was the fallback and it is two generations behind. Verified against
+ * `GET /v1beta/models` on this account (50 models visible) and the published docs
+ * (https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash): the newest Flash is
+ * `gemini-3.8-flash` — the list also carries 3.6 and 3.7 Flash, plus `gemini-flash-latest` as an
+ * alias that silently tracks whatever is newest. A pinned id is used on purpose: an alias can move
+ * under us mid-conversation and change tool-call formatting, which is the exact failure the
+ * models.ts comment at the top of this file was written for.
+ *
+ * The id is duplicated here rather than added to `lib/agent/models.ts`, because that file is the
+ * frozen, verified-against-the-API registry and is not to be edited. `verify:parity` asserts this
+ * constant equals `VIDEO_ANALYSIS_MODEL` there, so the two can never drift apart unnoticed.
+ */
+const AGENT_FALLBACK_MODEL = 'gemini-3.8-flash';
+
+/**
  * Custom fetch for DeepSeek SSE stream:
  * DeepSeek returns reasoning inside `delta.reasoning_content`.
  * We wrap reasoning into <think>...</think> tags so that AI SDK's
@@ -215,7 +232,8 @@ export async function isDeepseekAuthorized(): Promise<boolean> {
  * no longer selects a different model: the reasoner (`deepseek-v4-pro`) is not
  * used by the agent.
  *
- * Fallback: Google Gemini Flash, only when there is no usable DeepSeek key.
+ * Fallback: Google Gemini Flash (the current generation — see AGENT_FALLBACK_MODEL above), only
+ * when there is no usable DeepSeek key.
  */
 export async function getAgentModel(options: { preferReasoning?: boolean; hasVision?: boolean } = {}) {
   void options;
@@ -232,6 +250,9 @@ export async function getAgentModel(options: { preferReasoning?: boolean; hasVis
     }
   }
 
-  console.warn('[Agent Model] DeepSeek key not authorized — falling back to Gemini Flash.');
-  return google('gemini-2.5-flash');
+  console.warn(
+    `[Agent Model] DeepSeek key not authorized — falling back to ${AGENT_FALLBACK_MODEL}. ` +
+      'The owner should be told the agent is running on the fallback model, not the primary one.'
+  );
+  return google(AGENT_FALLBACK_MODEL);
 }
