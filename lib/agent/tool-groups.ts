@@ -96,7 +96,7 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
     // changes to how the business behaves on its own, and without these words the turn loaded no
     // automation tool and the agent answered that it could not change them.
     signals:
-      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?|audiences?|segments?|broadcasts?|campaigns?|move|stage|archiv\w+|tags?|crm|routines?|daily (?:routine|plan|brief|standup)|every day|each day|call(?:ing)? script|script (?:for|on) (?:the |my )?calls?|calling defaults?|calling voice|auto[- ]?call\w*|automatically|call(?:ing)? (?:new )?leads?|default voice|speaking voice|voice (?:agent|caller)|greeting)\b/i,
+      /\b(automations?|automated|automating|workflows?|flows?|triggers?|whenever|when a lead|sequences?|follow ?ups?|drips?|cadences?|audiences?|segments?|broadcasts?|campaigns?|move|stage|archiv\w+|tags?|crm|routines?|daily (?:routine|plan|brief|standup)|every day|each day|call(?:ing)? script|script (?:for|on) (?:the |my )?calls?|calling defaults?|calling voice|auto[- ]?call\w*|automatically|call(?:ing)? (?:new )?leads?|call (?:everyone|everybody|all|people|the list)|default voice|speaking voice|voice (?:agent|caller)|greeting)\b/i,
   },
   research: {
     signals:

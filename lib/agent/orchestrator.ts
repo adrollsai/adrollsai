@@ -18,6 +18,8 @@ import { createMediaStudioTools } from './tools/media_studio';
 import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
 import { createRegisteredVoiceTools } from './tools/voice';
+import { createComposedAdTools } from './tools/ads';
+import { createCallingCampaignTools } from './tools/calling';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
@@ -256,6 +258,13 @@ export async function createAgentContext(
     ...(has('recipes') ? createRecipeTools() : {}),
     ...(has('meta') ? createMetaOfficialMcpTools(supabase, userId) : {}),
     ...(has('meta') ? createMetaGraphTools(supabase, userId) : {}),
+    // COMPOSED ADS, on top of the primitives above rather than instead of them: a launch goes through the same
+    // campaign plan and processor the ads screen uses, and the raw Graph tools stay reachable for everything the
+    // composed paths do not cover. The agent could only improvise a launch before, on a live ad account.
+    ...(has('meta') ? createComposedAdTools(supabase, userId) : {}),
+    // Calling campaigns: the UI's bulk dialer had no agent path at all, so "call my 400 Diwali leads" was answered
+    // with one call or a pointer to the dashboard. Capped, gated, and stoppable without approval.
+    ...(has('automation') || has('meta') ? createCallingCampaignTools(supabase, userId) : {}),
     ...(has('meta') && metaLegacy ? { meta_mcp_launch_leadgen_campaign: metaLegacy.meta_mcp_launch_leadgen_campaign } : {}),
     ...(has('research') ? createDeepSeekSearchTools() : {}),
     ...(has('research') ? createWebFetchMcpTools() : {}),
@@ -457,6 +466,15 @@ MEDIA STUDIO â€” the app's own generation models, for actually creating med
 - 'list_reference_creatives': the app's built-in reference creatives (35 finished ad designs, each with a public image URL). Use when the user says "like this one", "in that style", or asks what templates exist. Pass the chosen url to generate_ai_image as referenceImageUrls â€” and be clear the reference is a style guide, never their own asset.
 - 'get_creative_rules': the house visual rules for this business's vertical (composition, typography, lighting, what to avoid). Fetch these before writing any branded graphic or ad-creative prompt; the dashboard applies them automatically, the agent must ask for them.
 - 'build_ad_creative_prompt': the default ad system. Brief in, conversion angle + headline + offer + CTA + a complete imagePrompt + a pixel layout + a verification checklist out. Use it for every ad, with or without a reference.
+FAST PATH FOR ONE IMAGE OR AD — the slowest thing you do, and it does not have to be:
+- When the owner asks for a single image, poster or ad creative and has told you what it is for, do EXACTLY TWO tool
+  calls and then answer: 'build_ad_creative_prompt', then 'generate_ai_image' with its imagePrompt. Then stop.
+- No reference search, no web search, no sandbox, no 'plan_image', no second brief, no re-planning. Measured: a
+  "make me an ad image" request spent 30 steps on preparation, took 5-12 minutes and sometimes staged no card at all.
+- The reference hunt above is for a LOOK that matters or was asked for ("like this one", "same style as our
+  Instagram"). A plain "make me an ad for the Diwali offer" does not need it.
+- If the brief is missing the one fact that decides the ad (the offer, the price, the product), ask for that fact in
+  one line - do not go looking for it in ten tools.
 - 'search_24fps_motion_graphics', 'get_24fps_clip_source', 'search_24fps_editor_presets', 'get_24fps_editor_preset': search 7,000+ motion graphic clips, presets and GSAP templates.
 Voiceover + Grok video + HyperFrames is the full ad pipeline: generate the images, animate them with Grok, narrate with Gemini TTS, then mux or compose in the sandbox.
 REFERENCES ARE THE DEFAULT, NOT A REQUEST — nobody should have to ask you to look.
@@ -641,6 +659,18 @@ HOW THIS BUSINESS BEHAVES - you can change these yourself, in your own words:
 - When the owner says "from now on", "instead of that, do this", or "stop doing X daily": make the change, then state exactly what changed and when it takes effect. Never reply that you cannot change your own routine, script or voice - you can.
 `);
 
+  // CALLING CAMPAIGNS. The bulk dialer lived only in the dashboard: the agent could place one gated call, or start
+  // the daily routine, and had no way to ring a segment of leads at all.
+  if (has('automation') || has('meta')) parts.push(`
+CALLING CAMPAIGNS - you can start one:
+- 'list_calling_campaigns' first: what already ran, and how far the dialling got (queued, calling, completed, no answer, failed). Two live campaigns over the same leads phones people twice.
+- 'start_calling_campaign': audience (a saved group, filters, or explicit lead ids) + a purpose + a voice. It creates the campaign, attaches the leads and starts the same runner the Voice campaigns screen uses. Inside the 9am-7pm IST calling window only; the 5-minute cron continues the queue.
+  It is HARD CAPPED at 200 leads per step and defaults to 25. Do not try to get round the cap - queue the next batch with a second approved step and say how many are left.
+  It needs a segment, a purpose and a window before it queues anything; missing any of them comes back as questions, and nothing is queued.
+- 'stop_calling_campaign': pauses the campaign AND detaches the leads that have not been dialled, so the cron cannot pick them up. It needs NO approval - if an owner says stop, stop first and explain afterwards.
+- For ONE person, use 'nobogent_voice_dispatch_call'. For "call everyone who enquired last week", use the campaign.
+`);
+
   if (has('meta')) parts.push(`
 META ADS â€” you manage the user's CONNECTED ad account directly:
 - 'meta_graph_account': the ad account's name, currency, timezone, status, spend and reachable accounts. Call this before quoting any budget so you use the real currency. It also reports whether the account can SPEND at all â€” paymentMethod.present, disableReason, readyToSpend and a readinessWarning. An account with no payment method accepts a campaign and then never delivers it, so if readyToSpend is false, tell the owner what is missing BEFORE any budget is promised.
@@ -651,6 +681,14 @@ META ADS â€” you manage the user's CONNECTED ad account directly:
 - 'meta_graph_query': the escape hatch. Any Graph endpoint the token is authorised for â€” pixels, catalogs, rules, business assets. Use it when no specific tool fits; do not claim something is impossible before trying it.
 - 'meta_mcp_launch_leadgen_campaign': one-shot launcher that builds form + campaign + ad set + creative + ad in a single call.
 - 'meta_official_list_tools' / 'meta_official_call_tool': Meta's OFFICIAL remote ads MCP server (mcp.facebook.com/ads). Prefer these when available. They require the "ads_mcp_management" permission; connected tokens currently lack it, so a 401 with remediation means fall back to the meta_graph_* tools rather than giving up.
+HOW TO LAUNCH - COMPOSED FIRST, PRIMITIVES ALWAYS AVAILABLE:
+- 'get_ads_readiness': connected account, page, pixel, currency, the URL the ads point at, and the minimum budget. Call it FIRST for any ads request; a launch without these fails inside Meta with a code nobody can act on.
+- 'launch_meta_campaign': the DEFAULT for "run a campaign / get me leads / advertise this". It resolves the objective, the ad-set optimisation, whether an instant form is needed and which questions it carries, then creates the campaign, ad set, creatives and ads - through the same plan and processor the ads screen uses, so a launch from chat and a launch from the modal cannot disagree.
+- 'launch_meta_retargeting': audience -> campaign in one action ("retarget my qualified leads"). It creates the hashed custom audience from the CRM or a phone list, then launches a campaign targeting only that audience.
+- 'optimize_meta_campaign': reads real performance and returns which ad sets to pause, which to keep and where the budget belongs, with the exact primitive call attached. It moves nothing by itself.
+- THE PRIMITIVES STAY. 'meta_graph_create', 'meta_graph_update', 'meta_graph_set_status', 'meta_graph_query', 'meta_graph_search_targeting' and the official MCP tools are all still here, and they are the answer whenever a composed tool does not cover what the owner wants: special ad categories, bid strategies, unusual placements, catalogue/DPA structures, conversion-rule or pixel surgery, anything Meta allows and this product has not wrapped yet.
+- NEVER answer "I cannot do that in Meta Ads" because no composed tool fits. Say what you will do, then do it with a primitive. Conversely, when a composed tool DOES fit, use it rather than hand-building the same campaign out of Graph fields - the composed path is the one that has been debugged against real accounts.
+- Both are gated: a composed launch comes back as an approval card, and so does any primitive that writes.
 `);
 
   if (has('reporting')) parts.push(`

@@ -189,6 +189,13 @@ export const TOOL_PRESENTATION: Record<string, Row> = {
   meta_mcp_get_insights: row('Campaign insights', 'ads', BarChart2),
   meta_mcp_create_campaign: row('Create campaign', 'ads', Megaphone),
   meta_mcp_launch_leadgen_campaign: row('Launch lead-gen campaign', 'ads', Rocket),
+  get_ads_readiness: row('Check ads setup', 'ads', Activity),
+  launch_meta_campaign: row('Launch campaign', 'ads', Rocket),
+  launch_meta_retargeting: row('Launch retargeting', 'ads', Rocket),
+  optimize_meta_campaign: row('Review campaign', 'ads', BarChart2),
+  start_calling_campaign: row('Start call campaign', 'voice', PhoneCall),
+  stop_calling_campaign: row('Stop call campaign', 'voice', PhoneCall),
+  list_calling_campaigns: row('Call campaigns', 'voice', PhoneCall),
 
   // ── scheduling ───────────────────────────────────────────────────────
   schedule_agent_task: row('Schedule task', 'schedule', CalendarClock),

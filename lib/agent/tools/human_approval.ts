@@ -144,7 +144,15 @@ export function createHumanApprovalTool(supabase: SupabaseClient, userId: string
     request_user_input: tool({
       description: 'Requests essential input, preferences, or clarification from the user at any point in an autonomous flow. Immediately sends a push notification to their device so they can provide the answer even if they navigated away or closed the tab. Pass `questions` to ask a BATCH of questions in one walkthrough (the docked panel steps through them one at a time) instead of one round trip per question — this is the pre-flight call for any big action that is missing required inputs (a campaign budget, locations, which asset to run, the offer, the segment, the timing). Four questions maximum; mark the answer you would pick with `recommended: true`.',
       inputSchema: z.object({
-        question: z.string().describe('The question or decision prompt to ask the user'),
+        // OPTIONAL, and that is the fix. `questions` is the batch form this description recommends for a pre-flight
+        // ("a campaign budget, locations, which asset to run, the offer, the segment, the timing"), but `question` was
+        // REQUIRED - so a model that did exactly what it was told and passed only `questions` had the whole call
+        // rejected by schema validation: "expected string, received undefined" at path `question`. Measured on a real
+        // ads pre-flight: the agent composed four excellent questions, was refused twice, and fell back to prose.
+        question: z
+          .string()
+          .optional()
+          .describe('A single question. Omit when you pass `questions` (the batch form) instead.'),
         context: z.string().optional().describe('Why this input is required for the workflow'),
         suggestedOptions: z.array(z.string()).optional().describe('Optional list of quick choices/options'),
         questions: z
@@ -167,15 +175,38 @@ export function createHumanApprovalTool(supabase: SupabaseClient, userId: string
           .optional()
           .describe('Ask several questions in one go. When present, `question` is ignored.'),
       }),
-      execute: async ({ question, context, suggestedOptions, questions }) => {
+      execute: async ({ question, context, suggestedOptions, questions }: any) => {
         try {
           const inputRequestId = 'input_' + crypto.randomBytes(6).toString('hex');
 
           // One question is the common case; `questions` is the batch form. Keep a
           // flat `question` alongside so any older renderer still has something to
           // show.
-          const list = Array.isArray(questions) && questions.length > 0 ? questions : null;
-          const headline = list ? list[0].question : question;
+          const batch = Array.isArray(questions)
+            ? questions.filter((q: any) => String(q?.question ?? '').trim())
+            : [];
+          const list = batch.length
+            ? batch
+            : String(question ?? '').trim()
+              ? [
+                  {
+                    question: String(question).trim(),
+                    context,
+                    options: (Array.isArray(suggestedOptions) ? suggestedOptions : []).map((label: string) => ({ label })),
+                  },
+                ]
+              : null;
+
+          if (!list) {
+            return {
+              success: false,
+              error:
+                'Ask at least one question: pass `question` for a single one, or `questions` (an array of ' +
+                '{question, context?, options?[{label, description?, recommended?}]}) for a batch.',
+            };
+          }
+
+          const headline = list[0].question;
 
           // Send push notification to user device
           try {

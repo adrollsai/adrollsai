@@ -82,6 +82,13 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
 
   // ── the owner's ad budget
   meta_mcp_launch_leadgen_campaign: { actionType: 'ad_spend', why: 'it launches a campaign that spends real ad budget' },
+  // The composed launches are the same act as the primitives below, so they carry the same gate. They are also the
+  // path that reuses the campaign plan and the processor, which is why they are the default.
+  launch_meta_campaign: { actionType: 'ad_spend', why: 'it creates a campaign that starts spending real ad budget' },
+  launch_meta_retargeting: {
+    actionType: 'ad_spend',
+    why: 'it uploads customer contact data to Meta and launches a campaign that spends real ad budget',
+  },
   meta_mcp_create_campaign: { actionType: 'ad_spend', why: 'it creates a campaign that can start spending' },
   meta_graph_create: { actionType: 'ad_spend', why: 'it creates a Meta object that can spend budget' },
   meta_graph_set_status: { actionType: 'ad_spend', why: 'it can start or stop live spending' },
@@ -150,6 +157,12 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   // ── reaching a real person
   nobogent_whatsapp_send_template: { actionType: 'whatsapp_broadcast', why: 'a real customer receives it' },
   nobogent_voice_dispatch_call: { actionType: 'bulk_call', why: 'a real customer is phoned and each call is billed' },
+  // A calling campaign is many phones ringing. The card carries the audience, the purpose and the lead count, and the
+  // tool itself is hard-capped to one batch per approval. Stopping it (stop_calling_campaign) is deliberately open.
+  start_calling_campaign: {
+    actionType: 'bulk_call',
+    why: 'it queues real phone calls to a list of leads and every call is billed',
+  },
   // A campaign is N sends, so it has the largest blast radius of any tool here: the approval card
   // carries the template, the audience, and how many people are in it.
   whatsapp_broadcast_to_audience: {
