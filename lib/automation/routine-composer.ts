@@ -27,6 +27,7 @@
 import type { Playbook } from './ceo';
 import { industryVocabulary } from './industry';
 import { resolveRecipes, type RecipeSet } from './recipes';
+import { observanceBriefLines, upcomingObservances } from './observance-calendar';
 
 export interface RoutineBriefRoutine {
   name?: string;
@@ -46,6 +47,11 @@ export interface RoutineBriefInput {
   routine: RoutineBriefRoutine;
   /** Today, in the tenant's timezone, as YYYY-MM-DD. */
   todaysDate: string;
+  /**
+   * The instant the brief is composed. Defaults to the real clock, which is what the cron and the
+   * manual trigger both want; injectable so the observance window can be tested against a fixed date.
+   */
+  now?: Date;
   /** Raw wallet balance, for the agent's own planning. */
   creditsLeft?: number | null;
   /** Balance minus open holds: what today is actually allowed to commit. */
@@ -57,6 +63,14 @@ export interface RoutineBriefInput {
 }
 
 const MAX_LIST = 6;
+
+/**
+ * How far ahead observance days are surfaced in the brief.
+ *
+ * 14 days, so the day after tomorrow and the day after that are both visible: long enough to plan a
+ * shoot, short enough that a creative is not made three weeks before the day it belongs to.
+ */
+const OBSERVANCE_WINDOW_DAYS = 14;
 
 function listBlock(title: string, items: unknown, limit = MAX_LIST): string[] {
   const arr = Array.isArray(items) ? items : items ? [items] : [];
@@ -225,6 +239,22 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   lines.push(`- what went out in the last 7 days and what happened to it`);
   lines.push(`- the calendar: any festival, holiday or event today or tomorrow`);
   if (input.festivals?.length) lines.push(`- known for today: ${input.festivals.slice(0, MAX_LIST).join(', ')}`);
+  // OBSERVANCE DAYS (Women's Day, Earth Day, Environment Day, Yoga Day, Mother's/Father's Day, ...)
+  // were nobody's job: they are not festivals, so the festival calendar never carried them, and the
+  // routine was told only to "check the calendar" — which it had no way to do. They arrive here with
+  // the date, the commercial angle and the lead time, so the creative exists BEFORE the day.
+  const observances = upcomingObservances(input.now ?? new Date(), {
+    withinDays: OBSERVANCE_WINDOW_DAYS,
+    timezone: routine.timezone,
+  });
+  if (observances.length) {
+    lines.push('');
+    lines.push('OBSERVANCE DAYS — in the window right now (not festivals; fixed national/international days):');
+    lines.push(...observanceBriefLines(observances));
+    lines.push(
+      '- An observance creative is a real piece of work, not a greeting card: use the angle given, and tie it to what this business actually sells. If the honest angle does not exist, skip that day and say why.'
+    );
+  }
   if (input.recentOutputs?.length) {
     lines.push(`- already published recently: ${input.recentOutputs.slice(0, MAX_LIST).join('; ')}`);
   }

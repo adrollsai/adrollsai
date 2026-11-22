@@ -127,6 +127,7 @@
     "verify:artefact-qa": "esbuild scripts/verify-artefact-qa.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-artefact-qa.mjs --log-level=warning && node .tmp-artefact-qa.mjs",
     "verify:call-queue": "esbuild scripts/verify-call-queue.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-call-queue.mjs --log-level=warning && node .tmp-call-queue.mjs",
     "verify:parity": "esbuild scripts/verify-agent-parity.ts --bundle --platform=node --format=esm --outfile=.tmp-verify-parity.mjs --log-level=warning && node .tmp-verify-parity.mjs",    "verify:inbound": "esbuild scripts/verify-inbound.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-inbound.mjs --log-level=warning && node .tmp-verify-inbound.mjs",
+    "verify:observances": "esbuild scripts/verify-observances.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-observances.mjs --log-level=warning && node .tmp-verify-observances.mjs",
     "verify:schedule": "esbuild scripts/verify-routine-schedule.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-schedule.mjs --log-level=warning && node .tmp-verify-schedule.mjs",
 
     "verify:behaviour": "esbuild scripts/verify-behaviour-controls.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-behaviour.mjs --log-level=warning && node .tmp-verify-behaviour.mjs",

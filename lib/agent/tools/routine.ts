@@ -14,6 +14,7 @@ import {
   type Cadence,
 } from '@/lib/agent/routines';
 import { describeSchedule, nextRunAt } from '@/lib/agent/routine-schedule';
+import { upcomingObservances } from '@/lib/automation/observance-calendar';
 import { enqueueRun } from '@/lib/agent/harness/runs';
 import { availableCredits, hasBalance, CREDIT_COSTS } from '@/utils/credits';
 
@@ -283,6 +284,17 @@ export function createRoutineTools(supabase: SupabaseClient, userId: string) {
             thisPeriod: period,
             thisPeriodRun: todayRun ? { status: todayRun.status, runId: todayRun.run_id } : null,
             summary: describeRoutine(routine),
+            // The observance days the brief will raise, so "what is coming up?" is answerable from
+            // the routine itself rather than by waiting for a run or guessing.
+            observanceDays: upcomingObservances(now, { withinDays: 21, timezone: routine.timezone }).map((o) => ({
+              name: o.name,
+              date: o.date,
+              daysAway: o.daysAway,
+              angle: o.angle,
+              needsCreativeNow: o.needsCreativeNow,
+            })),
+            observanceNote:
+              'Festival and observance creatives are part of every routine run: anything inside its lead time is produced before the day, not on it.',
             available: {
               cadences: ROUTINE_CADENCES,
               approvalPolicies: ROUTINE_APPROVAL_POLICIES,
