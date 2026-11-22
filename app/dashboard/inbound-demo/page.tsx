@@ -105,6 +105,27 @@ export default function InboundDemoPage() {
     load();
   }, [load]);
 
+  /**
+   * Watch for the call while the owner is on the phone.
+   *
+   * The outbound demo had a live view because you watch it happen on your screen. Inbound happens on
+   * a phone in the owner's hand, so without this the page looks dead during the only minute it
+   * matters. Polls the caller list only - never the form - so an unsaved edit is never clobbered.
+   */
+  useEffect(() => {
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch('/api/inbound/line', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        setData((d) => (d ? { ...d, recentCalls: json.recentCalls, readiness: json.readiness } : d));
+      } catch {
+        /* a dropped poll is not worth surfacing */
+      }
+    }, 6000);
+    return () => clearInterval(id);
+  }, []);
+
   const copy = async (text: string, tag: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -242,9 +263,14 @@ export default function InboundDemoPage() {
           </button>
         </div>
         <p className="text-xs text-white/70 mt-3 max-w-2xl">
-          Forward your phone to this number and dial it from any other phone — the AI will answer as the
-          business. Your own number keeps ringing as normal until you turn forwarding on, and turning it off
-          (&nbsp;{forwardCode.cancel}&nbsp;) restores it exactly.
+          <strong className="text-white">You do not need call forwarding to test this.</strong> Dial the number
+          above from any other phone: the receptionist answers exactly as it would for a forwarded call — the
+          forwarding hop is only how your own line gets here. Forwarding is worth turning on afterwards, once
+          you have heard it work.
+        </p>
+        <p className="text-xs text-white/60 mt-2 max-w-2xl">
+          Turning forwarding off later: dial {forwardCode.cancel}. The page watches for the call and the caller
+          appears below within a few seconds of you hanging up.
         </p>
       </section>
 
