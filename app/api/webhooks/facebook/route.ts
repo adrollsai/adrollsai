@@ -152,7 +152,14 @@ async function extractLeadNameWithAI(rawText: string): Promise<{ hasName: boolea
         }
     }
 
-    const dsKey = process.env.DEEPSEEK_API_KEY || 'sk-20cf24c78eeb44669f22cd92b2d0382f';
+    // No hard-coded fallback key. There used to be one here, and it was a key that has since been
+    // revoked - so an environment missing DEEPSEEK_API_KEY did not fail loudly, it authenticated
+    // with a dead key and every extraction came back 401 with the caller none the wiser.
+    const dsKey = process.env.DEEPSEEK_API_KEY;
+    if (!dsKey) {
+        console.warn('[FB WEBHOOK] DEEPSEEK_API_KEY is not configured: skipping AI name extraction');
+        return { hasName: false, name: null, isQuestionOrRefusal: false };
+    }
     const prompt = `You are an entity extractor. A WhatsApp bot asked: "May I know your good name please?".
 The user replied: "${raw}"
 
