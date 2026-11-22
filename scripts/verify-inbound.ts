@@ -61,7 +61,7 @@ const check = (name: string, ok: boolean, detail?: unknown) => {
   } else {
     fail++;
     const text = detail === undefined ? '' : typeof detail === 'string' ? detail : JSON.stringify(detail);
-    console.log(`  FAIL ${name}${text ? `  — ${String(text).slice(0, 320)}` : ''}`);
+    console.log(`  FAIL ${name}${text ? `  â€” ${String(text).slice(0, 320)}` : ''}`);
   }
 };
 
@@ -75,7 +75,7 @@ async function main() {
 
   try {
     // ---- 0. sanity of the pure layer
-    console.log('\n▸ the receptionist config itself');
+    console.log('\nâ–¸ the receptionist config itself');
     const did = arg('did', DEFAULT_INBOUND_DID || '+917965480715');
     const base = defaultReceptionist({ businessName: (before as any)?.business_name, industry: 'real_estate' });
     const bad = sanitiseConfig({ voiceName: 'Barry' }, base);
@@ -87,11 +87,12 @@ async function main() {
     check(
       'a DID is normalised to one E.164 form',
       sanitiseConfig({ did: '7965480539' }, base).config.did === '+917965480539' &&
-        sanitiseConfig({ did: '+91 79654 0539' }, base).config.did === '+917965480539',
+        sanitiseConfig({ did: '+91 79654 80539' }, base).config.did === '+917965480539',
+      sanitiseConfig({ did: '+91 79654 80539' }, base).config.did,
     );
 
     // ---- 1. save a distinctive config so the assertions cannot pass by accident
-    console.log('\n▸ saving a line the assertions can recognise');
+    console.log('\nâ–¸ saving a line the assertions can recognise');
     const config = {
       ...base,
       did,
@@ -164,7 +165,7 @@ async function main() {
     );
 
     // ---- 2. the forwarded call itself
-    console.log('\n▸ a forwarded call arrives (the exact body Vobiz posts)');
+    console.log('\nâ–¸ a forwarded call arrives (the exact body Vobiz posts)');
     const form = new URLSearchParams({
       From: PROBE_CALLER,
       To: did,
@@ -256,3 +257,4 @@ main().catch((e) => {
   console.error('verify:inbound failed:', e?.stack || e?.message || e);
   process.exitCode = 1;
 });
+

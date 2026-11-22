@@ -65,13 +65,32 @@ export interface InboundReceptionistConfig {
   updatedAt?: string | null;
 }
 
-/** Keep a DID in one shape, so `+91 79654 0539` and `+917965480539` are the same line. */
+/** Keep a DID in one shape, so `+91 79654 0539`, `079654 0539` and `+917965480539` are the same line. */
 export function normaliseDid(raw: unknown): string {
-  const digits = String(raw ?? '').replace(/\D/g, '');
+  // A carrier may hand us the number as a SIP URI, with a trunk prefix, or with a leading 0 for a
+  // national dial. Every one of those is the same line, and a mismatch here is invisible from the
+  // caller's side: they get an error tone and we log nothing at all.
+  const withoutUri = String(raw ?? '').split('@')[0];
+  let digits = withoutUri.replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.length === 10) return `+91${digits}`;
-  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
-  return `+${digits}`;
+
+  // Drop international access prefixes: 00 91 ... -> 91 ...
+  if (digits.startsWith('0091')) digits = digits.slice(4);
+  else if (digits.startsWith('00')) digits = digits.slice(2);
+
+  // National dial with a trunk prefix: 0 79654 80715 -> 79654 80715
+  if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+
+  // Last 10 digits are the subscriber number, whatever the country code was.
+  if (digits.length > 10) digits = digits.slice(-10);
+
+  return `+91${digits}`;
+}
+
+/** The subscriber part, for comparing numbers that may have been written differently. */
+export function didKey(raw: unknown): string {
+  const normalised = normaliseDid(raw);
+  return normalised.replace(/\D/g, '').slice(-10);
 }
 
 export function parseBusinessInfo(raw: unknown): Record<string, any> {
@@ -255,7 +274,8 @@ export async function resolveDidOwner(
   did: string
 ): Promise<{ userId: string; config: InboundReceptionistConfig } | null> {
   const wanted = normaliseDid(did);
-  if (!wanted) return null;
+  const wantedKey = didKey(did);
+  if (!wanted || !wantedKey) return null;
 
   const { data, error } = await db
     .from('profiles')
@@ -269,7 +289,9 @@ export async function resolveDidOwner(
     const bi = parseBusinessInfo(row.business_info);
     const stored = bi.inbound_receptionist;
     if (!stored || typeof stored !== 'object') continue;
-    if (normaliseDid(stored.did) !== wanted) continue;
+    // Compare the subscriber number, not the string: a stored `+917965480715` must match a carrier
+    // that reports `07965480715`, `917965480715` or `+91 79654 80715`.
+    if (didKey(stored.did) !== wantedKey) continue;
     if (stored.enabled === false) continue;
 
     const base = defaultReceptionist({
@@ -499,6 +521,34 @@ export async function didOwnership(
   }
 
   return { claimedByOtherTenant: false, businessName: null, ownerId: null };
+}
+
+/**
+ * Leave a receipt that the carrier actually called us.
+ *
+ * Without this, "the call said wrong number" and "our webhook returned nothing" look identical from
+ * the outside: there is no row anywhere, so the only evidence is a log line that may already have
+ * rotated. A single field on the profile settles it - either the carrier reached us at a time we can
+ * name, or it never did and the problem is entirely on the carrier side.
+ */
+export async function recordInboundHit(
+  db: any,
+  userId: string,
+  hit: { from?: string | null; to?: string | null; callUuid?: string | null }
+): Promise<void> {
+  try {
+    const { data: profile } = await db.from('profiles').select('business_info').eq('id', userId).maybeSingle();
+    const bi = parseBusinessInfo(profile?.business_info);
+    bi.inbound_last_hit = {
+      at: new Date().toISOString(),
+      from: hit.from || null,
+      to: hit.to || null,
+      callUuid: hit.callUuid || null,
+    };
+    await db.from('profiles').update({ business_info: JSON.stringify(bi) }).eq('id', userId);
+  } catch {
+    /* a receipt is never worth failing a call over */
+  }
 }
 
 /**

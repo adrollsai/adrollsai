@@ -64,6 +64,10 @@ async function handleRequest(req: Request) {
         if (!toNumber) toNumber = searchParams.get('To') || searchParams.get('to') || ''
 
         console.log(`[VOBIZ XML] Answer callback received. leadId: ${leadId}, profileId: ${profileId}, campaignId: ${campaignId}, CallUUID: ${callUuid}`)
+        // Log the carrier's own view of the call. Without these two values an inbound call that
+        // never resolves is indistinguishable from one that never arrived, and the caller only ever
+        // hears a tone.
+        console.log(`[VOBIZ XML] Raw carrier fields: From=${JSON.stringify(fromNumber)} To=${JSON.stringify(toNumber)} CallUUID=${JSON.stringify(callUuid)}`)
 
         let isInbound = false
         // INBOUND LINE FIRST: does this dialled number belong to a configured receptionist?
@@ -77,29 +81,53 @@ async function handleRequest(req: Request) {
         let receptionistVoice: string | null = null
         if (!profileId && toNumber) {
             try {
-                const { resolveDidOwner, ensureInboundCampaign } = await import('@/lib/inbound/receptionist')
+                const { resolveDidOwner, ensureInboundCampaign, recordInboundHit } = await import('@/lib/inbound/receptionist')
                 const owner = await resolveDidOwner(supabaseAdmin, toNumber)
                 if (owner) {
                     profileId = owner.userId
                     receptionistVoice = owner.config.voiceName || null
                     isInbound = true
-
-                    // Re-derive the script on every call: a greeting edited after the first call
-                    // must be what the next caller hears.
-                    const { data: prof } = await supabaseAdmin
-                        .from('profiles')
-                        .select('business_name, industry')
-                        .eq('id', owner.userId)
-                        .maybeSingle()
-                    const ensured = await ensureInboundCampaign(supabaseAdmin, owner.userId, owner.config, {
-                        businessName: prof?.business_name,
-                        industry: prof?.industry,
-                    })
-                    receptionistCampaignId = ensured.campaignId || owner.config.campaignId || null
+                    // Use the campaign we already prepared. Re-deriving it here meant four more
+                    // database round-trips before the carrier got its XML, and a carrier that does
+                    // not get an answer URL in time plays an error tone - which is what "that number
+                    // is wrong" sounds like from the caller's side. The refresh still happens, but
+                    // AFTER the answer has been sent.
+                    receptionistCampaignId = owner.config.campaignId || null
                     console.log(
                         `[VOBIZ XML] Inbound line ${toNumber} -> business ${owner.userId} ` +
                         `(voice ${receptionistVoice}, campaign ${receptionistCampaignId})`
                     )
+
+                    if (typeof (req as any).waitUntil !== 'function') {
+                        // Best effort, non-blocking: keep the spoken script in step with the owner's
+                        // latest edit without ever delaying this call.
+                        const refresh = async () => {
+                            try {
+                                await recordInboundHit(supabaseAdmin, owner.userId, {
+                                    from: fromNumber,
+                                    to: toNumber,
+                                    callUuid,
+                                })
+                                const { data: prof } = await supabaseAdmin
+                                    .from('profiles')
+                                    .select('business_name, industry')
+                                    .eq('id', owner.userId)
+                                    .maybeSingle()
+                                await ensureInboundCampaign(supabaseAdmin, owner.userId, owner.config, {
+                                    businessName: prof?.business_name,
+                                    industry: prof?.industry,
+                                })
+                            } catch (rErr: any) {
+                                console.warn('[VOBIZ XML] Receptionist campaign refresh skipped:', rErr?.message)
+                            }
+                        }
+                        try {
+                            const { after } = await import('next/server')
+                            after(refresh)
+                        } catch {
+                            void refresh()
+                        }
+                    }
                 }
             } catch (e: any) {
                 console.warn('[VOBIZ XML] Inbound line lookup failed, falling back to the old path:', e?.message)

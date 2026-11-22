@@ -71,6 +71,7 @@ interface Payload {
   answerUrl: string;
   choices: { voices: string[]; languages: string[] };
   didCandidates: string[];
+  lastCarrierHit: { at: string; from: string | null; to: string | null; callUuid: string | null } | null;
 }
 
 const pretty = (n: string) => {
@@ -342,15 +343,23 @@ export default function InboundDemoPage() {
         )}
 
         <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600">
-          <strong className="text-slate-800">The step that is easy to miss in Vobiz:</strong> creating the
-          application is only half of it. Open <em>Numbers</em>, select this DID, and link it to the
-          application you just made — otherwise a call to the number never reaches this webhook and goes to
-          whatever that number was already doing.
-          {data?.readiness.did?.claimedByOtherTenant && data.readiness.did.claimedByBusinessName && (
-            <span className="block mt-1 text-amber-700">
-              {data.readiness.did.number} is registered to {data.readiness.did.claimedByBusinessName}.
+          <strong className="text-slate-800">Did the carrier ever reach us?</strong>{' '}
+          {data?.lastCarrierHit ? (
+            <span className="text-emerald-700">
+              Yes — a call arrived at {new Date(data.lastCarrierHit.at).toLocaleString()} from{' '}
+              {data.lastCarrierHit.from || 'an unknown number'} to {data.lastCarrierHit.to || data.config.did}.
+              If that call was silent, the carrier leg is fine and the failure is in the media stream.
+            </span>
+          ) : (
+            <span className="text-amber-700">
+              No call has ever reached this webhook. A "wrong number" tone therefore never got this far:
+              the carrier is not delivering the call to our answer URL at all.
             </span>
           )}
+          <span className="block mt-1">
+            The step that is easy to miss in Vobiz: creating the application is only half of it. The number
+            itself must be linked to it under <em>Numbers → Linked Voice App</em>.
+          </span>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">

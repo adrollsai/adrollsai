@@ -83,6 +83,17 @@ export async function GET(req: Request) {
     industry: profile?.industry || null,
     readiness,
     recentCalls: calls || [],
+    /** Proof of whether the carrier has ever called this webhook, and when. */
+    lastCarrierHit: (() => {
+      try {
+        const bi = typeof (profile as any)?.business_info === 'string'
+          ? JSON.parse((profile as any).business_info)
+          : (profile as any)?.business_info;
+        return bi?.inbound_last_hit || null;
+      } catch {
+        return null;
+      }
+    })(),
     answerUrl: `${resolveAppUrl()}/api/voice/vobiz/xml`,
     choices: { voices: INBOUND_VOICES, languages: INBOUND_LANGUAGES },
     didCandidates: await didCandidates(user.id, config.did),
