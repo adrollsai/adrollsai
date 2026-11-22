@@ -1,6 +1,23 @@
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js';
-import { createClient } from './supabase/server';
 import { getUserLimits } from './subscription';
+
+/**
+ * WHY THIS MODULE NO LONGER IMPORTS THE COOKIE CLIENT AT ALL
+ *
+ * `./supabase/server` imports `next/headers`. A static import of it here put a request-scoped module into the module
+ * graph of everything that transitively touches quotas - `utils/campaign-processor.ts`, the agent's ad launch path,
+ * and therefore plain Node gates. Those bundles are ESM with node_modules left external, so `next/headers` failed to
+ * resolve at import time: `ERR_MODULE_NOT_FOUND` before a single check ran (verify:audiences died exactly there).
+ *
+ * The import existed for one fallback: no service key, so use the caller's own session client. In a script there is
+ * no caller and no cookies, so that fallback could not have worked anyway; in a request it silently degraded a
+ * billing check into whatever RLS allowed. Quota accounting that cannot read the real row must not guess, so this
+ * now fails loudly and names the missing variable.
+ */
+const MISSING_SERVICE_KEY =
+    '[Subscription Server] SUPABASE_SERVICE_ROLE_KEY is not set, so plan limits cannot be read or incremented. ' +
+    'Set it in the environment; this check will not fall back to a session client, because a quota decision made ' +
+    'under RLS is a wrong answer rather than a safe one.';
 
 // Helper to create a secure service-role client bypassing RLS policies for backend quota management
 const getAdminClient = async () => {
@@ -11,8 +28,8 @@ const getAdminClient = async () => {
             serviceKey
         );
     }
-    console.warn("[Subscription Server] WARNING: SUPABASE_SERVICE_ROLE_KEY is missing! Falling back to standard client.");
-    return await createClient();
+    console.error(MISSING_SERVICE_KEY);
+    throw new Error(MISSING_SERVICE_KEY);
 };
 
 export async function checkLimitAndIncrement(

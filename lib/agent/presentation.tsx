@@ -165,6 +165,7 @@ export const TOOL_PRESENTATION: Record<string, Row> = {
   // ── CRM (local tools) ────────────────────────────────────────────────
   query_leads: row('Query leads', 'crm', Users),
   create_lead: row('Create lead', 'crm', Users),
+  add_catalog_offering: row('Add to catalogue', 'data', Layers),
   update_lead_details: row('Update lead', 'crm', Users),
   update_lead_stage: row('Move lead stage', 'crm', Users),
   delete_or_archive_lead: row('Archive lead', 'crm', Trash2),

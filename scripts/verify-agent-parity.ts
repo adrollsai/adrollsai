@@ -389,5 +389,95 @@ check(
   unrouted.length ? unrouted.map(([t, g]) => `"${t}" needs ${g}`).join(' | ') : `${phrasing.length} phrasings`,
 );
 
+// ── 6. nothing declared and never wired
+console.log('\n▸ no capability exists only in a file nobody imports');
+{
+  const fsx = fs;
+  const toolFiles = fsx
+    .readdirSync('lib/agent/tools', { recursive: true } as any)
+    .filter((f: any) => String(f).endsWith('.ts'))
+    .map((f: any) => `lib/agent/tools/${String(f).replace(/\\/g, '/')}`)
+    .concat(['lib/agent/mcp/meta-graph.ts', 'lib/agent/mcp/meta-official-mcp.ts', 'lib/agent/mcp/nobogent_app_mcp.ts']);
+
+  const declared: Array<{ name: string; file: string }> = [];
+  for (const file of toolFiles) {
+    for (const m of fsx.readFileSync(file, 'utf8').matchAll(/export function (create[A-Za-z0-9]*Tools)\s*\(/g)) {
+      declared.push({ name: m[1], file });
+    }
+  }
+
+  /**
+   * Factories that are deliberately NOT registered. Each entry has to say why, so "it is dead" is a decision
+   * someone wrote down rather than something rediscovered by a customer asking for a feature that exists.
+   */
+  const INTENTIONALLY_UNREGISTERED: Record<string, string> = {
+    createCrmTools:
+      'superseded by nobogent_crm_* (read) and createCrmWriteTools (write, which also leaves lead_history)',
+    createWhatsAppTools:
+      'superseded by createMessagingTools and nobogent_whatsapp_list_templates; its prepare_whatsapp_broadcast was the fake tool that reported success without sending',
+    createInventoryTools:
+      'superseded by nobogent_inventory_search; its write half was rewritten as createCatalogueTools because it targeted location/category instead of address/property_type',
+    createVoiceTools:
+      'registered through createRegisteredVoiceTools instead - the curated subset, because launch_bulk_calling_campaign has no executor behind its approval payload',
+  };
+
+  const unwired = declared.filter(
+    (d) => !orchestrator.includes(d.name) && !INTENTIONALLY_UNREGISTERED[d.name],
+  );
+  check(
+    'every tool factory is either registered or documented as superseded',
+    unwired.length === 0,
+    unwired.length ? unwired.map((u) => `${u.name} (${u.file})`).join(', ') : `${declared.length} factories checked`,
+  );
+  check(
+    'the documented ones really are superseded, not just forgotten',
+    Object.keys(INTENTIONALLY_UNREGISTERED).length >= 3,
+  );
+}
+
+// ── 7. the catalogue can be written, not only read
+console.log('\n▸ the catalogue has a write path, against the real columns');
+{
+  const { CATALOGUE_TOOLS, CATALOGUE_WRITABLE_COLUMNS, buildCatalogueRow } = await import('../lib/agent/tools/catalogue');
+  check(
+    'the catalogue write tool is registered',
+    /createCatalogueTools\(supabase,\s*userId\)/.test(orchestrator),
+    CATALOGUE_TOOLS.join(', '),
+  );
+  check(
+    'it writes the table\'s real column names',
+    CATALOGUE_WRITABLE_COLUMNS.includes('address' as any) &&
+      CATALOGUE_WRITABLE_COLUMNS.includes('property_type' as any) &&
+      !(CATALOGUE_WRITABLE_COLUMNS as readonly string[]).includes('location') &&
+      !(CATALOGUE_WRITABLE_COLUMNS as readonly string[]).includes('category'),
+    'the dead module used location/category, which this table does not have',
+  );
+  check('a title is required', buildCatalogueRow({}).ok === false);
+  check(
+    'a price is stored as the full figure, and a bare "85" is flagged',
+    (() => {
+      const built = buildCatalogueRow({ title: 'Plot', price: '₹85,00,000' });
+      return built.ok && built.row?.price === 8500000;
+    })(),
+    String(buildCatalogueRow({ title: 'Plot', price: '₹85,00,000' }).row?.price),
+  );
+  check(
+    'a non-numeric price is refused',
+    buildCatalogueRow({ title: 'Plot', price: 'call us' }).ok === false,
+  );
+  check(
+    'only http(s) images are stored, and the first becomes the cover',
+    (() => {
+      const built = buildCatalogueRow({ title: 'Plot', imageUrls: ['javascript:alert(1)', 'https://cdn.x/a.jpg'] });
+      const imgs = (built.row?.images || []) as string[];
+      return imgs.length === 1 && imgs[0] === 'https://cdn.x/a.jpg' && built.row?.image_url === 'https://cdn.x/a.jpg';
+    })(),
+  );
+  check(
+    'adding an item needs no approval - it spends nothing and messages nobody',
+    !(REVIEW_POLICY as any).add_catalog_offering,
+  );
+}
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

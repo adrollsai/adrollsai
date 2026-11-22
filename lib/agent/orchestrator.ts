@@ -20,6 +20,7 @@ import { createRoutineTools } from './tools/routine';
 import { createRegisteredVoiceTools } from './tools/voice';
 import { createComposedAdTools } from './tools/ads';
 import { createCallingCampaignTools } from './tools/calling';
+import { createCatalogueTools } from './tools/catalogue';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
@@ -230,6 +231,10 @@ export async function createAgentContext(
     // A product's own photos, footage and documents. Always available: "make a creative for
     // this product" should reach the real thing rather than inventing imagery.
     ...createProductMediaTools(supabase, userId),
+    // WRITING the catalogue. Search was covered and writing was not - `add_catalog_offering` existed in a module
+    // that was never registered, and was wrong about the schema on top of that (`location`/`category` instead of
+    // `address`/`property_type`). "Add my new project to the catalogue" had no path at all.
+    ...createCatalogueTools(supabase, userId),
     ...(has('ops') ? createNotificationTools(supabase, userId) : {}),
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),
