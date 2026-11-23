@@ -189,6 +189,25 @@ export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
     why: "it uploads the business's customer contact data to Meta as a custom audience",
   },
 
+  // ── the primitives
+  //
+  // A primitive that can do everything is exactly the kind that needs a gate — and only where the act
+  // itself is irreversible or reaches outside. Updates and inserts to the account's own rows stay free
+  // (they are reversible, capped, and dry-run by default); deleting does not.
+  update_account_data: {
+    actionType: 'delete_data',
+    why: 'it deletes rows from this account',
+    when: (input: any) => String(input?.operation ?? '') === 'delete',
+  },
+  // Any state-changing call to a third-party API: it can move money, send a message or delete a
+  // record on someone else's system. Reads (GET/HEAD) are free.
+  http_request: {
+    actionType: 'custom',
+    why: 'it sends a state-changing request to an external API',
+    when: (input: any) =>
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(input?.method ?? 'GET').trim().toUpperCase()),
+  },
+
   // ── irreversible
   delete_data: { actionType: 'delete_data', why: 'deleting cannot be undone' },
   crm_delete_lead: { actionType: 'delete_data', why: 'a deleted lead and its history cannot be recovered' },

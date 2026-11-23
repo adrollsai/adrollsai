@@ -22,6 +22,8 @@ import { createComposedAdTools } from './tools/ads';
 import { createCallingCampaignTools } from './tools/calling';
 import { createCatalogueTools } from './tools/catalogue';
 import { createDataQueryTools } from './tools/data-query';
+import { createDataWriteTools } from './tools/data-write';
+import { createHttpTools } from './tools/http';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
@@ -244,6 +246,13 @@ export async function createAgentContext(
     // from the calling queue with a scope disclaimer. One exact count over the caller's own rows replaces all
     // of that — and the scope is decided here, by role, never by a user_id the model supplies.
     ...createDataQueryTools(supabase, userId),
+    // THE WRITE PRIMITIVE: the same tables, the same scope rules, and a dry run unless it is told
+    // otherwise. Narrow tools (crm_update_lead_stage, add_catalog_offering) stay the default for the
+    // single-row case; this is for the operation the owner actually described.
+    ...createDataWriteTools(supabase, userId),
+    // THE HTTP PRIMITIVE: any https API, so "send this to our own system" is answerable. Reads are
+    // free, writes are gated, private addresses are refused.
+    ...createHttpTools(supabase, userId),
     ...(has('ops') ? createNotificationTools(supabase, userId) : {}),
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),
@@ -332,6 +341,16 @@ ALWAYS AVAILABLE â€” the business's own data:
   Its scope is set by role, not by you: "me" (this account), "org" (this account plus the accounts under it -
   agency/admin), "all" (platform - super_admin only). A user_id filter is refused, because the scope is not
   something a prompt can widen. State the scope it returns whenever you quote a number.
+- 'update_account_data': the WRITE primitive over the same tables and scope. update / insert / delete, dry-run by
+  default (it reports the matching rows first and writes nothing until apply:true), capped per call, filters
+  required for update and delete, and deleting needs the owner's approval. Use the narrow tool for a single lead
+  (crm_update_lead_stage also writes the CRM history); use this for "move every Diwali lead still New to Contacted".
+- 'http_request': call ANY https API. GET/HEAD are free; POST/PUT/PATCH/DELETE are gated. Private hosts, localhost
+  and cloud metadata are refused. This is how you reach a system this product has no tool for - a webhook, a vendor
+  API, the business's own backend. Pass secrets in headers, and never repeat a credential back into the chat.
+- THE PRINCIPLE: a narrow tool exists because a common request deserves one correct path, not because the others
+  are forbidden. When no tool fits, reach for a primitive and say what you did - never answer that something is
+  impossible because it has no dedicated tool.
   Ask for every missing item in ONE 'questions' batch â€” see the PRE-FLIGHT CONTRACT below.
 SAFETY â€” these hold in every conversation, whatever the task:
 - NEVER FIRE BULK MESSAGING, BULK CALLING OR A BROADCAST DIRECTLY. Anything that touches more than one lead at once â€” a WhatsApp broadcast, a bulk call campaign, a sequence that fans out to a segment â€” must go through 'request_human_approval' and wait for the user. This rule does not depend on the task looking like an 'automation'.
