@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Supabase rows and provider payloads are untyped (stale generated types), matching utils/credits.ts. */
 /**
- * Playbook service — versioned, invariant-enforcing writes.
+ * Playbook service â€” versioned, invariant-enforcing writes.
  *
  * HOW A USER CHANGES HOW THE AGENT WORKS (the whole point of this file)
  * The user never edits config. They say it in chat:
@@ -11,7 +11,7 @@
  *
  * INVARIANTS (enforced here, not by convention)
  *  1. Exactly three reply buttons always exist, with stable ids. A patch may
- *     relabel them but can never remove, reorder away or re-id them — those ids
+ *     relabel them but can never remove, reorder away or re-id them â€” those ids
  *     are what the inbound webhook handlers match on.
  *  2. Only allowlisted sections can be written.
  *  3. Every write is a new version; the previous active row is archived, so
@@ -32,6 +32,15 @@ export const PATCHABLE_SECTIONS = [
   'cadence',
   'daily_routine', // what the agent does each day, and when
   'recipes',       // how to make a good FIRST draft (creative / video / copy)
+  /**
+   * Standing creative instructions, scoped: { global, properties: {id: []}, campaigns: {id: [] } }.
+   *
+   * "Never put the phone number on any daily creative" belongs here, and so does "for THIS property
+   * always show the site plan". They are not preferences: lib/automation/creative-directives enforces
+   * the machine-checkable half (phone, price, emoji, deadlines...) on the compiled spec before anything
+   * is generated, and verifies the result afterwards.
+   */
+  'creative_directives',
 ] as const
 
 export type PatchableSection = (typeof PATCHABLE_SECTIONS)[number]
@@ -49,7 +58,7 @@ export interface PatchResult {
   buttons?: ReplyButton[]
 }
 
-/** Stable ids — the contract with the inbound webhook handlers. */
+/** Stable ids â€” the contract with the inbound webhook handlers. */
 const BUTTON_IDS = ['view_properties', 'talk_expert', 'book_appointment'] as const
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -89,7 +98,7 @@ export function enforceButtonInvariant(candidate: unknown, industry?: string | n
 }
 
 /**
- * Build the next playbook state from the active one plus a patch. Pure — no I/O,
+ * Build the next playbook state from the active one plus a patch. Pure â€” no I/O,
  * so this is what the tests exercise.
  */
 export function buildNextPlaybook(
@@ -145,7 +154,7 @@ export async function applyPlaybookPatch(
   const nextVersion = Number(current?.version ?? 0) + 1
   const previousId = (current as any)?.id as string | undefined
 
-  // 1. Archive the current row FIRST — the partial unique index allows only one
+  // 1. Archive the current row FIRST â€” the partial unique index allows only one
   //    active playbook per tenant, so the new one cannot be inserted before this.
   if (previousId) {
     const { error: archErr } = await supabaseAdmin
@@ -168,6 +177,8 @@ export async function applyPlaybookPatch(
     cadence: built.next.cadence ?? {},
     daily_routine: (built.next as any).daily_routine ?? {},
     recipes: (built.next as any).recipes ?? {},
+    // Scoped standing creative instructions â€” enforced by lib/automation/creative-directives.
+    creative_directives: (built.next as any).creative_directives ?? {},
     authored_by: opts.authoredBy ?? 'ceo',
     notes: opts.note ?? null,
     updated_at: new Date().toISOString(),
@@ -198,7 +209,7 @@ async function loadActive(supabaseAdmin: any, userId: string): Promise<Playbook 
   try {
     const { data } = await supabaseAdmin
       .from('business_playbooks')
-      .select('id, version, status, industry, positioning, website_spec, call_script, whatsapp_replies, buttons, cadence, daily_routine, recipes')
+      .select('id, version, status, industry, positioning, website_spec, call_script, whatsapp_replies, buttons, cadence, daily_routine, recipes, creative_directives')
       .eq('user_id', userId)
       .eq('status', 'active')
       .maybeSingle()
@@ -211,6 +222,6 @@ async function loadActive(supabaseAdmin: any, userId: string): Promise<Playbook 
 /** Human-readable diff for the confirmation step in chat. */
 export function describePatch(patch: PlaybookPatch): string {
   const json = JSON.stringify(patch.value, null, 1)
-  const clipped = json.length > 400 ? json.slice(0, 400) + '…' : json
-  return `${patch.section} →\n${clipped}`
+  const clipped = json.length > 400 ? json.slice(0, 400) + 'â€¦' : json
+  return `${patch.section} â†’\n${clipped}`
 }

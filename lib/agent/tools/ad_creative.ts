@@ -13,6 +13,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AD_FORMATS, AD_ANGLES, composeAdCreative, type AdFormat } from '@/lib/agent/creative/ad-prompt-compiler';
+import { applyDirectivesToSpec, mergeDirectives } from '@/lib/automation/creative-directives';
 
 export function createAdCreativeTools(supabase: SupabaseClient, userId: string) {
   return {
@@ -54,8 +55,17 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
           .array(z.string())
           .optional()
           .describe('Angles or claims the owner has rejected — pass them back so they are not repeated'),
+        itemId: z
+          .string()
+          .optional()
+          .describe(
+            'The catalogue item (project, course, package) this creative is for. Item-scoped creative directives - "this project always shows the site plan", "no phone number on this one" - are applied only when it is given. The legacy name propertyId is accepted too.'
+          ),
+        propertyId: z.string().optional().describe('Alias of itemId, kept for older prompts'),
+        campaignId: z.string().optional().describe('Campaign-scoped creative directives, when the creative belongs to one'),
       }),
-      execute: async ({ product, offer, audience, place, format, cta, facts, avoid }) => {
+      execute: async ({ product, offer, audience, place, format, cta, facts, avoid, itemId, propertyId, campaignId }: any) => {
+        const catalogueItemId = itemId || propertyId;
         try {
           const { data: profile } = await supabase
             .from('profiles')
@@ -63,7 +73,17 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
             .eq('id', userId)
             .maybeSingle();
 
-          const spec = composeAdCreative({
+          // THE OWNER'S STANDING RULES, APPLIED IN CODE.
+          //
+          // "for this property, such and such every time" and "no phone number on any daily creative" are
+          // directives on the playbook. They are not forwarded to the model as advice: the bans are
+          // enforced on the compiled spec here and the result is checked afterwards. A creative that still
+          // contains a banned element comes back with `violations` set and must not be shipped.
+          const { getActivePlaybook } = await import('@/lib/automation/ceo');
+          const playbook: any = await getActivePlaybook(supabase as any, userId).catch(() => null);
+          const merged = mergeDirectives((playbook as any)?.creative_directives ?? null, { propertyId: catalogueItemId, campaignId });
+
+          const baseSpec = composeAdCreative({
             product,
             offer,
             audience,
@@ -72,13 +92,33 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
             cta,
             facts: facts || {},
             brandColor: profile?.brand_color || null,
-            contact: profile?.contact_number || null,
+            // A banned phone is not passed in at all: the compiler turns a contact into the call CTA and
+            // prints the number into the image instructions, so stripping it later would leave "Call" with
+            // nothing to call.
+            contact: merged.bans.includes('phone') ? null : profile?.contact_number || null,
             businessName: profile?.business_name || 'the business',
             industry: profile?.industry || null,
             avoid,
           });
 
+          const directed = applyDirectivesToSpec(baseSpec as any, merged);
+          const spec = directed.value as any;
+
           const notes: string[] = [];
+          if (merged.instructions.length || merged.bans.length) {
+            notes.push(
+              `Standing creative directives applied (${merged.sources.join('; ')}): ` +
+                `${merged.instructions.join(' | ') || '(no prose rules)'}. ` +
+                `Hard bans enforced: ${merged.bans.join(', ') || 'none'}.` +
+                (directed.applied.length ? ` What that changed: ${directed.applied.join('; ')}.` : ''),
+            );
+          }
+          if (directed.violations.length) {
+            notes.push(
+              `NOT SAFE TO SHIP: the compiled creative still breaks these rules — ${directed.violations.join('; ')}. ` +
+                'Fix the copy yourself or drop the offending line, then compose again.',
+            );
+          }
           if (spec.needs.length) {
             notes.push(
               `Ask the owner for ${spec.needs.join(', ')} before building — or choose a different angle with ` +

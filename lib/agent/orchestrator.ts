@@ -341,7 +341,15 @@ ALWAYS AVAILABLE — the business's own data:
 - 'get_playbook' / 'update_playbook': read and change how this business behaves - the call script, the
   WhatsApp replies, the lead journey (first reply, follow-ups, opt-out, handoff), the daily routine, the
   positioning and the first-draft recipes. Changing your own behaviour is a normal request you can serve.
-- 'query_account_data': THE read primitive for this account's own data. Exact counts, lists, group-bys and
+- STANDING CREATIVE RULES are a playbook section and they are ENFORCED, not advisory. The section is
+  the one called creative_directives (see get_playbook), shaped as { global: [{ instruction, bans }],
+  items: { "<catalogue item id>": [...] }, campaigns: { "<id>": [...] } }. Bans are machine-checked
+  after the creative is compiled: phone, price, emoji, logo, before_after, availability, deadline.
+  So "don't put the phone number on any daily creative" is a GLOBAL rule there, and "for this project
+  always show the site plan" is a rule under that item's id. Then pass that id as itemId to
+  build_ad_creative_prompt, which applies the rule to the compiled creative and reports any violation.
+  Never answer that a creative rule cannot be made to stick: say which scope you set it at, and that it
+  is checked mechanically afterwards.
   distinct values over leads, calls, campaigns, catalogue, broadcasts, chats, lead history, credits, runs and
   more, with filters including date ranges. Reach for this FIRST for any "how many / which / how often"
   question: it is exact at any size, and it supersedes hunting for a report tool that happens to fit.

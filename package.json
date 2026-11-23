@@ -133,6 +133,7 @@
     "verify:accounts": "esbuild scripts/verify-accounts.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-accounts.mjs --log-level=warning && node .tmp-verify-accounts.mjs",
     "verify:data-query": "esbuild scripts/verify-data-query.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-data-query.mjs --log-level=warning && node .tmp-verify-data-query.mjs",
     "verify:auth-links": "esbuild scripts/verify-auth-links.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-auth-links.mjs --log-level=warning && node .tmp-verify-auth-links.mjs",
+    "verify:creative-directives": "esbuild scripts/verify-creative-directives.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-creative-directives.mjs --log-level=warning && node .tmp-verify-creative-directives.mjs",
     "verify:observances": "esbuild scripts/verify-observances.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-observances.mjs --log-level=warning && node .tmp-verify-observances.mjs",
     "verify:schedule": "esbuild scripts/verify-routine-schedule.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-schedule.mjs --log-level=warning && node .tmp-verify-schedule.mjs",
 
