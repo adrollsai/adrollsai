@@ -195,6 +195,32 @@ export async function ensurePeriodSession(
   return created.id as string;
 }
 
+/**
+ * One run per business per sweep, whatever the table contains.
+ *
+ * The schema allows a business to hold several routine rows, but nothing in the product means
+ * that: `loadRoutine()` picks the oldest row and the CEO tab treats the routine as singular.
+ * So duplicates were invisible dead weight — except to this cron, which queued one run per row
+ * per period, each with its own `routineId:period` idempotency key and therefore no dedupe.
+ * Measured on production before this: six runs for one tenant on a single day, and three on the
+ * day the ops watchdog first ran.
+ *
+ * The caller's query is ordered by `next_run_at`, so the row kept per business is the most
+ * overdue one, which is the one a person would have expected to run.
+ *
+ * Pure and exported so `scripts/verify-routine-once-per-day.ts` can prove it without a database.
+ */
+export function pickRoutinesToMaterialise<T extends { user_id: string }>(due: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const picked: T[] = [];
+  for (const routine of due) {
+    if (!routine?.user_id || seen.has(routine.user_id)) continue;
+    seen.add(routine.user_id);
+    picked.push(routine);
+  }
+  return picked;
+}
+
 export async function materialiseDueRoutines(
   supabase: SupabaseClient,
   now = new Date(),
@@ -217,12 +243,24 @@ export async function materialiseDueRoutines(
   }
   if (!routines?.length) return result;
 
-  for (const routine of routines as BusinessRoutine[]) {
+  const due = pickRoutinesToMaterialise(routines as BusinessRoutine[]);
+  const extra = (routines as BusinessRoutine[]).length - due.length;
+  if (extra > 0) {
+    // Say it out loud rather than silently ignoring the duplicates: an operator reading the cron
+    // log should learn that this business holds rows the product will never use.
+    console.warn(
+      `[routines] ${extra} duplicate routine row(s) ignored — one run is queued per business per period`
+    );
+  }
+
+  for (const routine of due) {
     result.checked++;
     const period = periodKey(now, routine.timezone, routine.cadence);
 
-    // Claim the period first. The unique key is what stops a double run; if another
-    // worker got here first we simply move on.
+    // Claim the period first. Two unique keys protect this: `(routine_id, period_key)` from the
+    // original design, and `(user_id, period_key)` added because the first one cannot see a
+    // duplicate routine row. If another worker — or another routine of the same business — got
+    // here first, we simply move on.
     const { error: claimErr } = await supabase.from('routine_runs').insert({
       routine_id: routine.id,
       user_id: routine.user_id,

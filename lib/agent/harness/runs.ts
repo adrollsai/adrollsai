@@ -118,11 +118,42 @@ export function __resetRunsAvailabilityCacheForTests(): void {
 }
 
 /**
+ * Why this run would have nothing to execute, or null when it is runnable.
+ *
+ * A run is only runnable if it carries an instruction. The worker rebuilds the conversation
+ * from the session's event log, so either the log already holds a user turn or `goal` must be
+ * one — a run with neither is dead on arrival.
+ *
+ * WHY THIS IS CHECKED AT THE DOOR RATHER THAN IN THE WORKER
+ * Production demonstrated the cost of the opposite: routines and approval replies queued runs
+ * with their instruction in `goal` and nothing in the log, the worker found zero messages, and
+ * 36 runs over 11 days were dead-lettered with `attempts: 0`. Every one looked like a quiet
+ * no-op. Thirty seconds after the call, in a different process, with only a column to show for
+ * it. At the door, the caller gets an error it can return to whoever asked.
+ *
+ * Extracted and exported so `scripts/verify-routine-once-per-day.ts` can prove the rejection
+ * without a database.
+ */
+export function runInstructionProblem(goal: string | null | undefined): string | null {
+  const text = typeof goal === 'string' ? goal.trim() : '';
+  if (text) return null;
+  return (
+    'a run needs an instruction: pass a non-empty goal, or record a user.message in the ' +
+    'session before queuing. A run with neither would be dead-lettered by the worker.'
+  );
+}
+
+/**
  * Queue a new run for a session.
  *
  * Idempotent when `idempotencyKey` is supplied: a double-submit (impatient user,
  * retried fetch, duplicated webhook) resolves to the SAME run instead of
  * creating a second one that would spend the same money twice.
+ *
+ * THROWS when the run would be unrunnable (no instruction). That is deliberate and it is the
+ * one place in this module that throws instead of returning null: a missing instruction is a
+ * caller bug, and returning null made it indistinguishable from "the database is down", so the
+ * bug surfaced later as a silent dead letter rather than at the call site.
  */
 export async function enqueueRun(
   supabase: SupabaseClient,
@@ -137,6 +168,14 @@ export async function enqueueRun(
     maxAttempts?: number;
   }
 ): Promise<HarnessRun | null> {
+  const problem = runInstructionProblem(input.goal);
+  if (problem) {
+    console.error(
+      `[Harness] refusing to enqueue an unrunnable run for session ${String(input.sessionId).slice(0, 8)}: ${problem}`
+    );
+    throw new Error(`enqueueRun: ${problem}`);
+  }
+
   const deadline = input.deadlineAt ?? new Date(Date.now() + 6 * 60 * 60_000).toISOString();
 
   const { data, error } = await db(supabase)

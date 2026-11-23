@@ -682,6 +682,73 @@ export const agentEventBacklogDetector: Detector = {
 };
 
 /**
+ * A business holding more than one standing routine.
+ *
+ * This is the root cause of the duplicate-runs bug, and it is worth watching even now that a
+ * unique index prevents it: the index only covers ENABLED rows, so disabled leftovers can still
+ * accumulate, and a future migration that relaxes the index should not be able to reintroduce
+ * the behaviour quietly.
+ *
+ * Why duplicates were expensive: the routine-run idempotency key is `(routine_id, period_key)`,
+ * so each extra routine row got its own key and the daily cron queued one run per row per
+ * period. Measured before the fix: six runs for one tenant on a single day.
+ *
+ * Reported, never repaired. Deleting a customer's configuration is a decision, not a repair —
+ * and the harmless half of the problem is already neutralised in `materialiseDueRoutines`,
+ * which queues at most one run per business per sweep.
+ */
+export const duplicateRoutineRowsDetector: Detector = {
+  id: 'routine-duplicate-rows',
+  watches: 'Businesses holding more than one standing routine, which used to mean one run per row per day.',
+  async run(ctx: DetectorContext): Promise<Detection[]> {
+    const { data, error } = await ctx.supabase
+      .from('business_routines')
+      .select('id, user_id, name, enabled, created_at')
+      .limit(SCAN_LIMIT);
+    if (error) {
+      // A fresh install has no routines table yet; that is not an incident.
+      if (/does not exist|schema cache/i.test(String(error.message || ''))) return [];
+      throw new Error(`business_routines: ${String(error.message || error)}`);
+    }
+
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const byUser = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const userId = String(row.user_id ?? '');
+      if (!userId) continue;
+      const bucket = byUser.get(userId);
+      if (bucket) bucket.push(row);
+      else byUser.set(userId, [row]);
+    }
+
+    const detections: Detection[] = [];
+    for (const [userId, bucket] of byUser) {
+      if (bucket.length < 2) continue;
+      const enabledCount = bucket.filter((row) => row.enabled).length;
+      const names = bucket.map((row) => `"${row.name}"${row.enabled ? '' : ' (disabled)'}`).join(', ');
+      detections.push({
+        class: 'routine-duplicate-rows',
+        severity: enabledCount > 1 ? 'critical' : 'warning',
+        title: 'A business has more than one standing routine',
+        evidence:
+          `This business holds ${bucket.length} routine rows: ${names}. ` +
+          (enabledCount > 1
+            ? `${enabledCount} of them are enabled, which the unique index should have refused.`
+            : 'Only the oldest is used, so the rest are dead configuration.'),
+        suggestedFix:
+          'Keep the routine the business actually means and delete or disable the others. The cron already queues at most one run per business, so nothing is at risk meanwhile.',
+        blastRadius: 'needs_approval',
+        subjectTable: 'business_routines',
+        subjectId: userId,
+        userId,
+        detail: { count: bucket.length, enabledCount, routineIds: bucket.map((row) => row.id), names: bucket.map((row) => row.name) },
+      });
+    }
+    return detections;
+  },
+};
+
+/**
  * Is the app even up?
  *
  * Every other detector reads the database, and the database can be perfectly healthy while
@@ -792,5 +859,6 @@ export const DETECTORS: readonly Detector[] = [
   creditHoldLeakedDetector,
   unpricedUsageDetector,
   agentEventBacklogDetector,
+  duplicateRoutineRowsDetector,
   appReachabilityDetector,
 ];

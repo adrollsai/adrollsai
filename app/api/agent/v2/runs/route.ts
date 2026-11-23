@@ -3,7 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { resolveActingUser } from '@/utils/route-auth';
 import { isAvailable, appendEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
-import { enqueueRun, runsAvailableCheck, getRun, toSummary, hasLiveRun } from '@/lib/agent/harness/runs';
+import { enqueueRun, runsAvailableCheck, getRun, toSummary, hasLiveRun, runInstructionProblem } from '@/lib/agent/harness/runs';
 
 export const maxDuration = 30;
 
@@ -131,6 +131,16 @@ export async function POST(req: Request) {
   }
 
   const goal = typeof body.goal === 'string' && body.goal.trim() ? body.goal.trim() : message;
+
+  // A run with no instruction is unrunnable: the worker rebuilds the conversation from the
+  // session log, and with no user turn there and no goal here it would dead-letter the run
+  // silently. Reject it at the boundary instead, where the caller can see the error.
+  if (runInstructionProblem(goal)) {
+    return NextResponse.json(
+      { error: 'A run needs an instruction: send a message, or a non-empty goal.' },
+      { status: 400 },
+    );
+  }
 
   // A client-supplied key makes enqueue idempotent: an impatient double-click
   // or a retried request resolves to the same run instead of paying twice.

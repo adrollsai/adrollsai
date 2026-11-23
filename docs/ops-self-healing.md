@@ -64,6 +64,43 @@ remaining types up.
 queue with a 24-hour decision window is a detector that teaches the owner to ignore alerts. The
 exclusion is documented in the detector itself, next to the reason.
 
+## Making the class impossible, not just the instance rare
+
+Watching for a fault is the second-best outcome. The best is a schema and a set of guards that
+refuse to create it. Two more bugs surfaced while fixing the first three, and both were closed
+that way rather than by adding another detector.
+
+**A business could hold several routines, so it ran the same day several times.** The routine-run
+idempotency key is `(routine_id, period_key)` — per routine, not per business — so each extra
+routine row bought another run for the same day with its own key. Measured on production: **six
+runs for one tenant on 2026-11-12**, three on 2026-11-23, two on two other days. Every one of them
+died to the unrelated "no user message" bug, which is the only reason it cost nothing; once that
+was fixed, those duplicates would have become six real marketing runs.
+
+Closed at three levels:
+
+- `business_routines` now has a partial unique index on `(user_id) WHERE enabled` — the schema
+  matches what the code already assumed (`loadRoutine()` picks the oldest row; the CEO tab treats
+  the routine as singular).
+- `routine_runs` gained `UNIQUE (user_id, period_key)`, because the original key could not see a
+  duplicate routine row and therefore could not stop the second run.
+- `pickRoutinesToMaterialise` queues **at most one run per business per sweep**, and logs the
+  duplicates it ignored rather than discarding them silently — so duplicates are harmless even if
+  a future migration relaxes the index.
+
+Both constraints were proven to reject the real duplicates against the live database before being
+trusted (`scratch/prove-routine-constraints.mjs`), and it cleaned up after itself.
+
+**A run could be queued with no instruction at all.** `enqueueRun` accepted an empty `goal` and
+returned a run that the worker would dead-letter 30 seconds later in another process, with only a
+column to show for it — indistinguishable from "the database was busy". It now throws, the runs
+API answers `400`, and the reason is logged. A caller bug surfaces at the caller.
+
+The general shape of both fixes, and the rule to apply to the next bug of this kind: **if a
+failure mode has a cheap precondition, enforce it at the boundary; if it has a structural cause,
+enforce it in the schema.** A watchdog is what you build for the failures you cannot prevent.
+
+
 
 ## What it does
 
@@ -73,7 +110,7 @@ detect ──▶ record ──▶ repair (safe only) ──▶ resolve ──▶
 
 | Stage | What happens | Where |
 |---|---|---|
-| detect | 11 read-only detectors query production | `lib/ops/detectors.ts` |
+| detect | 12 read-only detectors query production | `lib/ops/detectors.ts` |
 | record | one incident row per *condition*, deduplicated by fingerprint | `lib/ops/incidents.ts` |
 | repair | only classes on the allowlist, only tables and columns they declare | `lib/ops/repairs.ts` |
 | resolve | conditions that stopped happening are closed automatically | `lib/ops/incidents.ts` |
@@ -100,6 +137,7 @@ in `public.ops_incidents` (`sql/ops-incidents.sql`).
 | `credit-hold-expired-with-spend` | the same, but money moved | no — reconcile first |
 | `usage-unpriced` | metered work older than 2h that was never billed, for a real tenant | no |
 | `agent-event-backlog` | non-approval agent events past their scheduled time | no |
+| `routine-duplicate-rows` | a business holding more than one standing routine | no |
 | `app-unreachable` / `app-slow` | the deployed app failing or crawling | no |
 
 Thresholds were chosen against live data, not guessed. Two examples:
@@ -192,9 +230,10 @@ new endpoints check for a `super_admin` profile, exactly like `/api/admin/ledger
 ## Verification
 
 ```bash
-npm run verify:ops-watchdog      # 51 assertions, 0 failures
-npm run verify:runner-goal-seed  # 17 assertions, 0 failures
-npm run build:ops-repo-index     # rebuild the snapshot after changing source
+npm run verify:ops-watchdog          # 51 assertions, 0 failures
+npm run verify:runner-goal-seed      # 17 assertions, 0 failures
+npm run verify:routine-once-per-day  # 23 assertions, 0 failures
+npm run build:ops-repo-index         # rebuild the snapshot after changing source
 ```
 
 The gate proves the properties that make this trustworthy rather than the code that makes it run:
@@ -209,7 +248,7 @@ The gate proves the properties that make this trustworthy rather than the code t
   what the snapshot recorded, so an answer cannot describe code that has changed. Checked by
   content rather than by comparing the snapshot's commit to `HEAD`: the commit comparison goes red
   on every unrelated commit, and on the very commit that rebuilds the snapshot
-- **live** — all 11 detectors run against production without throwing, and the full
+- **live** — all 12 detectors run against production without throwing, and the full
   detect→record→repair→record pipeline executes end to end
 
 The live test does not mutate customer data: `credit_holds.user_id` is a foreign key to a real
