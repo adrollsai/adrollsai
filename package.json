@@ -97,6 +97,7 @@
     "build:ops-repo-index": "node scripts/build-ops-repo-index.mjs",
     "verify:runner-goal-seed": "esbuild scripts/verify-runner-goal-seed.ts --bundle --platform=node --format=esm --outfile=.tmp-goalseed.mjs --log-level=warning --packages=external && node .tmp-goalseed.mjs",
     "verify:routine-once-per-day": "esbuild scripts/verify-routine-once-per-day.ts --bundle --platform=node --format=esm --outfile=.tmp-routineonce.mjs --log-level=warning --packages=external && node .tmp-routineonce.mjs",
+    "verify-call-origin": "esbuild scripts/verify-call-origin.ts --bundle --platform=node --format=esm --outfile=.tmp-callorigin.mjs --log-level=warning --packages=external && node .tmp-callorigin.mjs",
     "verify:ceo-metrics": "esbuild scripts/verify-ceo-metrics.ts --bundle --platform=node --format=esm --outfile=.tmp-ceom.mjs --log-level=warning && node .tmp-ceom.mjs",
     "verify:routing": "esbuild scripts/verify-routing.ts --bundle --platform=node --format=esm --outfile=.tmp-routing.mjs --log-level=warning && node .tmp-routing.mjs",
     "verify:approval-outcome": "esbuild scripts/verify-approval-outcome.ts --bundle --platform=node --format=esm --outfile=.tmp-approval.mjs --log-level=warning && node .tmp-approval.mjs",

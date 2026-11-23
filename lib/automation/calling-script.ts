@@ -22,6 +22,41 @@
 import { industryVocabulary } from '@/lib/automation/industry'
 
 /**
+ * Where did this lead come from? This decides the first thing the bot says about the enquiry.
+ *
+ * THE BUG THIS EXISTS FOR
+ * The voice prompt used to decide this inline with `source.includes('whatsapp') || custom_fields.meta_ad_origin`,
+ * and every Meta lead-form submission carries `meta_ad_origin`. So a lead who filled a
+ * Facebook/Instagram instant form — and had never sent a WhatsApp message in their life — was
+ * greeted with "aapne WhatsApp par inquiry start kiya tha". Procolor's leads Varun and KARTIK
+ * were exactly that: source "Facebook Ads", meta_ad_origin present, no WhatsApp thread at all.
+ * The bot opened by describing a conversation that never happened.
+ *
+ * Precedence, and why:
+ *   1. notes    — the owner wrote something about this specific lead; most specific wins.
+ *   2. whatsapp — an actual WhatsApp thread (real messages or a WhatsApp source). This outranks
+ *                 the ad because the lead really did message, even if an ad brought them in.
+ *   3. meta-ad  — a Meta ad/form submission. Say "the ad you saw", never WhatsApp.
+ *   4. ad       — anything else that isn't WhatsApp (a CSV import, a portal, a referral).
+ */
+export type LeadOrigin = 'notes' | 'whatsapp' | 'meta-ad' | 'ad'
+
+export function classifyLeadOrigin(input: {
+  source?: string | null
+  /** `custom_fields.meta_ad_origin` — set by a Meta instant-form submission. */
+  hasMetaAdOrigin?: boolean
+  /** True only when there is an actual WhatsApp conversation to refer to. */
+  hasWhatsAppThread?: boolean
+  hasNotes?: boolean
+}): LeadOrigin {
+  if (input.hasNotes) return 'notes'
+  const source = String(input.source || '').toLowerCase()
+  if (source.includes('whatsapp') || input.hasWhatsAppThread) return 'whatsapp'
+  if (input.hasMetaAdOrigin || /facebook|instagram|meta|\bfb\b/.test(source)) return 'meta-ad'
+  return 'ad'
+}
+
+/**
  * Shipped default. Deliberately industry-neutral: no property, listing, course or
  * visa assumptions, no invented facts, and an explicit "stop when asked" rule so
  * the phone channel honours an opt-out the same way WhatsApp does.

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { warmupVoiceBridge } from '@/utils/voice-helper'
 import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
+import { industryVocabulary } from '@/lib/automation/industry'
+import { classifyLeadOrigin } from '@/lib/automation/calling-script'
 
 // Using service role client because this is a public webhook requested by Twilio
 const supabaseAdmin = createClient(
@@ -476,12 +478,40 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
             : `GENDER IDENTITY (MALE): You are a MALE representative. In Hindi and Hinglish, you MUST ALWAYS use masculine verb forms and grammatical endings (e.g. "Main ${companyName} se baat kar RAHA hoon", "Main aapki help kar SAKTA hoon", "Main check kar KE BATA DETA hoon", "Call kar RAHA tha").`;
 
         // Direct context instruction
-        const isWhatsappOrigin = (lead?.source || '').toLowerCase().includes('whatsapp') || !!lead?.custom_fields?.meta_ad_origin;
+        //
+        // The origin decision lives in classifyLeadOrigin() (lib/automation/calling-script.ts) so
+        // it can be proven by a gate. It used to be an inline `source.includes('whatsapp') ||
+        // meta_ad_origin`, and that OR meant every Meta lead-form submission — which always
+        // carries meta_ad_origin — was greeted as a WhatsApp enquiry the lead never made.
+        const leadCustomFields: Record<string, any> =
+            typeof lead?.custom_fields === 'string'
+                ? (() => {
+                    try {
+                        return JSON.parse(lead.custom_fields as string) || {};
+                    } catch {
+                        return {};
+                    }
+                })()
+                : ((lead?.custom_fields as Record<string, any>) || {});
+        const leadOrigin = classifyLeadOrigin({
+            source: lead?.source,
+            // `custom_fields` is a text column, so over REST it can arrive as a JSON string. Reading
+            // `.meta_ad_origin` off a string is always undefined, which would have quietly defeated
+            // this check — parse it first.
+            hasMetaAdOrigin: Boolean(leadCustomFields.meta_ad_origin),
+            hasWhatsAppThread: Boolean(String(whatsappHistory || '').trim()),
+            hasNotes: Boolean(lead?.notes),
+        });
+        const industryVocab = industryVocabulary((profile as any)?.industry);
+        const sourceText = String(lead?.source || '').toLowerCase();
         let contextInstruction = '';
-        if (lead?.notes) {
+        if (leadOrigin === 'notes') {
             contextInstruction = `After the lead responds to your greeting, or if asked what this call is regarding, introduce yourself from ${companyName}. State clearly and naturally that you are calling regarding their specific inquiry/topic: "${lead.notes}". Explain the features, capabilities, and solutions clearly and warmly based on what they asked for and the business info provided below. DO NOT talk about unrelated topics unless their note or inquiry explicitly asks for it!`;
-        } else if (isWhatsappOrigin) {
+        } else if (leadOrigin === 'whatsapp') {
             contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka WhatsApp par inquiry start kiya tha, usi ke regarding call kiya hai taaki aapko right details provide kar sakein." Then naturally ask about their requirement.`;
+        } else if (leadOrigin === 'meta-ad') {
+            // Refer to the ad they actually responded to. NEVER say WhatsApp: they never messaged.
+            contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ${/instagram/.test(sourceText) ? 'Instagram' : 'Facebook'} par jo ad dekha tha, usi ke regarding call kiya hai taaki aapko right details provide kar sakein." Then naturally ask about their requirement. If the lead asks how you got their number, say their enquiry form on that ad came to us. Do NOT mention WhatsApp at any point — they never messaged us on WhatsApp.`;
         } else {
             contextInstruction = `After the lead responds to your greeting, say: "Aapne ${companyName} ka ek ad dekha tha, usi ke regarding call kiya hai." Then naturally ask about their requirement.`;
         }
@@ -514,13 +544,28 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
             }).filter((q: { question: string; options: string[] }) => q.question.trim().length > 0);
         }
 
-        // ONLY fallback to default property qualification questions if qualifying is actually ENABLED AND no specific lead note exists
+        // Fallback qualification questions, when qualifying is ENABLED and the lead left no note.
+        //
+        // These used to be property questions for every business: a film academy would have been
+        // asked "what type of property are you interested in" and offered a ₹50L–₹1.5Cr budget
+        // band. The property set now only applies to a property business; everyone else gets
+        // neutral questions built from their own industry vocabulary.
+        const industryKey = String((profile as any)?.industry || '').toLowerCase();
+        const isPropertyBusiness = /propert|real.?estate|realt|infra|homes|realty|land|plot/.test(
+            industryKey + ' ' + String(companyName || '').toLowerCase()
+        );
         if (isQualifyingEnabled && parsedQuestions.length === 0 && !lead?.notes) {
-            parsedQuestions = [
-                { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-            ];
+            parsedQuestions = isPropertyBusiness
+                ? [
+                    { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
+                    { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
+                    { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                ]
+                : [
+                    { question: `Which ${industryVocab.productNoun} are you interested in?`, options: [] },
+                    { question: 'When are you planning to start?', options: ['This month', '1 - 3 Months', 'Just exploring'] },
+                    { question: 'What would you like to know first?', options: ['Fees / pricing', 'Duration & schedule', 'Career scope'] }
+                ];
         }
 
         const formattedQuestionsList = parsedQuestions.map((q: { question: string; options: string[] }, i: number) => {
@@ -529,19 +574,19 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
         }).join('\n');
 
         const qualifyingInstruction = parsedQuestions.length > 0 ? `
-NATURAL CONVERSATIONAL QUALIFICATION & INVENTORY VALUE PITCH:
+NATURAL CONVERSATIONAL QUALIFICATION & VALUE PITCH:
 During the call, your objective is strictly to:
-1. Note the lead's requirement so our sales team can curate the exact property options matching their preference.
+1. Note the lead's requirement so our team can shortlist the exact ${industryVocab.productNounPlural} matching their preference.
 2. Collect answers to the following qualification questions conversationally:
 ${formattedQuestionsList}
-3. Answer any questions the lead has about our company, projects, and active property inventory.
-4. Assist the lead in scheduling / booking an in-person site visit or meeting slot.
+3. Answer any questions the lead has about ${companyName}, our ${industryVocab.productNounPlural} and what is currently available.
+4. Assist the lead in scheduling / booking an appointment or consultation slot.
 
 Guidelines:
 - DO NOT read questions mechanically like a survey. Ask them conversationally and naturally.
 - Politely clarify any missing qualification details in friendly conversational Hinglish.
 - If an answer is already known in 'Attributed Details' or 'CRM Notes', do not re-ask.
-- ABSOLUTE PROHIBITION: NEVER mention WhatsApp or offer to share anything on WhatsApp. Focus on direct consultation and scheduling a physical site visit.
+- Do NOT promise to send anything afterwards. Focus on direct consultation and scheduling the next step.
 `.trim() : `
 CONVERSATIONAL CONSULTATION & DIRECT ASSISTANCE:
 During the call, your objective is strictly to:
@@ -566,13 +611,13 @@ CRITICAL RULES:
 1. ONLY speak about the provided business profile info, catalog, and the lead's own previous conversation history/CRM notes.
 2. DO NOT make up, assume, or hallucinate any details. Under no circumstances mention unrelated businesses.
 3. Be polite, friendly, and brief in your responses. Keep all answers short (under 50 words) and direct.
-4. Your single goal is to qualify the lead and find a suitable date and time slot for a meeting/visit.
+4. Your single goal is to qualify the lead and find a suitable date and time slot for an appointment or consultation.
 5. LANGUAGE STYLE: MANDATORY: You MUST speak in natural, friendly, warm Hindi / Hinglish.
 6. MULTILINGUAL ADAPTATION: If the lead asks to speak in Telugu, Tamil, Kannada, Marathi, Gujarati, Bengali, Hindi, English, or any other regional language (e.g. "Telugu lo matladandi", "Can we speak in English?", "Tamil la pesunga"), you MUST IMMEDIATELY adapt and converse fluently in their requested language.
 7. PAST CALLS AND SCHEDULES: If the lead asks about when they requested a callback or previous conversations, answer accurately in Hinglish.
 8. ENDING THE CALL: Once the call objective is met (e.g. appointment is booked, callback is scheduled) or the lead wants to end the conversation, say a brief polite goodbye and immediately trigger your "End conversation" tool to hang up.
 9. VOICEMAIL / ANSWERING MACHINE DETECTION: If you hear a voicemail greeting or answering machine message, immediately trigger your "End conversation" tool to hang up.
-10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific project (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific project.
+10. PRIMARY INTEREST PRIORITY: If the lead inquired about a specific ${industryVocab.productNoun} (shown under 'PRIMARY INTEREST PRODUCT'), focus strictly on that specific ${industryVocab.productNoun}.
 
 CONVERSATION FLOW:
 1. Your opening greeting is: "${effectiveGreeting}". Speak this exact greeting.
