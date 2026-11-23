@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { createHash } from 'node:crypto';
 import { campaignLaunchRefusal } from '../preflight';
+import { LOCATION_TYPES } from '@/lib/ads/advantage-plus';
 
 /**
  * Direct Meta Marketing API (Graph) tools.
@@ -352,6 +353,17 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
           // Safety default: never create live spend implicitly.
           if (entity !== 'creative' && body.status === undefined) body.status = 'PAUSED';
           if (body.special_ad_categories === undefined) body.special_ad_categories = [];
+
+          // The location types Meta still offers. "People living in this location"
+          // (['home']) was removed from Ads Manager, so an ad set carrying it can be
+          // created through the API but never published or edited in the UI. Callers
+          // that send a targeting object get the surviving combination enforced.
+          if (body.targeting && typeof body.targeting === 'object') {
+            const geo = (body.targeting as any).geo_locations;
+            if (geo && typeof geo === 'object') {
+              (body.targeting as any).geo_locations = { ...geo, location_types: [...LOCATION_TYPES] };
+            }
+          }
 
           let path: string;
           if (entity === 'creative') {

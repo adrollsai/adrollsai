@@ -25,6 +25,7 @@ import {
   findViolations,
   mergeDirectives,
   scrubCopy,
+  type CreativeDirectiveSet,
 } from '../lib/automation/creative-directives';
 import { composeAdCreative } from '../lib/agent/creative/ad-prompt-compiler';
 import { composeRoutineBrief } from '../lib/automation/routine-composer';
@@ -44,16 +45,19 @@ const check = (name: string, ok: boolean, detail = '') => {
 const PROPERTY_A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const PROPERTY_B = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
 
-const set = {
-  global: [{ id: 'g1', instruction: 'No phone number on any daily creative', bans: ['phone' as const] }],
+// Typed as the real shape so the doc-shaped fixtures below cannot drift from the
+// parser they are meant to exercise (a `bans: [] as const` here used to make the
+// whole file fail to typecheck while still running fine).
+const set: CreativeDirectiveSet = {
+  global: [{ id: 'g1', instruction: 'No phone number on any daily creative', bans: ['phone'] }],
   items: {
     [PROPERTY_A]: [
-      { id: 'p1', instruction: 'Always show the site plan and the tower name', bans: [] as const },
-      { id: 'p2', instruction: 'Never show a price for this project', bans: ['price' as const] },
+      { id: 'p1', instruction: 'Always show the site plan and the tower name', bans: [] },
+      { id: 'p2', instruction: 'Never show a price for this project', bans: ['price'] },
     ],
-    [PROPERTY_B]: [{ id: 'p3', instruction: 'Family lifestyle imagery only', bans: [] as const }],
+    [PROPERTY_B]: [{ id: 'p3', instruction: 'Family lifestyle imagery only', bans: [] }],
   },
-  campaigns: { cmp1: [{ id: 'c1', instruction: 'Use the festive palette', bans: [] as const }] },
+  campaigns: { cmp1: [{ id: 'c1', instruction: 'Use the festive palette', bans: [] }] },
 };
 
 // ── 1. scoping

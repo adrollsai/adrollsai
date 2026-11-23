@@ -2,6 +2,14 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { campaignLaunchRefusal } from '../preflight';
+import {
+    LOCATION_TYPES,
+    ageAndGenderTargeting,
+    applyAdvantageTargeting,
+    buildCampaignPayload,
+    describeAdvantagePlan,
+    resolveAdvantagePlan,
+} from '@/lib/ads/advantage-plus';
 
 const META_GRAPH_VERSION = 'v21.0';
 
@@ -14,7 +22,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
   async function getUserMetaCredentials() {
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('facebook_token, ad_account_id, selected_page_token, selected_page_id, business_name, mission_statement, currency')
+      .select('facebook_token, ad_account_id, selected_page_token, selected_page_id, business_name, mission_statement, business_info, industry, currency')
       .eq('id', userId)
       .single();
 
@@ -274,6 +282,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
         }).optional(),
         ageMin: z.number().default(30),
         ageMax: z.number().default(65),
+        specialAdCategory: z.enum(['NONE', 'HOUSING', 'EMPLOYMENT', 'CREDIT', 'SOCIAL_ISSUES_ELECTIONS_POLITICS']).default('NONE').describe('Legally required special ad category. HOUSING for property ads, EMPLOYMENT for job ads, CREDIT for loans/cards. Meta will not publish an ad set that asks for Advantage+ audience inside a special category, so the launcher turns it off and says so.'),
         status: z.enum(['ACTIVE', 'PAUSED']).default('ACTIVE'),
       }),
       execute: async ({
@@ -287,6 +296,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
         targetLocations,
         ageMin,
         ageMax,
+        specialAdCategory,
         status,
       }) => {
         // PRE-FLIGHT GUARD. Creating a campaign, a form, an ad set and an ad is
@@ -411,18 +421,29 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           }
           const leadFormId = formDataResp.id;
 
-          // 3. Create Campaign (CBO with daily budget)
-          const dailyBudgetSubunits = Math.round(budgetInr * 100);
-          const campaignPayload = {
-            name: campaignName,
+          // The Advantage+ shape of this campaign, decided once (see
+          // lib/ads/advantage-plus.ts). Meta refuses to publish an ad set that asks
+          // for Advantage+ audience inside a special ad category — HOUSING property
+          // ads included — so the plan turns that lever off and reports why instead
+          // of shipping a campaign that cannot go live.
+          const advantage = resolveAdvantagePlan({
             objective: 'OUTCOME_LEADS',
+            specialAdCategories: specialAdCategory,
+            industry: (profile as any).industry || null,
+            businessInfo: (profile as any).business_info || null,
+            missionStatement: profile.mission_statement || null,
+            hasAgeOrGender: Number(ageMin) > 18 || Number(ageMax) < 65,
+            wantsAdvantageAudience: specialAdCategory === 'NONE' ? true : false,
+          });
+
+          // 3. Create Campaign (Advantage+ budget: one daily budget at campaign level)
+          const campaignPayload = buildCampaignPayload({
+            name: campaignName,
+            plan: advantage,
+            dailyBudget: budgetInr,
             status,
-            buying_type: 'AUCTION',
-            daily_budget: dailyBudgetSubunits.toString(),
-            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-            special_ad_categories: [],
-            access_token: token,
-          };
+            accessToken: token,
+          });
 
           const campRes = await fetch(`https://graph.facebook.com/${META_GRAPH_VERSION}/${adAccountId}/campaigns`, {
             method: 'POST',
@@ -436,16 +457,22 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const campaignId = campData.id;
 
           // 4. Create Ad Set
-          const targetingConfig: any = {
-            geo_locations: targetLocations || { countries: ['IN'], location_types: ['home'] },
-            age_min: ageMin,
-            targeting_automation: { advantage_audience: 0 },
-            publisher_platforms: ['facebook', 'instagram'],
-            device_platforms: ['mobile', 'desktop'],
-          };
-          if (ageMax < 65) {
-            targetingConfig.age_max = ageMax;
-          }
+          //
+          // location_types is always ["home","recent"]: "People living in this
+          // location" was removed from Ads Manager, and an ad set built with it can
+          // be created here but never published or edited there.
+          const requestedGeo = (targetLocations && typeof targetLocations === 'object')
+            ? { ...targetLocations, location_types: [...LOCATION_TYPES] }
+            : { countries: ['IN'], location_types: [...LOCATION_TYPES] };
+          const ageGender = ageAndGenderTargeting(advantage, ageMin, ageMax, null, () => null);
+          const targetingConfig: any = applyAdvantageTargeting(
+            {
+              geo_locations: requestedGeo,
+              age_min: ageGender.age_min,
+              ...(ageGender.age_max < 65 ? { age_max: ageGender.age_max } : {}),
+            },
+            advantage
+          );
 
           const adSetPayload = {
             name: `${campaignName} - AdSet`,
@@ -537,7 +564,16 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
             dailyBudget: `${fmtMoney(budgetInr)}/day`,
             currency,
             whatsappRedirectUrl,
-            message: `Campaign "${campaignName}" successfully launched on Meta Ads!`,
+            advantage: {
+              summary: describeAdvantagePlan(advantage),
+              state: advantage.advantageState,
+              specialAdCategories: advantage.specialAdCategories,
+              reasons: advantage.reasons,
+              blockers: advantage.blockers,
+            },
+            message:
+              `Campaign "${campaignName}" successfully launched on Meta Ads! Setup: ${describeAdvantagePlan(advantage)}.` +
+              (advantage.blockers.length ? ` Note: ${advantage.blockers.join(' ')}` : ''),
           };
         } catch (err: any) {
           return { success: false, error: err.message };

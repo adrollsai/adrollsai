@@ -607,11 +607,14 @@ function CRMPageContent() {
   // --- FILTERED BULK TRANSFER MODAL STATE ---
   const [isFilteredBulkTransferModalOpen, setIsFilteredBulkTransferModalOpen] = useState(false)
   const [filteredTransferFromIds, setFilteredTransferFromIds] = useState<string[]>(['ALL'])
-  const [filteredTransferStage, setFilteredTransferStage] = useState<string>('ALL')
+  const [filteredTransferStage, setFilteredTransferStage] = useState<string[]>([])
   const [filteredTransferDnp, setFilteredTransferDnp] = useState<string>('ALL')
   const [filteredTransferDateRange, setFilteredTransferDateRange] = useState<string>('ALL')
-  const [filteredTransferCampaign, setFilteredTransferCampaign] = useState<string>('ALL')
-  const [filteredTransferForm, setFilteredTransferForm] = useState<string>('ALL')
+  // Stage / Campaign / Form are multi-select: an admin may send leads from several campaigns to a
+  // teammate in one pass. `[]` means "every one", which is what the All row clears to (the API
+  // treats `[]` and the legacy 'ALL' identically).
+  const [filteredTransferCampaign, setFilteredTransferCampaign] = useState<string[]>([])
+  const [filteredTransferForm, setFilteredTransferForm] = useState<string[]>([])
   const [filteredTransferTargetAgentId, setFilteredTransferTargetAgentId] = useState<string>('')
   const [filteredTransferMaxLimit, setFilteredTransferMaxLimit] = useState<string>('')
   const [filteredTransferDeleteHistory, setFilteredTransferDeleteHistory] = useState<boolean>(false)
@@ -636,6 +639,8 @@ function CRMPageContent() {
             useFilters: true,
             previewOnly: true,
             fromAgentIds: filteredTransferFromIds,
+            // Arrays; `[]` = no filter on that field. The preview must send the same shapes as
+            // the execute call below, otherwise it counts a different set of leads than it moves.
             filterStage: filteredTransferStage,
             filterDnp: filteredTransferDnp,
             filterDateRange: filteredTransferDateRange,
@@ -5495,12 +5500,15 @@ END:VCARD\n`
                       )}
                     </div>
 
-                    {/* Pipeline Stage Filter (searchable) */}
+                    {/* Pipeline Stage Filter (searchable, MULTI-select) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Pipeline Stage</label>
                       <SearchableSelect
-                        value={filteredTransferStage}
-                        onChange={setFilteredTransferStage}
+                        multiple
+                        multiValue={filteredTransferStage}
+                        onMultiChange={(stages) => setFilteredTransferStage(stages)}
+                        value={'ALL'}
+                        onChange={() => {}}
                         allLabel="ALL Stages"
                         searchPlaceholder="Search stages..."
                         placeholder="ALL Stages"
@@ -5508,6 +5516,11 @@ END:VCARD\n`
                         options={STAGES.filter(s => s !== 'All Leads').map(stage => ({ value: stage, label: stage }))}
                         buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
                       />
+                      {filteredTransferStage.length > 1 && (
+                        <p className="text-[10px] font-bold text-indigo-600 mt-1">
+                          {filteredTransferStage.length} stages selected
+                        </p>
+                      )}
                     </div>
 
                     {/* DNP / Call Status Filter */}
@@ -5540,12 +5553,15 @@ END:VCARD\n`
                       </select>
                     </div>
 
-                    {/* Campaign Filter */}
+                    {/* Campaign Filter (searchable, MULTI-select) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Campaign</label>
                       <SearchableSelect
-                        value={filteredTransferCampaign}
-                        onChange={setFilteredTransferCampaign}
+                        multiple
+                        multiValue={filteredTransferCampaign}
+                        onMultiChange={(campaigns) => setFilteredTransferCampaign(campaigns)}
+                        value={'ALL'}
+                        onChange={() => {}}
                         allLabel={`All Campaigns (${transferCampaignOptions.length})`}
                         searchPlaceholder="Search campaigns..."
                         placeholder="All Campaigns"
@@ -5553,14 +5569,22 @@ END:VCARD\n`
                         options={transferCampaignOptions}
                         buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
                       />
+                      {filteredTransferCampaign.length > 1 && (
+                        <p className="text-[10px] font-bold text-indigo-600 mt-1">
+                          {filteredTransferCampaign.length} campaigns selected
+                        </p>
+                      )}
                     </div>
 
-                    {/* Form Filter (searchable) */}
+                    {/* Form Filter (searchable, MULTI-select) */}
                     <div>
                       <label className="block text-[11px] font-extrabold text-slate-700 mb-1">Lead Form</label>
                       <SearchableSelect
-                        value={filteredTransferForm}
-                        onChange={setFilteredTransferForm}
+                        multiple
+                        multiValue={filteredTransferForm}
+                        onMultiChange={(forms) => setFilteredTransferForm(forms)}
+                        value={'ALL'}
+                        onChange={() => {}}
                         allLabel={`All Forms (${transferFormOptions.length})`}
                         searchPlaceholder="Search lead forms..."
                         placeholder="All Forms"
@@ -5568,6 +5592,11 @@ END:VCARD\n`
                         options={transferFormOptions}
                         buttonClassName="bg-slate-50 border border-slate-200 text-slate-800 hover:bg-slate-100/70 focus:ring-4 focus:ring-indigo-500/20"
                       />
+                      {filteredTransferForm.length > 1 && (
+                        <p className="text-[10px] font-bold text-indigo-600 mt-1">
+                          {filteredTransferForm.length} forms selected
+                        </p>
+                      )}
                     </div>
 
                   </div>

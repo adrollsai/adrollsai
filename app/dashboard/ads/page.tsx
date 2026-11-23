@@ -14,6 +14,15 @@ import { getVideoPosterUrl } from '@/utils/get-video-poster'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
 import { getPropertyTags } from '@/utils/property-tags'
 import type { DroppedPin } from '@/components/ads/MapLocationPicker'
+import {
+  CAMPAIGN_GOALS,
+  CONVERSION_EVENTS,
+  DEFAULT_LEAD_FORM_FIELDS,
+  LEAD_FORM_FIELDS,
+  leadFormField,
+  normaliseConversionEvent,
+  type CampaignGoalId,
+} from '@/lib/ads/campaign-plan'
 import dynamic from 'next/dynamic'
 const MapLocationPicker = dynamic(() => import('@/components/ads/MapLocationPicker'), { ssr: false })
 
@@ -387,6 +396,37 @@ export default function AdsPage() {
   const [isAddingQuestion, setIsAddingQuestion] = useState(false)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [newQuestion, setNewQuestion] = useState<CustomQuestion>({ label: '', type: 'SHORT_ANSWER', options: [''] })
+
+  // What the campaign is FOR, and which standard fields the instant form asks for.
+  // Defaults: Leads, asking Name + WhatsApp Number + City (see lib/ads/campaign-plan).
+  const [campaignGoal, setCampaignGoal] = useState<CampaignGoalId>('leads')
+  const [conversionEvent, setConversionEvent] = useState<string>('LEAD')
+  const [formFields, setFormFields] = useState<string[]>([...DEFAULT_LEAD_FORM_FIELDS])
+
+  /**
+   * Pin the goal to a destination: choosing "Conversions" is what makes the pixel
+   * required, and the two must never drift apart.
+   */
+  const chooseGoal = (goal: CampaignGoalId) => {
+    setCampaignGoal(goal)
+    const def = CAMPAIGN_GOALS.find(g => g.id === goal)
+    if (def) setCampaignType(def.campaignType)
+  }
+
+  const toggleFormField = (id: string) => {
+    setFormFields(prev => {
+      if (prev.includes(id)) {
+        // Meta rejects a form with no questions. Full name is the one field the CRM
+        // keys a lead on, so it is the last one that may be removed.
+        if (prev.length === 1) {
+          toast.error('A lead form needs at least one field.')
+          return prev
+        }
+        return prev.filter(f => f !== id)
+      }
+      return [...prev, id]
+    })
+  }
 
   const [adForm, setAdForm] = useState({
     metaLocations: [] as { location: LocationOption, radius: number }[],
@@ -1926,14 +1966,31 @@ export default function AdsPage() {
         }
     }
     
-    const hasValidLocations = adForm.metaLocations.length > 0 || droppedPins.length > 0;
+    // A campaign aimed at saved audiences does not need a geo radius — that is the
+    // whole point of the "Run as Remarketing Campaign" toggle, which used to demand
+    // a city anyway and made the toggle a lie.
+    const audienceOnly = (runAsRemarketing && selectedCustomAudienceIds.length > 0) || !!remarketSourceCampaign;
+    const hasValidLocations = adForm.metaLocations.length > 0 || droppedPins.length > 0 || audienceOnly;
     // The floor follows the account currency (₹100 for INR, the equivalent small
     // minimum elsewhere). It used to be a hardcoded ₹100 for every account,
     // which made a legitimate $20/day campaign impossible to launch.
     const minDailyBudget = currency === 'INR' ? 100 : 5;
-    if (!hasValidLocations || adForm.dailyBudgetINR < minDailyBudget) { alert("Please set a valid location (select cities or drop a pin on the map) and minimum budget of " + minDailyBudget + "."); return }
+    if (!hasValidLocations || adForm.dailyBudgetINR < minDailyBudget) {
+        alert(
+            adForm.dailyBudgetINR < minDailyBudget
+                ? `Please set a daily budget of at least ${minDailyBudget}.`
+                : "Please set a valid location (select cities or drop a pin on the map)."
+        );
+        return;
+    }
     if (campaignType === 'whatsapp_chat' && !selectedWhatsAppNumber) {
         alert("Please select a connected WhatsApp number for the campaign.");
+        return;
+    }
+    // Conversions campaigns cannot deliver without a pixel: Meta needs an event to
+    // optimise for. Stop here instead of failing after the campaign shell exists.
+    if (campaignType === 'website_conversion' && !pixelId) {
+        alert("A Conversions campaign needs a Meta Pixel / Dataset. Pick one below, or switch the goal to Leads.");
         return;
     }
     
@@ -2062,7 +2119,9 @@ export default function AdsPage() {
       formPayload.append('dailyBudgetINR', adForm.dailyBudgetINR.toString()); 
       formPayload.append('linkUrl', finalLinkUrl);
       formPayload.append('privacyPolicyUrl', autoPrivacyUrl);
-      formPayload.append('optimizeForConversions', adForm.optimizeForConversions.toString());
+      formPayload.append('optimizeForConversions', (campaignGoal === 'quality_leads').toString());
+      formPayload.append('campaignGoal', campaignGoal);
+      formPayload.append('conversionEvent', normaliseConversionEvent(conversionEvent));
       formPayload.append('customQuestions', JSON.stringify(formQuestions));
       formPayload.append('campaignType', campaignType);
       formPayload.append('ageMin', adForm.ageMin.toString());
@@ -2082,6 +2141,9 @@ export default function AdsPage() {
               headline: 'Get Pricing, Floor Plans & Exclusive Offers',
               greetingText: 'Please verify your details below to receive the complete pricing sheet and direct developer brochure.',
               includeCity: true,
+              // What the form actually asks for — the client's choice, defaulting to
+              // Name + WhatsApp Number + City. The server re-validates this list.
+              standardFields: formFields,
               questions: formQuestions,
               privacyPolicyUrl: autoPrivacyUrl,
               privacyPolicyLinkText: 'Privacy Policy',
@@ -2150,6 +2212,9 @@ export default function AdsPage() {
           setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
+          setFormFields([...DEFAULT_LEAD_FORM_FIELDS]);
+          setCampaignGoal('leads');
+          setConversionEvent('LEAD');
           fetchAdsData(true);
           return;
         }
@@ -2168,6 +2233,9 @@ export default function AdsPage() {
           setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
+          setFormFields([...DEFAULT_LEAD_FORM_FIELDS]);
+          setCampaignGoal('leads');
+          setConversionEvent('LEAD');
         } else {
           // Legacy direct response
           toast.success(data.message || 'Campaign launched!');
@@ -2178,6 +2246,9 @@ export default function AdsPage() {
           setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
           setSelectedCreatives([]);
           setFormQuestions([]);
+          setFormFields([...DEFAULT_LEAD_FORM_FIELDS]);
+          setCampaignGoal('leads');
+          setConversionEvent('LEAD');
           fetchAdsData(true);
         }
       } else {
@@ -5834,30 +5905,56 @@ export default function AdsPage() {
                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">Campaign Settings</label>
                   <div className="space-y-4">
                       <div>
-                          <label className="text-[10px] font-bold text-slate-500 ml-2 block mb-1.5 uppercase tracking-wider">Campaign Destination Type</label>
-                          <div className="flex bg-slate-100 p-1 rounded-2xl">
-                              <button 
-                                  type="button"
-                                  onClick={() => setCampaignType('instant_form')}
-                                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${campaignType === 'instant_form' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                              >
-                                  Instant Form
-                              </button>
-                              <button 
-                                  type="button"
-                                  onClick={() => setCampaignType('website_conversion')}
-                                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${campaignType === 'website_conversion' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                              >
-                                  Website
-                              </button>
-                              <button 
-                                  type="button"
-                                  onClick={() => setCampaignType('whatsapp_chat')}
-                                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${campaignType === 'whatsapp_chat' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                              >
-                                  WhatsApp Chat
-                              </button>
+                          <div className="flex items-center justify-between mb-1.5 px-2">
+                              <label className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">Campaign Goal</label>
+                              <span className="text-[9px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">What Meta optimises for</span>
                           </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                              {CAMPAIGN_GOALS.map((g) => {
+                                  const active = campaignGoal === g.id
+                                  return (
+                                      <button
+                                          key={g.id}
+                                          type="button"
+                                          onClick={() => chooseGoal(g.id)}
+                                          aria-pressed={active}
+                                          className={`text-left p-3.5 rounded-2xl border-2 transition-all ${active ? 'border-blue-500 bg-blue-50/60 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/30'}`}
+                                      >
+                                          <div className="flex items-center justify-between gap-2">
+                                              <span className={`text-xs font-bold ${active ? 'text-blue-700' : 'text-slate-700'}`}>{g.label}</span>
+                                              {active
+                                                  ? <CheckCircle size={14} className="text-blue-600 shrink-0" />
+                                                  : <span className="w-3.5 h-3.5 rounded-full border border-slate-300 shrink-0" />}
+                                          </div>
+                                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-relaxed">{g.blurb}</p>
+                                      </button>
+                                  )
+                              })}
+                          </div>
+
+                          {campaignGoal === 'conversions' && (
+                              <div className="mt-3 bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                                  <label className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">Conversion Event</label>
+                                  <select
+                                      value={conversionEvent}
+                                      onChange={(e) => setConversionEvent(normaliseConversionEvent(e.target.value))}
+                                      className="w-full bg-white py-3 px-4 rounded-xl text-slate-800 text-sm font-semibold outline-none focus:ring-4 focus:ring-blue-500/20 border border-slate-200 transition-all cursor-pointer"
+                                  >
+                                      {CONVERSION_EVENTS.map(ev => (
+                                          <option key={ev.value} value={ev.value}>{ev.label}{ev.hint ? ` — ${ev.hint}` : ''}</option>
+                                      ))}
+                                  </select>
+                                  <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                                      Meta will only go after this event on your pixel. If the event never fires, delivery stalls — pick the event your site already sends.
+                                  </p>
+                              </div>
+                          )}
+
+                          {campaignGoal === 'quality_leads' && (
+                              <div className="mt-3 bg-emerald-50 border border-emerald-100 p-3.5 rounded-2xl text-[11px] text-emerald-800 font-medium leading-relaxed animate-in fade-in slide-in-from-top-2 duration-300">
+                                  Meta optimises for <strong>quality</strong> leads instead of volume: fewer leads, but the ones most likely to answer. Best once you have a month of lead history.
+                              </div>
+                          )}
                       </div>
 
                       {campaignType === 'whatsapp_chat' && (
@@ -6318,9 +6415,39 @@ export default function AdsPage() {
                           </span>
                       </div>
                       
-                      <div className="text-[11px] text-slate-500 font-medium mb-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between">
-                          <span>Pre-filled lead fields: <strong className="text-slate-700">Full Name, Phone, Email, City</strong></span>
-                          <span className="text-[10px] text-blue-600 font-semibold">Review screen enabled</span>
+                      <div className="text-[11px] text-slate-500 font-medium mb-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <div className="flex items-center justify-between gap-2">
+                              <span>Pre-filled lead fields <span className="text-slate-400">— tap to change</span></span>
+                              <button
+                                  type="button"
+                                  onClick={() => setFormFields([...DEFAULT_LEAD_FORM_FIELDS])}
+                                  className="text-[10px] text-blue-600 font-bold hover:underline shrink-0"
+                              >
+                                  Reset to default
+                              </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-2.5">
+                              {LEAD_FORM_FIELDS.map(f => {
+                                  const on = formFields.includes(f.id)
+                                  return (
+                                      <button
+                                          key={f.id}
+                                          type="button"
+                                          onClick={() => toggleFormField(f.id)}
+                                          aria-pressed={on}
+                                          title={f.hint || `${f.label} — shown on the form as "${f.metaLabel}"`}
+                                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-full border transition-all ${on ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300 hover:text-blue-600'}`}
+                                      >
+                                          {on ? <Check size={11} /> : <Plus size={11} />}
+                                          {f.label}
+                                      </button>
+                                  )
+                              })}
+                          </div>
+                          <p className="text-[10px] text-slate-400 font-medium mt-2 leading-relaxed">
+                              The form asks: <strong className="text-slate-600">{formFields.map(id => leadFormField(id)?.label || id).join(', ') || 'nothing yet'}</strong>.
+                              {formFields.includes('PHONE') && ' Meta labels the mobile field "Phone number"; it still captures the WhatsApp number.'}
+                          </p>
                       </div>
 
                       {formQuestions.length > 0 && (
@@ -6481,7 +6608,8 @@ export default function AdsPage() {
                 disabled={
                     isSubmitting || 
                     checkingSanity ||
-                    (adForm.metaLocations.length === 0 && droppedPins.length === 0) || 
+                    // An audience-only (remarketing) launch needs no geo targeting.
+                    ((adForm.metaLocations.length === 0 && droppedPins.length === 0) && !((runAsRemarketing && selectedCustomAudienceIds.length > 0) || !!remarketSourceCampaign)) || 
                     selectedCreatives.length === 0 || 
                     !accountStatus ||
                     (accountStatus && !accountStatus.error && (

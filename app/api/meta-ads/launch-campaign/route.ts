@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { logToFile, clearLogFile } from '@/utils/logger';
 import { ensureWabaSubscribed } from '@/utils/meta-subscription';
+import { resolveCampaignPlan } from '@/lib/ads/campaign-plan';
 
 export const maxDuration = 300;
 
@@ -77,6 +78,12 @@ export async function POST(request: Request) {
         data.privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
         data.optimizeForConversions = formData.get('optimizeForConversions') === 'true';
         data.customQuestions = formData.get('customQuestions')?.toString();
+        // The goal the client picked, plus the conversion event for a conversions
+        // campaign. Both are re-validated in lib/ads/campaign-plan before use.
+        data.campaignGoal = formData.get('campaignGoal')?.toString() || undefined;
+        data.conversionEvent = formData.get('conversionEvent')?.toString() || undefined;
+        // The modal has always sent a gender; the route never read it, so it was dropped.
+        data.gender = formData.get('gender')?.toString() || undefined;
         data.inventoryIds = formData.getAll('inventoryIds').map(String);
         data.assetIds = formData.getAll('assetIds').map(String);
         data.creativeUrls = formData.getAll('creativeUrls').map(String);
@@ -108,7 +115,7 @@ export async function POST(request: Request) {
 
     // --- Resolve profile data ---
     const { data: targetProfileData } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, selected_page_token, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number')
+        .select('facebook_token, ad_account_id, selected_page_id, selected_page_token, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, industry, whatsapp_waba_id, whatsapp_access_token, whatsapp_phone_number')
         .eq('id', targetUserId)
         .single();
     const targetProfile: any = targetProfileData;
@@ -139,20 +146,45 @@ export async function POST(request: Request) {
         facebookToken, adAccountId, pageId, linkUrl, privacyPolicyUrl,
         dailyBudget = 500, metaLocations: metaLocationsStr,
         optimizeForConversions, customQuestions: customQuestionsStr,
+        campaignGoal, conversionEvent, gender,
         inventoryIds = [], assetIds = [],
         campaignType = 'instant_form', pixelId,
         ageMin, ageMax, customAudienceIds = []
     } = data;
 
     const currency = targetProfile?.currency || 'INR';
-    const isWebsiteCampaign = campaignType === 'website_conversion';
     const finalPixelId = pixelId || targetProfile?.pixel_id || null;
 
+    // Resolve the goal once, here, and let the plan decide the destination the job
+    // carries. A stale modal, a replayed payload or a hand-made API call can then never
+    // ask for a combination Meta would reject (a lead form on an engagement campaign,
+    // a conversions campaign with no pixel, ...).
+    const plan = resolveCampaignPlan({
+        campaignType,
+        campaignGoal,
+        conversionEvent,
+        optimizeForConversions,
+    });
+    const effectiveCampaignType: 'instant_form' | 'website_conversion' | 'whatsapp_chat' =
+        plan.goal === 'whatsapp'
+            ? 'whatsapp_chat'
+            : plan.goal === 'conversions'
+                ? 'website_conversion'
+                : 'instant_form';
+
     // --- VALIDATIONS ---
-    if (isWebsiteCampaign && !finalPixelId) {
+    if (plan.requiresPixel && !finalPixelId) {
         await refundLimit(user.id, 'campaign_launches');
         return NextResponse.json(
-            { error: 'Meta Pixel ID is required for Website Conversion campaigns.' },
+            { error: 'A Meta Pixel / Dataset is required for a conversions campaign. Pick a pixel, or switch the goal to Leads.' },
+            { status: 400 }
+        );
+    }
+
+    if (plan.requiresWhatsAppNumber && !String(data.whatsappNumber || '').replace(/\D/g, '')) {
+        await refundLimit(user.id, 'campaign_launches');
+        return NextResponse.json(
+            { error: 'A connected WhatsApp number is required for a WhatsApp campaign.' },
             { status: 400 }
         );
     }
@@ -328,10 +360,13 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         metaLocationsStr,
         optimizeForConversions,
         customQuestionsStr,
+        campaignGoal,
+        conversionEvent,
+        gender,
         inventoryIds,
         assetIds,
         creativeUrls: data.creativeUrls || [],
-        campaignType,
+        campaignType: effectiveCampaignType,
         pixelId: finalPixelId,
         ageMin,
         ageMax,
@@ -341,9 +376,17 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         creativeProductIds: data.creativeProductIds || [],
         whatsappNumber: data.whatsappNumber || targetProfile?.whatsapp_phone_number || "",
         businessName: data.business_name || targetProfile?.business_name || "Our Business",
-        contactNumber: (campaignType === 'whatsapp_chat' ? (data.whatsappNumber || targetProfile?.whatsapp_phone_number) : null) || data.contact_number || targetProfile?.contact_number || "",
+        contactNumber: (effectiveCampaignType === 'whatsapp_chat' ? (data.whatsappNumber || targetProfile?.whatsapp_phone_number) : null) || data.contact_number || targetProfile?.contact_number || "",
         businessInfo: targetProfile?.business_info || targetProfile?.bio || "",
         missionStatement: targetProfile?.mission_statement || "",
+        // The vertical decides the legally required special ad category (HOUSING for
+        // property ads, EMPLOYMENT for job ads, ...). It has to travel with the job
+        // because the Advantage+ plan is resolved there, and a category that is not
+        // declared is both a compliance problem and a publish failure later on.
+        industry: (targetProfile as any)?.industry || null,
+        specialAdCategories: (data as any).specialAdCategories ?? (data as any).specialAdCategory ?? null,
+        advantageAudience: (data as any).advantageAudience ?? null,
+        advantagePlacements: (data as any).advantagePlacements ?? null,
         currency,
         logoUrl: targetProfile?.logo_url || null,
         customInstructions: data.customInstructions || null,

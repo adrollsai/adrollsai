@@ -7,6 +7,14 @@ import { ensureWabaSubscribed } from '@/utils/meta-subscription';
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
 import { logToFile, clearLogFile } from '@/utils/logger';
+import { resolveCampaignPlan, buildStandardQuestions, describeLeadFormFields } from '@/lib/ads/campaign-plan';
+import {
+    LOCATION_TYPES,
+    applyAdvantageTargeting,
+    buildCampaignPayload,
+    describeAdvantagePlan,
+    resolveAdvantagePlan,
+} from '@/lib/ads/advantage-plus';
 
 // Extend Vercel serverless function timeout for heavy Meta API operations
 export const maxDuration = 120;
@@ -80,6 +88,11 @@ export async function POST(request: Request) {
         data.privacyPolicyUrl = formData.get('privacyPolicyUrl')?.toString();
         data.optimizeForConversions = formData.get('optimizeForConversions') === 'true';
         data.customQuestions = formData.get('customQuestions')?.toString();
+        // Goal + conversion event + the chosen lead-form fields, same contract as
+        // launch-campaign so a retargeting launch cannot drift from a fresh one.
+        data.campaignGoal = formData.get('campaignGoal')?.toString() || undefined;
+        data.conversionEvent = formData.get('conversionEvent')?.toString() || undefined;
+        data.leadFormConfig = formData.get('leadFormConfig')?.toString();
         data.inventoryIds = formData.getAll('inventoryIds').map(String);
         data.assetIds = formData.getAll('assetIds').map(String);
         data.sourceCampaignId = formData.get('sourceCampaignId')?.toString();
@@ -102,7 +115,7 @@ export async function POST(request: Request) {
 
     // Fetch TARGET profile for credentials and business info
     const { data: targetProfile } = await supabaseAdmin.from('profiles')
-        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, whatsapp_waba_id, whatsapp_access_token')
+        .select('facebook_token, ad_account_id, selected_page_id, custom_domain, business_name, contact_number, currency, pixel_id, logo_url, business_info, mission_statement, industry, whatsapp_waba_id, whatsapp_access_token')
         .eq('id', targetUserId)
         .single();
 
@@ -139,13 +152,55 @@ export async function POST(request: Request) {
         campaignType = 'instant_form',
         pixelId,
         ageMin,
-        ageMax
+        ageMax,
+        campaignGoal,
+        conversionEvent,
+        leadFormConfig
     } = data;
     
     const currency = targetProfile?.currency || 'INR';
 
     const finalPixelId = pixelId || targetProfile?.pixel_id || null;
     const isWebsiteCampaign = campaignType === 'website_conversion';
+
+    // One plan, shared with the fresh-launch pipeline: it owns the objective, the
+    // optimisation goal and which conversion event a conversions campaign optimises for.
+    const formConfig = (() => {
+        if (!leadFormConfig) return null;
+        try { return typeof leadFormConfig === 'string' ? JSON.parse(leadFormConfig) : leadFormConfig; } catch (e) { return null; }
+    })();
+
+    const plan = resolveCampaignPlan({
+        campaignType,
+        campaignGoal,
+        conversionEvent,
+        optimizeForConversions,
+    });
+
+    // A retargeting launch targets a saved audience, so Advantage+ audience must stay
+    // off and expansion must be pinned to 0 — otherwise Meta widens the delivery past
+    // the very list this campaign exists for. The special ad category is still
+    // resolved (and declared) because an undeclared HOUSING campaign is a compliance
+    // problem regardless of how the audience is built.
+    const advantage = resolveAdvantagePlan({
+        objective: plan.objective,
+        campaignType,
+        specialAdCategories: (data as any).specialAdCategories ?? (data as any).specialAdCategory ?? null,
+        industry: (targetProfile as any)?.industry || null,
+        businessInfo: (targetProfile as any)?.business_info || null,
+        missionStatement: (targetProfile as any)?.mission_statement || null,
+        hasCustomAudience: true,
+        hasDetailedTargeting: false,
+        hasAgeOrGender: Boolean((data as any).gender) || (Number(ageMin) || 18) > 18 || (Number(ageMax) || 65) < 65,
+        wantsAdvantageAudience: false,
+        wantsAdvantagePlacements: false,
+    });
+    logToFile("Remarketing advantage+ plan:", {
+        summary: describeAdvantagePlan(advantage),
+        specialAdCategories: advantage.specialAdCategories,
+        reasons: advantage.reasons,
+        blockers: advantage.blockers,
+    });
 
     if (isWebsiteCampaign && !finalPixelId) {
 
@@ -754,7 +809,7 @@ export async function POST(request: Request) {
                 .map(label => label.replace(/[?:]/g, '').trim())
                 .join(', ');
 
-            const formName = `Form - Retargeting - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+            const formName = `Form - Retargeting - ${businessName} - (${describeLeadFormFields(formConfig?.standardFields)}, ${questionLabels || 'no extra questions'}) - ${Date.now().toString().slice(-6)}`;
 
             const leadFormPayload: any = {
                 name: formName,
@@ -766,9 +821,8 @@ export async function POST(request: Request) {
                     link_text: "Privacy Policy" 
                 },
                 questions: [
-                    { type: "FULL_NAME", key: "full_name" },
-                    { type: "EMAIL", key: "email" },
-                    { type: "PHONE", key: "phone_number" },
+                    // Same default as a fresh campaign: name, WhatsApp number, city.
+                    ...buildStandardQuestions(formConfig?.standardFields),
                     ...metaCustomQuestions
                 ],
                 access_token: facebookToken
@@ -1143,16 +1197,13 @@ export async function POST(request: Request) {
         // Distinguishable Campaign Naming including Retargeting and Product Name
         const campaignName = `${businessName} - Retargeting (Retargetting) - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
 
-        const campaignPayload = {
+        const campaignPayload = buildCampaignPayload({
             name: campaignName,
-            objective: 'OUTCOME_LEADS', 
-            status: 'ACTIVE', 
-            buying_type: 'AUCTION',
-            daily_budget: Math.round(dailyBudget * 100), 
-            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-            special_ad_categories: [], 
-            access_token: facebookToken,
-        };
+            plan: advantage,
+            dailyBudget,
+            status: 'ACTIVE',
+            accessToken: facebookToken,
+        });
 
         const campaignRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/campaigns`, {
             method: 'POST',
@@ -1172,7 +1223,7 @@ export async function POST(request: Request) {
 
         // --- Parse Location Targeting ---
         logToFile("--- PREPARING LOCATION TARGETING ---");
-        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } }; 
+        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: [...LOCATION_TYPES] } }; 
         
         if (metaLocationsStr) {
             try {
@@ -1184,7 +1235,7 @@ export async function POST(request: Request) {
                             regions: [], 
                             countries: [], 
                             zips: [], 
-                            location_types: ['home'] 
+                            location_types: [...LOCATION_TYPES] 
                         } 
                     };
                     
@@ -1230,15 +1281,17 @@ export async function POST(request: Request) {
         } else {
             delete targetingConfig.age_max;
         }
-        targetingConfig.targeting_automation = { advantage_audience: 0 };
-        targetingConfig.device_platforms = ['mobile', 'desktop'];
+        // Advantage+ audience stays off for retargeting, but the automation block is
+        // built by the plan so the audience expansion switches are explicitly pinned
+        // to 0 instead of being left to Meta's default.
+        targetingConfig = applyAdvantageTargeting(targetingConfig, advantage);
         targetingConfig.publisher_platforms = ['facebook', 'instagram']; // Exclude messenger for higher lead quality
 
         // --- Step F: Ad Set targeting custom audience ---
         logToFile("--- 6. AD SET ---");
         const startTime = new Date(Date.now() + 30 * 60 * 1000).toISOString(); 
 
-        const customEventType = 'LEAD';
+        const customEventType = plan.conversionEvent || 'LEAD';
 
         const adSetPayload: any = {
             name: `Retargeting AdSet - CRM Qualified Leads`,
@@ -1254,18 +1307,18 @@ export async function POST(request: Request) {
         };
 
         if (isWebsiteCampaign) {
-            adSetPayload.destination_type = 'WEBSITE';
-            adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
+            adSetPayload.destination_type = plan.destinationType;
+            adSetPayload.optimization_goal = plan.optimizationGoal;
             adSetPayload.promoted_object = { 
                 pixel_id: finalPixelId, 
                 custom_event_type: customEventType 
             };
             logToFile(`Website conversion campaign configured. Pixel: ${finalPixelId}, Event: ${customEventType}`);
         } else {
-            adSetPayload.destination_type = 'ON_AD';
-            adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
+            adSetPayload.destination_type = plan.destinationType;
+            adSetPayload.optimization_goal = plan.optimizationGoal;
             adSetPayload.promoted_object = { page_id: pageId };
-            logToFile(`Instant Form lead campaign configured.`);
+            logToFile(`Instant Form lead campaign configured (${plan.goal}).`);
         }
 
         const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {

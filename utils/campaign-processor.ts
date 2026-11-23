@@ -1,6 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 import { logToFile } from '@/utils/logger';
 import { writeJobLocal, readJobLocal } from '@/utils/job-store';
+import {
+    buildStandardQuestions,
+    describeLeadFormFields,
+    genderTargeting,
+    resolveCampaignPlan,
+    type CampaignPlan,
+} from '@/lib/ads/campaign-plan';
+import {
+    LOCATION_TYPES,
+    ageAndGenderTargeting,
+    applyAdvantageTargeting,
+    buildCampaignPayload,
+    describeAdvantagePlan,
+    resolveAdvantagePlan,
+    type AdvantagePlan,
+} from '@/lib/ads/advantage-plus';
 
 const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
 
@@ -231,6 +247,50 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         const isWebsiteCampaign = campaignType === 'website_conversion';
         const finalPixelId = pixelId || null;
+
+        // One plan for the whole job: objective, destination, optimisation goal and
+        // conversion event are decided once, in lib/ads/campaign-plan, so the campaign
+        // and the ad set can never disagree about what this launch is for.
+        const plan: CampaignPlan = resolveCampaignPlan({
+            campaignType,
+            campaignGoal: (payload as any).campaignGoal,
+            conversionEvent: (payload as any).conversionEvent,
+            optimizeForConversions,
+        });
+        logToFile("Campaign plan resolved:", {
+            goal: plan.goal,
+            objective: plan.objective,
+            destination: plan.destinationType,
+            optimizationGoal: plan.optimizationGoal,
+            conversionEvent: plan.conversionEvent,
+        });
+
+        // The Advantage+ shape of this launch: which levers can be on, whether a
+        // special ad category forbids them, and why. Almost every publish failure in
+        // this launcher class came from a combination Meta refuses at review time,
+        // which no API error ever showed us (see lib/ads/advantage-plus.ts).
+        const advantage: AdvantagePlan = resolveAdvantagePlan({
+            objective: plan.objective,
+            campaignType,
+            specialAdCategories: (payload as any).specialAdCategories ?? (payload as any).specialAdCategory,
+            industry: (payload as any).industry || null,
+            businessInfo: (payload as any).businessInfo || null,
+            missionStatement: (payload as any).missionStatement || null,
+            hasCustomAudience: Array.isArray(customAudienceIds) && customAudienceIds.length > 0,
+            hasDetailedTargeting: Boolean((payload as any).interests?.length),
+            hasAgeOrGender: Boolean((payload as any).gender) || (Number(ageMin) || 18) > 18 || (Number(ageMax) || 65) < 65,
+            wantsAdvantageAudience: (payload as any).advantageAudience,
+            wantsAdvantagePlacements: (payload as any).advantagePlacements,
+        });
+        logToFile("Advantage+ plan resolved:", {
+            summary: describeAdvantagePlan(advantage),
+            specialAdCategories: advantage.specialAdCategories,
+            advantageAudience: advantage.advantageAudience,
+            advantagePlacements: advantage.advantagePlacements,
+            advantageState: advantage.advantageState,
+            blockers: advantage.blockers,
+            reasons: advantage.reasons,
+        });
 
         logToFile("=== [JOB PROCESSOR] STARTING CAMPAIGN CREATION ===", { jobId });
 
@@ -569,6 +629,21 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 logToFile("Creating new instant lead form on Meta Page...");
                 const formConfig = payload.leadFormConfig || null;
 
+                // The standard fields are the client's choice, defaulting to
+                // Name + WhatsApp number + City. Every field is a reason to abandon the
+                // form, so the default deliberately does NOT ask for an email: the CRM,
+                // the calling queue and the WhatsApp journey all key off phone + city.
+                // Resolved BEFORE the custom questions so the de-duplication below knows
+                // which standard fields are already on the form.
+                const standardQuestions: any[] = buildStandardQuestions(
+                    formConfig?.standardFields ?? formConfig?.standardQuestions
+                );
+                const standardTypes = new Set(standardQuestions.map((q) => q.type));
+                if (formConfig?.includeCity && !standardTypes.has('CITY')) {
+                    standardQuestions.push(buildStandardQuestions(['CITY'])[0]);
+                    standardTypes.add('CITY');
+                }
+
                 let metaCustomQuestions: any[] = [];
                 let hasCustomQuestions = false;
 
@@ -605,7 +680,10 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         return metaQ;
                     });
 
-                    const seenTypes = new Set(['FULL_NAME', 'EMAIL', 'PHONE']);
+                    // A custom question must never duplicate a standard field the form
+                    // already asks for — Meta rejects the same question twice, and the
+                    // failure lands after the campaign shell exists.
+                    const seenTypes = new Set(standardTypes);
                     metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
                         if (q.type === 'CUSTOM') return true;
                         if (seenTypes.has(q.type)) return false;
@@ -614,19 +692,11 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     });
                 }
 
-                // Add City if requested
-                const standardQuestions: any[] = [
-                    { type: "FULL_NAME", key: "full_name" },
-                    { type: "PHONE", key: "phone_number" },
-                    { type: "EMAIL", key: "email" }
-                ];
-                if (formConfig?.includeCity) {
-                    standardQuestions.push({ type: "CITY", key: "city" });
-                }
-
                 const finalFollowUpUrl = linkUrl || "https://adrolls.in";
+                // The name now states the fields the form actually carries, so an operator
+                // reading the Page's form list can tell two campaigns apart.
                 const questionLabels = metaCustomQuestions.map((q: any) => q.label || q.type).filter(Boolean).map((label: string) => label.replace(/[?:]/g, '').trim()).join(', ');
-                const defaultFormName = `Form - ${businessName} - (Name, Email, Phone${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
+                const defaultFormName = `Form - ${businessName} - (${describeLeadFormFields(formConfig?.standardFields ?? formConfig?.standardQuestions)}${questionLabels ? `, ${questionLabels}` : ''}) - ${Date.now().toString().slice(-6)}`;
                 const formName = formConfig?.name || defaultFormName;
 
                 // Meta official documentation: is_continued_flow = true enforces HIGHER INTENT review step
@@ -758,16 +828,13 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             : `${campaignSubject} - ${businessName} - ${dateStr} - ${randSuffix}`;
         const campaignName = payload.campaign_name || payload.campaignName || defaultAiCampaignName;
 
-        const campaignPayload = {
+        const campaignPayload = buildCampaignPayload({
             name: campaignName,
-            objective: campaignType === 'whatsapp_chat' ? 'OUTCOME_ENGAGEMENT' : 'OUTCOME_LEADS',
+            plan: advantage,
+            dailyBudget,
             status: 'ACTIVE',
-            buying_type: 'AUCTION',
-            daily_budget: Math.round(dailyBudget * 100),
-            bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-            special_ad_categories: [],
-            access_token: facebookToken,
-        };
+            accessToken: facebookToken,
+        });
 
         const campaignRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/campaigns`, {
             method: 'POST',
@@ -782,7 +849,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         const campaignId = campaignData.id;
 
         // --- Step 6: Parse Targeting ---
-        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: ['home'] } };
+        let targetingConfig: any = { geo_locations: { countries: ['IN'], location_types: [...LOCATION_TYPES] } };
         let parsedLocations = false;
         if (metaLocationsStr) {
             try {
@@ -796,7 +863,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                             regions: [], 
                             countries: [], 
                             zips: [], 
-                            location_types: ['home'] 
+                            location_types: [...LOCATION_TYPES] 
                         } 
                     };
                     locationsArray.forEach((locData: any) => {
@@ -869,7 +936,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             targetingConfig = {
                 geo_locations: {
                     custom_locations: [],
-                    location_types: ['home']
+                    location_types: [...LOCATION_TYPES]
                 }
             };
             payload.droppedPins.forEach((pin: any) => {
@@ -947,7 +1014,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     targetingConfig = {
                         geo_locations: {
                             cities: citiesFound,
-                            location_types: ['home']
+                            location_types: [...LOCATION_TYPES]
                         }
                     };
                     delete targetingConfig.geo_locations.countries;
@@ -959,15 +1026,26 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
         }
 
-        targetingConfig.age_min = ageMin !== undefined && ageMin !== null ? ageMin : 18;
-        if (ageMax !== undefined && ageMax !== null && ageMax < 65) {
-            targetingConfig.age_max = ageMax;
+        // Age, gender and the Advantage+ automation levers now come from the plan.
+        //
+        // This used to send `advantage_audience: 0` plus a Facebook/Instagram-only
+        // placement restriction on every single launch, which is why no campaign this
+        // platform built could ever be an Advantage+ campaign: Meta requires the
+        // campaign budget, the audience and the placements levers together. A special
+        // ad category additionally forbids age/gender targeting outright.
+        const ageGender = ageAndGenderTargeting(advantage, ageMin, ageMax, (payload as any).gender, genderTargeting);
+        targetingConfig.age_min = ageGender.age_min;
+        if (ageGender.age_max < 65) {
+            targetingConfig.age_max = ageGender.age_max;
         } else {
             delete targetingConfig.age_max;
         }
-        targetingConfig.targeting_automation = { advantage_audience: 0 };
-        targetingConfig.device_platforms = ['mobile', 'desktop'];
-        targetingConfig.publisher_platforms = ['facebook', 'instagram'];
+        if (ageGender.genders) {
+            targetingConfig.genders = ageGender.genders;
+        } else {
+            delete targetingConfig.genders;
+        }
+        targetingConfig = applyAdvantageTargeting(targetingConfig, advantage);
 
         // --- Meta Official Detailed Targeting (flexible_spec) ---
         const interestsList = payload.interests || payload.detailedTargeting || [];
@@ -1008,12 +1086,15 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
         };
 
         if (isWebsiteCampaign) {
-            adSetPayload.destination_type = 'WEBSITE';
-            adSetPayload.optimization_goal = 'OFFSITE_CONVERSIONS';
-            adSetPayload.promoted_object = { pixel_id: finalPixelId, custom_event_type: 'LEAD' };
+            adSetPayload.destination_type = plan.destinationType;
+            adSetPayload.optimization_goal = plan.optimizationGoal;
+            adSetPayload.promoted_object = {
+                pixel_id: finalPixelId,
+                custom_event_type: plan.conversionEvent || 'LEAD',
+            };
         } else if (campaignType === 'whatsapp_chat') {
-            adSetPayload.destination_type = 'WHATSAPP';
-            adSetPayload.optimization_goal = 'REPLIES';
+            adSetPayload.destination_type = plan.destinationType;
+            adSetPayload.optimization_goal = plan.optimizationGoal;
             
             let cleanPhone = "";
             if (whatsappNumber) {
@@ -1028,8 +1109,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                 ...(cleanPhone ? { whatsapp_phone_number: "+" + cleanPhone } : {})
             };
         } else {
-            adSetPayload.destination_type = 'ON_AD';
-            adSetPayload.optimization_goal = optimizeForConversions ? 'QUALITY_LEAD' : 'LEAD_GENERATION';
+            adSetPayload.destination_type = plan.destinationType;
+            adSetPayload.optimization_goal = plan.optimizationGoal;
             adSetPayload.promoted_object = { page_id: pageId };
         }
 
@@ -1229,10 +1310,17 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
             throw new Error(errMsg);
         } else {
+            // Say what was actually built. "Launched Successfully" told the client
+            // nothing about whether Meta will treat it as an Advantage+ campaign, and
+            // the first anyone heard about a special ad category was a publish error.
+            const shape = describeAdvantagePlan(advantage);
             if (lastDraftError) {
-                finalMessage = `Campaign DRAFTED! ⚠️ Saved in Ads Manager with ${successfulAds} ads (Payment method required to activate).`;
+                finalMessage = `Campaign DRAFTED! ⚠️ Saved in Ads Manager with ${successfulAds} ads (Payment method required to activate). Setup: ${shape}.`;
             } else {
-                finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads!`;
+                finalMessage = `Campaign Launched Successfully with ${successfulAds} AI Optimized Ads! Setup: ${shape}.`;
+            }
+            if (advantage.blockers.length) {
+                finalMessage += ` Note: ${advantage.blockers.join(' ')}`;
             }
         }
 

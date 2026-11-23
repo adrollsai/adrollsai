@@ -4,6 +4,7 @@ import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendLeadTransferEmail } from '@/utils/email-helper'
 import { requireUser, serviceAdmin } from '@/utils/route-auth'
+import { buildCampaignFilter, buildFormFilter, buildStageFilter } from '@/lib/crm/transfer-filters'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // Max 5 minutes for large bulk operations
@@ -204,19 +205,30 @@ export async function POST(req: Request) {
         }
       }
 
-      // Filter by Pipeline Stage
-      if (filterStage && filterStage !== 'ALL') {
-        query = query.eq('pipeline_stage', filterStage)
+      // Filter by Pipeline Stage.
+      //
+      // Stage, Campaign and Form all accept an ARRAY now (an admin may send leads from several
+      // campaigns at once) while still accepting the old plain string, and `[]`/`'ALL'` both mean
+      // "no filter". This is the single place the criteria are translated, and the quick-preview
+      // path above runs through exactly this code, so the count the admin confirms cannot be
+      // computed from a different (narrower) set of filters than the transfer that follows.
+      const stageFilters = buildStageFilter(filterStage)
+      if (stageFilters.length === 1) {
+        query = query.eq('pipeline_stage', stageFilters[0])
+      } else if (stageFilters.length > 1) {
+        query = query.in('pipeline_stage', stageFilters)
       }
 
-      // Filter by Campaign
-      if (filterCampaign && filterCampaign !== 'ALL') {
-        query = query.or(`campaign_id.eq.${filterCampaign},ad_name.ilike.%${filterCampaign}%`)
+      // Filter by Campaign: every selected campaign is OR-ed in ONE expression.
+      const campaignFilter = buildCampaignFilter(filterCampaign)
+      if (campaignFilter) {
+        query = query.or(campaignFilter)
       }
 
-      // Filter by Form
-      if (filterForm && filterForm !== 'ALL') {
-        query = query.or(`form_id.eq.${filterForm},form_name.ilike.%${filterForm}%`)
+      // Filter by Form: same treatment.
+      const formFilter = buildFormFilter(filterForm)
+      if (formFilter) {
+        query = query.or(formFilter)
       }
 
       // Filter by Date Range

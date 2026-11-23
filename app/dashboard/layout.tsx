@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav'
 import PushManager from '@/components/PushManager'
 import { Loader2, XCircle } from 'lucide-react'
 import QuotaManager from '@/components/QuotaManager'
+import ImpersonationBar from '@/components/super-admin/ImpersonationBar'
 import { UploadProvider } from '@/utils/UploadContext'
 import { planValidityNotice, type PlanNotice } from '@/lib/automation/plan-validity'
 import { decidePaywall, isWhitelistedEmail } from '@/lib/entitlements'
@@ -310,6 +311,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Suspense fallback={null}>
           <ImpersonationBanner />
         </Suspense>
+
+        {/* Super admin tenant switcher: sticky, route-preserving, and invisible to
+            every other role. It renders nothing unless the signed-in user is a
+            super_admin, so it costs other tenants no space at all. */}
+        <ImpersonationBar />
+
         
         {/* PushManager deployed as a banner. It auto-hides if enabled or dismissed */}
         <PushManager variant="banner" />

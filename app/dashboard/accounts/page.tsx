@@ -18,7 +18,8 @@ import {
   SlidersHorizontal,
   Coins,
   Check,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -41,6 +42,9 @@ export default function AccountsPage() {
   const impersonateId = searchParams.get('impersonate')
 
   const [loading, setLoading] = useState(true)
+  // Separate from `loading`: a manual refresh keeps the list on screen and only
+  // spins the refresh affordance, instead of blanking the page behind a skeleton.
+  const [refreshing, setRefreshing] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [accounts, setAccounts] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -77,19 +81,19 @@ export default function AccountsPage() {
     fetchData()
   }, [impersonateId])
 
-  const fetchData = async () => {
-    // Setup local storage cache key
-    const cacheKey = `subaccounts_cache_${impersonateId || 'own'}`;
-    try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-            setAccounts(JSON.parse(cached));
-            setLoading(false);
-        }
-    } catch (e) {}
+  const fetchData = async (options: { manual?: boolean } = {}) => {
+    // The account list is never painted from localStorage any more. Restoring a
+    // cached list before the network call is precisely what made this page show
+    // old accounts, old statuses and old credit balances until storage was
+    // cleared. Drop any key the old code left behind so it cannot resurface, and
+    // always read the fresh rows below.
+    const legacyCacheKey = `subaccounts_cache_${impersonateId || 'own'}`
+    try { localStorage.removeItem(legacyCacheKey) } catch (e) {}
+
+    if (options.manual) setRefreshing(true)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { setRefreshing(false); return }
 
     // 1. Get current logged in user's profile to check authority
     const { data: authProfile } = await supabase
@@ -129,6 +133,7 @@ export default function AccountsPage() {
       // For admins, agents or basic clients who shouldn't see this page, we redirect
       // BUT if we are impersonating them as a super_admin, we stay
       if (authProfile?.role !== 'super_admin' && authProfile?.role !== 'agency') {
+          setRefreshing(false)
           router.push('/dashboard')
           return
       }
@@ -145,7 +150,10 @@ export default function AccountsPage() {
     setIsSuperAdmin(authProfile?.role === 'super_admin')
     if (authProfile?.role === 'super_admin') {
       try {
-        const costRes = await fetch('/api/admin/costing')
+        const costRes = await fetch('/api/admin/costing', {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        })
         const costJson = await costRes.json()
         if (costJson.success) {
           setCostingData(costJson.costing || {})
@@ -157,8 +165,10 @@ export default function AccountsPage() {
 
     const finalAccounts = subAccounts || []
     setAccounts(finalAccounts)
-    try { localStorage.setItem(cacheKey, JSON.stringify(finalAccounts)); } catch (e) {}
+    // Nothing is written back to localStorage: the next visit must read the
+    // network, not last visit's snapshot.
     setLoading(false)
+    setRefreshing(false)
   }
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -169,6 +179,7 @@ export default function AccountsPage() {
     try {
       const response = await fetch('/api/team', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           adminId: currentUser.id,
@@ -236,6 +247,7 @@ export default function AccountsPage() {
     try {
       const res = await fetch('/api/team/features', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           adminId: currentUser.id,
@@ -275,6 +287,7 @@ export default function AccountsPage() {
     try {
       const res = await fetch('/api/team/credits/allocate', {
         method: 'POST',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           adminId: currentUser.id,
@@ -365,6 +378,16 @@ export default function AccountsPage() {
             Oversee all partners, clients, and team members in your network.
           </p>
         </div>
+
+          <button
+            onClick={() => fetchData({ manual: true })}
+            disabled={refreshing}
+            title="Reload the newest accounts from the database"
+            className="bg-white text-slate-700 border border-slate-200 px-5 py-3 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm active:scale-95 disabled:opacity-60"
+          >
+            <RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
 
           <button
             onClick={() => {
