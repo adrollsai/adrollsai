@@ -43,7 +43,7 @@ export async function warmupVoiceBridge(leadId?: string, profileId?: string, cam
 }
 
 
-import { computeValidCallingSlot, isWithinCallingWindow } from '@/utils/calling-window'
+import { computeValidCallingSlot, isWithinCallingWindow, describeCallingWindow, type CallingWindow } from '@/utils/calling-window'
 export { computeValidCallingSlot, isWithinCallingWindow }
 
 
@@ -220,9 +220,13 @@ export async function triggerOutboundCall(
             };
         }
 
-        // Check if within window (strictly 9 AM to 7 PM business local time)
+        // Check if within window (the account's hours, default 9 AM to 7 PM local time)
         let allowAfterHours = !!(options?.allowAfterHours || options?.forceBluesquareDid || options?.useBluesquareDid)
-        if (lead && lead.custom_fields) {
+        // A lead may additionally opt ITSELF in, but it must never switch an explicit instruction
+        // back off. This used to assign unconditionally, so every lead carrying custom_fields
+        // silently cancelled options.allowAfterHours / useBluesquareDid — the override looked
+        // supported and did nothing.
+        if (!allowAfterHours && lead && lead.custom_fields) {
             try {
                 const customFields = typeof lead.custom_fields === 'string'
                     ? JSON.parse(lead.custom_fields)
@@ -245,9 +249,25 @@ export async function triggerOutboundCall(
             }
         }
 
-        const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), timeZone, allowAfterHours)
+        // This is the FIRST gate a call meets, so it has to honour the tenant's own hours too —
+        // otherwise a 09:00-20:00 account is still turned away at 19:30 by a rule written here.
+        let callingWindow: CallingWindow = {}
+        try {
+            const biHours = typeof (profile as any)?.business_info === 'string'
+                ? JSON.parse((profile as any).business_info)
+                : ((profile as any)?.business_info || {})
+            const configuredHours = biHours?.calling_hours
+            if (configuredHours && (configuredHours.start != null || configuredHours.end != null)) {
+                callingWindow = { startHour: Number(configuredHours.start), endHour: Number(configuredHours.end) }
+            }
+        } catch {
+            /* a malformed business_info must not block calls: fall back to the default window */
+        }
+
+        const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), timeZone, allowAfterHours, callingWindow)
 
         if (!isWithinWindow) {
+            const windowLabel = describeCallingWindow(callingWindow)
             // Update lead in DB
             await supabaseAdmin
                 .from('leads')
@@ -262,14 +282,14 @@ export async function triggerOutboundCall(
                 await supabaseAdmin.from('lead_history').insert({
                     lead_id: leadId,
                     action_type: 'REMARK',
-                    description: `🕒 Call prevented outside calling hours (9 AM - 7 PM). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone })} (${timeZone}).`
+                    description: `🕒 Call prevented outside this account's calling hours (${windowLabel}). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone })} (${timeZone}).`
                 })
             } catch (histErr) {
                 console.error('[VOICE HELPER] Failed to insert lead history for scheduling outside hours:', histErr)
             }
 
-            console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside calling hours (9 AM - 7 PM).`)
-            return { success: false, scheduled: true, scheduledTime, error: 'Calling hours restricted (9 AM - 7 PM). Call rescheduled.' }
+            console.log(`[VOICE HELPER] Lead ${leadId} call scheduled for ${scheduledTime.toISOString()} due to outside calling hours (${windowLabel}).`)
+            return { success: false, scheduled: true, scheduledTime, error: `Calling hours restricted (${windowLabel}). Call rescheduled.` }
         }
         
         // Check credit balance (must have at least 40 credits to dial 1 minute)
@@ -306,19 +326,36 @@ export async function triggerOutboundCall(
         const BLUESQUARE_DID = '+917965480905'
         const BLUESQUARE_VOBIZ_AUTH_ID = 'SA_RUY0ZNCH'
         const BLUESQUARE_VOBIZ_AUTH_TOKEN = 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi'
-        const vobizNumber = isBluesquareVoip ? BLUESQUARE_DID : (profile?.voice_vobiz_number || bi?.claimed_vobiz_number || bi?.voice_vobiz_number || (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938' ? profile.voice_twilio_number : null) || masterVobizNumber)
-        
-        // Master account only uses Vobiz if telephonyProvider is explicitly 'vobiz' AND a valid owned vobizNumber exists
-        const useVobiz = isBluesquareVoip || (!isNobogentMaster 
-            ? ((telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz') && !!vobizNumber)
-            : (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938'))
+
+        // A number this tenant genuinely holds. The master's test DID is NOT one of them: passing it
+        // here used to outrank the rotation pool inside triggerVobizOutboundCall, so every tenant
+        // dialled from a number the account does not own and Vobiz refused with "not owned".
+        const tenantVobizNumber =
+            profile?.voice_vobiz_number ||
+            bi?.claimed_vobiz_number ||
+            bi?.voice_vobiz_number ||
+            (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938'
+                ? profile.voice_twilio_number
+                : null)
+
+        const vobizNumber = isBluesquareVoip ? BLUESQUARE_DID : (tenantVobizNumber || (isNobogentMaster ? masterVobizNumber : null))
+
+        // Vobiz is chosen on the provider setting alone. It used to also require a number, which
+        // dropped tenants with no dedicated DID onto Twilio — where most of them have no credentials
+        // at all, so the call simply never happened. Rotation supplies the DID instead.
+        const isVobizConfigured = telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz'
+        const useVobiz = isBluesquareVoip || (isNobogentMaster
+            ? (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938')
+            : isVobizConfigured)
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
-                fromPhone: vobizNumber!,
+                // Left undefined when the tenant holds no DID of its own, so the shared rotation pool
+                // decides the caller ID rather than a guessed default.
+                fromPhone: vobizNumber || undefined,
                 campaignId,
                 voiceName: profile?.voice_name || 'Fenrir',
                 allowAfterHours: isBluesquareVoip ? true : allowAfterHours,

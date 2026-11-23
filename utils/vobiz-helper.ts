@@ -29,6 +29,77 @@ export function pickRotatedDid(pool: readonly string[], seed: string): string | 
   return usable[hash % usable.length]
 }
 
+/** The master Vobiz account, whose credentials can dial from any DID the account owns. */
+const MASTER_AUTH_ID = () => String(process.env.VOBIZ_AUTH_ID || '').replace(/"/g, '').trim()
+const MASTER_AUTH_TOKEN = () => String(process.env.VOBIZ_AUTH_TOKEN || '').replace(/"/g, '').trim()
+
+function basicAuthHeader(authId: string, authToken: string): string {
+  return `Basic ${Buffer.from(`${authId}:${authToken}`).toString('base64')}`
+}
+
+/**
+ * The DIDs this Vobiz account actually owns, newest pool first — the real rotation pool.
+ *
+ * WHY THIS EXISTS
+ * Rotation used to be seeded from `VOBIZ_NUMBER_CATALOG`, which is the catalogue of numbers you can
+ * BUY, not the ones you own. Production duly picked a number nobody owned and Vobiz answered
+ * "The from number 911171366938 is not owned by this account", so not one call could be placed.
+ *
+ * Verified against the live API instead of guessed: the account owns six 79-series DIDs, three of
+ * them unassigned and three attached to sub-accounts, and the MASTER credentials can place a call
+ * from every one of them — including the sub-account ones (measured: 201 "call queued" from
+ * +917965480539 / SA_9EVCEZKC and +917965853573 / SA_5USUA60B using master auth). So a DID being
+ * "owned" by another sub-account does not stand in the way of rotating across it, which is exactly
+ * what was asked for: every number on the account is one shared pool.
+ *
+ * Cached for ten minutes because this sits in front of a dial: the pool changes when someone buys or
+ * releases a number, not between calls, and a network round trip per dial would add latency to the
+ * one thing that must feel instant.
+ */
+const OWNED_DID_TTL_MS = 10 * 60_000
+let ownedDidCache: { at: number; numbers: string[] } | null = null
+
+export async function getOwnedVobizDids(
+  authId: string = MASTER_AUTH_ID(),
+  authToken: string = MASTER_AUTH_TOKEN(),
+  options: { forceRefresh?: boolean } = {}
+): Promise<string[]> {
+  if (!authId || !authToken) return []
+  if (!options.forceRefresh && ownedDidCache && Date.now() - ownedDidCache.at < OWNED_DID_TTL_MS) {
+    return ownedDidCache.numbers
+  }
+
+  try {
+    const res = await fetch(`https://api.vobiz.ai/api/v1/account/${authId}/numbers`, {
+      headers: { Authorization: basicAuthHeader(authId, authToken) },
+    })
+    if (!res.ok) {
+      console.warn(`[VOBIZ HELPER] Could not list owned DIDs (HTTP ${res.status}); keeping the previous pool.`)
+      return ownedDidCache?.numbers || []
+    }
+    const body = await res.json()
+    const numbers = (body.items || [])
+      .filter((n: any) => n?.status === 'active' && n?.voice_enabled !== false && n?.e164)
+      .map((n: any) => String(n.e164))
+      .filter(Boolean)
+      // Sorted so the rotation is stable regardless of the order the API happens to return.
+      .sort()
+    if (numbers.length) {
+      ownedDidCache = { at: Date.now(), numbers }
+      console.log(`[VOBIZ HELPER] Rotation pool: ${numbers.length} owned DID(s) — ${numbers.join(', ')}`)
+    }
+    return numbers
+  } catch (err: any) {
+    console.warn('[VOBIZ HELPER] Owned-DID lookup failed, keeping the previous pool:', err?.message)
+    return ownedDidCache?.numbers || []
+  }
+}
+
+/** Forget the cached DID pool (used by tests and by an operator after buying a number). */
+export function clearOwnedDidCache(): void {
+  ownedDidCache = null
+}
+
 export interface VobizCallParams {
     leadId: string
     profileId: string
@@ -278,16 +349,23 @@ export async function triggerVobizOutboundCall(
         console.log(`[VOBIZ HELPER] Dialling on ${channel.label} (auth ${channel.authId || 'default'}) — ${describeCapacity(channelRegistry.channels, channelRegistry.source)}`)
     }
 
-    // DID ROTATION. All the numbers on the Vobiz account are one shared pool and no DID belongs to any
-    // one tenant, so a call is placed from a number rotated across that pool rather than from a number
-    // "owned" by the caller. That is what makes the outbound traffic look like one marketing department
-    // with many lines instead of the same line every time.
+    // DID ROTATION across every number the Vobiz account actually owns.
     //
-    // Order: an explicit caller-supplied number wins (an owner testing a specific line), then the shared
-    // pool, and only then a per-tenant number as a last resort so an account with a claimed DID and an
-    // empty pool still works. The seed is the lead id, so the choice is spread across the pool and
-    // stable for a given lead — no shared counter, and nothing to get out of sync across instances.
-    const sharedPool = VOBIZ_NUMBER_CATALOG.map((n) => n.phoneNumber).filter(Boolean)
+    // The pool used to be VOBIZ_NUMBER_CATALOG — the catalogue of numbers you can BUY — so rotation
+    // picked a number nobody owned and every dial failed with "not owned by this account". It now
+    // comes from the live account inventory (getOwnedVobizDids), which is the only list that means
+    // anything at dial time.
+    //
+    // Ownership by a sub-account does NOT exclude a number. Verified against the API: the master
+    // credentials can place calls from every owned DID, including the ones attached to other
+    // sub-accounts, so all of them rotate together as one shared pool — which is the behaviour asked
+    // for. A per-tenant number is still honoured as a last resort so an account with a claimed DID
+    // and an empty pool keeps working.
+    //
+    // The seed is the lead id, so the choice is spread across the pool and stable for a given lead —
+    // no shared counter, and nothing to get out of sync across instances.
+    const ownedDids = await getOwnedVobizDids(authId, authToken)
+    const sharedPool = ownedDids.length ? ownedDids : VOBIZ_NUMBER_CATALOG.map((n) => n.phoneNumber).filter(Boolean)
     const rotatedNumber = pickRotatedDid(sharedPool, String(leadId || profileId || ''))
     const assignedNumber = channel?.number
         || fromPhone
@@ -297,6 +375,16 @@ export async function triggerVobizOutboundCall(
         || bi.voice_vobiz_number 
         || (profile.voice_twilio_number?.startsWith('+91') && profile.voice_twilio_number !== '+911171366938' ? profile.voice_twilio_number : null)
         || (isNobogentMaster ? masterNumber : null)
+
+    // Which credentials may dial from the number we picked. The number and the account that authorises
+    // it travel together: a rotated DID belongs to the master account, so it is dialled with master
+    // credentials even when the tenant has its own Vobiz sub-account — a sub-account cannot place a
+    // call from a number it does not hold. An explicit channel or a caller-supplied number keeps the
+    // credentials it came with.
+    const usingRotatedDid = !channel?.number && !fromPhone && rotatedNumber && assignedNumber === rotatedNumber
+    const dialAuthOverride = usingRotatedDid
+        ? { authId: MASTER_AUTH_ID() || authId, authToken: MASTER_AUTH_TOKEN() || authToken }
+        : null
 
     if (!assignedNumber) {
         console.warn(`[VOBIZ HELPER] Call aborted for lead ${leadId}: Account ${profile.email} (${profileId}) has NO assigned phone number.`);
@@ -433,14 +521,20 @@ export async function triggerVobizOutboundCall(
     console.log(`[VOBIZ HELPER] Initiating outbound call to ${cleanPhone} from ${callerId} (User: ${profileId})...`)
 
     try {
-        // The channel's own auth account wins: the number and the account that bills for it must never disagree.
-    const dialAuthId = channel?.authId || authId
+        // The number and the account that authorises it must never disagree: an explicit channel wins,
+        // then a caller-supplied number keeps the credentials it came with, and a rotated DID is dialled
+        // with master credentials because that is the account which holds it.
+        const dialAuthId = dialAuthOverride?.authId || channel?.authId || authId
+        const dialAuthToken = dialAuthOverride?.authToken || authToken
+        if (dialAuthOverride) {
+            console.log(`[VOBIZ HELPER] Rotated DID ${callerId} is authorised by the master account ${dialAuthId}`)
+        }
     const vobizUrl = `https://api.vobiz.ai/api/v1/Account/${dialAuthId}/Call/`
         const res = await fetch(vobizUrl, {
             method: 'POST',
             headers: {
                 'X-Auth-ID': dialAuthId,
-                'X-Auth-Token': authToken,
+                'X-Auth-Token': dialAuthToken,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(requestPayload)

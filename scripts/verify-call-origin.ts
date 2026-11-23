@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 import { classifyLeadOrigin } from '../lib/automation/calling-script';
 import { industryVocabulary } from '../lib/automation/industry';
 import { computeValidCallingSlot, describeCallingWindow } from '../utils/calling-window';
+import { getOwnedVobizDids, pickRotatedDid } from '../utils/vobiz-helper';
 
 /** The IST hour of an instant, for asserting where a blocked call gets scheduled. */
 function istHour(d: Date): number {
@@ -189,6 +190,51 @@ check(
   'and passes it into the window check',
   /computeValidCallingSlot\(new Date\(\), 'Asia\/Kolkata', !!allowAfterHours, callingWindow\)/.test(dialler),
 );
+
+head('9. Rotation draws on numbers the account actually owns');
+
+check(
+  'the rotation pool comes from the live account inventory, not the shopping catalogue',
+  /getOwnedVobizDids\(authId, authToken\)/.test(readFileSync('utils/vobiz-helper.ts', 'utf8')),
+  'VOBIZ_NUMBER_CATALOG was the list of numbers you can BUY',
+);
+check(
+  'a sub-account-owned DID is not excluded from the pool',
+  // The filter keeps every active, voice-enabled number regardless of sub_account_id.
+  /n\?\.status === 'active' && n\?\.voice_enabled !== false/.test(
+    readFileSync('utils/vobiz-helper.ts', 'utf8'),
+  ),
+);
+check(
+  'a rotated DID is dialled with the master credentials that hold it',
+  /dialAuthOverride\?\.authId \|\| channel\?\.authId \|\| authId/.test(readFileSync('utils/vobiz-helper.ts', 'utf8')),
+  'a sub-account cannot dial from a number it does not hold',
+);
+
+const pool = ['+917965480905', '+917965480799', '+917965480715', '+917965480539'];
+const picks = pool.map((_, i) => pickRotatedDid(pool, `lead-${i}`));
+check('every pick comes from the pool', picks.every((p) => p && pool.includes(p)), picks.join(', '));
+check(
+  'the pool is actually spread, not pinned to one number',
+  new Set(picks).size >= 2,
+  `${new Set(picks).size} distinct across ${picks.length} leads`,
+);
+check(
+  'the same lead always gets the same number (a retried call must not change it)',
+  pickRotatedDid(pool, 'lead-7') === pickRotatedDid(pool, 'lead-7'),
+);
+check('an empty pool yields null rather than a blank caller ID', pickRotatedDid([], 'lead-1') === null);
+
+// Live check: the pool must exist. Skipped when credentials are absent, so the gate still runs
+// on a machine without the Vobiz env.
+if (process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN) {
+  const live = await getOwnedVobizDids(process.env.VOBIZ_AUTH_ID, process.env.VOBIZ_AUTH_TOKEN, {
+    forceRefresh: true,
+  });
+  check('the live Vobiz account reports at least one owned DID', live.length > 0, `${live.length} owned: ${live.join(', ')}`);
+} else {
+  console.log('SKIP  live DID inventory (no VOBIZ_AUTH_ID / VOBIZ_AUTH_TOKEN in this environment)');
+}
 
 console.log(`\n${'─'.repeat(62)}`);
 console.log(`${pass} passed, ${fail} failed`);
