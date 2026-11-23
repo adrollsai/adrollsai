@@ -46,7 +46,7 @@ const get = async (path: string, fields: string) => {
   return (await res.json().catch(() => ({}))) as any;
 };
 
-const LINK = 'https://app.pipixel.io/shared/bc63c065-9bcc-4793-bedc-f0960406425b/nobogent-ai-run-your-business';
+const LINK = 'https://app.nobogent.com/shared/bc63c065-9bcc-4793-bedc-f0960406425b/nobogent-ai-run-your-business';
 const stamp = Date.now().toString().slice(-6);
 
 console.log(`account: ${ACCOUNT} · page: ${PAGE} (${profile.selected_page_name})`);

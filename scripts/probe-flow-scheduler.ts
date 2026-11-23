@@ -10,7 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 import { enqueueFlowRun } from '../lib/flows/store';
 
 const TENANT = process.argv[2] ?? 'bc63c065-9bcc-4793-bedc-f0960406425b';
-const BASE = process.argv[3] ?? 'https://app.pipixel.io';
+const BASE = process.argv[3] ?? 'https://app.nobogent.com';
 
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
   auth: { persistSession: false },

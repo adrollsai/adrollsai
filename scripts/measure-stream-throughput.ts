@@ -46,7 +46,7 @@ function arg(name: string, fallback = ''): string {
 }
 
 const MODE = arg('mode', 'sse');
-const BASE = arg('base', process.env.MEASURE_BASE_URL || 'https://app.pipixel.io');
+const BASE = arg('base', process.env.MEASURE_BASE_URL || 'https://app.nobogent.com');
 const PROMPT = arg('prompt', 'hi');
 const TIMEOUT_MS = Number(arg('timeoutMs', '180000'));
 

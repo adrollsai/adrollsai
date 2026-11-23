@@ -36,7 +36,7 @@ function arg(name: string, fallback = ''): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
-const BASE = arg('base', process.env.MEASURE_BASE_URL || 'https://app.pipixel.io');
+const BASE = arg('base', process.env.MEASURE_BASE_URL || 'https://app.nobogent.com');
 const TIMEOUT_MS = Number(arg('timeoutMs', '240000'));
 
 const admin = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {

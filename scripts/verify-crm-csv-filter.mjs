@@ -27,7 +27,7 @@ function env(name) {
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const PORT = Number(arg('port', '9226'));
 const CHROME =
   ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(

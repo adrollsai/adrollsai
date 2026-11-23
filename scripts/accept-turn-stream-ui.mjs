@@ -2,7 +2,7 @@
  * The acceptance check, in a real browser, against the live URL.
  *
  *   npm run accept:stream-ui
- *   npm run accept:stream-ui -- --base=https://app.pipixel.io --prompt=hi
+ *   npm run accept:stream-ui -- --base=https://app.nobogent.com --prompt=hi
  *
  * What it proves, and why each part exists:
  *
@@ -38,7 +38,7 @@ function env(name) {
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const PROMPT = arg('prompt', 'hi');
 const AGENT_PATH = arg('path', '/dashboard/agent');
 const PORT = Number(arg('port', '9223'));

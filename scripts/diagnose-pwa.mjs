@@ -29,7 +29,7 @@ function env(name) {
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const PATHS = arg('path', '/dashboard,/dashboard/profile').split(',').filter(Boolean);
 const PORT = Number(arg('port', '9224'));
 const CHROME =

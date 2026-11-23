@@ -30,7 +30,7 @@ function arg(name: string, fallback = ''): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const OWNER = arg('owner', 'bc63c065-9bcc-4793-bedc-f0960406425b');
 const BLUESQUARE = arg('tenant', '2f62a259-f23b-48ee-a920-c436f36eaa4b');
 const STALLED_CAMPAIGN = arg('campaign', 'fcb363ad-a099-4bca-9dc7-82e28f4ad15b');

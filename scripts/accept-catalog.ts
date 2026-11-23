@@ -31,7 +31,7 @@ function arg(name: string, fallback = ''): string {
   return hit ? hit.slice(name.length + 3) : fallback;
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const OWNER = arg('owner', 'bc63c065-9bcc-4793-bedc-f0960406425b');
 const IMAGE_COUNT = Number(arg('images', '40'));
 

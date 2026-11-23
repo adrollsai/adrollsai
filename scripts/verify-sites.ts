@@ -118,7 +118,7 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   if (pub?.success && pub.url) {
     // The tool reports the configured public host; NEXT_PUBLIC_APP_URL is a white-label host that is
     // not always reachable from here, so the page is fetched from whichever of the two answers.
-    const candidates = [pub.url, `${(process.env.VERIFY_BASE_URL || 'https://app.pipixel.io').replace(/\/$/, '')}/shared/${profile.id}/${slug}`];
+    const candidates = [pub.url, `${(process.env.VERIFY_BASE_URL || 'https://app.nobogent.com').replace(/\/$/, '')}/shared/${profile.id}/${slug}`];
     let rendered = false;
     let detail = 'no candidate URL';
     for (const candidate of candidates) {

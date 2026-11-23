@@ -32,7 +32,7 @@ function env(name) {
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const OWNER = arg('user', 'bc63c065-9bcc-4793-bedc-f0960406425b');
 const PORT = Number(arg('port', '9233'));
 const CHROME = [

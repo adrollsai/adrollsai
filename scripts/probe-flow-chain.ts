@@ -6,7 +6,7 @@ import '../lib/env-local';
 import { createClient } from '@supabase/supabase-js';
 
 const TENANT = 'bc63c065-9bcc-4793-bedc-f0960406425b';
-const BASE = 'https://app.pipixel.io';
+const BASE = 'https://app.nobogent.com';
 const secret = String(process.env.CRON_SECRET ?? '').trim();
 const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
 const nonce = Date.now().toString(36);

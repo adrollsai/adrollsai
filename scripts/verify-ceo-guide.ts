@@ -42,7 +42,7 @@ const sample = (over: Record<string, any> = {}) =>
     businessName: 'Procolor Film Academy',
     industry: 'education',
     positioning: 'Hands-on film school in Chandigarh',
-    dashboardUrl: 'https://app.pipixel.io/dashboard',
+    dashboardUrl: 'https://app.nobogent.com/dashboard',
     leads: {
       total: 120,
       newToday: 9,

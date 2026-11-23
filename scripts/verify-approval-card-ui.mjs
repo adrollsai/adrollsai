@@ -19,7 +19,7 @@
  * "call tool".
  *
  *   npm run verify:approval-card-ui
- *   npm run verify:approval-card-ui -- --base=https://app.pipixel.io
+ *   npm run verify:approval-card-ui -- --base=https://app.nobogent.com
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,7 +39,7 @@ function env(name) {
   return m[1].trim().replace(/^["']|["']$/g, '');
 }
 
-const BASE = arg('base', 'https://app.pipixel.io');
+const BASE = arg('base', 'https://app.nobogent.com');
 const PORT = Number(arg('port', '9224'));
 const CHROME =
   arg('chrome') ||

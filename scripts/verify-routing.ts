@@ -10,6 +10,7 @@
 import {
   decideRouting,
   isAppPath,
+  isOurOwnDomain,
   isPlatformHost,
   normaliseHost,
   parseExtraDomains,
@@ -28,22 +29,34 @@ function check(name: string, ok: boolean, detail = '') {
 }
 const head = (title: string) => console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`);
 
-head('1. The platform recognises its own domains');
+head('1. Our own domains, and a client whitelabel domain, are different things');
 
 check(
-  'app.pipixel.io is the platform',
-  isPlatformHost('app.pipixel.io') === true,
-  'the production app domain',
+  'app.nobogent.com is OURS',
+  isPlatformHost('app.nobogent.com') === true && isOurOwnDomain('app.nobogent.com') === true,
+  'our production app domain',
 );
 check(
-  'the bare domain and other subdomains are the platform too',
-  isPlatformHost('pipixel.io') === true && isPlatformHost('www.pipixel.io') === true,
-  'pipixel.io, www.pipixel.io',
+  'the bare domain and other subdomains are ours too',
+  isPlatformHost('nobogent.com') === true &&
+    isPlatformHost('www.nobogent.com') === true &&
+    isOurOwnDomain('nobogent.com') === true,
+  'nobogent.com, www.nobogent.com',
 );
 check(
-  'the older brand domains still work',
-  isPlatformHost('app.nobogent.com') === true && isPlatformHost('nobogent.com') === true,
-  'no regression on nobogent.com',
+  'app.pipixel.io is a CLIENT whitelabel domain, not ours',
+  isOurOwnDomain('app.pipixel.io') === false && isOurOwnDomain('pipixel.io') === false,
+  'PiPixel is a customer (profiles.whitelabel_domain), so it must never appear as our own domain',
+);
+check(
+  'but it still has to serve the app shell for that client',
+  isPlatformHost('app.pipixel.io') === true && isPlatformHost('pipixel.io') === true,
+  'known whitelabel app domain - the RLS regression is why it is listed',
+);
+check(
+  'one of the clients whose domain serves a storefront is not an app host',
+  isPlatformHost('redrosecity.in') === false && isOurOwnDomain('redrosecity.in') === false,
+  'a storefront domain is resolved from the database, not hardcoded',
 );
 check(
   'local development and preview deployments are the platform',
@@ -59,14 +72,15 @@ check(
 );
 check(
   'a lookalike host is NOT the platform',
-  isPlatformHost('notpipixel.io') === false &&
-    isPlatformHost('pipixel.io.evil.com') === false &&
-    isPlatformHost('evil-pipixel.io') === false,
+  isPlatformHost('notnobogent.com') === false &&
+    isPlatformHost('nobogent.com.evil.com') === false &&
+    isPlatformHost('notpipixel.io') === false &&
+    isPlatformHost('pipixel.io.evil.com') === false,
   'suffix matching is on dots, not substrings',
 );
 check(
   'ports are stripped before comparison',
-  normaliseHost('App.PiPixel.io:443') === 'app.pipixel.io' && normaliseHost(null) === '',
+  normaliseHost('App.Nobogent.com:443') === 'app.nobogent.com' && normaliseHost(null) === '',
   'case and port handled',
 );
 check(
