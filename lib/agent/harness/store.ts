@@ -209,16 +209,25 @@ export async function loadEvents(
   sessionId: string,
   afterSeq = 0
 ): Promise<HarnessEvent[]> {
-  const { data, error } = await db(supabase)
-    .from('harness_events')
-    .select('seq, type, data, created_at')
-    .eq('session_id', sessionId)
-    .gt('seq', afterSeq)
-    .order('seq', { ascending: true })
-    .limit(5000);
+  // PAGED. This asked for `.limit(5000)`; PostgREST caps a response at 1000 and still answers 200, so a
+  // long session silently lost its later events — and the run resume rebuilds its state from exactly
+  // this list. A truncated event log is a resumed turn that does not remember what it already did.
+  const { scanAll } = await import('@/lib/supabase/paged');
+  const scan = await scanAll<any>(
+    () =>
+      db(supabase)
+        .from('harness_events')
+        .select('seq, type, data, created_at')
+        .eq('session_id', sessionId)
+        .gt('seq', afterSeq)
+        .order('seq', { ascending: true }),
+    { cap: 20_000 }
+  );
+  const data = scan.rows;
+  const error = scan.error ? { message: scan.error } : null;
 
   if (error) {
-    if (!isMissingTable(error)) console.error('[Harness] loadEvents failed:', error.message);
+    if (!isMissingTable(error as any)) console.error('[Harness] loadEvents failed:', error.message);
     return [];
   }
 

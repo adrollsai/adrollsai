@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { vendoredSkill } from '@/lib/agent/skills-vendor';
+import { scanAll } from '@/lib/supabase/paged';
 
 export interface BusinessContext {
   business: {
@@ -101,12 +102,19 @@ export async function assembleBusinessContext(supabase: SupabaseClient, userId: 
   const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
   const performance = { leadsLast30d: 0, callsLast30d: 0, bookedLast30d: 0, topStage: null as string | null };
   try {
-    const { data: leads } = await supabase
-      .from('leads')
-      .select('created_at, pipeline_stage, voice_call_status, booked_time')
-      .eq('user_id', userId)
-      .gte('created_at', since)
-      .limit(2000);
+    // Paged, not `.limit(2000)`: PostgREST caps a response at 1000 rows and still answers 200, so a
+    // business plan for a busy account was built on the first thousand leads of the month and reported
+    // them as the month.
+    const leadScan = await scanAll<any>(
+      () =>
+        supabase
+          .from('leads')
+          .select('created_at, pipeline_stage, voice_call_status, booked_time')
+          .eq('user_id', userId)
+          .gte('created_at', since),
+      { cap: 60_000 }
+    );
+    const leads = leadScan.rows;
     performance.leadsLast30d = (leads ?? []).length;
     performance.callsLast30d = (leads ?? []).filter((l: any) => l.voice_call_status).length;
     performance.bookedLast30d = (leads ?? []).filter((l: any) => l.booked_time).length;

@@ -19,6 +19,7 @@
  */
 
 import type { DayMetrics } from './ceo-findings';
+import { scanAll } from '@/lib/supabase/paged';
 
 /** Local rounding, so this module carries no dependency on the video skill's number helpers. */
 const roundTo = (value: number, dp = 2): number => {
@@ -116,15 +117,24 @@ const CONNECTED_CALL_STATUSES = ['completed', 'answered', 'connected', 'success'
 
 /** Everything the report needs, from the tables that really hold it. */
 export function supabaseMetricsReader(supabase: any, userId: string): MetricsReader {
+  /**
+   * Read EVERY matching row, not the first page.
+   *
+   * This used `.limit(5000)`. PostgREST's max-rows is 1000 and it returns HTTP 200 regardless, so every
+   * CEO figure — leads, calls, booked, connected, spend — was computed from a truncated slice and
+   * presented as a total for any account with more than a thousand rows in the window.
+   */
   const countRows = async (table: string, build: (query: any) => any): Promise<any[]> => {
-    const base = supabase.from(table).select('*').eq('user_id', userId).limit(5000);
-    const { data, error } = await build(base);
-    if (error) {
+    try {
+      const scan = await scanAll<any>(() => build(supabase.from(table).select('*').eq('user_id', userId)), {
+        cap: 60_000,
+      });
       // A table we cannot read is a figure we do not have. It must not become a zero.
-      if (/does not exist|schema cache|permission/i.test(String(error.message))) return [];
+      if (scan.error && scan.rows.length === 0) return [];
+      return scan.rows;
+    } catch {
       return [];
     }
-    return data ?? [];
   };
 
   return {
@@ -204,13 +214,19 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
       const balance = Number(profile?.credits ?? 0) || 0;
 
       const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: spend } = await supabase
-        .from('credit_transactions')
-        .select('amount')
-        .eq('user_id', userId)
-        .lt('amount', 0)
-        .gte('created_at', since)
-        .limit(5000);
+      // Spend for the week: paged, because a busy account has more than one page of transactions and a
+      // truncated sum understates what the owner actually spent.
+      const spendScan = await scanAll<any>(
+        () =>
+          supabase
+            .from('credit_transactions')
+            .select('amount, created_at')
+            .eq('user_id', userId)
+            .lt('amount', 0)
+            .gte('created_at', since),
+        { cap: 50_000 }
+      );
+      const spend = spendScan.rows;
       const spent = (spend ?? []).reduce((sum: number, row: any) => sum + Math.abs(Number(row.amount) || 0), 0);
       return { balance: roundTo(balance, 2), spentLast7Days: roundTo(spent, 2) };
     },
