@@ -21,6 +21,7 @@ import { createRegisteredVoiceTools } from './tools/voice';
 import { createComposedAdTools } from './tools/ads';
 import { createCallingCampaignTools } from './tools/calling';
 import { createCatalogueTools } from './tools/catalogue';
+import { createDataQueryTools } from './tools/data-query';
 import { createReferenceCreativeTools } from './tools/reference_creatives';
 import { createReferenceBankTools } from './tools/reference_bank';
 import { createReferenceSearchTools } from './tools/reference_search';
@@ -235,6 +236,14 @@ export async function createAgentContext(
     // that was never registered, and was wrong about the schema on top of that (`location`/`category` instead of
     // `address`/`property_type`). "Add my new project to the catalogue" had no path at all.
     ...createCatalogueTools(supabase, userId),
+    // THE READ PRIMITIVE, always available.
+    //
+    // The reporting tools answer the questions someone thought of in advance. Measured cost of that: asked
+    // "how many of MY leads have never been contacted", the agent called the ORG-wide report, found the CRM
+    // search truncated at 100 rows, ran ELEVEN find_tools searches for an account-scoped count, and answered
+    // from the calling queue with a scope disclaimer. One exact count over the caller's own rows replaces all
+    // of that — and the scope is decided here, by role, never by a user_id the model supplies.
+    ...createDataQueryTools(supabase, userId),
     ...(has('ops') ? createNotificationTools(supabase, userId) : {}),
     ...(has('ops') ? createSchedulerTools(supabase, userId) : {}),
     ...(has('reporting') ? createReportingTools(supabase, userId) : {}),
@@ -316,6 +325,13 @@ ALWAYS AVAILABLE â€” the business's own data:
 - 'get_playbook' / 'update_playbook': read and change how this business behaves - the call script, the
   WhatsApp replies, the lead journey (first reply, follow-ups, opt-out, handoff), the daily routine, the
   positioning and the first-draft recipes. Changing your own behaviour is a normal request you can serve.
+- 'query_account_data': THE read primitive for this account's own data. Exact counts, lists, group-bys and
+  distinct values over leads, calls, campaigns, catalogue, broadcasts, chats, lead history, credits, runs and
+  more, with filters including date ranges. Reach for this FIRST for any "how many / which / how often"
+  question: it is exact at any size, and it supersedes hunting for a report tool that happens to fit.
+  Its scope is set by role, not by you: "me" (this account), "org" (this account plus the accounts under it -
+  agency/admin), "all" (platform - super_admin only). A user_id filter is refused, because the scope is not
+  something a prompt can widen. State the scope it returns whenever you quote a number.
   Ask for every missing item in ONE 'questions' batch â€” see the PRE-FLIGHT CONTRACT below.
 SAFETY â€” these hold in every conversation, whatever the task:
 - NEVER FIRE BULK MESSAGING, BULK CALLING OR A BROADCAST DIRECTLY. Anything that touches more than one lead at once â€” a WhatsApp broadcast, a bulk call campaign, a sequence that fans out to a segment â€” must go through 'request_human_approval' and wait for the user. This rule does not depend on the task looking like an 'automation'.
