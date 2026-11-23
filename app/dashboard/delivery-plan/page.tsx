@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
     Sparkles, 
     Film, 
@@ -42,8 +43,38 @@ type PropertyItem = {
     last_video_created_at?: string | null;
 };
 
+/**
+ * Who this screen is about.
+ *
+ * A super admin may inspect any tenant by appending ?impersonate=<uuid>; an
+ * agency/admin only for an account inside their own workspace; everybody else
+ * (a plain `client`/`agent`) always gets their own id, so the parameter can never
+ * widen what they can read. Same gate as `app/dashboard/analytics/page.tsx`.
+ */
+async function resolveTargetUserId(supabase: any, viewerId: string, impersonateId?: string | null): Promise<string> {
+    if (!impersonateId || impersonateId === 'null' || impersonateId === 'undefined' || impersonateId === viewerId) {
+        return viewerId
+    }
+    const { data: selfProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', viewerId)
+        .maybeSingle()
+    const selfRole = String(selfProfile?.role || '').toLowerCase()
+    if (selfRole === 'super_admin') return impersonateId
+    if (!['agency', 'admin'].includes(selfRole)) return viewerId
+    const { data: target } = await supabase
+        .from('profiles')
+        .select('agency_id, parent_id')
+        .eq('id', impersonateId)
+        .maybeSingle()
+    return target?.agency_id === viewerId || target?.parent_id === viewerId ? impersonateId : viewerId
+}
+
 export default function DeliveryPlanPage() {
     const supabase = createClient();
+    const searchParams = useSearchParams();
+    const impersonateId = searchParams.get('impersonate');
 
     const [loading, setLoading] = useState(true);
     const [properties, setProperties] = useState<PropertyItem[]>([]);
@@ -77,9 +108,11 @@ export default function DeliveryPlanPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
 
+            const targetUserId = await resolveTargetUserId(supabase, user.id, impersonateId);
+
             const [propsRes, assetsRes] = await Promise.all([
-                supabase.from('properties').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-                supabase.from('assets').select('property_id, type, created_at').eq('user_id', user.id).order('created_at', { ascending: false })
+                supabase.from('properties').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }),
+                supabase.from('assets').select('property_id, type, created_at').eq('user_id', targetUserId).order('created_at', { ascending: false })
             ]);
 
             const loadedAssets = assetsRes.data || [];
@@ -105,7 +138,8 @@ export default function DeliveryPlanPage() {
 
     useEffect(() => {
         fetchPropertiesData();
-    }, []);
+        // Re-read when the switcher changes tenant: ?impersonate= is the scope.
+    }, [impersonateId]);
 
     // Active in round-robin filters
     const creativePool = properties.filter(p => !!p.auto_generate);
@@ -289,8 +323,11 @@ export default function DeliveryPlanPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error("Unauthorized");
 
+            // A new project belongs to the account being viewed, not to the viewer.
+            const targetUserId = await resolveTargetUserId(supabase, user.id, impersonateId);
+
             const { data: newProp, error } = await supabase.from('properties').insert({
-                user_id: user.id,
+                user_id: targetUserId,
                 title: newTitle.trim(),
                 price: newPrice.trim() || 'Contact for Price',
                 description: newDesc.trim(),

@@ -24,6 +24,7 @@
  */
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { resolveActingUser } from '@/utils/route-auth';
 import { isAvailable, appendEvents, setSessionStatus, loadEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
 import {
@@ -97,7 +98,20 @@ export async function POST(req: Request) {
   }
   stage('auth');
 
-  // Everything below needs only `user.id`, and all of it is independent, so all
+  // ── whose turn this is ─────────────────────────────────────────────────────
+  //
+  // A super admin inspecting a tenant appends ?impersonate=<uuid> to this POST.
+  // The id is only accepted from a caller that may act for that account
+  // (super_admin always, agency/admin for their own sub-accounts); everything
+  // below — tenant context, the wallet that pays, the run row and its ownership
+  // check — must use THAT id, not the signed-in super admin's, or the tenant's
+  // work would run in the super admin's own account.
+  const acting = await resolveActingUser(req, new URL(req.url).searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+  stage('acting');
+
+  // Everything below needs only `actingUserId`, and all of it is independent, so all
   // of it starts now and is awaited where it is actually needed:
   //
   //   * the tenant context (profile + skills) is the data half of building the
@@ -107,9 +121,9 @@ export async function POST(req: Request) {
   //     request's Supabase client and its JWT.
   //   * the affordability check walks the credit pots, and only the model call
   //     costs money, so it is enforced later, not first.
-  const tenantPromise = loadTenantContext(supabase, user.id).catch(() => undefined);
+  const tenantPromise = loadTenantContext(supabase, actingUserId).catch(() => undefined);
   const affordablePromise = import('@/lib/agent/usage')
-    .then(({ canStartTurn }) => canStartTurn(user.id))
+    .then(({ canStartTurn }) => canStartTurn(actingUserId))
     .catch(() => ({ ok: true }) as { ok: boolean; reason?: string });
 
   // Both are schema probes and both are cached per process, but on a cold
@@ -168,7 +182,7 @@ export async function POST(req: Request) {
     void (async () => {
       try {
         const { maybeAutoTitle } = await import('@/lib/agent/harness/persist');
-        await maybeAutoTitle(supabase, user.id, sessionId, message);
+        await maybeAutoTitle(supabase, actingUserId, sessionId, message);
       } catch {
         /* naming never blocks a turn */
       }
@@ -194,7 +208,7 @@ export async function POST(req: Request) {
   const worker = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const claim = await createClaimedRun(supabase, {
     sessionId,
-    userId: user.id,
+    userId: actingUserId,
     goal: goal || 'Continue the conversation.',
     worker,
     leaseSeconds: LEASE_SECONDS,

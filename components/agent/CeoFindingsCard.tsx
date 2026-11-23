@@ -68,17 +68,21 @@ const STYLES: Record<Severity, { chip: string; dot: string; Icon: typeof Info; l
   },
 };
 
-export default function CeoFindingsCard() {
+export default function CeoFindingsCard({ impersonateId }: { impersonateId?: string | null } = {}) {
   const [payload, setPayload] = React.useState<FindingsPayload | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [expanded, setExpanded] = React.useState(false);
 
+  // Whose findings these are: a super admin inspecting a tenant must read that
+  // tenant's report, not their own.
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
+
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/agent/ceo/findings', { cache: 'no-store' });
+      const response = await fetch(`/api/agent/ceo/findings${impParam}`, { cache: 'no-store' });
       const body = (await response.json()) as FindingsPayload;
       if (!response.ok || body?.ok === false) {
         setError(body?.error || `Could not load the report (${response.status})`);
@@ -92,7 +96,7 @@ export default function CeoFindingsCard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [impParam]);
 
   React.useEffect(() => {
     void load();

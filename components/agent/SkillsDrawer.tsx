@@ -24,7 +24,19 @@ interface Skill {
   updated_at: string;
 }
 
-export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export default function SkillsDrawer({
+  open,
+  onClose,
+  impersonateId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  impersonateId?: string | null;
+}) {
+  // The account whose skills these are: a super admin inspecting a tenant reaches
+  // the agent tab with ?impersonate=<uuid> and every call below must carry it.
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
+  const impQuery = impersonateId ? `&impersonate=${encodeURIComponent(impersonateId)}` : '';
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,7 +50,7 @@ export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/agent/skills');
+      const res = await fetch(`/api/agent/skills${impParam}`);
       const data = await res.json();
       if (data.needsMigration) setNeedsMigration(true);
       setSkills(data.skills || []);
@@ -47,7 +59,7 @@ export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [impParam]);
 
   useEffect(() => {
     if (open) void load();
@@ -70,7 +82,8 @@ export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch('/api/agent/skills', { method: 'POST', body: form });
+      if (impersonateId && !form.get('impersonate')) form.append('impersonate', impersonateId);
+      const res = await fetch(`/api/agent/skills${impParam}`, { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       setNotice(`Saved "${data.name}" — the agent uses it from your next message.`);
@@ -88,10 +101,10 @@ export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose
   async function toggle(skill: Skill) {
     setBusy(true);
     try {
-      await fetch('/api/agent/skills', {
+      await fetch(`/api/agent/skills${impParam}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: skill.id, enabled: !skill.enabled }),
+        body: JSON.stringify({ id: skill.id, enabled: !skill.enabled, impersonate: impersonateId || undefined }),
       });
       await load();
     } finally {
@@ -108,7 +121,7 @@ export default function SkillsDrawer({ open, onClose }: { open: boolean; onClose
     setPendingDelete(null);
     setBusy(true);
     try {
-      await fetch(`/api/agent/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await fetch(`/api/agent/skills?id=${encodeURIComponent(id)}${impQuery}`, { method: 'DELETE' });
       await load();
     } finally {
       setBusy(false);

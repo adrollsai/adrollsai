@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 /**
  * Business skills — the client's own written procedures, available to the agent.
@@ -21,6 +22,15 @@ interface Skill {
 }
 
 export default function SkillsPage() {
+  const searchParams = useSearchParams();
+  const impersonateId = searchParams.get('impersonate');
+  /**
+   * Whose skills these are. A super admin (or an agency over its own client)
+   * reaches a tenant with ?impersonate=<uuid>; `/api/agent/skills` applies the
+   * role gate, so all this side has to do is carry the parameter everywhere.
+   */
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
+
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -32,7 +42,7 @@ export default function SkillsPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent/skills');
+      const res = await fetch(`/api/agent/skills${impParam}`);
       const data = await res.json();
       if (data.needsMigration) setNeedsMigration(true);
       setSkills(data.skills || []);
@@ -41,7 +51,7 @@ export default function SkillsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [impParam]);
 
   useEffect(() => {
     void load();
@@ -52,7 +62,8 @@ export default function SkillsPage() {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch('/api/agent/skills', { method: 'POST', body: form });
+      if (impersonateId && !form.get('impersonate')) form.append('impersonate', impersonateId);
+      const res = await fetch(`/api/agent/skills${impParam}`, { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Upload failed');
       setNotice(`Saved "${data.name}". The agent will use it from the next message.`);
@@ -82,10 +93,10 @@ export default function SkillsPage() {
   async function toggle(skill: Skill) {
     setBusy(true);
     try {
-      await fetch('/api/agent/skills', {
+      await fetch(`/api/agent/skills${impParam}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: skill.id, enabled: !skill.enabled }),
+        body: JSON.stringify({ id: skill.id, enabled: !skill.enabled, impersonate: impersonateId || undefined }),
       });
       await load();
     } finally {
@@ -102,7 +113,8 @@ export default function SkillsPage() {
     setPendingDelete(null);
     setBusy(true);
     try {
-      await fetch(`/api/agent/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const impQuery = impersonateId ? `&impersonate=${encodeURIComponent(impersonateId)}` : '';
+      await fetch(`/api/agent/skills?id=${encodeURIComponent(id)}${impQuery}`, { method: 'DELETE' });
       await load();
     } finally {
       setBusy(false);

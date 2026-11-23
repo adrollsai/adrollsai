@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { resolveActingUser } from '@/utils/route-auth';
 
 export const maxDuration = 60;
 
@@ -12,6 +13,11 @@ export const maxDuration = 60;
  *
  * Text-like formats are read directly. Anything else gets a clear refusal naming
  * the formats that work, instead of silently storing bytes that will never load.
+ *
+ * `?impersonate=<uuid>` (or `impersonate` in the JSON body) is honoured only for a
+ * caller that may act for that account — super_admin always, agency/admin for
+ * their own sub-accounts — so a super admin inspecting a tenant edits that
+ * tenant's skills, and nobody else can reach across tenants.
  */
 
 const TEXT_EXT = /\.(md|markdown|txt|text|json|ya?ml|csv|tsv)$/i;
@@ -53,17 +59,21 @@ async function readTextFromFile(file: File): Promise<{ text: string; filename: s
   return { text, filename };
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const acting = await resolveActingUser(req, new URL(req.url).searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+
   const { data, error } = await supabase
     .from('agent_skills')
     .select('id, name, description, source_filename, enabled, created_at, updated_at')
-    .eq('user_id', user.id)
+    .eq('user_id', actingUserId)
     .order('updated_at', { ascending: false });
 
   if (error) {
@@ -87,6 +97,7 @@ export async function POST(req: Request) {
   let filename: string | null = null;
   let name = '';
   let description = '';
+  let requestedImpersonate: string | null = new URL(req.url).searchParams.get('impersonate');
 
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData();
@@ -99,13 +110,22 @@ export async function POST(req: Request) {
     filename = read.filename;
     name = String(form.get('name') || '').trim();
     description = String(form.get('description') || '').trim();
+    const formImpersonate = form.get('impersonate');
+    if (!requestedImpersonate && typeof formImpersonate === 'string') requestedImpersonate = formImpersonate;
   } else {
     const body = await req.json().catch(() => null);
     if (!body) return NextResponse.json({ error: 'Expected JSON or a file upload.' }, { status: 400 });
     text = String(body.content || '').trim();
     name = String(body.name || '').trim();
     description = String(body.description || '').trim();
+    if (!requestedImpersonate && typeof body.impersonate === 'string') requestedImpersonate = body.impersonate;
   }
+
+  // The skill belongs to the account being viewed, and only a caller that may act
+  // for that account gets to write it.
+  const acting = await resolveActingUser(req, requestedImpersonate);
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
 
   if (!text) return NextResponse.json({ error: 'The skill has no content.' }, { status: 400 });
   if (text.length > MAX_CHARS) {
@@ -120,7 +140,7 @@ export async function POST(req: Request) {
     .from('agent_skills')
     .upsert(
       {
-        user_id: user.id,
+        user_id: actingUserId,
         name,
         description,
         content: text,
@@ -144,7 +164,7 @@ export async function POST(req: Request) {
       const { error: updateError } = await supabase
         .from('agent_skills')
         .update({ description, content: text, source_filename: filename, enabled: true })
-        .eq('user_id', user.id)
+        .eq('user_id', actingUserId)
         .ilike('name', name);
       if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 });
       return NextResponse.json({ ok: true, updated: true, name });
@@ -166,6 +186,13 @@ export async function PATCH(req: Request) {
   const id = body?.id ? String(body.id) : '';
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
+  const acting = await resolveActingUser(
+    req,
+    new URL(req.url).searchParams.get('impersonate') || (typeof body?.impersonate === 'string' ? body.impersonate : null)
+  );
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+
   const patch: Record<string, unknown> = {};
   if (typeof body.enabled === 'boolean') patch.enabled = body.enabled;
   if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim();
@@ -173,7 +200,7 @@ export async function PATCH(req: Request) {
   if (typeof body.content === 'string' && body.content.trim()) patch.content = body.content;
   if (!Object.keys(patch).length) return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
 
-  const { error } = await supabase.from('agent_skills').update(patch).eq('id', id).eq('user_id', user.id);
+  const { error } = await supabase.from('agent_skills').update(patch).eq('id', id).eq('user_id', actingUserId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
@@ -188,7 +215,10 @@ export async function DELETE(req: Request) {
   const id = new URL(req.url).searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
-  const { error } = await supabase.from('agent_skills').delete().eq('id', id).eq('user_id', user.id);
+  const acting = await resolveActingUser(req, new URL(req.url).searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+
+  const { error } = await supabase.from('agent_skills').delete().eq('id', id).eq('user_id', acting.userId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

@@ -401,7 +401,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // When the store is available the conversation lives in the event log and
   // the UI is a projection over it. When it is not (migration not applied) we
   // fall back to the previous localStorage behaviour so nothing breaks.
-  const harness = useHarnessSession();
+  const harness = useHarnessSession(impersonateId);
   const [logSessionId, setLogSessionId] = useState<string | null>(null);
   const logEnabled = harness.available === true && logSessionId !== null;
   const projected = harness.state && harness.state.sessionId === logSessionId ? harness.state : null;
@@ -432,7 +432,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // connected purely as the reconnect path: if this stream drops, the
   // projection — a fold of the log, which the runner still writes once per
   // step — catches the transcript up and the durable run finishes the work.
-  const runStream = useRunStream();
+  const runStream = useRunStream(impersonateId);
   const liveTurn = runStream.message;
   const sendRunStream = runStream.send;
   const stopRunStream = runStream.stop;
@@ -573,7 +573,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     let alive = true;
     (async () => {
       try {
-        const res = await fetch('/api/agent/v2/sessions');
+        const sessionsUrl = impersonateId
+          ? `/api/agent/v2/sessions?impersonate=${encodeURIComponent(impersonateId)}`
+          : '/api/agent/v2/sessions';
+        const res = await fetch(sessionsUrl);
         const data = await res.json();
         if (!alive || !data?.ceoSessionId) return;
         setCeoSessionId(data.ceoSessionId);
@@ -590,7 +593,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     return () => {
       alive = false;
     };
-  }, []);
+    // A different tenant is a different permanent CEO thread.
+  }, [impersonateId]);
 
   // Create panel: the front door to a production job (kind, dimensions, reference, brief).
   const [createOpen, setCreateOpen] = useState(false);
@@ -2362,7 +2366,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       />
 
       <CreatePanel open={createOpen} onClose={() => setCreateOpen(false)} onSend={handleSend} />
-      <SkillsDrawer open={skillsOpen} onClose={() => setSkillsOpen(false)} />
+      <SkillsDrawer open={skillsOpen} onClose={() => setSkillsOpen(false)} impersonateId={impersonateId} />
     </div>
   );
 }

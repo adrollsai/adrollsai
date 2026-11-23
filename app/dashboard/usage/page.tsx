@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { createClient } from '@/utils/supabase/client'
 import { 
     Coins, 
     Phone, 
@@ -16,25 +18,59 @@ import { toast } from 'sonner'
 import { getCachedValue, setCachedValue } from '@/utils/client-cache'
 import { useRazorpay } from '@/utils/useRazorpay'
 
+/**
+ * Whose ledger this screen shows.
+ *
+ * A super admin may inspect any tenant with ?impersonate=<uuid>; an agency/admin
+ * only for an account inside their own workspace; a plain `client`/`agent` stays
+ * on their own row, so the parameter cannot widen what they see. Same gate as
+ * `app/dashboard/analytics/page.tsx`.
+ */
+async function resolveTargetUserId(supabase: any, viewerId: string, impersonateId?: string | null): Promise<string> {
+    if (!impersonateId || impersonateId === 'null' || impersonateId === 'undefined' || impersonateId === viewerId) {
+        return viewerId;
+    }
+    const { data: selfProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', viewerId)
+        .maybeSingle();
+    const selfRole = String(selfProfile?.role || '').toLowerCase();
+    if (selfRole === 'super_admin') return impersonateId;
+    if (!['agency', 'admin'].includes(selfRole)) return viewerId;
+    const { data: target } = await supabase
+        .from('profiles')
+        .select('agency_id, parent_id')
+        .eq('id', impersonateId)
+        .maybeSingle();
+    return target?.agency_id === viewerId || target?.parent_id === viewerId ? impersonateId : viewerId;
+}
+
 export default function UsagePage() {
+    const searchParams = useSearchParams()
+    const impersonateId = searchParams.get('impersonate')
+    // The cache is per account, or switching tenant would paint the previous
+    // tenant's numbers until the fetch lands.
+    const cacheKey = impersonateId ? `usage_cache_${impersonateId}` : 'usage_cache'
+    const supabase = useMemo(() => createClient(), [])
     const { openCheckout, isProcessing } = useRazorpay()
     const [usage, setUsage] = useState<any>(() => {
         if (typeof window !== 'undefined') {
-            const cached = getCachedValue<any>('usage_cache')
+            const cached = getCachedValue<any>(cacheKey)
             if (cached?.usage) return cached.usage
         }
         return null
     })
     const [loading, setLoading] = useState(() => {
         if (typeof window !== 'undefined') {
-            const cached = getCachedValue<any>('usage_cache')
+            const cached = getCachedValue<any>(cacheKey)
             if (cached?.usage) return false
         }
         return true
     })
     const [transactions, setTransactions] = useState<any[]>(() => {
         if (typeof window !== 'undefined') {
-            const cached = getCachedValue<any>('usage_cache')
+            const cached = getCachedValue<any>(cacheKey)
             if (cached?.transactions) return cached.transactions
         }
         return []
@@ -48,7 +84,12 @@ export default function UsagePage() {
         else if (targetPage > 1) setLoadingMore(true)
         
         try {
-            const res = await fetch(`/api/subscription/usage?page=${targetPage}&limit=10`)
+            const { data: { user } } = await supabase.auth.getUser()
+            const targetUserId = user ? await resolveTargetUserId(supabase, user.id, impersonateId) : null
+            const impParam = targetUserId && impersonateId && targetUserId === impersonateId
+                ? `&impersonate=${encodeURIComponent(targetUserId)}`
+                : ''
+            const res = await fetch(`/api/subscription/usage?page=${targetPage}&limit=10${impParam}`)
             const data = await res.json()
             if (data.error) throw new Error(data.error)
             
@@ -56,7 +97,7 @@ export default function UsagePage() {
                 setUsage(data)
                 setTransactions(data.transactions || [])
                 // Persist to localStorage
-                setCachedValue('usage_cache', {
+                setCachedValue(cacheKey, {
                     usage: data,
                     transactions: data.transactions || []
                 })
@@ -75,7 +116,7 @@ export default function UsagePage() {
 
     useEffect(() => {
         fetchUsage(1)
-    }, [])
+    }, [impersonateId])
 
     const handleLoadMore = () => {
         if (!loadingMore && hasMore) {

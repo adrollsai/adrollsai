@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 import { PLANS, getUserLimits } from '@/utils/subscription';
+import { resolveActingUser } from '@/utils/route-auth';
 
 export async function GET(request: Request) {
     try {
@@ -13,16 +14,23 @@ export async function GET(request: Request) {
         const limit = parseInt(url.searchParams.get('limit') || '10', 10);
         const offset = (page - 1) * limit;
 
+        // Whose usage this is. ?impersonate=<uuid> is honoured only for a caller
+        // that may act for that account (super_admin always, agency/admin for
+        // their own sub-accounts) — otherwise it is a 403, never a silent read.
+        const acting = await resolveActingUser(request, url.searchParams.get('impersonate'));
+        if (!acting.ok) return acting.response;
+        const actingUserId = acting.userId;
+
         const { data: profile } = await supabase
             .from('profiles')
             .select('*')
-            .eq('id', user.id)
+            .eq('id', actingUserId)
             .single();
 
         if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
         // Resolve Primary User ID (Owner of the limits)
-        const primaryUserId = profile.parent_id || profile.agency_id || user.id;
+        const primaryUserId = profile.parent_id || profile.agency_id || actingUserId;
 
         // If part of a team, fetch the primary profile for limits and usage reset date
         let primaryProfile = profile;
@@ -84,7 +92,7 @@ export async function GET(request: Request) {
         const isManagedClient = isClient && !!(profile.agency_id || profile.parent_id);
         const hasDedicatedCredits = isClient && typeof profile.credits === 'number' && profile.credits > 0;
         const effectiveCredits = hasDedicatedCredits ? profile.credits : (primaryProfile.credits || 0);
-        const targetLedgerUserId = hasDedicatedCredits ? user.id : primaryUserId;
+        const targetLedgerUserId = hasDedicatedCredits ? actingUserId : primaryUserId;
 
         // Check if trial was already purchased
         let hasPurchasedTrial = Boolean(

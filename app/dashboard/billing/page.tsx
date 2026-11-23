@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { getCachedValue, setCachedValue } from '@/utils/client-cache';
 import {
@@ -36,40 +36,73 @@ import {
 import { toast } from 'sonner';
 import { useRazorpay } from '@/utils/useRazorpay';
 
+/**
+ * Whose plan this screen shows.
+ *
+ * A super admin may inspect any tenant with ?impersonate=<uuid>; an agency/admin
+ * only for an account inside their own workspace; a plain `client`/`agent` never
+ * leaves their own row, so the parameter cannot widen what they see. Same gate as
+ * `app/dashboard/analytics/page.tsx`.
+ */
+async function resolveTargetUserId(supabase: any, viewerId: string, impersonateId?: string | null): Promise<string> {
+    if (!impersonateId || impersonateId === 'null' || impersonateId === 'undefined' || impersonateId === viewerId) {
+        return viewerId;
+    }
+    const { data: selfProfile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', viewerId)
+        .maybeSingle();
+    const selfRole = String(selfProfile?.role || '').toLowerCase();
+    if (selfRole === 'super_admin') return impersonateId;
+    if (!['agency', 'admin'].includes(selfRole)) return viewerId;
+    const { data: target } = await supabase
+        .from('profiles')
+        .select('agency_id, parent_id')
+        .eq('id', impersonateId)
+        .maybeSingle();
+    return target?.agency_id === viewerId || target?.parent_id === viewerId ? impersonateId : viewerId;
+}
+
 export default function BillingPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const impersonateId = searchParams.get('impersonate');
+    // The cache is per account, or switching tenant would paint the previous
+    // tenant's plan and credits until the fetch lands.
+    const cacheKey = impersonateId ? `billing_cache_${impersonateId}` : 'billing_cache';
     const supabase = createClient();
     const { openCheckout, isProcessing } = useRazorpay();
 
     const [loading, setLoading] = useState(() => {
         if (typeof window !== 'undefined') {
-            const cached = getCachedValue<any>('billing_cache');
+            const cached = getCachedValue<any>(cacheKey);
             if (cached) return false;
         }
         return true;
     });
     const [activePlan, setActivePlan] = useState<string>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.activePlan || 'free';
     });
     const [activePlanName, setActivePlanName] = useState<string>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.activePlanName || 'Free Plan';
     });
     const [renewalDate, setRenewalDate] = useState<string | null>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.renewalDate || null;
     });
     const [creditsBalance, setCreditsBalance] = useState<number>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.creditsBalance || 0;
     });
     const [isUnlimited, setIsUnlimited] = useState<boolean>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.isUnlimited || false;
     });
     const [isManagedClient, setIsManagedClient] = useState<boolean>(() => {
-        const cached = typeof window !== 'undefined' ? getCachedValue<any>('billing_cache') : null;
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.isManagedClient || false;
     });
     const [paymentType, setPaymentType] = useState<'one_time' | 'recurring'>('one_time');
@@ -83,7 +116,10 @@ export default function BillingPage() {
                 return;
             }
 
-            const res = await fetch('/api/subscription/usage');
+            // Whose subscription this is: the switcher's tenant, or the viewer.
+            const targetUserId = await resolveTargetUserId(supabase, user.id, impersonateId);
+
+            const res = await fetch(`/api/subscription/usage${impersonateId && targetUserId === impersonateId ? `?impersonate=${encodeURIComponent(targetUserId)}` : ''}`);
             if (res.ok) {
                 const data = await res.json();
                 
@@ -118,7 +154,7 @@ export default function BillingPage() {
                 const { data: profile } = await supabase
                     .from('profiles')
                     .select('subscription_plan, subscription_status, client_features')
-                    .eq('id', user.id)
+                    .eq('id', targetUserId)
                     .single();
 
                 if (profile?.client_features?.has_purchased_trial || profile?.subscription_plan === 'trial') {
@@ -131,7 +167,7 @@ export default function BillingPage() {
                 }
 
                 // Persist billing data to localStorage
-                setCachedValue('billing_cache', {
+                setCachedValue(cacheKey, {
                     activePlan: plan,
                     activePlanName: resolvedPlanName,
                     renewalDate: formattedDate,
@@ -148,7 +184,7 @@ export default function BillingPage() {
 
     useEffect(() => {
         fetchBillingData();
-    }, [router, supabase]);
+    }, [router, supabase, impersonateId]);
 
     const handlePurchase = (planId: string) => {
         // 7-day trial is strictly a one-time purchase pass

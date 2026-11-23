@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
 /**
  * Automation control panel.
@@ -57,6 +58,17 @@ function hourLabel(h: number) {
 }
 
 export default function AutomationSettingsPage() {
+  const searchParams = useSearchParams()
+  const impersonateId = searchParams.get('impersonate')
+  /**
+   * Whose policy row this screen edits.
+   *
+   * A super admin (or an agency over its own client) reaches a tenant with
+   * ?impersonate=<uuid>; `/api/automation/settings` applies the role gate, so all
+   * this side has to do is carry the parameter on every read and write.
+   */
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''
+
   const [settings, setSettings] = useState<Settings | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
   const [loading, setLoading] = useState(true)
@@ -67,7 +79,7 @@ export default function AutomationSettingsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/automation/settings', { cache: 'no-store' })
+      const res = await fetch(`/api/automation/settings${impParam}`, { cache: 'no-store' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to load')
       setSettings(data.settings)
@@ -83,7 +95,7 @@ export default function AutomationSettingsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [impParam])
 
   useEffect(() => { load() }, [load])
 
@@ -114,10 +126,10 @@ export default function AutomationSettingsPage() {
         call_max_attempts: settings.call_max_attempts,
         bill_automation: settings.bill_automation,
       }
-      const res = await fetch('/api/automation/settings', {
+      const res = await fetch(`/api/automation/settings${impParam}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, impersonate: impersonateId || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to save')

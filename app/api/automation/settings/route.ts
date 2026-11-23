@@ -6,6 +6,7 @@
  */import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { resolveActingUser } from '@/utils/route-auth'
 
 /**
  * Automation settings for the signed-in tenant.
@@ -13,6 +14,11 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
  * `tenant_automations` is the single source of truth every cron reads. It is
  * default-ON for new accounts; this endpoint is what lets a tenant switch the
  * whole workflow off, or switch off individual features (e.g. "no videos").
+ *
+ * `?impersonate=<uuid>` (or `impersonate` in the body) is honoured only for a
+ * caller that may act for that account — super_admin always, agency/admin for
+ * their own sub-accounts — so a super admin inspecting a tenant sees and edits
+ * that tenant's automation, and nobody else can reach across tenants.
  */
 
 const BOOLEAN_FIELDS = [
@@ -45,9 +51,13 @@ async function resolveUser() {
   return user
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await resolveUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const acting = await resolveActingUser(request, new URL(request.url).searchParams.get('impersonate'))
+  if (!acting.ok) return acting.response
+  const actingUserId = acting.userId
 
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,7 +68,7 @@ export async function GET() {
   const first = await admin
     .from('tenant_automations')
     .select(SELECT_COLS)
-    .eq('user_id', user.id)
+    .eq('user_id', actingUserId)
     .maybeSingle()
 
   const error = first.error
@@ -67,7 +77,7 @@ export async function GET() {
   if (!data && !error) {
     const { data: created } = await admin
       .from('tenant_automations')
-      .insert({ user_id: user.id })
+      .insert({ user_id: actingUserId })
       .select(SELECT_COLS)
       .single()
     data = created
@@ -80,7 +90,7 @@ export async function GET() {
   const { data: profile } = await admin
     .from('profiles')
     .select('whatsapp_access_token, whatsapp_phone_number_id, whatsapp_personal_number, contact_number, google_refresh_token, voice_twilio_number, voice_vobiz_number')
-    .eq('id', user.id)
+    .eq('id', actingUserId)
     .single()
 
   return NextResponse.json({
@@ -144,16 +154,24 @@ export async function PATCH(request: Request) {
 
   patch.updated_at = new Date().toISOString()
 
+  // Whose row is being edited: the account being viewed, never a body-supplied
+  // id — resolveActingUser proves the caller may act for it.
+  const acting = await resolveActingUser(
+    request,
+    new URL(request.url).searchParams.get('impersonate') || (typeof body?.impersonate === 'string' ? body.impersonate : null)
+  )
+  if (!acting.ok) return acting.response
+
   const admin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  // Scoped to the caller's own row — never trust a user_id from the body.
+  // Scoped to the acting owner's own row — never trust a user_id from the body.
   const { data, error } = await admin
     .from('tenant_automations')
     .update(patch)
-    .eq('user_id', user.id)
+    .eq('user_id', acting.userId)
     .select(SELECT_COLS)
     .single()
 

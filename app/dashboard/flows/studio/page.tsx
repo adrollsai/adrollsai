@@ -16,6 +16,7 @@
  *     flow, so problems surface while you build instead of in production.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ReactFlow,
   Background,
@@ -139,6 +140,15 @@ interface FlowSummary {
 }
 
 export default function FlowStudioPage() {
+  const searchParams = useSearchParams();
+  const impersonateId = searchParams.get('impersonate');
+  /**
+   * The account being edited. A super admin (or an agency over its own client)
+   * reaches a tenant's flows with ?impersonate=<uuid>; `/api/flows` applies the
+   * role gate for it, so all this side has to do is carry the parameter.
+   */
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
+
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [name, setName] = useState('Untitled flow');
@@ -151,7 +161,7 @@ export default function FlowStudioPage() {
 
   const loadFlows = useCallback(async () => {
     try {
-      const res = await fetch('/api/flows');
+      const res = await fetch(`/api/flows${impParam}`);
       const body = await res.json();
       setFlows(body.flows || []);
     } catch {
@@ -159,7 +169,7 @@ export default function FlowStudioPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [impParam]);
 
   useEffect(() => {
     void loadFlows();
@@ -228,7 +238,7 @@ export default function FlowStudioPage() {
         xyNodes: nodes,
         xyEdges: edges,
       };
-      const res = await fetch('/api/flows', {
+      const res = await fetch(`/api/flows${impParam}`, {
         method: activeId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(activeId ? { ...payload, id: activeId } : payload),

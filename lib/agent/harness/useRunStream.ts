@@ -185,12 +185,29 @@ function toChunkStream(body: ReadableStream<Uint8Array>): ReadableStream<UIMessa
   );
 }
 
-export function useRunStream(): UseRunStream {
+export function useRunStream(impersonateId?: string | null): UseRunStream {
   const [message, setMessage] = useState<UIMessage | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [outcome, setOutcome] = useState<RunStreamOutcome>('idle');
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<RunStreamMetrics | null>(null);
+
+  /**
+   * The account the turn runs for.
+   *
+   * A super admin inspecting a tenant opens the agent tab with
+   * ?impersonate=<uuid>. The turn POST and the cancel/stop calls must carry it,
+   * or `/api/agent/v2/runs/stream` resolves the signed-in super admin and the
+   * tenant's message is answered in the wrong account.
+   */
+  const withImp = useCallback(
+    (url: string) => {
+      if (!impersonateId) return url;
+      const sep = url.includes('?') ? '&' : '?';
+      return `${url}${sep}impersonate=${encodeURIComponent(impersonateId)}`;
+    },
+    [impersonateId]
+  );
 
   const abortRef = useRef<AbortController | null>(null);
   const runIdRef = useRef<string | null>(null);
@@ -224,10 +241,10 @@ export function useRunStream(): UseRunStream {
     // stream abandoned.
     const runId = runIdRef.current;
     if (runId) {
-      void fetch(`/api/agent/v2/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }).catch(() => {});
+      void fetch(withImp(`/api/agent/v2/runs/${encodeURIComponent(runId)}`), { method: 'DELETE' }).catch(() => {});
     }
     abortRef.current?.abort();
-  }, []);
+  }, [withImp]);
 
   const send = useCallback(async (args: RunStreamSendArgs): Promise<RunStreamResult> => {
     abortRef.current?.abort();
@@ -247,7 +264,7 @@ export function useRunStream(): UseRunStream {
     let chars = 0;
 
     try {
-      const res = await fetch('/api/agent/v2/runs/stream', {
+      const res = await fetch(withImp('/api/agent/v2/runs/stream'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -256,6 +273,7 @@ export function useRunStream(): UseRunStream {
           messageId: args.messageId,
           goal: args.goal,
           attachments: args.attachments,
+          impersonate: impersonateId || undefined,
         }),
         signal: controller.signal,
       });
@@ -369,7 +387,7 @@ export function useRunStream(): UseRunStream {
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  }, []);
+  }, [withImp, impersonateId]);
 
   return { message, streaming, outcome, error, metrics, send, stop, reset };
 }

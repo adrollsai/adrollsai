@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { resolveActingUser } from '@/utils/route-auth';
 import { defaultRoutineIntent } from '@/lib/agent/routines';
 
 export const maxDuration = 60;
@@ -11,18 +12,25 @@ export const maxDuration = 60;
  * calls for it, always ask before spending. Cadence changes are meant to arrive as
  * words ("stop doing reels daily") rather than as a settings screen, so this endpoint
  * deliberately exposes only create + list.
+ *
+ * `?impersonate=<uuid>` is honoured only for a caller that may act for that
+ * account (super_admin always, agency/admin for their own sub-accounts).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const acting = await resolveActingUser(req, req.nextUrl.searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+
   const { data, error } = await supabase
     .from('business_routines')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', actingUserId)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -41,17 +49,21 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const acting = await resolveActingUser(req, req.nextUrl.searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+
   const body = await req.json().catch(() => ({}));
   const { data: profile } = await supabase
     .from('profiles')
     .select('business_name, industry')
-    .eq('id', user.id)
+    .eq('id', actingUserId)
     .single();
 
   const { data: existing } = await supabase
     .from('business_routines')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', actingUserId)
     .eq('enabled', true)
     .maybeSingle();
 
@@ -62,7 +74,7 @@ export async function POST(req: NextRequest) {
   const { data: created, error } = await supabase
     .from('business_routines')
     .insert({
-      user_id: user.id,
+      user_id: actingUserId,
       name: body.name || 'Daily marketing',
       intent: body.intent || defaultRoutineIntent(profile?.business_name || 'the business', profile?.industry || null),
       cadence: 'daily',

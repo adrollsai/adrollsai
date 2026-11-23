@@ -33,7 +33,12 @@ interface Delivery {
 
 type Outcome = { tone: 'ok' | 'warn' | 'bad'; message: string };
 
-export function PendingDeliveries() {
+export function PendingDeliveries({ impersonateId }: { impersonateId?: string | null } = {}) {
+  // The account whose queue this is: a super admin inspecting a tenant reaches
+  // this screen with ?impersonate=<uuid>, already resolved and role-gated by the
+  // page. Every read and decision below has to stay inside that account.
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
+  const impQuery = impersonateId ? `&impersonate=${encodeURIComponent(impersonateId)}` : '';
   const [rows, setRows] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -54,7 +59,7 @@ export function PendingDeliveries() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/flows/deliveries?status=${showAll ? 'delivered' : 'pending_approval'}`, { cache: 'no-store' });
+      const res = await fetch(`/api/flows/deliveries?status=${showAll ? 'delivered' : 'pending_approval'}${impQuery}`, { cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || `The queue could not be read (HTTP ${res.status}).`);
       setRows(json.deliveries ?? []);
@@ -64,7 +69,7 @@ export function PendingDeliveries() {
     } finally {
       setLoading(false);
     }
-  }, [showAll]);
+  }, [showAll, impQuery]);
 
   useEffect(() => {
     void load();
@@ -74,10 +79,10 @@ export function PendingDeliveries() {
     async (delivery: Delivery, decision: 'approve' | 'reject') => {
       setBusyId(delivery.id);
       try {
-        const res = await fetch('/api/flows/deliveries', {
+        const res = await fetch(`/api/flows/deliveries${impParam}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deliveryId: delivery.id, decision }),
+          body: JSON.stringify({ deliveryId: delivery.id, decision, impersonate: impersonateId || undefined }),
         });
         const json = await res.json();
         if (!res.ok && !json?.status) throw new Error(json?.error || `HTTP ${res.status}`);

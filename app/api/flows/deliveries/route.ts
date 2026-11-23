@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { resolveActingUser } from '@/utils/route-auth';
 import { decideDelivery, describeDelivery, dispatchDelivery, listDeliveries, type DeliveryStatus } from '@/lib/flows/delivery';
 
 export const runtime = 'nodejs';
@@ -55,9 +56,16 @@ export async function GET(request: Request) {
     const status = requested && ALLOWED_STATUS.includes(requested as DeliveryStatus) ? [requested as DeliveryStatus] : undefined;
     const limit = Math.min(Number(params.get('limit') ?? 50) || 50, 200);
 
-    // Service role, but scoped to the signed-in owner on every call: the queue is only ever read
+    // Whose queue this is. ?impersonate=<uuid> is honoured only for a caller that
+    // may act for that account (super_admin always, agency/admin for their own
+    // sub-accounts), so the service-role client below is never handed an id the
+    // caller was allowed to choose.
+    const acting = await resolveActingUser(request, params.get('impersonate'));
+    if (!acting.ok) return acting.response;
+
+    // Service role, but scoped to the acting owner on every call: the queue is only ever read
     // for the account that is asking.
-    const rows = await listDeliveries(admin(), user.id, { status: status ?? ['pending_approval'], limit });
+    const rows = await listDeliveries(admin(), acting.userId, { status: status ?? ['pending_approval'], limit });
     return NextResponse.json({
       ok: true,
       [QUEUE_KEY]: rows.map((d) => ({ ...d, summary: describeDelivery(d) })),
@@ -87,7 +95,16 @@ export async function POST(request: Request) {
     }
 
     const db = admin();
-    const decided = await decideDelivery(db, { userId: user.id, deliveryId, decision, decidedBy: user.id });
+
+    // The row must belong to the account being viewed; the decision is still
+    // recorded against the real person who pressed the button.
+    const acting = await resolveActingUser(
+      request,
+      new URL(request.url).searchParams.get('impersonate') || (typeof body?.impersonate === 'string' ? body.impersonate : null)
+    );
+    if (!acting.ok) return acting.response;
+
+    const decided = await decideDelivery(db, { userId: acting.userId, deliveryId, decision, decidedBy: user.id });
     if (!decided.ok) return NextResponse.json({ ok: false, error: decided.error }, { status: 400 });
 
     if (decision === 'reject') {

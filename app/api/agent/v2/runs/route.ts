@@ -1,10 +1,27 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { resolveActingUser } from '@/utils/route-auth';
 import { isAvailable, appendEvents } from '@/lib/agent/harness/store';
 import { createEvent } from '@/lib/agent/harness/events';
 import { enqueueRun, runsAvailableCheck, getRun, toSummary, hasLiveRun } from '@/lib/agent/harness/runs';
 
 export const maxDuration = 30;
+
+/**
+ * The account a harness run belongs to.
+ *
+ * A super admin inspecting a tenant appends ?impersonate=<uuid> (or sends
+ * `impersonate` in the body); the id is only accepted from a caller that may act
+ * for that account — super_admin always, agency/admin for their own sub-accounts.
+ * Without this the run was queued against the signed-in super admin, so a tenant's
+ * work happened in the super admin's own wallet and workspace.
+ */
+async function resolveActing(req: Request, bodyImpersonate?: unknown) {
+  const requested =
+    new URL(req.url).searchParams.get('impersonate') ||
+    (typeof bodyImpersonate === 'string' ? bodyImpersonate : null);
+  return resolveActingUser(req, requested);
+}
 
 /**
  * POST /api/agent/v2/runs
@@ -31,20 +48,25 @@ export async function POST(req: Request) {
   const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
   if (!sessionId) return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
 
-  // Confirm the session belongs to this user before queueing work against it.
+  const acting = await resolveActing(req, body.impersonate);
+  if (!acting.ok) return acting.response;
+  const actingUserId = acting.userId;
+
+  // Confirm the session belongs to the account being run before queueing work against it.
   const { data: session } = await supabase
     .from('harness_sessions')
     .select('id')
     .eq('id', sessionId)
-    .eq('user_id', user.id)
+    .eq('user_id', actingUserId)
     .maybeSingle();
   if (!session) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   // An empty wallet must not start work we then fail to bill. Media tools were already
   // gated; text turns were not, which is an open tap rather than a wrong number.
+  // The wallet checked is the one that pays: the account being run.
   {
     const { canStartTurn } = await import('@/lib/agent/usage');
-    const affordable = await canStartTurn(user.id);
+    const affordable = await canStartTurn(actingUserId);
     if (!affordable.ok) {
       return NextResponse.json(
         { error: 'insufficient_credits', message: affordable.reason },
@@ -101,7 +123,7 @@ export async function POST(req: Request) {
     void (async () => {
       try {
         const { maybeAutoTitle } = await import('@/lib/agent/harness/persist');
-        await maybeAutoTitle(supabase, user.id, sessionId, message);
+        await maybeAutoTitle(supabase, actingUserId, sessionId, message);
       } catch {
         /* naming never blocks a run */
       }
@@ -119,7 +141,7 @@ export async function POST(req: Request) {
 
   const run = await enqueueRun(supabase, {
     sessionId,
-    userId: user.id,
+    userId: actingUserId,
     goal,
     idempotencyKey,
     priority: typeof body.priority === 'number' ? body.priority : 0,
@@ -167,11 +189,14 @@ export async function GET(req: Request) {
   const sessionId = new URL(req.url).searchParams.get('sessionId');
   if (!sessionId) return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
 
+  const acting = await resolveActing(req);
+  if (!acting.ok) return acting.response;
+
   const { data, error } = await (supabase as any)
     .from('harness_runs')
     .select('*')
     .eq('session_id', sessionId)
-    .eq('user_id', user.id)
+    .eq('user_id', acting.userId)
     .order('created_at', { ascending: false })
     .limit(20);
 

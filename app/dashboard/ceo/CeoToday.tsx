@@ -19,25 +19,28 @@ import CeoFindingsCard from '@/components/agent/CeoFindingsCard';
  * waiting on me. Everything deeper lives in the conversation behind "Talk to the
  * CEO".
  */
-export default function CeoTodayPanel({ initial }: { initial: CeoToday }) {
+export default function CeoTodayPanel({ initial, impersonateId }: { initial: CeoToday; impersonateId?: string | null }) {
   const [data, setData] = useState<CeoToday>(initial);
   const [busy, setBusy] = useState(false);
+  // The account being viewed (a super admin may be inspecting a tenant). Both the
+  // refresh and the switch-on have to stay inside that account.
+  const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/agent/ceo/today');
+      const res = await fetch(`/api/agent/ceo/today${impParam}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not load today');
       setData(json);
     } catch (e: any) {
       toast.error(e?.message || 'Could not load today');
     }
-  }, []);
+  }, [impParam]);
 
   const switchOn = async () => {
     setBusy(true);
     try {
-      const res = await fetch('/api/agent/routines', {
+      const res = await fetch(`/api/agent/routines${impParam}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
@@ -78,7 +81,7 @@ export default function CeoTodayPanel({ initial }: { initial: CeoToday }) {
             </span>
           )}
           <Link
-            href="/dashboard/agent?ceo=1"
+            href={impersonateId ? `/dashboard/agent?ceo=1&impersonate=${encodeURIComponent(impersonateId)}` : '/dashboard/agent?ceo=1'}
             className="flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700"
           >
             <Bot size={13} /> Talk to the CEO <ArrowRight size={12} />
@@ -98,7 +101,7 @@ export default function CeoTodayPanel({ initial }: { initial: CeoToday }) {
 
       {/* Yesterday, in findings — the report the daily job files. Read-only: it shows what
           the numbers say and what we would do, and never acts on any of it. */}
-      <CeoFindingsCard />
+      <CeoFindingsCard impersonateId={impersonateId} />
 
       {/* Engine status */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">

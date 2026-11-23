@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createUserClient } from '@/utils/supabase/server';
+import { resolveActingUser } from '@/utils/route-auth';
 import { analyseDay, renderReport, summariseFindings } from '@/lib/agent/ceo-findings';
 import { gatherDayMetrics, supabaseMetricsReader, windowFor } from '@/lib/agent/ceo-metrics';
 
@@ -109,14 +110,21 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    // Whose findings: a super admin inspecting a tenant appends ?impersonate=<uuid>
+    // and must read that tenant's report. The id is only accepted from a caller
+    // that may act for the account (super_admin always, agency/admin for their own
+    // sub-accounts).
+    const acting = await resolveActingUser(req, req.nextUrl.searchParams.get('impersonate'));
+    if (!acting.ok) return acting.response;
+
     const { data: profile } = await supabase
       .from('profiles')
       .select('timezone')
-      .eq('id', user.id)
+      .eq('id', acting.userId)
       .maybeSingle();
 
     const admin = adminClient();
-    const result = await findingsFor(admin, user.id, (profile as any)?.timezone || 'Asia/Kolkata');
+    const result = await findingsFor(admin, acting.userId, (profile as any)?.timezone || 'Asia/Kolkata');
     return NextResponse.json({ ok: true, readOnly: true, ...result });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: String(error?.message ?? error) }, { status: 500 });

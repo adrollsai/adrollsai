@@ -114,7 +114,7 @@ async function jsonFetch(url: string, init?: RequestInit) {
   return body;
 }
 
-export function useHarnessSession(): UseHarnessSession {
+export function useHarnessSession(impersonateId?: string | null): UseHarnessSession {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [sessions, setSessions] = useState<HarnessSessionSummary[]>([]);
   const [workspaces, setWorkspaces] = useState<HarnessWorkspace[]>([]);
@@ -126,6 +126,23 @@ export function useHarnessSession(): UseHarnessSession {
   const lastSeqRef = useRef(0);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = activeId;
+
+  /**
+   * Every harness call carries the account being viewed.
+   *
+   * A super admin inspecting a tenant opens the agent tab with
+   * ?impersonate=<uuid>. Without forwarding it here, the sidebar listed the super
+   * admin's own sessions and workspaces while the switcher said otherwise — the
+   * chat itself was already impersonated, so the two halves disagreed.
+   */
+  const withImp = useCallback(
+    (url: string) => {
+      if (!impersonateId) return url;
+      const sep = url.includes('?') ? '&' : '?';
+      return `${url}${sep}impersonate=${encodeURIComponent(impersonateId)}`;
+    },
+    [impersonateId]
+  );
 
   /**
    * The sidebar's session tree.
@@ -145,7 +162,7 @@ export function useHarnessSession(): UseHarnessSession {
 
     const run = (async () => {
       try {
-        const body = await jsonFetch('/api/agent/v2/sessions');
+        const body = await jsonFetch(withImp('/api/agent/v2/sessions'));
         setAvailable(Boolean(body.available));
         setSessions(Array.isArray(body.sessions) ? body.sessions : []);
         setWorkspaces(Array.isArray(body.workspaces) ? body.workspaces : []);
@@ -162,7 +179,7 @@ export function useHarnessSession(): UseHarnessSession {
 
     refreshInFlight.current = run;
     return run;
-  }, []);
+  }, [withImp]);
 
   useEffect(() => {
     void refresh();
@@ -171,7 +188,7 @@ export function useHarnessSession(): UseHarnessSession {
   const openSession = useCallback(async (id: string): Promise<HarnessState | null> => {
     setLoading(true);
     try {
-      const body = await jsonFetch(`/api/agent/v2/sessions/${id}`);
+      const body = await jsonFetch(withImp(`/api/agent/v2/sessions/${id}`));
       const nextState = body.state as HarnessState;
       setActiveId(id);
       setState(nextState);
@@ -185,7 +202,7 @@ export function useHarnessSession(): UseHarnessSession {
       // another device) showed a transcript with no sign that the agent was
       // still working. Ask the server what is actually in flight.
       try {
-        const runsBody = await jsonFetch(`/api/agent/v2/runs?sessionId=${encodeURIComponent(id)}`);
+        const runsBody = await jsonFetch(withImp(`/api/agent/v2/runs?sessionId=${encodeURIComponent(id)}`));
         const runs: RunSummary[] = Array.isArray(runsBody.runs) ? runsBody.runs : [];
         const live = runs.find((r) => r.status === 'queued' || r.status === 'running') || null;
         setActiveRun(live);
@@ -200,12 +217,12 @@ export function useHarnessSession(): UseHarnessSession {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [withImp]);
 
   const createSession = useCallback(
     async (opts?: { title?: string; workspaceId?: string }) => {
       try {
-        const body = await jsonFetch('/api/agent/v2/sessions', {
+        const body = await jsonFetch(withImp('/api/agent/v2/sessions'), {
           method: 'POST',
           body: JSON.stringify({
             title: opts?.title,
@@ -230,13 +247,13 @@ export function useHarnessSession(): UseHarnessSession {
         return null;
       }
     },
-    [openSession]
+    [openSession, withImp]
   );
 
   const removeSession = useCallback(
     async (id: string) => {
       try {
-        await jsonFetch(`/api/agent/v2/sessions/${id}`, { method: 'DELETE' });
+        await jsonFetch(withImp(`/api/agent/v2/sessions/${id}`), { method: 'DELETE' });
         setSessions((prev) => prev.filter((s) => s.id !== id));
         if (activeIdRef.current === id) {
           setActiveId(null);
@@ -247,12 +264,12 @@ export function useHarnessSession(): UseHarnessSession {
         setError(err?.message || 'Could not delete session');
       }
     },
-    []
+    [withImp]
   );
 
   const renameSession = useCallback(async (id: string, title: string) => {
     try {
-      await jsonFetch(`/api/agent/v2/sessions/${id}`, {
+      await jsonFetch(withImp(`/api/agent/v2/sessions/${id}`), {
         method: 'PATCH',
         body: JSON.stringify({ title }),
       });
@@ -260,11 +277,11 @@ export function useHarnessSession(): UseHarnessSession {
     } catch (err: any) {
       setError(err?.message || 'Could not rename session');
     }
-  }, []);
+  }, [withImp]);
 
   const createWorkspace = useCallback(async (name: string) => {
     try {
-      const body = await jsonFetch('/api/agent/v2/sessions', {
+      const body = await jsonFetch(withImp('/api/agent/v2/sessions'), {
         method: 'POST',
         body: JSON.stringify({ kind: 'workspace', name }),
       });
@@ -272,7 +289,7 @@ export function useHarnessSession(): UseHarnessSession {
     } catch (err: any) {
       setError(err?.message || 'Could not create workspace');
     }
-  }, []);
+  }, [withImp]);
 
   const appendUserMessage = useCallback(
     async (
@@ -309,7 +326,7 @@ export function useHarnessSession(): UseHarnessSession {
       });
 
       try {
-        await jsonFetch(`/api/agent/v2/sessions/${sessionId}/events`, {
+        await jsonFetch(withImp(`/api/agent/v2/sessions/${sessionId}/events`), {
           method: 'POST',
           body: JSON.stringify({
             type: 'user.message',
@@ -322,7 +339,7 @@ export function useHarnessSession(): UseHarnessSession {
 
       return id;
     },
-    []
+    [withImp]
   );
 
   const syncFromLog = useCallback(async () => {
@@ -330,7 +347,7 @@ export function useHarnessSession(): UseHarnessSession {
     if (!sessionId) return [];
     try {
       const body = await jsonFetch(
-        `/api/agent/v2/sessions/${sessionId}/events?after=${lastSeqRef.current}`
+        withImp(`/api/agent/v2/sessions/${sessionId}/events?after=${lastSeqRef.current}`)
       );
       const events: HarnessEvent[] = Array.isArray(body.events) ? body.events : [];
       if (events.length) {
@@ -340,7 +357,7 @@ export function useHarnessSession(): UseHarnessSession {
     } catch {
       return [];
     }
-  }, []);
+  }, [withImp]);
 
   // ── durable runs ─────────────────────────────────────────────────────────
   const [activeRun, setActiveRun] = useState<RunSummary | null>(null);
@@ -350,7 +367,7 @@ export function useHarnessSession(): UseHarnessSession {
     const sessionId = activeIdRef.current;
     if (!sessionId) return null;
     try {
-      const body = await jsonFetch(`/api/agent/v2/sessions/${sessionId}`);
+      const body = await jsonFetch(withImp(`/api/agent/v2/sessions/${sessionId}`));
       const next = body.state as HarnessState;
       setState(next);
       const events: HarnessEvent[] = Array.isArray(body.events) ? body.events : [];
@@ -359,14 +376,14 @@ export function useHarnessSession(): UseHarnessSession {
     } catch {
       return null;
     }
-  }, []);
+  }, [withImp]);
 
   const startRun = useCallback(
     async (message: string, opts?: { goal?: string; attachments?: unknown[] }) => {
       const sessionId = activeIdRef.current;
       if (!sessionId) return null;
       try {
-        const body = await jsonFetch('/api/agent/v2/runs', {
+        const body = await jsonFetch(withImp('/api/agent/v2/runs'), {
           method: 'POST',
           body: JSON.stringify({
             sessionId,
@@ -375,6 +392,7 @@ export function useHarnessSession(): UseHarnessSession {
             attachments: opts?.attachments,
             messageId: genId(),
             idempotencyKey: enqueueKey(sessionId, message),
+            impersonate: impersonateId || undefined,
           }),
         });
         const run = body.run as RunSummary;
@@ -386,19 +404,19 @@ export function useHarnessSession(): UseHarnessSession {
         return null;
       }
     },
-    []
+    [withImp, impersonateId]
   );
 
   const cancelRun = useCallback(async () => {
     const run = activeRun;
     if (!run) return;
     try {
-      await jsonFetch(`/api/agent/v2/runs/${run.id}`, { method: 'DELETE' });
+      await jsonFetch(withImp(`/api/agent/v2/runs/${run.id}`), { method: 'DELETE' });
       setActiveRun({ ...run, cancelRequested: true });
     } catch (err: any) {
       setError(err?.message || 'Could not cancel the run');
     }
-  }, [activeRun]);
+  }, [activeRun, withImp]);
 
   const runInProgress = Boolean(activeRun && (activeRun.status === 'queued' || activeRun.status === 'running'));
 
@@ -426,7 +444,7 @@ export function useHarnessSession(): UseHarnessSession {
           await refreshProjection();
           if (activeRun?.id) {
             try {
-              const body = await jsonFetch(`/api/agent/v2/runs/${activeRun.id}`);
+              const body = await jsonFetch(withImp(`/api/agent/v2/runs/${activeRun.id}`));
               if (!disposed && body.run) setActiveRun(body.run as RunSummary);
             } catch {
               /* ignore */
@@ -483,7 +501,7 @@ export function useHarnessSession(): UseHarnessSession {
         if (fresh.length) await refreshProjection();
       }
       try {
-        const body = await jsonFetch(`/api/agent/v2/runs/${activeRun.id}`);
+        const body = await jsonFetch(withImp(`/api/agent/v2/runs/${activeRun.id}`));
         if (!stopped && body.run) setActiveRun(body.run as RunSummary);
       } catch {
         /* transient — next tick will retry */
