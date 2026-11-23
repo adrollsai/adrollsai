@@ -2,6 +2,9 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { signedRecordingUrl, RECORDING_LINK_TTL_SECONDS } from '@/lib/automation/recording-link';
+// Any read of "all matching rows" goes through here: PostgREST caps a response at 1000 rows and
+// returns HTTP 200, so counting what came back reports a truncated slice as a total.
+import { exactCount, scanAll } from '@/lib/supabase/paged';
 
 /**
  * Reporting the agent can actually trust.
@@ -152,17 +155,31 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
         else if (period === 'last_30_days') since = startOfDayInZone(tz, 29);
 
         try {
-          let q = supabase
-            .from('leads')
-            .select('id, name, pipeline_stage, voice_call_status, last_call_status, ad_name, form_name, source, created_at, last_call_at, voice_call_summary, calling_enabled')
-            .in('user_id', ids)
-            .limit(5000);
-          if (since) q = q.gte('created_at', since.toISOString());
-          if (campaignContains) q = q.or(`ad_name.ilike.%${campaignContains}%,form_name.ilike.%${campaignContains}%`);
+          // THE 1000-ROW TRAP.
+          //
+          // This query used `.limit(5000)`. PostgREST's `max-rows` on this project is 1000, so it
+          // received 1000 rows with HTTP 200 and no warning — and then counted them. That is how the
+          // owner was told "1,000 leads all-time across 6 accounts" while their own account alone held
+          // 1,572 and the organisation held ~40,000. Every stage figure, the positive count and
+          // "reached by phone" came from that truncated slice, presented as a total.
+          //
+          // Now: the total comes from the DATABASE (an exact head count, no rows transferred) and the
+          // breakdown comes from a paged scan that treats 1000 as a page size. If the scan hits its own
+          // ceiling, `capped` travels with the answer so it cannot be read as a total.
+          const buildLeads = () => {
+            let q = supabase
+              .from('leads')
+              .select('id, name, pipeline_stage, voice_call_status, last_call_status, ad_name, form_name, source, created_at, last_call_at, voice_call_summary, calling_enabled')
+              .in('user_id', ids);
+            if (since) q = q.gte('created_at', since.toISOString());
+            if (campaignContains) q = q.or(`ad_name.ilike.%${campaignContains}%,form_name.ilike.%${campaignContains}%`);
+            return q;
+          };
 
-          const { data, error } = await q;
-          if (error) throw new Error(error.message);
-          const leads = data || [];
+          const scan = await scanAll<any>(buildLeads, { withTotal: true });
+          if (scan.error && scan.rows.length === 0) throw new Error(scan.error);
+          const leads = scan.rows;
+          const exactTotalRows = typeof scan.exactTotal === 'number' ? scan.exactTotal : leads.length;
 
           const stages: Record<string, number> = {};
           let positive = 0;
@@ -197,17 +214,21 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             period === 'last_30_days' ? 'in the last 30 days' : 'all time';
 
           const answer =
-            leads.length === 0
+            exactTotalRows === 0
               ? `No leads arrived ${periodLabel}${campaignContains ? ` for campaigns matching "${campaignContains}"` : ''}.`
-              : `${leads.length} lead${leads.length === 1 ? '' : 's'} arrived ${periodLabel}` +
-                ` — ${positive} positive (${Math.round((positive / leads.length) * 100)}%), ` +
+              : `${exactTotalRows.toLocaleString('en-IN')} lead${exactTotalRows === 1 ? '' : 's'} arrived ${periodLabel}` +
+                ` — ${positive} positive (${Math.round((positive / Math.max(1, leads.length)) * 100)}%), ` +
                 `${reachedByPhone} reached by phone${awaitingFirstCall > 0 ? `, ${awaitingFirstCall} never called yet` : ''}.`;
 
           return {
             success: true,
             answer,
             period: periodLabel,
-            totalLeads: leads.length,
+            totalLeads: exactTotalRows,
+            // Explicit, because this is the number someone will quote: it comes from the database.
+            exactTotal: exactTotalRows,
+            rowsScanned: scan.scanned,
+            capped: scan.capped,
             positiveLeads: positive,
             positiveRate: leads.length ? Math.round((positive / leads.length) * 100) : 0,
             reachedByPhone,
@@ -215,7 +236,15 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             byStage: stages,
             topCampaigns,
             accountsInScope: ids.length,
+            scopeNote: `${ids.length} account${ids.length === 1 ? '' : 's'} in scope (organisation-wide). For THIS account only, use query_account_data with scope "me".`,
             positiveDefinition: `stages: ${POSITIVE_STAGES.join(', ')}`,
+            ...(scan.capped
+              ? {
+                  warning:
+                    `The per-stage breakdown was computed from the first ${scan.scanned.toLocaleString('en-IN')} matching rows, so those ` +
+                    `figures are a slice. exactTotal (${exactTotalRows.toLocaleString('en-IN')}) is the real count.`,
+                }
+              : {}),
           };
         } catch (err: any) {
           return { success: false, error: err?.message || 'Could not report on leads' };
@@ -641,17 +670,21 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
           // actions. This tool used to read `call_logs`, which is a narrower table, so the
           // agent told an owner "0 calls yesterday" on a day their dashboard showed 38
           // attempts. Two different numbers for one question is worse than a slow answer.
-          let q = supabase
-            .from('lead_history')
-            .select('user_id, action_type, description, created_at, lead_id')
-            .in('user_id', ids)
-            .order('created_at', { ascending: false })
-            .limit(20000);
-          if (since) q = q.gte('created_at', since.toISOString());
-          if (until) q = q.lt('created_at', until.toISOString());
-
-          const { data, error } = await q;
-          if (error) throw new Error(error.message);
+          // The same 1000-row trap as the lead report: 20,000 was requested, 1000 arrived, and the
+          // attempt-counting ran on that slice. Paged scan instead, so a busy week is counted whole.
+          const buildActions = () => {
+            let q = supabase
+              .from('lead_history')
+              .select('user_id, action_type, description, created_at, lead_id')
+              .in('user_id', ids)
+              .order('created_at', { ascending: false });
+            if (since) q = q.gte('created_at', since.toISOString());
+            if (until) q = q.lt('created_at', until.toISOString());
+            return q;
+          };
+          const actionScan = await scanAll<any>(buildActions, { withTotal: true });
+          if (actionScan.error && actionScan.rows.length === 0) throw new Error(actionScan.error);
+          const actionRows = actionScan.rows;
 
           const isAttempt = (row: any) => {
             const type = String(row.action_type || '').toUpperCase();
@@ -671,7 +704,7 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
             return false;
           };
 
-          const rows = (data || []).filter(isAttempt);
+          const rows = actionRows.filter(isAttempt);
           const total = rows.length;
 
           const byStatus: Record<string, number> = {};
@@ -716,17 +749,17 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
 
           // Talk time only exists on telephony rows; lead_history has no duration, so it
           // is measured from call_logs when available and left at 0 rather than invented.
+          // Talk time: same trap (5000 asked, 1000 arrived, seconds added up from the slice).
           let connectedSeconds = 0;
           try {
-            let dq = supabase
-              .from('call_logs')
-              .select('duration, status')
-              .in('user_id', ids)
-              .limit(5000);
-            dq = since ? dq.gte('created_at', since.toISOString()) : dq;
-            dq = until ? dq.lt('created_at', until.toISOString()) : dq;
-            const { data: durRows } = await dq;
-            for (const d of durRows || []) {
+            const buildDurations = () => {
+              let dq = supabase.from('call_logs').select('duration, status, created_at').in('user_id', ids);
+              dq = since ? dq.gte('created_at', since.toISOString()) : dq;
+              dq = until ? dq.lt('created_at', until.toISOString()) : dq;
+              return dq;
+            };
+            const durationScan = await scanAll<any>(buildDurations, { cap: 50_000 });
+            for (const d of durationScan.rows) {
               if (String(d.status || '').toLowerCase() === 'connected') connectedSeconds += Number(d.duration || 0);
             }
           } catch {}

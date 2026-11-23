@@ -1287,23 +1287,37 @@ function CRMPageContent() {
         setIsRefreshing(false)
       }
 
-      // Step 2: If more pages needed, fetch remaining in parallel
+      // Step 2: If more pages needed, fetch the rest — and paint each page AS IT LANDS.
+      //
+      // Why this shape: PostgREST caps a response at 1000 rows, so 1000 is the page size and the loop
+      // is what makes the full list load at all. The old version waited for EVERY remaining page
+      // before the second setLeads, which left the list frozen for 3-5 seconds on a 1.5k account (and
+      // much longer on a 16k one) with nothing on screen suggesting it was working.
       if (totalCount > 1000) {
         const remainingPages = Math.ceil(totalCount / 1000) - 1
-        const batchPromises = Array.from({ length: remainingPages }, (_, i) => {
-          const pageIdx = i + 1
-          return filterFn(supabase.from('leads').select(leadFields))
-            .order('last_activity_at', { ascending: false })
-            .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
-        })
+        const sortLeads = (rows: any[]) =>
+          [...rows].sort((a, b) => {
+            const at = new Date(a.last_activity_at || a.created_at || 0).getTime()
+            const bt = new Date(b.last_activity_at || b.created_at || 0).getTime()
+            return bt - at
+          })
 
-        const batchResults = await Promise.all(batchPromises)
-        for (const r of batchResults) {
-          if (r.data && r.data.length > 0) {
-            allLeads = allLeads.concat(parseLeads(r.data))
-          }
-        }
-        setLeads(allLeads)
+        await Promise.all(
+          Array.from({ length: remainingPages }, (_, i) => {
+            const pageIdx = i + 1
+            return filterFn(supabase.from('leads').select(leadFields))
+              .order('last_activity_at', { ascending: false })
+              .range(pageIdx * 1000, (pageIdx + 1) * 1000 - 1)
+              .then((r: any) => {
+                if (r.data && r.data.length > 0) {
+                  allLeads = allLeads.concat(parseLeads(r.data))
+                  setLeads(sortLeads(allLeads))
+                }
+              })
+              .catch(() => null)
+          })
+        )
+        setLeads(sortLeads(allLeads))
         setTotalLeadsCount(allLeads.length > totalCount ? allLeads.length : totalCount)
       }
 

@@ -191,9 +191,14 @@ const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
     );
     check(
       'non-committal rows get a non-committal bucket',
-      today.connectedCalls > 0 ||
+      // An EMPTY day is a legitimate answer with no buckets at all ("No calls were made today"), so it
+      // must pass. This assertion is about days that DO have attempt rows: none may be silently
+      // dropped. Before, it failed on a quiet day, which made the gate assert a state of the data
+      // rather than a property of the code.
+      Number(today.total ?? today.attempts ?? 0) === 0 ||
+        today.connectedCalls > 0 ||
         buckets.some((b) => /call noted|call started|dnp|whatsapp/i.test(b)),
-      buckets.join(', ')
+      buckets.length ? buckets.join(', ') : 'no attempt rows at all today',
     );
 
     if ((today.connectedCalls || 0) === 0) {
