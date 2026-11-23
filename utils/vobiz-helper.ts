@@ -1,7 +1,7 @@
 import { warmupVoiceBridge } from '@/utils/voice-helper'
 import { hasEnoughCredits } from '@/utils/credits'
 import { VOBIZ_NUMBER_CATALOG, VobizAvailableNumber } from '@/utils/vobiz-catalog'
-import { computeValidCallingSlot } from '@/utils/calling-window'
+import { computeValidCallingSlot, describeCallingWindow, type CallingWindow } from '@/utils/calling-window'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { resolveAppUrl, isAbsoluteHttpsUrl, describeUrlProblem } from '@/utils/app-url'
 import { loadVoiceChannels, pickChannel, describeCapacity } from '@/lib/automation/voice-channels'
@@ -95,11 +95,32 @@ export async function triggerVobizOutboundCall(
         }
     }
 
-    // 0. Strict Calling Hours Gatekeeper: 9:00 AM - 7:00 PM IST (09:00 - 19:00)
-    // Under NO circumstances may outbound calls dial between 7:00 PM and 9:00 AM IST.
-    const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), 'Asia/Kolkata', !!allowAfterHours)
+    // 0. Calling Hours Gatekeeper. The default window is 09:00-19:00 IST, but a tenant may open
+    //    its own day later (a coaching institute taking evening enquiries runs to 20:00) via
+    //    `business_info.calling_hours = { start, end }` in 24-hour local time. The window used is
+    //    reported in the blocked-call note so nobody has to guess which rule applied.
+    let callingWindow: CallingWindow = {}
+    try {
+        const { data: windowRow } = await supabaseAdmin
+            .from('profiles')
+            .select('business_info')
+            .eq('id', profileId)
+            .maybeSingle()
+        const wbi = typeof windowRow?.business_info === 'string'
+            ? JSON.parse(windowRow.business_info)
+            : (windowRow?.business_info || {})
+        const configured = wbi?.calling_hours
+        if (configured && (configured.start != null || configured.end != null)) {
+            callingWindow = { startHour: Number(configured.start), endHour: Number(configured.end) }
+        }
+    } catch (windowErr: any) {
+        console.warn('[VOBIZ HELPER] Could not read calling_hours; using the default window:', windowErr?.message)
+    }
+
+    const { isWithinWindow, scheduledTime } = computeValidCallingSlot(new Date(), 'Asia/Kolkata', !!allowAfterHours, callingWindow)
     if (!isWithinWindow) {
-        console.warn(`[VOBIZ HELPER] Call to ${toPhone} BLOCKED: Outside allowed calling window (9:00 AM - 7:00 PM IST). Rescheduled for ${scheduledTime.toISOString()}.`)
+        const windowLabel = describeCallingWindow(callingWindow)
+        console.warn(`[VOBIZ HELPER] Call to ${toPhone} BLOCKED: Outside this account's calling window (${windowLabel}). Rescheduled for ${scheduledTime.toISOString()}.`)
         if (leadId) {
             await supabaseAdmin
                 .from('leads')
@@ -113,7 +134,7 @@ export async function triggerVobizOutboundCall(
                 await supabaseAdmin.from('lead_history').insert({
                     lead_id: leadId,
                     action_type: 'REMARK',
-                    description: `🕒 Outbound call blocked: Outside allowed calling window (9:00 AM - 7:00 PM IST). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
+                    description: `🕒 Outbound call blocked: Outside this account's calling window (${windowLabel}). Rescheduled for ${scheduledTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST.`
                 })
             } catch (hErr) {
                 console.error('[VOBIZ HELPER] Error writing history entry:', hErr)
@@ -123,7 +144,7 @@ export async function triggerVobizOutboundCall(
             success: false,
             scheduled: true,
             scheduledTime,
-            error: 'Calling is strictly prohibited outside 9:00 AM - 7:00 PM IST. Call scheduled for next business window (9:00 AM IST).'
+            error: `Calling is strictly prohibited outside ${windowLabel}. Call scheduled for the next business window.`
         }
     }
 

@@ -20,6 +20,14 @@
 import { readFileSync } from 'node:fs';
 import { classifyLeadOrigin } from '../lib/automation/calling-script';
 import { industryVocabulary } from '../lib/automation/industry';
+import { computeValidCallingSlot, describeCallingWindow } from '../utils/calling-window';
+
+/** The IST hour of an instant, for asserting where a blocked call gets scheduled. */
+function istHour(d: Date): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', hourCycle: 'h23', hour: 'numeric' }).format(d),
+  );
+}
 
 let pass = 0;
 let fail = 0;
@@ -119,6 +127,67 @@ check(
 check(
   'the qualification block no longer promises "property options" to every business',
   !/exact property options matching/.test(route),
+);
+
+head('7. The calling window is per-account, and the default is unchanged');
+
+// Build a moment at a given IST clock time. IST is UTC+5:30, so subtract to get the UTC instant.
+const ist = (hour: number, minute = 0) => new Date(Date.UTC(2026, 10, 23, hour - 5, minute - 30));
+
+check(
+  'the default window still ends at 19:00 — nobody else gets a longer day by accident',
+  computeValidCallingSlot(ist(18, 59)).isWithinWindow === true &&
+    computeValidCallingSlot(ist(19, 0)).isWithinWindow === false,
+  '18:59 allowed, 19:00 blocked',
+);
+check(
+  'the default window still opens at 09:00',
+  computeValidCallingSlot(ist(9, 0)).isWithinWindow === true &&
+    computeValidCallingSlot(ist(8, 59)).isWithinWindow === false,
+  '09:00 allowed, 08:59 blocked',
+);
+check(
+  'a 9-to-20 account can be dialled at 19:30',
+  computeValidCallingSlot(ist(19, 30), 'Asia/Kolkata', false, { startHour: 9, endHour: 20 }).isWithinWindow === true,
+);
+check(
+  'and is still blocked at 20:00',
+  computeValidCallingSlot(ist(20, 0), 'Asia/Kolkata', false, { startHour: 9, endHour: 20 }).isWithinWindow === false,
+);
+check(
+  'a blocked call is rescheduled to that account\'s own opening time, not 9 AM forever',
+  (() => {
+    const out = computeValidCallingSlot(ist(21, 0), 'Asia/Kolkata', false, { startHour: 10, endHour: 20 });
+    return out.isWithinWindow === false && istHour(out.scheduledTime) === 10;
+  })(),
+  'opens at 10:00 for a 10-20 account',
+);
+check(
+  'a nonsense window falls back to the default instead of blocking every call',
+  computeValidCallingSlot(ist(12, 0), 'Asia/Kolkata', false, { startHour: 20, endHour: 9 }).isWithinWindow === true,
+  'end <= start is treated as unset',
+);
+check(
+  'the window is described in the logs so nobody has to guess which rule applied',
+  describeCallingWindow({ startHour: 9, endHour: 20 }) === '9:00 AM - 8:00 PM IST',
+  describeCallingWindow({ startHour: 9, endHour: 20 }),
+);
+check(
+  'and the default description is unchanged',
+  describeCallingWindow() === '9:00 AM - 7:00 PM IST',
+  describeCallingWindow(),
+);
+
+head('8. The dialler actually reads the tenant window');
+
+const dialler = readFileSync('utils/vobiz-helper.ts', 'utf8');
+check(
+  'the dial gate reads business_info.calling_hours',
+  /calling_hours/.test(dialler),
+);
+check(
+  'and passes it into the window check',
+  /computeValidCallingSlot\(new Date\(\), 'Asia\/Kolkata', !!allowAfterHours, callingWindow\)/.test(dialler),
 );
 
 console.log(`\n${'─'.repeat(62)}`);

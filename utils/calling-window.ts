@@ -12,17 +12,46 @@ export interface CallingSlotResult {
 }
 
 /**
+ * The hours a tenant is allowed to be dialled, in 24-hour local time.
+ *
+ * Defaults to 09:00–19:00, which is what this module has always enforced. It is a parameter now
+ * because a flat 7 PM cut-off is wrong for some businesses — a coaching institute taking evening
+ * enquiries wants 09:00–20:00 — and hardcoding it meant the only way to extend one account's day
+ * was to extend everybody's, or to pass `allowAfterHours` and remove the guard entirely.
+ */
+export interface CallingWindow {
+    startHour?: number
+    endHour?: number
+}
+
+const DEFAULT_START_HOUR = 9
+const DEFAULT_END_HOUR = 19
+
+function normaliseWindow(window: CallingWindow = {}): { startHour: number; endHour: number } {
+    const start = Number(window.startHour)
+    const end = Number(window.endHour)
+    const startHour = Number.isFinite(start) && start >= 0 && start <= 23 ? Math.floor(start) : DEFAULT_START_HOUR
+    const endHour = Number.isFinite(end) && end >= 1 && end <= 24 ? Math.floor(end) : DEFAULT_END_HOUR
+    // A window that does not contain any hours is a bug at the call site, not an instruction to
+    // stop dialling forever, so fall back rather than blocking every call.
+    return endHour > startHour ? { startHour, endHour } : { startHour: DEFAULT_START_HOUR, endHour: DEFAULT_END_HOUR }
+}
+
+/**
  * Checks whether a given Date is within the allowed calling window (default: 9:00 AM to 7:00 PM IST).
- * If outside the window, returns the next valid 9:00 AM slot.
+ * If outside the window, returns the next valid opening slot.
  */
 export function computeValidCallingSlot(
     targetDate: Date = new Date(),
     timeZone: string = 'Asia/Kolkata',
-    allowAfterHours: boolean = false
+    allowAfterHours: boolean = false,
+    window: CallingWindow = {}
 ): CallingSlotResult {
     if (allowAfterHours) {
         return { isWithinWindow: true, scheduledTime: targetDate }
     }
+
+    const { startHour, endHour } = normaliseWindow(window)
 
     const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone,
@@ -36,8 +65,8 @@ export function computeValidCallingSlot(
     const minuteVal = parseInt(mStr, 10)
 
     const timeInMinutes = hourVal * 60 + minuteVal
-    const startMinutes = 9 * 60     // 09:00 AM
-    const endMinutes = 19 * 60      // 07:00 PM (19:00)
+    const startMinutes = startHour * 60
+    const endMinutes = endHour * 60
 
     const isWithinWindow = timeInMinutes >= startMinutes && timeInMinutes < endMinutes
     if (isWithinWindow) {
@@ -49,7 +78,7 @@ export function computeValidCallingSlot(
         }
     }
 
-    // Outside 9 AM - 7 PM -> schedule for next valid 9:00 AM slot
+    // Outside the window -> schedule for the next opening slot
     const parts = new Intl.DateTimeFormat('en-US', {
         timeZone,
         hourCycle: 'h23',
@@ -66,13 +95,13 @@ export function computeValidCallingSlot(
     const hour = parseInt(partMap.hour, 10)
 
     let targetDay = day
-    if (hour >= 19) {
-        // After 7 PM -> schedule for tomorrow 9 AM
+    if (hour >= endHour) {
+        // After the window closes -> tomorrow's opening time
         targetDay += 1
     }
-    // Before 9 AM -> schedule for today 9 AM
+    // Before the window opens -> today's opening time
 
-    const localUtcTs = Date.UTC(year, month, targetDay, 9, 0, 0, 0)
+    const localUtcTs = Date.UTC(year, month, targetDay, startHour, 0, 0, 0)
     const getOffset = (tz: string, d: Date) => {
         const tzStr = d.toLocaleString('en-US', { timeZone: tz })
         const locD = new Date(tzStr)
@@ -91,10 +120,25 @@ export function computeValidCallingSlot(
 }
 
 /**
- * Quick boolean check if current time is within calling hours (09:00 to 19:00 IST)
+ * Quick boolean check if current time is within calling hours (09:00 to 19:00 IST by default).
  */
-export function isWithinCallingWindow(timeZone: string = 'Asia/Kolkata', allowAfterHours: boolean = false): boolean {
-    return computeValidCallingSlot(new Date(), timeZone, allowAfterHours).isWithinWindow
+export function isWithinCallingWindow(
+    timeZone: string = 'Asia/Kolkata',
+    allowAfterHours: boolean = false,
+    window: CallingWindow = {}
+): boolean {
+    return computeValidCallingSlot(new Date(), timeZone, allowAfterHours, window).isWithinWindow
+}
+
+/** Human label for a window, e.g. "9:00 AM - 8:00 PM IST". Used in logs and the blocked-call note. */
+export function describeCallingWindow(window: CallingWindow = {}): string {
+    const { startHour, endHour } = normaliseWindow(window)
+    const label = (h: number) => {
+        const suffix = h >= 12 ? 'PM' : 'AM'
+        const hour12 = h % 12 === 0 ? 12 : h % 12
+        return `${hour12}:00 ${suffix}`
+    }
+    return `${label(startHour)} - ${label(endHour)} IST`
 }
 
 /**

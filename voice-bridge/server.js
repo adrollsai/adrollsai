@@ -397,27 +397,41 @@ No projects are registered on this account. You therefore MUST NOT name any proj
     }
 
     // Priority resolution for voice:
-    // 1. If campaign specifies voice_name in audience_filter, respect it!
-    // 2. If prompt/guidance mentions Kabir or male persona, enforce male voice (Charon)
-    // 3. Otherwise use voiceName param if not default, then profile.voice_name, then 'Aoede'
-    let resolvedVoice = voiceName;
-    const isExplicitVoice = voiceName && voiceName !== 'Aoede';
-    if (!isExplicitVoice && campaign?.audience_filter?.voice_name) {
-        resolvedVoice = campaign.audience_filter.voice_name;
-    } else if (!isExplicitVoice && (campGuidanceLower.includes('kabir') || campGuidanceLower.includes('male tone') || campGuidanceLower.includes('distinctly male'))) {
-        resolvedVoice = 'Charon';
-    } else if (!isExplicitVoice && profile?.voice_name) {
-        resolvedVoice = profile.voice_name;
-    }
+    //   1. The tenant's OWN choice (profile.voice_name) — authoritative. A business that picked a
+    //      female voice must not be flipped to a male one because a campaign prompt happens to
+    //      contain the word "male", which is what used to happen: an explicit profile voice was
+    //      treated exactly like the default 'Aoede', so keyword sniffing could override it.
+    //   2. A campaign's audience_filter.voice_name.
+    //   3. A male persona in the campaign prompt (Kabir / "male tone").
+    //   4. The request param, then 'Aoede'.
+    const VOICES = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
+    const tenantVoice = profile?.voice_name && VOICES.includes(profile.voice_name) ? profile.voice_name : '';
+    const wantsMaleFromPrompt =
+        campGuidanceLower.includes('kabir') ||
+        campGuidanceLower.includes('male tone') ||
+        campGuidanceLower.includes('distinctly male');
 
-    if (campGuidanceLower.includes('kabir') || campGuidanceLower.includes('male tone') || campGuidanceLower.includes('distinctly male')) {
-        if (!isMaleVoice(resolvedVoice)) {
+    let resolvedVoice = tenantVoice || voiceName;
+    let voiceSource = tenantVoice ? 'profile.voice_name' : 'request param';
+    if (!tenantVoice) {
+        if (campaign?.audience_filter?.voice_name) {
+            resolvedVoice = campaign.audience_filter.voice_name;
+            voiceSource = 'campaign audience_filter';
+        } else if (wantsMaleFromPrompt) {
             resolvedVoice = 'Charon';
+            voiceSource = 'campaign prompt (male persona)';
+        }
+        if (wantsMaleFromPrompt && !isMaleVoice(resolvedVoice)) {
+            resolvedVoice = 'Charon';
+            voiceSource = 'campaign prompt (male persona)';
         }
     }
 
-    const vLower = (resolvedVoice || profile?.voice_gender || '').toLowerCase();
     const isFemale = !isMaleVoice(resolvedVoice, profile?.voice_gender);
+    console.log(
+        `[BRIDGE] voice for lead ${leadId}: ${resolvedVoice} (${isFemale ? 'female' : 'male'}) from ${voiceSource}` +
+            (tenantVoice ? ' — tenant choice pinned' : '')
+    );
 
     const genderGrammarInstruction = isFemale
         ? (defaultCallingLang === 'english'
