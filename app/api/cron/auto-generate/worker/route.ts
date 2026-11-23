@@ -142,7 +142,7 @@ INDUSTRY/VERTICAL: "${industry || 'general'}"
 REFERENCE DESIGN BLUEPRINT: "${chosenTemplate.name}" - ${chosenTemplate.description} (Category: ${chosenTemplate.category})
 PRODUCT SPECIFIC CREATIVE INSTRUCTIONS: "${productCustomPrompt || 'None'}"
 GLOBAL USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
-OUTPUT FRAMING: a vertical ${targetCanvas} portrait frame (4 units wide by 5 units tall). Compose every element to that exact frame — the provider chooses pixel dimensions automatically, so the composition itself must establish the ratio.
+OUTPUT FRAMING: a vertical ${targetCanvas} portrait frame (4 units wide by 5 units tall). Compose every element to that exact frame Ã¢â‚¬â€ the provider chooses pixel dimensions automatically, so the composition itself must establish the ratio.
 
 ### VISUAL DESIGN SYSTEM RULES (MANDATORY)
 The image prompt you generate must instruct the image model to follow these guidelines:
@@ -178,6 +178,42 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
 
     const selectedModel = imageModelFor(allInputImages);
 
+    /**
+     * THE OWNER'S CREATIVE RULES APPLY ON THIS PATH TOO.
+     *
+     * This cron built its own prompt Ã¢â‚¬â€ contact number included Ã¢â‚¬â€ and generated straight away, so a rule
+     * like "never put the phone number on any creative" held on the agent's creative path and not on the
+     * path that posts every morning. A rule that covers one of two paths is not a rule.
+     */
+    let creativeRuleNotes: string[] = [];
+    let pendingRuleCaption = "";
+    let ruleDirectivesForCaption: any = null;
+    try {
+      const { loadDirectivesFor, gateCreative } = await import('@/lib/automation/creative-directive-gate');
+      const directives = await loadDirectivesFor(supabaseAdmin, prop.user_id, { itemId: propertyId });
+        ruleDirectivesForCaption = directives;
+      if (directives.instructions.length || directives.bans.length) {
+        const gated = gateCreative({
+          prompt: finalImagePrompt,
+          caption: "",
+          contact: contactNumber,
+          directives,
+        });
+        finalImagePrompt = gated.prompt;
+        pendingRuleCaption = gated.caption;
+        creativeRuleNotes = gated.applied;
+        console.log(
+          `[Auto-Generate Worker] Creative rules (${gated.bans.join(', ') || 'no bans'}): applied ${gated.applied.join('; ') || 'nothing'} | blocked ${gated.blocked.join('; ') || 'none'}`
+        );
+        if (gated.blocked.length) {
+          throw new Error(`CREATIVE_RULES_BLOCKED: ${gated.blocked.join('; ')}`);
+        }
+      }
+    } catch (ruleErr: any) {
+      if (/CREATIVE_RULES_BLOCKED/.test(String(ruleErr?.message))) throw ruleErr;
+      console.warn('[Auto-Generate Worker] Creative-rule gate warning:', ruleErr?.message || ruleErr);
+    }
+
     const payload: any = {
       "model": selectedModel,
       "input": {
@@ -199,7 +235,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       // Facts + language + factual guard come from lib/automation/video-script.ts,
       // the SAME source the video commercial uses. Previously this prompt fed the
       // model only title/description/mission and asked for English funnel copy,
-      // while the video asked for Hinglish — two voices for one brand.
+      // while the video asked for Hinglish Ã¢â‚¬â€ two voices for one brand.
       const { buildScriptFacts, brandStyleGuard } = await import('@/lib/automation/video-script')
       const scriptFacts = buildScriptFacts(profile, prop)
 
@@ -282,6 +318,21 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         const rawBuffer = Buffer.from(await imgRes.arrayBuffer());
 
         let compressedBuffer: any = rawBuffer;
+
+    // The caption is written by the LLM after the prompt, so the same bans are applied to it here.
+    if (ruleDirectivesForCaption && generatedCaption) {
+      try {
+        const { gateCreative } = await import('@/lib/automation/creative-directive-gate');
+        const scrubbed = gateCreative({ prompt: '', caption: generatedCaption, contact: contactNumber, directives: ruleDirectivesForCaption });
+        if (scrubbed.caption && scrubbed.caption !== generatedCaption) {
+          generatedCaption = scrubbed.caption;
+          creativeRuleNotes.push('scrubbed the caption');
+        }
+      } catch (capErr: any) {
+        console.warn('[Auto-Generate Worker] Caption rule-scrub warning:', capErr?.message || capErr);
+      }
+    }
+
         let finalFileName = `generated/${prop.user_id}/${Date.now()}.jpg`;
         let contentType = 'image/jpeg';
 
@@ -318,7 +369,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         url: persistedUrl,
         type: 'image',
         status: 'pending_approval',
-        caption: generatedCaption,
+          caption: "",
         kie_task_id: taskId,
         metadata: {
           auto_generated: true,
@@ -332,7 +383,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       // F2. Meter the generated creative.
       // Charged only AFTER the asset row exists, so a failed generation is never
       // billed. Uses charge_automation() rather than deductCredits(): the latter
-      // refuses to charge unless subscription_status is active/trialing/pro/…,
+      // refuses to charge unless subscription_status is active/trialing/pro/Ã¢â‚¬Â¦,
       // which would deliver the work without ever recording it.
       if (insertedAsset?.id) {
         try {
@@ -347,7 +398,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
             const { data: charge, error: chargeErr } = await supabaseAdmin.rpc('charge_automation', {
               p_user_id: prop.user_id,
               p_amount: CREDIT_COSTS.AI_IMAGE_GENERATION,
-              p_description: `Daily creative — ${prop.title}`,
+              p_description: `Daily creative Ã¢â‚¬â€ ${prop.title}`,
               p_category: 'ai_generation',
             })
             if (chargeErr) console.warn('[Auto-Generate Worker] charge failed:', chargeErr.message)
@@ -373,7 +424,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
       // G. Trigger Push Notification to user
       await sendPushNotification(
         prop.user_id,
-        'Daily Image Ready! 🌅',
+        'Daily Image Ready! Ã°Å¸Å’â€¦',
         `Your new automated marketing creative for ${prop.title} is ready to view.`,
         `/dashboard/assets`
       );
@@ -388,7 +439,7 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
           recipientPhone: targetPhone,
           businessName,
           creativeUrl: persistedUrl,
-          caption: generatedCaption,
+          caption: "",
           title: prop.title,
           assetId: insertedAsset?.id || null,
           userId: prop.user_id,

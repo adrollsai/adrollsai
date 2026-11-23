@@ -150,5 +150,57 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
         }
       },
     }),
+
+    /**
+     * Check a FINISHED creative against the owner's standing rules — by looking at it.
+     *
+     * The compiled spec is text: "include the site plan" is a request, and the model can still return a
+     * sunset. This asks a yes/no question per rule about the actual image. Call it after
+     * generate_ai_image and BEFORE showing or publishing, whenever the business has prose rules.
+     */
+    verify_creative_against_directives: tool({
+      description:
+        'Verify a generated creative against the owner\'s standing creative rules by LOOKING at it. Returns one check per rule with the evidence the model saw, and ok:false when anything failed. Use it before delivering a creative for a business that has creative rules — "this project always shows the site plan", "no phone number on any creative". A failed check means fix the creative, not ship it.',
+      inputSchema: z.object({
+        imageUrl: z.string().describe('Public URL of the generated image'),
+        itemId: z.string().optional().describe('The catalogue item this creative is for, so its own rules are checked too'),
+        campaignId: z.string().optional().describe('Campaign-scoped rules, when the creative belongs to one'),
+      }),
+      execute: async ({ imageUrl, itemId, campaignId }: any) => {
+        try {
+          const url = String(imageUrl || '').trim();
+          if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'imageUrl must be a public http(s) URL' };
+
+          const { loadDirectivesFor } = await import('@/lib/automation/creative-directive-gate');
+          const directives = await loadDirectivesFor(supabase as any, userId, { itemId, campaignId });
+          if (!directives.instructions.length && !directives.bans.length) {
+            return {
+              ok: true,
+              checks: [],
+              message: 'This business has no standing creative rules, so there is nothing to check. Do not invent one.',
+            };
+          }
+
+          const { verifyCreativeAgainstDirectives } = await import('@/lib/automation/creative-verification');
+          const { analyzeImageWithGemini } = await import('@/utils/image-analysis');
+          const result = await verifyCreativeAgainstDirectives({
+            imageUrl: url,
+            directives,
+            analyse: (image, question) => analyzeImageWithGemini(image, question),
+          });
+
+          return {
+            ...result,
+            rulesChecked: directives.instructions.length,
+            bansChecked: directives.bans.length,
+            message: result.ok
+              ? 'Every standing rule is satisfied, with the evidence listed. Safe to deliver.'
+              : `NOT deliverable yet: ${result.failures.join('; ')}. Fix the creative and re-check.`,
+          };
+        } catch (e: any) {
+          return { ok: false, error: e?.message || 'the creative check failed' };
+        }
+      },
+    }),
   };
 }

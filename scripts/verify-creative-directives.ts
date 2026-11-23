@@ -160,5 +160,102 @@ check('and takes a propertyId', /propertyId: z/.test(adTool));
 check('the routine brief imports the directives module', /from '\.\/creative-directives'/.test(fs.readFileSync('lib/automation/routine-composer.ts', 'utf8')));
 check('a migration exists for the column', fs.existsSync('supabase/migrations/20261217000000_creative_directives.sql'));
 
+
+// ── 6. the cron path and the vision check
+console.log('\n▸ the paths the agent does not control');
+const gateMod = await import('../lib/automation/creative-directive-gate');
+const verifyMod = await import('../lib/automation/creative-verification');
+
+const cronPrompt =
+  'Premium Meta ad for GNR HOMES. Include contact info "+91 98765 43210" at the bottom and the price ₹1.85 Cr.';
+const gatedPrompt = gateMod.gateCreative({
+  prompt: cronPrompt,
+  caption: 'Book now on ₹1.85 Cr — call +91 98765 43210',
+  contact: '+919876543210',
+  directives: forA,
+});
+check('the daily-creative prompt is scrubbed of the phone number', !/98765/.test(gatedPrompt.prompt), gatedPrompt.applied.join('; '));
+check('and of the banned price', !/1\.85|₹/.test(gatedPrompt.prompt));
+check('the caption is scrubbed too', !/98765|1\.85/.test(gatedPrompt.caption), gatedPrompt.caption);
+check('the bans are stated to the generator', /Do NOT (depict|include|write)/i.test(gatedPrompt.prompt));
+check('the owner instruction is carried into the prompt', /STANDING RULES/.test(gatedPrompt.prompt));
+check('nothing is left blocked', gatedPrompt.blocked.length === 0, JSON.stringify(gatedPrompt.blocked));
+
+// No directives at all. (The global phone ban applies to item B too, correctly — so item B is the
+// wrong fixture for a no-op test.)
+const cleanGate = gateMod.gateCreative({ prompt: 'A calm ad with no contact and no price', caption: '', contact: null, directives: { instructions: [], bans: [], sources: [] } });
+check('an account with no applicable bans is left alone', cleanGate.prompt === 'A calm ad with no contact and no price');
+
+const needed = verifyMod.expectedCheckCount(forA);
+check('the check asks one question per rule plus legibility', needed === forA.instructions.length + forA.bans.length + 1, String(needed));
+const question = verifyMod.buildVerificationPrompt(forA);
+check('the question prompt demands machine-readable JSON', /Answer ONLY with JSON/.test(question));
+check('and spells out one entry per question', /One entry per question/.test(question));
+
+const passAnswer = JSON.stringify({
+  checks: Array.from({ length: needed }, (_, i) => ({ rule: `rule ${i}`, pass: true, evidence: 'seen' })),
+});
+const passing = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => passAnswer,
+});
+check('a compliant creative passes', passing.ok === true && passing.checks.length === needed);
+
+const failAnswer = JSON.stringify({
+  checks: Array.from({ length: needed }, (_, i) => ({ rule: `rule ${i}`, pass: i !== 0, evidence: i === 0 ? 'no site plan visible' : 'seen' })),
+});
+const failing = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => failAnswer,
+});
+check('a creative missing the required element FAILS', failing.ok === false && /no site plan visible/.test(failing.failures.join(' ')));
+
+const short = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => JSON.stringify({ checks: [{ rule: 'only one', pass: true, evidence: 'seen' }] }),
+});
+check('a partial answer is unverified, not a pass', short.ok === false && /unverified/.test(short.failures.join(' ')));
+
+const garbled = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => 'looks fine to me!',
+});
+check('a reply that is not JSON fails closed', garbled.ok === false && /nothing usable/.test(garbled.failures.join(' ')));
+
+const nullPass = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => JSON.stringify({ checks: Array.from({ length: needed }, () => ({ rule: 'r', pass: 'maybe', evidence: 'unclear' })) }),
+});
+check('a non-boolean verdict fails closed', nullPass.ok === false && /not a yes\/no/.test(nullPass.failures.join(' ')));
+
+const threw = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: forA,
+  analyse: async () => {
+    throw new Error('vendor down');
+  },
+});
+check('a failed vision call means unverified, not compliant', threw.ok === false && /could not run/.test(threw.failures.join(' ')));
+
+const noRules = await verifyMod.verifyCreativeAgainstDirectives({
+  imageUrl: 'https://x/y.jpg',
+  directives: { instructions: [], bans: [], sources: [] },
+  analyse: async () => 'x',
+});
+check('no rules means nothing to check, and no vendor call', noRules.ok === true && noRules.checks.length === 0);
+
+const workerSource = fs.readFileSync('app/api/cron/auto-generate/worker/route.ts', 'utf8');
+check('the daily-creative cron gates its prompt', /gateCreative\(/.test(workerSource) && /loadDirectivesFor\(/.test(workerSource));
+check('and refuses to generate when a rule would be broken', /CREATIVE_RULES_BLOCKED/.test(workerSource));
+check('and scrubs the caption it writes afterwards', /scrubbed the caption/.test(workerSource));
+const adToolSourceForVerify = fs.readFileSync('lib/agent/tools/ad_creative.ts', 'utf8');
+check('the agent has a verification tool', /verify_creative_against_directives: tool\(/.test(adToolSourceForVerify));
+check('built on the shared verifier', /verifyCreativeAgainstDirectives\(/.test(adToolSourceForVerify));
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;
