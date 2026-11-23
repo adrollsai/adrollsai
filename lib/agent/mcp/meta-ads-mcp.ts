@@ -2,6 +2,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { campaignLaunchRefusal } from '../preflight';
+import { META_GRAPH_VERSION as GRAPH_VERSION } from '@/lib/ads/graph-version';
 import {
     LOCATION_TYPES,
     ageAndGenderTargeting,
@@ -11,7 +12,7 @@ import {
     resolveAdvantagePlan,
 } from '@/lib/ads/advantage-plus';
 
-const META_GRAPH_VERSION = 'v21.0';
+const META_GRAPH_VERSION = GRAPH_VERSION;
 
 /**
  * Meta Ads MCP Suite (Model Context Protocol).

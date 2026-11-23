@@ -46,6 +46,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/auto-generate/festival",
+      "schedule": "30 2 * * *"
+    },
+    {
       "path": "/api/cron/website-builder",
       "schedule": "*/15 * * * *"
     },
@@ -92,6 +96,10 @@
     {
       "path": "/api/cron/flows",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/meta-ad-issues",
+      "schedule": "0 */6 * * *"
     }
   ]
 }

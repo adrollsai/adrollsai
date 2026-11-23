@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { createClient } from '@/utils/supabase/server'
 
-const FB_MARKETING_URL = "https://graph.facebook.com/v20.0"
+const FB_MARKETING_URL = META_GRAPH_URL
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)

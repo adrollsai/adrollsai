@@ -440,15 +440,21 @@ export function ageAndGenderTargeting(
   const restrictedByCategory = plan.specialAdCategories.length > 0;
   const min = Number(ageMin);
   const max = Number(ageMax);
+  // `Number(null)` is 0 and `Number('')` is 0, both of which are FINITE — so a caller that omitted a
+  // ceiling used to clamp to `Math.max(18, 0)` and send an 18-to-18 ad set: an audience of exactly one
+  // year of age. Nothing errored; the campaign simply reached almost nobody, which is the hardest kind
+  // of bug to notice because the ad account looks healthy. A non-positive age means "not set", always.
+  const hasMin = Number.isFinite(min) && min > 0;
+  const hasMax = Number.isFinite(max) && max > 0;
 
   if (restrictedByCategory) {
     return { age_min: OPEN_AGE_RANGE.min, age_max: OPEN_AGE_RANGE.max, genders: null };
   }
 
-  const ageMinValue = Number.isFinite(min)
+  const ageMinValue = hasMin
     ? Math.max(OPEN_AGE_RANGE.min, Math.min(OPEN_AGE_RANGE.max, Math.round(min)))
     : OPEN_AGE_RANGE.min;
-  const requestedMax = Number.isFinite(max)
+  const requestedMax = hasMax
     ? Math.max(OPEN_AGE_RANGE.min, Math.min(OPEN_AGE_RANGE.max, Math.round(max)))
     : OPEN_AGE_RANGE.max;
   // Advantage+ audience refuses any ceiling below 65; the advertiser's ceiling is
@@ -527,6 +533,15 @@ export function applyAdvantageTargeting(
   if (plan.advantageAudience && plan.individualSetting) automation.individual_setting = plan.individualSetting;
   out.targeting_automation = automation;
 
+  if (!plan.advantageAudience) {
+    // Meta refuses to switch Advantage+ audience off while an `age_range` is present:
+    // "The field targeting_automation must be enabled to use the field age_range"
+    // (subcode 1487079) — measured on a live ad set. Callers that pass a whole
+    // targeting object through would hit exactly that, so the range leaves with the
+    // lever.
+    delete out.age_range;
+  }
+
   if (plan.relaxation) out.targeting_relaxation_types = plan.relaxation;
 
   const geo = out.geo_locations && typeof out.geo_locations === 'object' ? out.geo_locations : {};
@@ -544,4 +559,51 @@ export function describeAdvantagePlan(plan: AdvantagePlan): string {
   parts.push('budget at campaign level');
   if (plan.specialAdCategories.length) parts.push(`category ${plan.specialAdCategories.join(' + ')}`);
   return parts.join(' · ');
+}
+
+// ---------------------------------------------------------------------------
+// Attribution
+// ---------------------------------------------------------------------------
+
+/**
+ * The attribution window Meta actually accepts for a lead campaign.
+ *
+ * Measured, not assumed: on a lead ad set Meta rejects 7-day click and any
+ * view-through window with *"For the selected objective and performance goal, use one
+ * of these supported click-through and view-through attribution window combinations:
+ * (1, 0)"*. So lead and messaging campaigns get a 1-day click window, explicitly,
+ * instead of silently inheriting whatever the account default happens to be.
+ *
+ * Other objectives keep Meta's own default: the window they accept varies (7-day
+ * click is still valid for sales/traffic), and guessing there would trade a working
+ * default for a rejection.
+ */
+export function attributionSpecFor(objective: string): Array<{ event_type: string; window_days: number }> | null {
+  const leadsLike = ['OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT', 'LEAD_GENERATION', 'MESSAGES'];
+  return leadsLike.includes(objective) ? [{ event_type: 'CLICK_THROUGH', window_days: 1 }] : null;
+}
+
+// ---------------------------------------------------------------------------
+// Advantage+ creative
+// ---------------------------------------------------------------------------
+
+/**
+ * Advantage+ creative enhancements, in the shape Marketing API v22+ accepts.
+ *
+ * `standard_enhancements` — the obvious name, and the one every older guide shows —
+ * is rejected on v22 and later with *"Including standard enhancements field in
+ * creative has been deprecated. Please choose to set individual features instead"*
+ * (subcode 3858504). The catalog bundle is the surviving equivalent, and it validated
+ * cleanly against v23.0.
+ *
+ * Only the catalog bundle is enrolled. Image animation and text translation are
+ * separate features that change what the client's creative looks like, so they stay
+ * an explicit choice rather than something a launcher switches on silently.
+ */
+export function creativeEnhancements(): Record<string, unknown> {
+  return {
+    creative_features_spec: {
+      STANDARD_ENHANCEMENTS_CATALOG: { enroll_status: 'OPT_IN' },
+    },
+  };
 }

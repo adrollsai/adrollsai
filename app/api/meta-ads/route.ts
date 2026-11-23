@@ -1,10 +1,11 @@
 // adrollsai/adrollsai/adrollsai-adrollsai-version3/app/api/meta-ads/route.ts (New File)
 
 import { NextResponse } from 'next/server'
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { createClient } from '@/utils/supabase/server'
 
 // Base URL for Marketing API
-const FB_MARKETING_URL = "https://graph.facebook.com/v19.0" 
+const FB_MARKETING_URL = META_GRAPH_URL 
 
 export async function POST(request: Request) {
     const supabase = await createClient()

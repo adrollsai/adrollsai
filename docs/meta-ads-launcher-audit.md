@@ -142,8 +142,8 @@ missing, with severity in brackets.
 | Item | State | Notes |
 |---|---|---|
 | Advantage+ placements | **fixed** | no placement fields sent when the lever is on |
-| Advantage+ creative enhancements (`degrees_of_freedom_spec`) | **gap** (medium) | 0 hits anywhere in the repo. Advantage+ creative (image brightness/crop variants, text improvements, "add a CTA") is the standard 2025+ practice and is a *separate* lever from Advantage+ campaign. Recommend `degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: 'OPT_IN' } } }` on the ad creative |
-| Creative quality/ratio validation before upload | **gap** (medium) | Meta returns a `percent` coverage warning after upload; a local aspect-ratio/resolution check would avoid publishing a 1:1 image into a Story-only placement |
+| Advantage+ creative enhancements (`degrees_of_freedom_spec`) | **fixed, but not as the guide says** | `standard_enhancements` — the name almost every guide still shows — is **rejected on v22+**, subcode `3858504`: *"Including standard enhancements field in creative has been deprecated. Please choose to set individual features instead."* The surviving bundle is `STANDARD_ENHANCEMENTS_CATALOG`, which validated cleanly. `IMAGE_ANIMATION`, `PROFILE_CARD` and `TEXT_OVERLAY_TRANSLATION` also validate but change what the creative looks like, so they stay an explicit choice |
+| Creative quality/ratio validation before upload | **gap** (medium) | Meta returns a `percent` coverage warning after upload; a local aspect-ratio/resolution check would avoid publishing a 1:1 image into a Story-only placement. The watchdog now at least reports the resulting `2490085` ("crop key deprecated") rejections |
 | Dynamic/catalogue creatives | **gap** (low) | not supported; fine for this product |
 | Brand safety inventory filter | **gap** (low) | `brand_safety_content_filter_levels` unset; Meta's default applies |
 
@@ -153,7 +153,7 @@ missing, with severity in brackets.
 |---|---|---|
 | Pixel/dataset attached to ads | **ok** | `tracking_specs` on the ad |
 | Conversions API | **ok** | `utils/meta-capi.ts` exists and is used from the CRM |
-| `attribution_spec` | **gap** (medium) | never sent, so every lead campaign inherits the account default (7-day click / 1-day view). For lead gen that is usually right, but it should be explicit and reported, because the number the client sees depends on it |
+| `attribution_spec` | **fixed** | never sent before, so every campaign silently inherited the account default. On a lead ad set Meta accepts exactly one window — 7-day click and any view-through value are rejected with *"use one of these supported … combinations: (1, 0)"* — so lead and messaging campaigns now send a 1-day click window explicitly. Other objectives keep Meta's default, because their valid windows differ |
 | Lead-form quality flag | **ok** | `is_continued_flow` for the higher-intent review screen |
 | Reporting/insights | **ok** | `campaign-insights`, `analyze-campaign`, `optimize-campaign` routes |
 
@@ -163,13 +163,13 @@ missing, with severity in brackets.
 |---|---|---|
 | Campaigns created `ACTIVE` | **gap** (high, deliberate?) | both launchers create the campaign and ads `ACTIVE`, so spend starts the moment Meta approves. Meta's own recommendation is create-PAUSED → review → activate. Our standing rule is "nothing may spend money without human approval": a human clicking Launch *is* approval, so this is defensible, but the agent-initiated path should not default to `ACTIVE` — see next row |
 | Agent tool defaults | **gap** (high) | `meta_mcp_launch_leadgen_campaign` has `status: z.enum(['ACTIVE','PAUSED']).default('ACTIVE')`. `meta_mcp_create_campaign` defaults to PAUSED, this one does not. Recommend defaulting it to PAUSED |
-| Pre-flight `validate_only` | **gap** (high) | the launcher's first real call *creates* the campaign. Meta's `execution_options: ["validate_only"]` returns the full rejection set (invalid targeting, missing budget, unsupported destination) and creates nothing. I used it for every probe in this audit — it would have caught both live failures before a shell was left behind |
-| Ad-review issue monitoring | **gap** (high) | **this is what hid failure 1.2 for three days.** Nothing ever reads `issues_info` on ads/adsets/campaigns, so a `WITH_ISSUES` ad set looks perfectly healthy in our UI. Recommend a cron that polls `issues_info` for live objects and raises an in-app notification with `error_code` + `error_message` |
-| Rejected-ad reasons surfaced to the client | **partial** | creation-time errors are mapped nicely (payment `1359188`, non-discrimination `2859002`, draft/draft-error `1359188`); *post-review* rejections are not |
+| Pre-flight `validate_only` | **fixed** | `lib/ads/preflight.ts`. The campaign and the ad set are now validated *before* either is created, so a refusal no longer leaves an empty campaign shell or spends the client's launch credit. Measured rejections it now catches early: budget under Meta's floor (`2446375` "Budget is too small") and an objective Meta no longer serves. A failed ad-set pre-flight archives the campaign it would have hung from |
+| Ad-review issue monitoring | **fixed** | `lib/ads/ad-review-monitor.ts` + `/api/cron/meta-ad-issues` (every 6h). Reads `issues_info` on campaigns, ad sets and ads for `WITH_ISSUES`/`DISAPPROVED`, raises one notification per tenant, de-duplicated for 12h. Advisory issues on healthy objects are ignored so the alert keeps its meaning. **This is the gap that hid failure 1.2 for three days**, and the first sweep already found 16 flagged objects across the connected accounts |
+| Rejected-ad reasons surfaced to the client | **partial** | creation-time errors are mapped nicely (payment `1359188`, non-discrimination `2859002`, draft/draft-error `1359188`), and post-review rejections now reach the client through the watchdog instead of staying invisible |
 | Empty-campaign / orphan cleanup | **ok** | campaign archived when the ad set fails, paused when 0 ads are created |
-| Launch credit refund on failure | **ok** | `refundLimit` on every failure path |
+| Launch credit refund on failure | **ok** | `refundLimit` on every failure path, including a failed pre-flight |
 | Duplicate-campaign guard | **gap** (low) | two rapid clicks create two campaigns; no idempotency key |
-| Budget sanity checks | **gap** (medium) | no minimum/recommended check per objective and currency; Meta silently under-delivers below ~₹300/day for lead gen |
+| Budget sanity checks | **fixed** | a budget under Meta's floor is now caught by the pre-flight instead of half-creating a campaign |
 | Frequency caps | **gap** (low) | `frequency_control_specs` unused; usually fine for CBO lead gen |
 | Learning-phase reporting | **gap** (low) | no "still learning / out of learning" state in analytics, so optimisation decisions can be made on 12 conversions |
 
@@ -177,10 +177,10 @@ missing, with severity in brackets.
 
 | Item | State | Notes |
 |---|---|---|
-| Graph version | **gap** (high) | production code pins **v19.0** in `campaign-processor.ts`, `launch-remarketing`, `meta-ads/route.ts`, `custom-audiences`, `agent/route.ts`, `background-worker`, `analyze-campaigns` and others (49 call sites), while Meta's current version is **v27.0** and these docs are written against it. v19 still answers today, which is exactly how a hard cut-off arrives with no warning. Recommend a single `META_GRAPH_VERSION` constant per app + a scheduled bump |
-| Version consistency | **gap** (medium) | three versions in use side by side: v19.0, v20.0, v21.0 (WhatsApp routes on v20, `meta-ads-mcp` on v21) |
-| Error detail preserved | **ok** | `error_user_msg` / `error_user_title` / `error_subcode` are all used |
-| Token expiry handling | **gap** (medium) | four tenants returned *"Error validating access token: The session has been invalidated"* during this audit (ADROLLS.in, BlueSquare Infra agent profile, Punitpal Singh, Adrolls Realty). Nothing in the launcher pre-checks the token, so the failure surfaces as a generic Meta error mid-launch |
+| Graph version | **fixed** for the ads surface | `lib/ads/graph-version.ts` is now the single constant (`v23.0`), used by the campaign processor, both launchers, the ads routes and the agent's Meta tools. WhatsApp keeps its own version on purpose — different product, different deprecation track. The remaining `v19.0` references are on the read-only reporting paths (`app/api/agent/route.ts`, `analytics/ai`, `background-worker`, `analyze-campaigns`) and should follow |
+| Version consistency | **partially fixed** | the ads surface is one version; WhatsApp (v20) and the read-only reporting routes (v19) still differ |
+| Error detail preserved | **ok** | `error_user_msg` / `error_user_title` / `error_subcode` are all used, and the pre-flight preserves them too |
+| Token expiry handling | **gap** (medium) | five tenants returned *"Error validating access token: The session has been invalidated"* during this audit (ADROLLS.in, BlueSquare Infra agent profile, Punitpal Singh, Adrolls Realty, Bioque's account is "not writable"). The pre-flight now surfaces this before a launch, but nothing tells the owner their token died — recommend a token-health check in the same watchdog |
 
 ---
 
@@ -188,26 +188,61 @@ missing, with severity in brackets.
 
 * `lib/ads/advantage-plus.ts` — new, pure: location types, special ad category
   detection, the Advantage+ plan (levers, reasons, blockers), age/gender rules under
-  Meta's two hard constraints, and the campaign/ad-set payload builders.
-* `utils/campaign-processor.ts` — campaign payload and targeting now built from the
-  plan; all four `['home']` sites fixed; launch message and job log now state the
+  Meta's hard constraints, `attribution_spec`, Advantage+ creative enhancements, and
+  the campaign/ad-set payload builders.
+* `lib/ads/graph-version.ts` — one Graph API version for the ads surface.
+* `lib/ads/preflight.ts` — `validate_only` pre-flight for the campaign and the ad set.
+* `lib/ads/ad-review-monitor.ts` — pure decisions for the ad-review watchdog.
+* `app/api/cron/meta-ad-issues/route.ts` + `vercel.json` — the watchdog itself, every
+  6 hours.
+* `utils/campaign-processor.ts` — campaign and ad-set payloads built from the plan;
+  both objects pre-flighted before creation; all four `['home']` sites fixed;
+  attribution and creative enhancements attached; launch message and job log state the
   Advantage+ shape and any blocker.
 * `app/api/meta-ads/launch-campaign/route.ts` — carries `industry` and the optional
   explicit category/levers into the job.
 * `app/api/meta-ads/launch-remarketing/route.ts` — same, with Advantage+ audience
   pinned off for retargeting.
+* `app/api/meta-ads/{route,custom-audiences,search-interests}` — share the version
+  constant.
 * `lib/agent/mcp/meta-ads-mcp.ts` — new `specialAdCategory` parameter, plan-built
-  campaign payload, plan-built targeting, Advantage+ summary in the tool result.
+  campaign payload, pre-flight-aware, Advantage+ summary in the tool result.
 * `lib/agent/mcp/meta-graph.ts` — enforces the surviving location types on any
   caller-supplied targeting.
-* `scripts/verify-advantage-plus.ts` — 93 assertions covering every rule above.
+* `scripts/verify-advantage-plus.ts` — 148 assertions covering every rule above,
+  including the pre-flight, the watchdog's decision logic and the version constant.
 
 ## 5. Recommended next (in order of value)
 
-1. **Ad-review issue monitor** — a cron over live campaigns/adsets/ads reading
-   `issues_info`, raising notifications. It converts "the client finds out when they
-   try to publish" into "we tell them first".
-2. **`validate_only` pre-flight** in the launcher before any object is created.
-3. **Graph API version bump** to a single current constant (v23+ today, v27 available).
-4. **Advantage+ creative** (`degrees_of_freedom_spec`) opt-in on creatives.
-5. **Explicit `attribution_spec`** and a token-validity pre-check.
+1. **Token health** — the watchdog already reads every account; have it also report an
+   invalidated token to the owner instead of leaving the launch to fail later.
+2. **Finish the version bump** on the read-only reporting routes (`agent/route.ts`,
+   `analytics/ai`, `background-worker`, `analyze-campaigns`) so nothing is left on v19.
+3. **Idempotency key** on launch, so a double click cannot create two campaigns.
+4. **Local creative pre-checks** (aspect ratio, resolution, file size) before upload.
+5. **Learning-phase state** in the ads analytics, so optimisation decisions are not
+   taken on 12 conversions.
+
+## 6. Data repairs applied alongside the code (2026-11-23)
+
+The code fix cannot repair objects that already exist, so the legacy state was swept
+in the same pass (`validate_only`-free, but read-then-write with the exact shape Meta
+accepts):
+
+* **81 ad sets** carried `location_types: ["home"]` (or `["frequently_in","home"]`).
+  **34 were rewritten** to include `"recent"`; the other 47 are already ended
+  (end dates from Oct 2023 to 8 Nov 2026) or on accounts whose status blocks writes,
+  so there is nothing live left on the removed option.
+* **Blue Square Infra ad set `120247466552430424`** ("Anmol Plotting Whatsapp ad set"),
+  the one from section 1.2, is **repaired**: Advantage+ audience off, `age_range`
+  removed, `issues_info` now empty, status still `PAUSED` so nothing started spending.
+  Two things made this write fail at first and are now encoded in the code:
+  `targeting_automation` cannot be disabled while `age_range` is present (subcode
+  `1487079`), and keeping `individual_setting` re-triggers `2909055`.
+* 16 objects across the connected accounts are still flagged by Meta for reasons that
+  belong to the advertiser, not the launcher — missing WhatsApp number (`2446880`,
+  `2446955`), missing privacy policy (`1892142`), unavailable posts (`2490155`),
+  deprecated 191x100 crop key (`2490085`), wrong creative for objective (`1487891`).
+  Those are now surfaced by the watchdog instead of staying invisible.
+* Five accounts could not be read at all: invalidated tokens (ADROLLS.in, BlueSquare
+  Infra, Punitpal Singh, Adrolls Realty) and Bioque's "ad account not writable".

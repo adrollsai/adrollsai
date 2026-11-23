@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { createClient } from '@/utils/supabase/server';
 import { createHash } from 'crypto';
 
-const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
+const FB_MARKETING_URL = META_GRAPH_URL;
 
 // Hashing Helpers for Meta Custom Audience User Uploads
 const cleanAndHashPhone = (phoneStr: string) => {

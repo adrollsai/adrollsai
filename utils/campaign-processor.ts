@@ -12,13 +12,21 @@ import {
     LOCATION_TYPES,
     ageAndGenderTargeting,
     applyAdvantageTargeting,
+    attributionSpecFor,
     buildCampaignPayload,
+    creativeEnhancements,
     describeAdvantagePlan,
     resolveAdvantagePlan,
     type AdvantagePlan,
 } from '@/lib/ads/advantage-plus';
+import {
+    describePreflightFailure,
+    validateAdSet,
+    validateCampaign,
+} from '@/lib/ads/preflight';
+import { META_GRAPH_URL } from '@/lib/ads/graph-version';
 
-const FB_MARKETING_URL = "https://graph.facebook.com/v19.0";
+const FB_MARKETING_URL = META_GRAPH_URL;
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -836,6 +844,16 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             accessToken: facebookToken,
         });
 
+        // ASK BEFORE CREATING. Meta's validate_only runs the full validation and makes
+        // nothing: no campaign shell, no orphan to clean up, no launch credit spent on
+        // a request it was always going to refuse (a budget under its floor, an
+        // objective it no longer serves, a category combination it will not publish).
+        const campaignPreflight = await validateCampaign(adAccountId, campaignPayload, facebookToken);
+        if (!campaignPreflight.ok) {
+            logToFile("Campaign pre-flight refused by Meta:", campaignPreflight);
+            throw new Error(describePreflightFailure(campaignPreflight, 'campaign'));
+        }
+
         const campaignRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/campaigns`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1114,6 +1132,30 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             adSetPayload.promoted_object = { page_id: pageId };
         }
 
+        // Attribution, explicitly. Meta only accepts a 1-day click window on a lead
+        // campaign (7-day click and any view-through window are rejected), so send it
+        // rather than inheriting an account default nobody can see.
+        const attributionSpec = attributionSpecFor(plan.objective);
+        if (attributionSpec) {
+            adSetPayload.attribution_spec = attributionSpec;
+        }
+
+        // Same pre-flight as the campaign: this is where targeting combinations Meta
+        // refuses actually show up (a special category plus Advantage+ audience, a
+        // country mixed with a city, an age ceiling below 65 under Advantage+).
+        const adSetPreflight = await validateAdSet(adAccountId, adSetPayload, facebookToken);
+        if (!adSetPreflight.ok) {
+            logToFile("Ad set pre-flight refused by Meta:", adSetPreflight);
+            try {
+                await fetch(`${FB_MARKETING_URL}/${campaignId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'ARCHIVED', access_token: facebookToken })
+                });
+            } catch (cleanupErr) { /* ignore cleanup error */ }
+            throw new Error(describePreflightFailure(adSetPreflight, 'ad set'));
+        }
+
         const adSetRes = await fetch(`${FB_MARKETING_URL}/${adAccountId}/adsets`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1171,6 +1213,10 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             const creativePayload: any = {
                 name: `${defaultAdName} - Creative`,
                 object_story_spec: { page_id: pageId },
+                // Advantage+ creative enhancements in the shape v22+ accepts. The
+                // friendly `standard_enhancements` name is rejected on v22 and later
+                // (subcode 3858504), which is why this comes from the shared module.
+                degrees_of_freedom_spec: creativeEnhancements(),
                 access_token: facebookToken,
             };
 

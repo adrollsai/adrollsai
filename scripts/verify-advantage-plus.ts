@@ -15,18 +15,45 @@
  *
  * Run: npx tsx scripts/verify-advantage-plus.ts   (npm run verify:advantage)
  */
+import fs from 'node:fs';
+
 import {
   LOCATION_TYPES,
   OPEN_AGE_RANGE,
   PLACEMENT_FIELDS,
   ageAndGenderTargeting,
   applyAdvantageTargeting,
+  attributionSpecFor,
   buildCampaignPayload,
   buildGeoLocations,
+  creativeEnhancements,
   describeAdvantagePlan,
   detectSpecialAdCategories,
   resolveAdvantagePlan,
 } from '../lib/ads/advantage-plus';
+import {
+  META_GRAPH_URL,
+  META_GRAPH_VERSION,
+  META_GRAPH_VERSION_HISTORY,
+} from '../lib/ads/graph-version';
+import {
+  describePreflightFailure,
+  validateAdSet,
+  validateCampaign,
+  validateOnly,
+} from '../lib/ads/preflight';
+import {
+  ALERT_DEDUPE_HOURS,
+  ALERT_TYPE,
+  alertBody,
+  alertTitle,
+  alertUrl,
+  collectBlockingIssues,
+  describeCounts,
+  groupByAccount,
+  isBlockingStatus,
+  issueSignature,
+} from '../lib/ads/ad-review-monitor';
 
 let passed = 0;
 const failures: string[] = [];
@@ -234,6 +261,16 @@ eq('…and pins expansion to 0', housingTargeting.targeting_relaxation_types, { 
 const manualTargeting = applyAdvantageTargeting({ geo_locations: { countries: ['IN'] } }, manualPlacements);
 eq('manual placements are restored when the lever is off', manualTargeting.publisher_platforms, ['facebook', 'instagram']);
 
+// Meta error 1487079: an age_range cannot survive Advantage+ audience being switched off.
+const withAgeRange = applyAdvantageTargeting(
+  { geo_locations: { countries: ['IN'] }, age_range: [30, 65], age_min: 25 },
+  prospecting
+);
+check('turning Advantage+ audience off drops age_range', withAgeRange.age_range === undefined, JSON.stringify(withAgeRange.age_range));
+eq('…while keeping the plain age bounds', withAgeRange.age_min, 25);
+const keptRange = applyAdvantageTargeting({ geo_locations: { countries: ['IN'] }, age_range: [30, 65] }, generic);
+eq('Advantage+ on keeps age_range untouched', keptRange.age_range, [30, 65]);
+
 // ---------------------------------------------------------------------------
 // 6. What the client is told
 // ---------------------------------------------------------------------------
@@ -255,6 +292,157 @@ for (const plan of [prospecting, generic, retargeting, requestedButForbidden, su
   const forbidden = plan.specialAdCategories.length > 0 && t.targeting_automation.advantage_audience === 1;
   check(`never Advantage+ audience inside a special category for ${describeAdvantagePlan(plan)}`, !forbidden);
 }
+
+// ---------------------------------------------------------------------------
+// 8. One Graph version for the ads surface
+// ---------------------------------------------------------------------------
+eq('the launcher builds its URLs from one version constant', META_GRAPH_URL, `https://graph.facebook.com/${META_GRAPH_VERSION}`);
+check('the version is not a retired one', META_GRAPH_VERSION >= 'v22.0', META_GRAPH_VERSION);
+check('the history records what was in use before', META_GRAPH_VERSION_HISTORY.length >= 2);
+check(
+  'the processor imports the constant rather than pinning a string',
+  /from '@\/lib\/ads\/graph-version'/.test(fs.readFileSync('utils/campaign-processor.ts', 'utf8'))
+);
+check(
+  'no ads route still pins its own version',
+  !/graph\.facebook\.com\/v\d\d\.0/.test(fs.readFileSync('utils/campaign-processor.ts', 'utf8'))
+);
+
+// ---------------------------------------------------------------------------
+// 9. Attribution asked for explicitly
+// ---------------------------------------------------------------------------
+eq('a lead campaign asks for 1-day click', attributionSpecFor('OUTCOME_LEADS'), [
+  { event_type: 'CLICK_THROUGH', window_days: 1 },
+]);
+eq('a messaging campaign does too', attributionSpecFor('OUTCOME_ENGAGEMENT'), [
+  { event_type: 'CLICK_THROUGH', window_days: 1 },
+]);
+check('a sales campaign keeps Meta default', attributionSpecFor('OUTCOME_SALES') === null);
+check(
+  'no lead-style window longer than a day is ever sent (Meta rejects it)',
+  (attributionSpecFor('OUTCOME_LEADS') || []).every((s) => s.window_days <= 1)
+);
+
+// ---------------------------------------------------------------------------
+// 10. Advantage+ creative, in the shape v22+ accepts
+// ---------------------------------------------------------------------------
+const enhancements = creativeEnhancements() as any;
+const featureSpec = enhancements.creative_features_spec;
+check('enhancements ride in degrees_of_freedom_spec', Boolean(enhancements.creative_features_spec));
+check(
+  'the deprecated standard_enhancements key is never sent (v22+ rejects it, 3858504)',
+  featureSpec.standard_enhancements === undefined
+);
+eq('the catalog bundle is enrolled instead', featureSpec.STANDARD_ENHANCEMENTS_CATALOG, { enroll_status: 'OPT_IN' });
+
+// ---------------------------------------------------------------------------
+// 11. Pre-flight: ask before creating
+// ---------------------------------------------------------------------------
+const fakeOk = (async () => new Response(JSON.stringify({ success: true }), { status: 200 })) as unknown as typeof fetch;
+const okResult = await validateOnly('act_1/campaigns', { name: 'x', access_token: 'secret' }, 'token', fakeOk);
+check('a clean payload passes pre-flight', okResult.ok === true);
+check('the access token never lands in the recorded payload', okResult.sent.access_token === undefined);
+
+const fakeBad = (async () =>
+  new Response(
+    JSON.stringify({
+      error: { code: 100, error_subcode: 2446375, error_user_title: 'Budget is too small', error_user_msg: "This campaign's budget is too small." },
+    }),
+    { status: 400 }
+  )) as unknown as typeof fetch;
+const badResult = await validateOnly('act_1/campaigns', { daily_budget: '500' }, 'token', fakeBad);
+check('a rejected payload fails pre-flight', badResult.ok === false);
+eq('the subcode is preserved', badResult.error?.subcode, 2446375);
+const failureLine = describePreflightFailure(badResult, 'campaign');
+check('the failure sentence names the object', failureLine.includes('campaign'), failureLine);
+check('…and carries Meta’s own words', failureLine.includes('budget is too small'), failureLine);
+check('…and the code', failureLine.includes('2446375'), failureLine);
+
+const fakeNetwork = (async () => {
+  throw new Error('ECONNRESET');
+}) as unknown as typeof fetch;
+const netResult = await validateAdSet('act_1/adsets', { name: 'x' }, 'token', fakeNetwork);
+check('a network failure is reported as a failure, not as "fine"', netResult.ok === false);
+check('…and says so', String(netResult.error?.message).includes('Could not reach Meta'), String(netResult.error?.message));
+
+// The launcher must use it, and must use it for both objects.
+const processor = fs.readFileSync('utils/campaign-processor.ts', 'utf8');
+check('the launcher pre-flights the campaign', processor.includes('validateCampaign('));
+check('the launcher pre-flights the ad set', processor.includes('validateAdSet('));
+check('the pre-flight runs BEFORE the campaign is created', processor.indexOf('validateCampaign(') < processor.indexOf('campaigns`, {'));
+check('a failed ad-set pre-flight archives the empty campaign', /adSetPreflight[\s\S]{0,600}ARCHIVED/.test(processor));
+
+// ---------------------------------------------------------------------------
+// 12. Ad-review monitoring
+// ---------------------------------------------------------------------------
+check('WITH_ISSUES is a blocking status', isBlockingStatus('WITH_ISSUES'));
+check('DISAPPROVED is a blocking status', isBlockingStatus('DISAPPROVED'));
+check('ACTIVE is not', !isBlockingStatus('ACTIVE'));
+check('an empty status is not', !isBlockingStatus(undefined));
+
+const objects = [
+  {
+    edge: 'adsets' as const,
+    id: 'as1',
+    name: 'Anmol Plotting Whatsapp ad set',
+    effective_status: 'WITH_ISSUES',
+    issues_info: [
+      {
+        error_code: 2909055,
+        error_summary: 'Advantage+ audience is not available',
+        error_message: 'Advantage+ audience is unavailable for ads in this special ad category.',
+      },
+    ],
+  },
+  {
+    edge: 'ads' as const,
+    id: 'ad1',
+    name: 'AI Optimized Ad - Image',
+    effective_status: 'DISAPPROVED',
+    issues_info: [{ error_code: 1487891, error_summary: 'Invalid creative for objective' }],
+  },
+  {
+    edge: 'campaigns' as const,
+    id: 'c-active',
+    name: 'Healthy campaign',
+    effective_status: 'ACTIVE',
+    // An advisory issue on a healthy object must NOT alert.
+    issues_info: [{ error_code: 1, error_summary: 'Routine suggestion' }],
+  },
+  { edge: 'campaigns' as const, id: 'c-silent', name: 'Blocked, no detail', effective_status: 'WITH_ISSUES' },
+];
+
+const issueList = collectBlockingIssues(objects);
+eq('only blocked objects are collected', issueList.length, 3);
+check('a healthy object with advice is ignored', !issueList.some((i) => i.id === 'c-active'));
+check('a blocked object with no detail still surfaces', issueList.some((i) => i.id === 'c-silent'));
+eq('the first issue carries Meta’s code', issueList[0].code, '2909055');
+eq('issue keys are stable per object+code', issueList[0].key, 'adsets:as1:2909055');
+eq('duplicate rows collapse', collectBlockingIssues([objects[0], objects[0]]).length, 1);
+
+const title = alertTitle(issueList);
+check('the alert title names the object', title.includes('ad set'), title);
+check('…and is short enough for a notification', title.length <= 90, `${title.length} chars`);
+const body = alertBody(issueList);
+check('the body carries the summary', body.includes('Advantage+ audience is not available'), body);
+check('…the code', body.includes('2909055'), body);
+check('…and counts the rest', /ad\b/.test(body), body);
+check('the deep link points at the ads dashboard', alertUrl() === '/dashboard/ads');
+eq('the notification type is the ads failure category', ALERT_TYPE, 'campaign_failure');
+check('the de-dupe window is measured in hours', ALERT_DEDUPE_HOURS >= 1 && ALERT_DEDUPE_HOURS <= 24);
+eq('the signature ignores order', issueSignature([issueList[1], issueList[0]]), issueSignature([issueList[0], issueList[1]]));
+check('the signature changes when a new problem appears', issueSignature(issueList) !== issueSignature([issueList[0]]));
+eq('counts read like prose', describeCounts([issueList[0], issueList[1]]), '1 ad set and 1 ad');
+
+const grouped = groupByAccount(issueList, (edge, id) => (id === 'as1' ? 'acct-a' : 'acct-b'));
+eq('issues are grouped per account', grouped.size, 2);
+eq('…without losing any', [...grouped.values()].flat().length, 3);
+
+const cronRoute = fs.readFileSync('app/api/cron/meta-ad-issues/route.ts', 'utf8');
+check('the watchdog cron exists and reads issues_info', cronRoute.includes('issues_info'));
+check('…asks Meta only for blocked objects', cronRoute.includes("'WITH_ISSUES', 'DISAPPROVED'"));
+check('…de-duplicates before notifying', cronRoute.includes('recentlyAlerted'));
+check('…and is registered in vercel.json', fs.readFileSync('vercel.json', 'utf8').includes('/api/cron/meta-ad-issues'));
 
 console.log(`\nverify:advantage — ${passed} passed, ${failures.length} failed`);
 if (failures.length) {
