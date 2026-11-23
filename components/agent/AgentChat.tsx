@@ -1234,6 +1234,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       const serverId = await creation;
       if (sessionCreationRef.current === creation) sessionCreationRef.current = null;
       if (serverId) {
+        freshSessionRef.current = serverId;
         setActiveSessionId(serverId);
         setLogSessionId(serverId);
         toast.success('Started a fresh session');
@@ -1244,6 +1245,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     }
 
     const newId = 'session_' + Date.now();
+    freshSessionRef.current = newId;
     setActiveSessionId(newId);
     setLogSessionId(null);
     try {
@@ -1437,6 +1439,16 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
    */
   const [historyLoading, setHistoryLoading] = useState(false);
   const lastLoadedSessionRef = React.useRef<string | null>(null);
+  /**
+   * A session created by this click has no history to wait for.
+   *
+   * The skeleton is meant for "we asked the server for this thread's history and it has not
+   * answered yet". For a brand-new thread there is nothing to answer with, so the skeleton waited
+   * for content that was never coming and sat there until the safety timeout — which is the
+   * "it spins for a moment, then the UI appears" delay on New session. A fresh thread paints
+   * immediately instead.
+   */
+  const freshSessionRef = React.useRef<string | null>(null);
 
   const allWorkspaces: WorkspaceFolder[] = useMemo(() => {
     const base =
@@ -1452,12 +1464,19 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     return [{ id: CEO_WORKSPACE_ID, name: 'CEO', createdAt: '' }, ...others];
   }, [harness.available, harness.workspaces, workspaces, ceoSessionId]);
 
-  // A thread switch is a load: show the skeleton until something arrives.
+  // A thread switch is a load: show the skeleton until something arrives — unless this is a
+  // thread we just created, which has nothing to load.
   useEffect(() => {
     if (!activeSessionId || lastLoadedSessionRef.current === activeSessionId) return;
     lastLoadedSessionRef.current = activeSessionId;
+    if (freshSessionRef.current === activeSessionId) {
+      setHistoryLoading(false);
+      return;
+    }
     setHistoryLoading(true);
-    const safety = setTimeout(() => setHistoryLoading(false), 5000);
+    // Short ceiling: a real load clears this on content (below). The old 5s ceiling is what made
+    // an empty thread spin for five full seconds before showing an empty conversation.
+    const safety = setTimeout(() => setHistoryLoading(false), 1500);
     return () => clearTimeout(safety);
   }, [activeSessionId]);
 
