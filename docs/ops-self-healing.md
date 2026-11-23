@@ -24,6 +24,47 @@ dead run only writes an `error` column on a row nobody opens.
 That is the class of failure this system is built for: **the app already writes down what went
 wrong, and nobody is reading it.**
 
+## The first sweep: what it found, and what was fixed
+
+The watchdog's first three findings were acted on the same day. Two were real bugs; one was the
+watchdog being wrong, which is worth recording just as carefully.
+
+**1. Agent runs were dying before they started — fixed in `lib/agent/harness/runner.ts`.**
+
+36 runs over 11 days, all `attempts: 0`, all `"Nothing to run: the session has no user message."`
+The cause was not an empty session log — the logs had 6 to 396 events. It was that routines,
+WhatsApp approvals and the `run_routine` tool queue a run with their instruction in `run.goal`
+and **never record a `user.message`**. The log therefore contained only `run.status` bookkeeping,
+which projects to zero model messages, and the runner dead-lettered the run rather than run it.
+
+The fix turns a run's `goal` into the opening user turn when the reconstruction produces nothing,
+and writes it to the event log so the transcript shows what was asked for and a resume
+reconstructs the same conversation. It sits at the runner rather than at each caller, so every
+queueing path is fixed, including ones not written yet. Proven against the two real sessions that
+failed: `0 messages before, 1 replayable user turn after` (`npm run verify:runner-goal-seed`, 17
+assertions).
+
+**2. Ten unpriced `kie_video` usage rows — written off, with a reason recorded.**
+
+All ten had `user_id = NULL`, `units = NULL` and `cost_inr = 0`: no tenant to charge and no
+quantity to price, so there was nothing to recover. Rather than let them sit invisible, they are
+now `priced = true`, `state = 'void'` with the write-off note in `detail`. The detector also
+learned the difference and no longer reports rows it cannot bill.
+
+**3. Four "overdue" agent events — the watchdog was wrong, and the detector was fixed.**
+
+They were `PENDING_ACTION_APPROVAL` rows: a decision waiting for the *owner*, correctly sitting
+in `pending` and closed automatically by `expireStaleApprovals` after 24 hours
+(`lib/agent/review-gate.ts`). The detector had also assumed a drainer that this app deliberately
+disables — `/api/cron/agent-events` returns early with "Autonomous lead evaluation agent cron is
+disabled". It now excludes approval events and says in its evidence that no human is holding the
+remaining types up.
+
+**The lesson taken from that third one:** a detector that fires at a 30-minute threshold on a
+queue with a 24-hour decision window is a detector that teaches the owner to ignore alerts. The
+exclusion is documented in the detector itself, next to the reason.
+
+
 ## What it does
 
 ```
@@ -57,8 +98,8 @@ in `public.ops_incidents` (`sql/ops-incidents.sql`).
 | `site-build-attempts-exhausted` | that, with no attempts left | no |
 | `credit-hold-leaked` | credits reserved by a hold that expired having spent nothing | **yes** — released |
 | `credit-hold-expired-with-spend` | the same, but money moved | no — reconcile first |
-| `usage-unpriced` | metered work older than 2h that was never billed | no |
-| `agent-event-backlog` | follow-ups past their scheduled time | no |
+| `usage-unpriced` | metered work older than 2h that was never billed, for a real tenant | no |
+| `agent-event-backlog` | non-approval agent events past their scheduled time | no |
 | `app-unreachable` / `app-slow` | the deployed app failing or crawling | no |
 
 Thresholds were chosen against live data, not guessed. Two examples:
@@ -152,6 +193,7 @@ new endpoints check for a `super_admin` profile, exactly like `/api/admin/ledger
 
 ```bash
 npm run verify:ops-watchdog      # 51 assertions, 0 failures
+npm run verify:runner-goal-seed  # 17 assertions, 0 failures
 npm run build:ops-repo-index     # rebuild the snapshot after changing source
 ```
 

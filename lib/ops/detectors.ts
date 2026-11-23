@@ -560,6 +560,13 @@ export const creditHoldLeakedDetector: Detector = {
  * `usage_events.priced = false` means work happened that nobody has been billed for. Left
  * alone, this is revenue that quietly disappears; the reason it survives is that an unpriced
  * row is invisible everywhere except a billing reconciliation nobody runs.
+ *
+ * Only rows that CAN be billed are reported. The first version did not check, and its first
+ * live run reported ten `kie_video` rows from twelve days earlier — every one with a null
+ * `user_id`, null `units` and `cost_inr = 0`. There is no tenant to charge and no quantity to
+ * price, so calling that "revenue quietly disappearing" was wrong: those rows are debris from
+ * a debugging session, and the correct action is a recorded write-off, not an escalation.
+ * (They were written off. See docs/ops-self-healing.md.)
  */
 export const unpricedUsageDetector: Detector = {
   id: 'usage-unpriced',
@@ -570,6 +577,9 @@ export const unpricedUsageDetector: Detector = {
       .from('usage_events')
       .select('id, user_id, service, created_at, units, unit')
       .eq('priced', false)
+      // Unbillable rows (no tenant) are debris, not lost revenue. They are written off, and
+      // reporting them as an incident would be noise the owner cannot act on.
+      .not('user_id', 'is', null)
       .lt('created_at', cutoff)
       .order('created_at', { ascending: false })
       .limit(SCAN_LIMIT);
@@ -615,19 +625,33 @@ export const unpricedUsageDetector: Detector = {
 /**
  * Agent events past their scheduled time.
  *
- * `agent_events` is the follow-up/follow-through queue drained by `/api/cron/agent-events`
- * every five minutes. Rows that sit past their `scheduled_for` are customer follow-ups that
- * did not happen — the single most expensive kind of quiet failure in this product.
+ * `agent_events` is a shared queue table, and NOT everything in it is work waiting to be
+ * drained. Getting that wrong made this detector's first version cry wolf on production:
+ *
+ *   • `PENDING_ACTION_APPROVAL` rows are a decision waiting for the OWNER. They are supposed
+ *     to sit in `pending`, and `expireStaleApprovals` (lib/agent/review-gate.ts) closes them
+ *     after 24 hours so they cannot pile up as cards nobody can act on. Four healthy
+ *     approvals 90 minutes old were reported as a critical backlog. They are excluded here.
+ *   • `/api/cron/agent-events` — the drainer this detector's first version assumed — is
+ *     deliberately disabled in this app ("Autonomous lead evaluation agent cron is
+ *     disabled"). So a genuinely overdue event of a drainable type will never fix itself,
+ *     which makes it MORE worth reporting, not less.
+ *
+ * The rule that keeps this honest: report only events nobody needs to decide about and no
+ * worker is going to pick up.
  */
 export const agentEventBacklogDetector: Detector = {
   id: 'agent-event-backlog',
-  watches: 'Scheduled agent events (follow-ups, nudges) sitting past their due time.',
+  watches: 'Scheduled agent events that a worker is supposed to drain, sitting past their due time.',
   async run(ctx: DetectorContext): Promise<Detection[]> {
     const cutoff = minutesAgo(ctx.now, AGENT_EVENT_BACKLOG_MINUTES);
     const { data, error } = await ctx.supabase
       .from('agent_events')
       .select('id, user_id, event_type, status, scheduled_for')
       .eq('status', 'pending')
+      // Waiting on a human is not a backlog. See the note above — this exclusion is the
+      // difference between a useful alert and one the owner learns to ignore.
+      .neq('event_type', 'PENDING_ACTION_APPROVAL')
       .lt('scheduled_for', cutoff)
       .limit(SCAN_LIMIT);
     if (error) throw new Error(`agent_events: ${String(error.message || error)}`);
@@ -636,22 +660,22 @@ export const agentEventBacklogDetector: Detector = {
     if (!rows.length) return [];
 
     const tenants = new Set(rows.map((row) => row.user_id).filter(Boolean));
+    const types = [...new Set(rows.map((row) => String(row.event_type ?? 'unknown')))];
     return [
       {
         class: 'agent-event-backlog',
         severity: rows.length >= SYSTEMIC_FAILURE_THRESHOLD ? 'critical' : 'warning',
         title: `${rows.length} scheduled agent action(s) are overdue`,
         evidence:
-          `${rows.length} pending agent event(s) are more than ${AGENT_EVENT_BACKLOG_MINUTES} minutes past their ` +
-          `scheduled time${tenants.size ? `, across ${tenants.size} tenant(s)` : ''}. The queue is drained every ` +
-          'five minutes, so it is not keeping up.',
+          `${rows.length} pending ${types.join(', ')} event(s) are more than ${AGENT_EVENT_BACKLOG_MINUTES} minutes ` +
+          `past their scheduled time${tenants.size ? `, across ${tenants.size} tenant(s)` : ''}.`,
         suggestedFix:
-          'Check the /api/cron/agent-events invocation, then work the backlog — these are follow-ups a customer was waiting for.',
+          'These are not approvals, so no human is holding them up: check whether anything still drains this event type, then work the backlog.',
         blastRadius: 'needs_approval',
         subjectTable: 'agent_events',
         subjectId: 'backlog',
         fingerprintKey: 'backlog',
-        detail: { count: rows.length, eventIds: rows.slice(0, 20).map((row) => row.id) },
+        detail: { count: rows.length, types, eventIds: rows.slice(0, 20).map((row) => row.id) },
       },
     ];
   },

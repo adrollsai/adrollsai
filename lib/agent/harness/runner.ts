@@ -33,7 +33,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { streamText, stepCountIs } from 'ai';
 import { getAgentModel } from '../deepseek';
 import { createAgentContext, type TenantContext } from '../orchestrator';
-import { appendEvents, loadEvents } from './store';
+import { appendEvent, appendEvents, loadEvents } from './store';
 import { createEvent, type HarnessEvent } from './events';
 import { persistStep } from './persist';
 import { buildDiscoverableTools, discoveryPromptSection } from './tool-proxy';
@@ -46,6 +46,38 @@ import { AGENT_MODEL } from '../models';
 
 /** Generous output budget: reasoning is billed inside it, so a small default starves the answer. */
 const HARNESS_MAX_OUTPUT_TOKENS = 16000;
+
+/** The opening turn a goal-only run needs. See `goalSeedFor`. */
+export interface GoalSeed {
+  /** The log entry to append, validated against the `user.message` schema by createEvent. */
+  event: { type: 'user.message'; data: Record<string, unknown> };
+  /** The same thing as a model message, so the run can start even if the log write fails. */
+  message: { role: 'user'; content: string };
+}
+
+/**
+ * Decide whether a run needs its `goal` turned into an opening user turn.
+ *
+ * The bug this exists for: routines, WhatsApp approvals and the `run_routine` tool queue a run
+ * with the instruction in `run.goal` and no `user.message` in the session log. The runner
+ * rebuilds the conversation from that log, got nothing, and dead-lettered the run — 36 times
+ * over 11 days on one tenant, every one with `attempts: 0`, so nothing looked broken.
+ *
+ * Extracted and exported rather than inlined so `scripts/verify-runner-goal-seed.ts` can prove
+ * the decision without calling a model: that it seeds a goal-bearing run, and refuses to seed a
+ * run that already has a conversation or carries no goal at all (the case where seeding would
+ * put words in the owner's mouth).
+ */
+export function goalSeedFor(goal: string | null | undefined, runId: string): GoalSeed | null {
+  const text = typeof goal === 'string' ? goal.trim() : '';
+  if (!text) return null;
+  return {
+    // `createEvent` parses the payload against the schema, so a malformed seed throws here at
+    // the write site rather than being rejected later by `parseEvent` in the renderer.
+    event: createEvent('user.message', { id: `run-goal-${runId}`, text }),
+    message: { role: 'user', content: text },
+  };
+}
 
 export interface SliceOptions {
   worker: string;
@@ -223,6 +255,32 @@ export async function openRunTurn(
     // which both loses the task history and makes DeepSeek's thinking mode
     // reject the replay ("reasoning_content must be passed back").
     messages = itemsToModelMessages(state.items);
+
+    // ── a queued run whose brief was never written down as a turn ────────────
+    // Routines, WhatsApp approvals and the `run_routine` tool all enqueue a run with
+    // their instruction in `run.goal` and never record a user message. The log then
+    // contains only `run.status` bookkeeping, projects to zero messages, and the run
+    // is dead-lettered before it does any work — with `attempts: 0`, because nothing
+    // ever failed, there was simply nothing to run.
+    //
+    // Measured in production before this was fixed: 36 runs over 11 days, one tenant's
+    // daily marketing never happening, and approval round trips that silently did
+    // nothing. The goal IS the task, so it is recorded as the user turn it always was
+    // — in the LOG, not only in memory, so the transcript shows the owner what was
+    // asked for and a later resume reconstructs the same conversation.
+    const seed = messages.length ? null : goalSeedFor(run.goal, run.id);
+    if (seed) {
+      const appended = await appendEvent(supabase, run.session_id, seed.event.type, seed.event.data);
+      messages = [seed.message];
+      // Claim the sequence we just wrote, so the post-slice reader does not read our own
+      // seeded turn back as a new event and echo it a second time.
+      if (appended) loadedMaxSeq += 1;
+      console.log(
+        `[Harness runner] run ${run.id.slice(0, 8)} had no user message; seeded its goal as the opening turn` +
+          (appended ? ' and recorded it in the log' : ' (log write failed — continuing from memory)')
+      );
+    }
+
     console.log(
       `[Harness runner] starting run ${run.id.slice(0, 8)} from ${messages.length} reconstructed messages ` +
         `(${messages.filter((m) => m.role === 'tool').length} tool results, ` +
@@ -232,7 +290,9 @@ export async function openRunTurn(
   stage('history');
 
   if (!messages.length) {
-    const error = 'Nothing to run: the session has no user message.';
+    // Genuinely unrunnable: no conversation and no goal to seed one from. This is now the
+    // real edge case rather than the normal path it had become.
+    const error = 'Nothing to run: the session has no user message and the run carries no goal.';
     await appendRunStatus(supabase, run.session_id, 'failed', error, sliceNumber);
     return { kind: 'settled', result: { status: 'dead', steps: 0, error } };
   }
