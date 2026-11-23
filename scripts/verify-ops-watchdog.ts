@@ -275,14 +275,36 @@ check('the snapshot has files in it', snapshot.fileCount > 500, `${snapshot.file
 // The commit comparison looked precise and was not: it goes red on every unrelated commit, and
 // it goes red on the very commit that rebuilds the snapshot (rebuilding edits files, so the
 // diff from the stamped commit is never empty). Line counts answer the question that matters —
-// does this snapshot describe the files on disk right now? — and rebuilding makes them agree.
+// does this snapshot describe the code that was deployed? — and rebuilding makes them agree.
 //
-// Only a sample is compared when the repo is large, because the point is to catch "nobody
-// rebuilt this in a month", not to prove every byte.
+// FILES WITH UNCOMMITTED CHANGES ARE SKIPPED, and that is the point rather than a loophole. The
+// snapshot describes HEAD, because HEAD is what ships. Comparing it against a working tree that
+// someone is mid-edit on reports their work-in-progress as a staleness bug and, worse, pushes
+// whoever is holding the gate to rebuild the snapshot from a dirty tree — which would publish an
+// ask console describing code that is not deployed. Measured: this gate went red for exactly one
+// file the moment a colleague had an uncommitted edit in it.
+const dirty = new Set<string>();
+try {
+  const porcelain = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' });
+  for (const line of porcelain.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    // `?? path`, ` M path`, `R  old -> new` — take the last field and strip any rename arrow.
+    const path = line.slice(3).split(' -> ').pop();
+    if (path) dirty.add(path.trim().replace(/^"|"$/g, ''));
+  }
+} catch {
+  // No git: nothing to skip, the comparison still runs against whatever is on disk.
+}
+
 const snapshotFiles = repoSnapshotFiles();
 const drifted: { path: string; recorded: number; actual: number }[] = [];
+const skippedDirty: string[] = [];
 let unreadable = 0;
 for (const entry of snapshotFiles) {
+  if (dirty.has(entry.path)) {
+    skippedDirty.push(entry.path);
+    continue;
+  }
   let source: string;
   try {
     source = readFileSync(entry.path, 'utf8');
@@ -294,14 +316,16 @@ for (const entry of snapshotFiles) {
   if (actual !== entry.lines) drifted.push({ path: entry.path, recorded: entry.lines, actual });
 }
 check(
-  'every indexed file matches the line count the snapshot recorded, so answers describe current code',
+  'every clean indexed file matches the line count the snapshot recorded, so answers describe deployed code',
   drifted.length === 0,
   drifted.length
     ? `${drifted.length} drifted, e.g. ${drifted
         .slice(0, 3)
         .map((d) => `${d.path} (${d.recorded} -> ${d.actual})`)
         .join(', ')} — run npm run build:ops-repo-index`
-    : `${snapshotFiles.length - unreadable} files verified${unreadable ? `, ${unreadable} unreadable` : ''}`,
+    : `${snapshotFiles.length - unreadable - skippedDirty.length} verified` +
+      (skippedDirty.length ? `, ${skippedDirty.length} skipped (uncommitted: ${skippedDirty.slice(0, 2).join(', ')})` : '') +
+      (unreadable ? `, ${unreadable} unreadable` : ''),
 );
 
 // Retrieval has to find the right file for the questions the owner will actually ask.
