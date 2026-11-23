@@ -46,6 +46,7 @@ export const DEFAULT_RECIPES: RecipeSet = {
       'the price (or "Price on request" if absent)',
       'a real photo of the actual offering — never an invented one',
       'the brand mark or business name, tastefully small',
+      'a headline that fits the field it will run in — 40 characters on a Meta headline, 30 on Google',
     ],
     layout: [
       'one clear focal point; the photo carries the frame, not the text',
@@ -58,6 +59,10 @@ export const DEFAULT_RECIPES: RecipeSet = {
       'cluttered collages or more than one photo',
       'unverifiable claims, discounts or approvals not in the facts',
       'phone numbers baked into the image',
+      // Copy tics are enforced in code by lib/ads/creative-specs.ts; this is the reminder that
+      // arrives with the brief, before anything is written.
+      'copy that reads as generated — "unlock the power", "reimagined", "say goodbye to", an em dash, ' +
+        'three stacked negations (see the nobogent-ad-copy rule)',
     ],
     degraded_path:
       'If no usable photo exists, produce a clean typographic poster using the brand colour and the name of the offering — do NOT invent a building.',
@@ -93,12 +98,26 @@ export const DEFAULT_RECIPES: RecipeSet = {
   copy: {
     goal: 'a message a real person would read to the end',
     length: { whatsapp: 'under 400 characters', social: 'under 300 characters' },
-    structure: ['hook in the first line', 'one concrete true benefit', 'one clear call to action'],
+    structure: [
+      'pick the ONE argument before writing, and be able to say which angle it is',
+      'hook in the first line',
+      'one concrete true benefit',
+      'one clear call to action',
+    ],
     language: 'natural Hinglish in Latin script for India; plain English otherwise — never mix scripts',
     channel_rules: {
       whatsapp: 'ALWAYS include the three reply buttons (View / Talk to Expert / Book) — never send a lead message without them',
     },
-    avoid: ['shouting capitals', 'emoji spam', 'unverifiable superlatives', 'any fact not supplied'],
+    avoid: [
+      'shouting capitals',
+      'emoji spam',
+      'unverifiable superlatives',
+      'any fact not supplied',
+      // The enforced list lives in lib/ads/creative-specs.ts; this names the habits worth calling out
+      // in the brief so the first draft is already close.
+      'stock phrases ("unlock the power", "reimagined", "take it to the next level"), em dashes, ' +
+        'contrast reveals ("it is not X, it is Y"), and three stacked negations',
+    ],
     degraded_path:
       'If facts are thin, write a shorter honest message asking one qualifying question — never pad with invented detail.',
   },

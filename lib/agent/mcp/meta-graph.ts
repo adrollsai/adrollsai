@@ -507,6 +507,18 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
             breakdowns: breakdowns || [],
             count: rows.length,
             rows,
+            /**
+             * THE UNFORMATTED ROWS, and the reason this exists.
+             *
+             * `rows` above is built for a human or a model to read: money becomes "₹2,000.00", CTR becomes
+             * "1.25%", and the entity IDS ARE DROPPED. That is right for display and useless for arithmetic.
+             * `recommendOptimisation` reads `row.spend`, `row.ctr`, `row.frequency` and `row.adset_id`, so
+             * handed the display rows it computed NaN against everything and reported "nothing has crossed
+             * the spend threshold" no matter what the account was actually doing — a judgement tool that
+             * could never judge. Passing Meta's own objects through unchanged keeps the numbers numeric and
+             * the ids attached, which is what both the optimiser and the learning pass need.
+             */
+            raw: res.data || [],
             nextCursor: res.paging?.cursors?.after,
             note: rows.length === 0 ? 'No delivery recorded for this window.' : undefined,
           };

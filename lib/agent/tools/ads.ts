@@ -20,11 +20,13 @@ import {
   describePlan,
   launchCampaignAsAgent,
   launchRetargetingAsAgent,
+  loadRecordedLaunches,
   recommendOptimisation,
   resolveLaunchContext,
   validateLaunchRequest,
 } from '@/lib/ads/launch-service';
 import { CAMPAIGN_GOALS, CONVERSION_EVENTS, LEAD_FORM_FIELDS } from '@/lib/ads/campaign-plan';
+import { attributePerformance, angleGuidance, deriveResults, summariseLearnings } from '@/lib/ads/creative-learning';
 
 const locationSchema = z.object({
   key: z.string().describe('Meta geo key: a numeric city key, a region key, or an ISO country code'),
@@ -100,12 +102,25 @@ export function createComposedAdTools(supabase: SupabaseClient, userId: string) 
         assetIds: z.array(z.string()).optional().describe('Uploaded media asset ids'),
         adCopy: z
           .object({
-            headline: z.string().optional().describe('Max 40 characters'),
-            primary_text: z.string().optional().describe('Max 150 characters'),
-            description: z.string().optional().describe('Max 400 characters'),
+            headline: z.string().optional().describe('Max 40 characters — Meta truncates the rest silently'),
+            primary_text: z.string().optional().describe('Only the first ~125 characters show before "See more"'),
+            description: z.string().optional().describe('Max 30 characters recommended'),
           })
           .optional()
-          .describe('Omit and the pipeline writes the copy from the business profile and the catalogue'),
+          .describe('Omit and the pipeline writes the copy from the business profile and the catalogue. Copy over a limit, or carrying a banned stock phrase, is REFUSED before anything is created.'),
+        creativePlan: z
+          .object({
+            angleId: z
+              .string()
+              .optional()
+              .describe('The angle from build_ad_creative_prompt (offer-first, proof, local, ...). Recorded so this campaign\'s results can be attributed to it.'),
+            headline: z.string().optional(),
+            subhead: z.string().optional(),
+            offerLine: z.string().optional(),
+            format: z.string().optional().describe('1:1, 4:5, 9:16 or 16:9'),
+          })
+          .optional()
+          .describe('What this launch is ARGUING. Pass the angle build_ad_creative_prompt chose — without it the campaign\'s performance cannot be learned from.'),
         ...targetSchema,
         leadFormFields: z
           .array(z.string())
@@ -190,10 +205,10 @@ export function createComposedAdTools(supabase: SupabaseClient, userId: string) 
 
     optimize_meta_campaign: tool({
       description:
-        'Read a campaign\'s real performance and say what to do about it: which ad sets/ad to pause, which to keep and where budget belongs. Returns the ACTIONS plus the exact primitive call for each (meta_graph_set_status / meta_graph_update) - it does not move a client\'s budget by itself, and it never invents a number. Use it before recommending any budget change, and use meta_graph_insights when the owner wants the raw figures.',
+        'Read a campaign\'s real performance and say what to do about it: which ad sets/ads to pause, which to keep and where budget belongs. ALSO says what to make NEXT: it joins each row to the angle that launch recorded, so it returns per-angle learnings (which argument is winning, which has already lost) that you pass into build_ad_creative_prompt. Returns the ACTIONS plus the exact primitive call for each (meta_graph_set_status / meta_graph_update) - it does not move a client\'s budget by itself, and it never invents a number. Call it before recommending any budget change AND before writing a new batch of creatives, so the next batch is built on what actually worked.',
       inputSchema: z.object({
         campaignId: z.string().optional().describe('Restrict the analysis to one campaign'),
-        level: z.enum(['campaign', 'adset', 'ad']).default('adset').describe('What to judge'),
+        level: z.enum(['campaign', 'adset', 'ad']).default('adset').describe('What to judge. "ad" gives the finest attribution to an angle.'),
         datePreset: z
           .enum(['today', 'yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d', 'last_90d', 'maximum'])
           .default('last_7d'),
@@ -215,18 +230,83 @@ export function createComposedAdTools(supabase: SupabaseClient, userId: string) 
           if (!insights?.success) {
             return { ok: false, error: insights?.error || 'could not read the insights - nothing was changed' };
           }
-          const rows = insights.rows || insights.data || [];
-          const actions = recommendOptimisation(rows, { minSpendForJudgement });
+
+          /**
+           * THE NUMBERS, NOT THE LABELS.
+           *
+           * `insights.rows` is built for reading — money as "₹2,000.00", CTR as "1.25%", and no ids. Judging
+           * those produced NaN against every threshold, so this tool used to answer "nothing has crossed the
+           * spend threshold" whatever the account was doing. `insights.raw` is Meta's own payload: numeric
+           * and id-bearing.
+           *
+           * `results` is then derived rather than left absent. Meta has no results field — it has an `actions`
+           * array — and `recommendOptimisation` pauses anything that spent money with `results === 0`. Passing
+           * raw rows through untouched would therefore mark every single row "spent with no results at all" and
+           * recommend pausing the entire account.
+           */
+          const usedRaw = Array.isArray(insights.raw) && insights.raw.length > 0;
+          const sourceRows: any[] = usedRaw
+            ? insights.raw
+            : Array.isArray(insights.rows)
+              ? insights.rows
+              : [];
+          const numericRows: any[] = sourceRows.map((row) => ({ ...row, results: deriveResults(row) }));
+          const actions = recommendOptimisation(numericRows, { minSpendForJudgement });
+
+          // ── the other half of the loop: what the numbers mean for the NEXT batch ──────────────────
+          const recorded = await loadRecordedLaunches(db, userId, { limit: 100 });
+          const attributed = attributePerformance(numericRows, recorded.launches);
+          const learnings = summariseLearnings(attributed.observations, {
+            period: datePreset || 'last_7d',
+            currency: insights.currency || 'INR',
+            ...(minSpendForJudgement ? { minSpend: Number(minSpendForJudgement) } : {}),
+          });
+          learnings.unattributedRows = attributed.unattributedRows;
+          learnings.unattributedSpend = attributed.unattributedSpend;
+          if (!learnings.summary) learnings.summary = 'No learnings yet.';
+          const guidance = angleGuidance(learnings);
+
+          const notes: string[] = [
+            'These are recommendations with the primitive call attached. Applying one is a separate, gated step: ' +
+              'call the named primitive (meta_graph_set_status / meta_graph_update) and the review card will carry it.',
+          ];
+          if (!usedRaw) {
+            notes.push(
+              'The provider returned no raw rows, so this pass read the DISPLAY rows: money arrives pre-formatted and ' +
+                'the entity ids are gone. Treat the budget actions as indicative, and expect nothing to be attributable ' +
+                'to an angle until raw rows are available.',
+            );
+          }
+          if (recorded.readError) {
+            notes.push(`Could not read recorded launches (${recorded.readError}), so nothing could be attributed to an angle.`);
+          } else if (!recorded.launches.length) {
+            notes.push(
+              'No launch has recorded a creativePlan yet, so no spend could be tied to an angle. Pass creativePlan.angleId ' +
+                'on the next launch and this pass will start learning.',
+            );
+          }
+          if (attributed.unattributedRows) {
+            notes.push(
+              `${attributed.unattributedRows} row(s) (${attributed.unattributedSpend.toFixed(0)} ${learnings.currency}) could not ` +
+                'be attributed to an angle - they were launched before plans were recorded, or outside this platform. They are ' +
+                'NOT included in the angle verdicts.',
+            );
+          }
+
           return {
             ok: true,
-            analysed: rows.length,
+            analysed: numericRows.length,
             currency: insights.currency || 'INR',
             period: datePreset || 'last_7d',
             actions,
-            note:
-              'These are recommendations with the primitive call attached. Applying one is a separate, gated step: ' +
-              'call the named primitive (meta_graph_set_status / meta_graph_update) and the review card will carry it.',
-            rows,
+            learnings,
+            guidance,
+            note: notes.join(' '),
+            howToUseLearnings:
+              'Pass guidance.avoid ids into build_ad_creative_prompt as `avoidAngles`, and prefer guidance.prefer when ' +
+              'choosing an angle. Then pass the chosen angle back as creativePlan.angleId on the launch, which is what ' +
+              'keeps this loop turning. The owner\'s explicit instruction always wins over a measurement.',
+            rows: insights.rows,
           };
         } catch (e: any) {
           return { ok: false, error: e?.message || 'the optimisation pass failed - nothing was changed' };

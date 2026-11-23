@@ -38,12 +38,46 @@ export const HOUSE_SKILLS: readonly HouseSkill[] = [
   {
     name: 'nobogent-video-brief',
     description:
-      'How to write a video brief that the video tool will accept: one lead-in, readable line lengths, one plate per scene.',
+      'How to write a video brief that the video tool will accept: one lead-in, readable line lengths, one plate per scene, and the two speech modes (on-camera dialogue vs narration).',
     content: `# Writing a video brief
 
 A video is described as a "beats file": a JSON object with \`beats\`, \`scenes\`, \`plates\`
 and an \`endCard\`. Use the \`plan_video\` tool to check yours BEFORE promising anything —
-it validates against the renderer's real contract and quotes the credits.
+it validates against the renderer's real contract and quotes the credits. If the brief is
+one line plus a reference video, start at \`video_intake\` and ask what it lists.
+
+## Where the speech comes from — decide this first
+
+A film talks in one of two ways, and choosing wrongly produces something no edit can save.
+
+**A. \`dialogue\` plates — someone on camera speaks.** The exact line goes INTO the video
+prompt, so the model generates the voice and the lip movement in one pass:
+
+\`\`\`jsonc
+{ "id": "dlg-a", "source": "dialogue",
+  "line": "नाम याद रखना — डॉक्टर सतीश बत्रा!",
+  "speaker": "young Indian woman, bright and confident, close studio microphone",
+  "seconds": 15, "resolution": "480p",
+  "imageKey": "brand/founder.jpg" }
+\`\`\`
+
+* The beat that plays it keeps \`vo: ""\` — the clip speaks. A \`vo\` that disagrees with the
+  plate's \`line\` is rejected when the brief is parsed, so a line is never said twice.
+* One plate = one performer = exactly one beat. Two beats cannot share it.
+* \`seconds\` may run to 15 (the model's ceiling); a silent \`generate\` plate stays at 1-6 s.
+* \`resolution\` defaults to 480p for dialogue: a talking head is bought by the second, and
+  720p/1080p cost about 2x/3x more for a shot that is mostly a face.
+* The clip comes back with air around the words; the skill measures it, cuts the clip to
+  the speech, and cuts the film to what the model actually said.
+* Then it transcribes the clip and compares it with the line. Under ~40% of the words and
+  the run records a mismatch: regenerate that plate with a shorter line, never ship it.
+
+**B. Narration — nobody appears on camera.** Leave \`vo\` filled and use \`generate\` or
+\`asset\` plates. TTS reads the line, the skill measures it, the film is cut to it.
+
+NEVER mix the two on the SAME line: a silent talking shot plus a TTS track is a dub, the
+mouths move on their own, and nothing downstream fixes that. Mixing across the film is
+fine — a host speaks on camera, a narrator reads the packshot line.
 
 ## The rules the renderer will hold you to
 
@@ -214,6 +248,96 @@ Two habits that keep this honest:
    not "improve" it, do not add a unit they did not use.
 2. If a deliverable needs a fact you do not have, produce it with a clearly marked gap and
    list the question. A gap is a working document; an invention is a liability.`,
+  },
+  {
+    name: 'nobogent-ad-copy',
+    description:
+      'The platform rule for ad copy — headlines, primary text, offer lines and description text on any creative, ' +
+      'launch or broadcast: the character budget each platform truncates at, the phrases that make copy read as ' +
+      'machine-written, one argument per ad, and how to state a claim that can be proven wrong. Load it before ' +
+      'writing any headline, hook or offer.',
+    content: `# Writing ad copy here
+
+This is the platform rule for every headline, offer line, description, caption and broadcast message
+that will be read as an ad. It is enforced, not advised: build_ad_creative_prompt reports against it,
+and a Meta launch carrying copy that breaks it is REFUSED before anything is created.
+
+Being refused is not a failure to work around. The refusal quotes a version that fits — use it, or
+write a better one.
+
+## 1. Fit the field, or it does not run
+
+Meta does not reject an over-long headline. It truncates it and reports nothing, so the advertiser
+finds out when a customer reads a sentence that stops mid-word. The budget is per field:
+
+- **Meta** — headline 40, primary text 125 visible, description 30.
+- **Google Ads** — headline 30 (hard cap), long headline 90, description 90, display path 15.
+- **LinkedIn** — intro text 150, headline 70, description 100.
+- **TikTok** — ad text 80, display name 40.
+- **X** — tweet text 280, card headline 70, card description 200.
+
+The front of the field is what gets read. Put the specific claim in the first 125 characters, not a
+warm-up. "Site visits open this Saturday" earns the next line; "We are pleased to announce" does not.
+
+## 2. One ad, one argument
+
+An ad makes ONE argument, chosen before a single word is written. Take it from a named angle — a
+pain point, an outcome, social proof, a comparison, identity, or a genuine deadline — and say which
+one you chose and why.
+
+Do not stack three arguments to "cover more". A reader remembers none of them. If two arguments both
+deserve testing, that is two ads, which is the point of a batch.
+
+## 3. Never write these
+
+They read as machine-written, and the reader can tell:
+
+- **Stock phrases.** "Unlock the power of", "say goodbye to", "reimagined", "take it to the next
+  level", "here is the thing", "game-changer", "cutting-edge", "state-of-the-art", "seamless
+  experience", "get started today", "join thousands of happy customers". These are refused.
+- **Cop-out hooks.** "Stop scrolling", "here is what nobody tells you", "you will not believe", and a
+  bare "POV:". A POV hook is allowed only when the situation is hyper-specific to the viewer.
+- **Em dashes.** Banned in ad copy. A dash between two clauses is a full stop in disguise.
+- **Contrast reveals.** "It is not X, it is Y." State Y and the reason. One is a coincidence; a batch
+  of them is a tic.
+- **Stacked negations.** "No fees, no delays, no hassle." Keep the one absence that matters and spend
+  the space on a fact.
+- **Self-answered questions.** "The result? 3x faster." "The best part: it learns." Say it plainly.
+- **Trailing pile-ons.** A full claim, then a comma and more restating. End the sentence at the claim.
+
+Across a batch, vary the sentence shapes. Ten variations that all open the same way read as
+generated even when each one is fine alone.
+
+## 4. Specific beats clever
+
+A number, a date, a place, a named outcome, a real objection handled. "Handover in March" is an ad;
+"a lifestyle awaits" is a mood. If the business gave you no specific, the honest move is to ask for
+one — never to invent one (see nobogent-never-invent).
+
+## 5. Say what would prove it wrong
+
+When you propose a variation, state a hypothesis a result can actually disprove. Name the METRIC
+(CTR, cost per lead, conversion rate), what it is measured AGAINST (the current ad, a sibling
+variation), and the expected DIRECTION.
+
+"This will resonate with buyers" cannot lose, so it teaches nothing.
+"Beats the current creative on CTR among site-visit leads, by 15% or more" can.
+
+## 6. Learn from what already ran
+
+Before proposing an angle, look at what has actually run and what happened to it. Double down on the
+structure and subject that worked, in new words. Do not re-propose an angle the owner already
+rejected or that already lost. Change one variable per cycle, and say which number you judged on.
+
+## 7. Where the rest of it lives
+
+This rule is the floor, not the whole playbook. For the full method — the angle system, the grounded
+inputs corpus that puts the customer's own words into the ad, the static template library, the hook
+system, the format taxonomy and the strategy loop — load the vendored skill ad-creative, then fetch
+only the reference document the task needs with get_skill_reference.
+
+Where a vendored document disagrees with anything above, THIS rule wins: it is the one enforced in
+code.`,
   },
 ];
 

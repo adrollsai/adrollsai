@@ -76,7 +76,7 @@ console.log('\n▸ 2. video is SCRIPT -> SHOT LIST -> SOURCE DECISION');
 const iScript = prompt.indexOf('SCRIPT FIRST');
 const iShots = prompt.indexOf('THEN THE SHOT LIST');
 const iSource = prompt.indexOf('WHERE THE FOOTAGE COMES FROM');
-const iVoice = prompt.indexOf('THE VOICE IS NARRATION');
+const iVoice = prompt.indexOf('SPEECH HAS TWO MODES');
 check('the script step exists', iScript > -1);
 check('the shot-list step exists', iShots > -1);
 check('the per-shot source decision exists', iSource > -1);
@@ -90,17 +90,27 @@ check(
 );
 
 // ── 3. No speaking person by default; TTS carries the voice.
+//
+// These markers track the prompt's CURRENT wording. The doctrine was rewritten to be explicit about
+// the two speech modes (4a narration / 4b on-camera dialogue), which made the old phrases obsolete and
+// left this gate red for a rule that was, if anything, better stated than before. A red test that is
+// red for the wrong reason is worse than no test: it teaches everyone to skim the failures.
 console.log('\n▸ 3. NO SPEAKING PERSON unless explicitly asked');
-check('the default is narrated, not presented', /NARRATION, NOT A PRESENTER/i.test(prompt));
+check(
+  'the default is narrated, not presented',
+  /NARRATION \(the default\): nobody appears on camera/i.test(prompt),
+  '4a',
+);
 check('TTS is the stated default', /'generate_voiceover' \(Gemini 3\.8 Flash\)/.test(prompt), 'Gemini 3.8 Flash');
 check(
   'a speaking person is explicitly forbidden by default',
-  /DO NOT put a speaking person in the video unless the owner explicitly asks/i.test(prompt),
+  /Do not put a generated speaker in a film unless the owner or the reference asks/i.test(prompt),
+  '4c',
 );
 check(
   'and when asked, Grok generates them inside the film',
   // Whitespace-tolerant: the prompt is line-wrapped, so a phrase written across two lines must still match.
-  /generate that person with Grok/i.test(prompt.replace(/\s+/g, ' ')),
+  /Grok generates the voice and the lip movement/i.test(prompt.replace(/\s+/g, ' ')),
   'the obvious exception, stated',
 );
 

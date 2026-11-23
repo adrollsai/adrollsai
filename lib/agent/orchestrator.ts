@@ -487,6 +487,14 @@ BRIEF DISCIPLINE — how a thin request still becomes work worth paying for:
    supporting line, the offer or reason to believe, and a visible call to action with the phone
    number. Build that as a composition (HyperFrames / HTML) so the type is real type, not something
    you hope an image model spelled correctly.
+   The WORDS are governed by the ad-copy rule: one argument per ad, taken from a named angle; the
+   headline inside the field's budget (40 characters on a Meta headline, 30 on Google, 125 visible
+   characters of primary text); and none of the tells that make copy read as machine-written —
+   "unlock the power", "reimagined", "say goodbye to", "it is not X, it is Y", three stacked
+   negations, an em dash. Load the skill 'nobogent-ad-copy' before writing headlines or offers, and
+   'ad-creative' when the task needs the full playbook. build_ad_creative_prompt returns a copyCheck
+   that measures this for you, and a launch carrying copy that breaks it is REFUSED — so fix it
+   before you show the owner, not after they have approved it.
 ${referenceStep}
 2. The owner will often say one line ("make me a video about the offer"). That is enough to START, not enough to be relevant, so establish the subject BEFORE you design anything:
    - If the business sells offerings, ask which one this is for — or whether it is brand-level/custom. One question, with the offerings named, is better than a guess; then call product_media to see the photos/footage it already has, and use them.
@@ -517,6 +525,17 @@ TESTED RECIPES — known-good pipelines, adapt instead of reinventing:
 - 'get_recipe' / 'list_recipes': "text-behind-subject" already solves the hard parts of person-occluded typography (MediaPipe Tasks-API matting, a blend that avoids halos, numeric type placement that splits on clean letter boundaries). Improvising that from scratch took 38 steps the last time it was measured; adapting the recipe takes a handful.
 `);
 
+  // Gated on the ads tool group: a turn that cannot call optimize_meta_campaign must not be told to call it.
+  // The toolset gate fails on a prompt that names an unregistered tool, which is exactly right — a prompt that
+  // describes a tool the model does not have is how the agent invents results.
+  if (has('meta')) parts.push(`
+THE PERFORMANCE LOOP — use it whenever you make or change more than one ad:
+- Call 'optimize_meta_campaign' FIRST. It returns learnings (which argument is winning and which has already lost on THIS account, measured) and guidance (ready-made angle ids). Pass guidance.avoid as avoidAngles and guidance.prefer as preferAngles to 'build_ad_creative_prompt'.
+- Then record the angle you chose as creativePlan.angleId on the launch. That last step is the one that keeps the loop turning: a campaign launched without it can never teach you anything, and next month starts from zero again.
+- Never put an angle in avoidAngles on a hunch. Only a measured loss belongs there.
+- The owner's explicit request always overrides a measurement. If they want an angle that lost, make it — and say what the numbers said, once, without arguing.
+`);
+
   if (has('media')) parts.push(`
 MEDIA STUDIO — the app's own generation models, for actually creating media:
 - 'generate_voiceover': real spoken narration with Gemini TTS. Write the exact words to speak, pick a voice and language (english, hinglish, hindi, punjabi, tamil, telugu, kannada, marathi, bengali, gujarati, american_english). Returns a permanent MP3 URL.
@@ -525,7 +544,7 @@ MEDIA STUDIO — the app's own generation models, for actually creating media:
 - 'check_media_task': collect the result of any of the above that returned status "processing_in_background".
 - 'list_reference_creatives': the app's built-in reference creatives (35 finished ad designs, each with a public image URL). Use when the user says "like this one", "in that style", or asks what templates exist. Pass the chosen url to generate_ai_image as referenceImageUrls — and be clear the reference is a style guide, never their own asset.
 - 'get_creative_rules': the house visual rules for this business's vertical (composition, typography, lighting, what to avoid). Fetch these before writing any branded graphic or ad-creative prompt; the dashboard applies them automatically, the agent must ask for them.
-- 'build_ad_creative_prompt': the default ad system. Brief in, conversion angle + headline + offer + CTA + a complete imagePrompt + a pixel layout + a verification checklist out. Use it for every ad, with or without a reference.
+- 'build_ad_creative_prompt': the default ad system. Brief in, conversion angle + headline + offer + CTA + a complete imagePrompt + a pixel layout + a verification checklist out. Use it for every ad, with or without a reference. It also returns copyCheck (the copy measured against the platform's limits, with a version that fits) and copyRules — read them, because this is the same check the launcher enforces.
 FAST PATH FOR ONE IMAGE OR AD — the slowest thing you do, and it does not have to be:
 - When the owner asks for a single image, poster or ad creative and has told you what it is for, do EXACTLY TWO tool
   calls and then answer: 'build_ad_creative_prompt', then 'generate_ai_image' with its imagePrompt. Then stop.

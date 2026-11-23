@@ -270,6 +270,15 @@ export interface AdBriefInput {
   industry?: string | null;
   /** Excluded angles, e.g. when the owner rejected one. */
   avoid?: string[];
+  /**
+   * Angles this account's own results favour, best first.
+   *
+   * A PREFERENCE, never a mandate. It is added as a tiebreak among angles that are already fully supported by
+   * the supplied facts, so it can reorder two honest options but can never promote an angle whose facts are
+   * missing. A measurement from last month must not make the compiler invent a price this month — honesty
+   * outranks performance, always.
+   */
+  prefer?: string[];
 }
 
 export interface AdCreativeSpec {
@@ -329,14 +338,18 @@ export function chooseAngle(input: AdBriefInput): { angle: AdAngle; whyChosen: s
 
   const industry = `${input.industry || ''} ${input.product} ${input.offer || ''}`.toLowerCase();
   const avoided = new Set((input.avoid || []).map((a) => a.toLowerCase()));
+  const preferred = new Set((input.prefer || []).map((a) => a.toLowerCase()));
 
   const scored = AD_ANGLES.filter((angle) => !avoided.has(angle.id) && !avoided.has(angle.name.toLowerCase())).map(
     (angle) => {
       const missing = angle.requires.filter((need) => !has(need));
       const suited = angle.suits.filter((word) => industry.includes(word)).length;
       // A fully supported angle always beats a better-targeted unsupported one: honesty outranks fit.
-      const score = (missing.length === 0 ? 100 : 0) + suited;
-      return { angle, missing, score };
+      // A measured preference (+10) only separates angles that are already tied on support, so it can reorder
+      // two honest options and can never rescue a dishonest one — 0 + 10 still loses to 100.
+      const isPreferred = preferred.has(angle.id) || preferred.has(angle.name.toLowerCase());
+      const score = (missing.length === 0 ? 100 : 0) + suited + (isPreferred ? 10 : 0);
+      return { angle, missing, score, isPreferred };
     },
   );
 
@@ -351,8 +364,9 @@ export function chooseAngle(input: AdBriefInput): { angle: AdAngle; whyChosen: s
   const why = best.missing.length
     ? `${best.angle.name}: the business supplied ${best.angle.requires.filter(has).join(', ') || 'nothing specific'} ` +
       `and is missing ${best.missing.join(', ')} — those slots are flagged, not invented.`
-    : `${best.angle.name}: every fact this angle needs was supplied (${best.angle.requires.join(', ')}), so the ` +
-      'argument can be made without inventing anything.';
+    : `${best.angle.name}: every fact this angle needs was supplied (${best.angle.requires.join(', ')})` +
+      (best.isPreferred ? ', and this account\'s results favour it' : '') +
+      ', so the argument can be made without inventing anything.';
 
   return { angle: best.angle, whyChosen: why };
 }

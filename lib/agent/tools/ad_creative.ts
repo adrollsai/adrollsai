@@ -14,6 +14,7 @@ import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AD_FORMATS, AD_ANGLES, composeAdCreative, type AdFormat } from '@/lib/agent/creative/ad-prompt-compiler';
 import { applyDirectivesToSpec, mergeDirectives } from '@/lib/automation/creative-directives';
+import { checkAdCopy, adCopyRulesForPrompt } from '@/lib/ads/creative-specs';
 
 export function createAdCreativeTools(supabase: SupabaseClient, userId: string) {
   return {
@@ -55,6 +56,22 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
           .array(z.string())
           .optional()
           .describe('Angles or claims the owner has rejected — pass them back so they are not repeated'),
+        avoidAngles: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Angle ids that ALREADY LOST on this account — take them from optimize_meta_campaign\'s ' +
+              'guidance.avoid. They are excluded from selection, so the next ad does not re-buy the same lesson. ' +
+              'Do not add an angle here on a hunch; only a measured loss belongs in it.'
+          ),
+        preferAngles: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Angle ids this account\'s results favour, best first — take them from guidance.prefer. A preference ' +
+              'only breaks a tie between angles the supplied facts already support; it never overrides the fact ' +
+              'that an angle has no data behind it.'
+          ),
         itemId: z
           .string()
           .optional()
@@ -64,7 +81,7 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
         propertyId: z.string().optional().describe('Alias of itemId, kept for older prompts'),
         campaignId: z.string().optional().describe('Campaign-scoped creative directives, when the creative belongs to one'),
       }),
-      execute: async ({ product, offer, audience, place, format, cta, facts, avoid, itemId, propertyId, campaignId }: any) => {
+      execute: async ({ product, offer, audience, place, format, cta, facts, avoid, avoidAngles, preferAngles, itemId, propertyId, campaignId }: any) => {
         const catalogueItemId = itemId || propertyId;
         try {
           const { data: profile } = await supabase
@@ -83,6 +100,18 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
           const playbook: any = await getActivePlaybook(supabase as any, userId).catch(() => null);
           const merged = mergeDirectives((playbook as any)?.creative_directives ?? null, { propertyId: catalogueItemId, campaignId });
 
+          /**
+           * Excluded angles = what the owner rejected + what this account's own results already lost with.
+           *
+           * They share one channel because they are one instruction: do not argue this again. `prefer` is the
+           * opposite and is deliberately weaker — it only breaks a tie between angles the facts already support,
+           * so a good month can steer the choice but can never make the compiler invent a missing fact.
+           */
+          const excludedAngles = [
+            ...(Array.isArray(avoid) ? avoid : []),
+            ...(Array.isArray(avoidAngles) ? avoidAngles : []),
+          ];
+
           const baseSpec = composeAdCreative({
             product,
             offer,
@@ -98,7 +127,8 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
             contact: merged.bans.includes('phone') ? null : profile?.contact_number || null,
             businessName: profile?.business_name || 'the business',
             industry: profile?.industry || null,
-            avoid,
+            ...(excludedAngles.length ? { avoid: excludedAngles } : {}),
+            ...(Array.isArray(preferAngles) && preferAngles.length ? { prefer: preferAngles } : {}),
           });
 
           const directed = applyDirectivesToSpec(baseSpec as any, merged);
@@ -128,6 +158,30 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
           if (spec.layout.contrast.actual !== null && spec.layout.contrast.actual < 4.5) {
             notes.push(`Contrast ${spec.layout.contrast.actual}:1 fails — ${spec.layout.contrast.verdict}.`);
           }
+
+          // THE LAUNCHER'S OWN RULE, CHECKED AT AUTHORING TIME.
+          //
+          // The compiled headline is what gets printed on the image and is the natural Meta headline, so
+          // finding out at launch that it cannot survive 40 characters is finding out too late — the
+          // launcher refuses it, and the owner has already approved a creative. Reported here instead,
+          // never blocking: the creative is still buildable, it just needs a shorter line to become an ad.
+          const copyCheck = checkAdCopy('meta', {
+            headline: spec.headline,
+            primary_text: spec.subhead || spec.offerLine || '',
+          });
+          for (const verdict of copyCheck.overLimit) {
+            notes.push(
+              `The ${verdict.field} "${verdict.text}" is ${verdict.length} characters but Meta shows ` +
+                `${verdict.limit}` +
+                (verdict.trimmed ? ` — "${verdict.trimmed}" fits, if you want the same ad shorter.` : '.'),
+            );
+          }
+          for (const issue of copyCheck.violations.filter((entry) => entry.severity === 'block')) {
+            notes.push(`Copy tic in the ${issue.field}: "${issue.match}" — ${issue.fix}`);
+          }
+          for (const issue of copyCheck.violations.filter((entry) => entry.severity === 'warn')) {
+            notes.push(`Worth reconsidering in the ${issue.field}: ${issue.why} ${issue.fix}`);
+          }
           if (!profile?.contact_number) {
             notes.push('No phone number on the profile, so the CTA says "visit". Set the number if this ad should convert by call.');
           }
@@ -137,6 +191,20 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
             ...spec,
             formats: Object.keys(AD_FORMATS),
             angles: AD_ANGLES.map((a) => ({ id: a.id, name: a.name, needs: a.requires })),
+            // What the launcher will demand of this copy, measured now rather than at the refusal.
+            copyCheck: {
+              platform: copyCheck.platform,
+              ok: copyCheck.ok,
+              overLimit: copyCheck.overLimit.map((verdict) => ({
+                field: verdict.field,
+                length: verdict.length,
+                limit: verdict.limit,
+                trimmed: verdict.trimmed,
+              })),
+              violations: copyCheck.violations,
+              summary: copyCheck.summary,
+            },
+            copyRules: adCopyRulesForPrompt('meta'),
             howToUse:
               'Pass `imagePrompt` to generate_ai_image as the prompt (append a reference image URL if the owner ' +
               'supplied one — the reference changes the LOOK, not this structure). If you build the creative in ' +

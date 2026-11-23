@@ -17,13 +17,151 @@
  *
  *   node scripts/vendor-skills.mjs            # refresh every vendored skill
  *   node scripts/vendor-skills.mjs --check    # report drift against upstream, write nothing
+ *   node scripts/vendor-skills.mjs --only=ad-creative-ad-creative-ref-platform-specs
+ *                                             # refresh named slugs only (comma-separated)
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
 const OUT_DIR = path.join('lib', 'agent', 'skills-vendor');
 
-/** Everything we vendor, and the exact upstream file it came from. */
+// ── ad-creative (coreyhaines31/marketingskills, MIT) ─────────────────────────────────────────────────────────
+//
+// The performance-creative playbook: platform character limits, the angle system, the "no AI tells" copy
+// blacklist, the grounded-inputs corpus, the static template library and the strategy loop that turns last
+// month's results into next month's briefs.
+//
+// WHY THE REFERENCE FILES ARE VENDORED SEPARATELY RATHER THAN INLINED
+// SKILL.md is 27 KB and points at eleven further documents totalling ~160 KB. Pasting that into one skill body
+// would spend a turn's whole prompt budget on a document the agent reads once and mostly does not need; and
+// dropping the references would leave the skill telling the agent to read files that are not there. So the body
+// ships as the `ad-creative` skill and each reference ships as a companion the agent fetches by name, which is
+// the same progressive disclosure the rest of this directory uses — just one level deeper.
+//
+// Licensed MIT (Copyright (c) 2025 Corey Haines). Attribution is mandatory and the gate enforces it; the
+// upstream `evals/evals.json` fixture and the `assets/creative-review-template.html` delivery template are
+// deliberately NOT vendored — the first is their test harness, the second duplicates `app/review`.
+const AD_CREATIVE = {
+  repo: 'coreyhaines31/marketingskills',
+  root: 'skills/ad-creative',
+  licence: 'MIT',
+};
+
+/**
+ * `[slug, title, why]` for each of the skill's own reference documents.
+ *
+ * The slug is deliberately IDENTICAL to the upstream basename, so the attribution URL and
+ * `get_skill_reference` name never drift from the file they claim to be: `meta-creative-formats`
+ * and not a tidied-up `meta-formats`.
+ */
+const AD_CREATIVE_REFERENCES = [
+  [
+    'platform-specs',
+    'Platform specs',
+    'Character and quantity limits for every ad platform and placement, with the format variations each one ' +
+      'accepts. This is the table that stops Meta truncating a headline at 40 characters without warning.',
+  ],
+  [
+    'static-ad-templates',
+    'Static ad templates',
+    'The static layout library — Us vs. Them, Stat Callout, Before/After, Founder Message, FAQ Card, Grid, ' +
+      'Callout, Guarantee, Without — each tiered S–F with its funnel role and copy slots.',
+  ],
+  [
+    'hook-system',
+    'Hook system',
+    'How the first line earns the next second, plus funnel-stage diagnosis: which hook a problem-aware reader ' +
+      'needs versus a product-aware one.',
+  ],
+  [
+    'awareness-headlines',
+    'Awareness headlines',
+    'Choosing the headline treatment from the reader\'s stage of awareness, with the mobile-readable visual ' +
+      'spec for text-led statics.',
+  ],
+  [
+    'meta-creative-formats',
+    'Meta creative formats',
+    'About 51 Meta creative formats ranked S to F by one question: does it puncture a cold audience, or only ' +
+      'convert people already in the funnel. Use it to decide which format to make NEXT.',
+  ],
+  [
+    'creative-roadmap',
+    'Creative roadmap',
+    'The strategy loop: evidence-ranked concepts from three signal sources, an exploration-versus-scaling mix, ' +
+      'a capacity-checked roadmap with production tiers, and the monthly retro that feeds the next slate.',
+  ],
+  [
+    'creative-review-page',
+    'Creative review page',
+    'The data model and grounding rules for a self-contained creative-review page a client picks from, ' +
+      'including the disclosure block that is required.',
+  ],
+  [
+    'generative-tools',
+    'Generative tools',
+    'Which image, video, voice and code-based tool makes which kind of ad, with per-platform image specs and a ' +
+      'cost comparison. Cross-check it against our own model registry before calling a vendor.',
+  ],
+  [
+    'short-form-video-specs',
+    'Short-form video',
+    'Creator and UGC short-form format library, plus the vertical video production spec that governs ALL 9:16 ' +
+      'work: the 720×1200 text-safe band, the caption recipe, and the organic-versus-baked-music decision.',
+  ],
+  [
+    'motion-video-ads',
+    'Motion video ads',
+    'Faceless motion-style ads end to end: styled stills, image-to-video, TTS, word-timed captions, nine visual ' +
+      'styles, and the QC gotchas that only show up at delivery.',
+  ],
+  [
+    'imessage-video-ads',
+    'iMessage video ads',
+    'The iOS-native reveal formats — iMessage thread, ChatGPT, Apple Notes, AirDrop — with scripting, pacing, ' +
+      'and the compliance rules that apply to a dramatised conversation.',
+  ],
+];
+
+function adCreativeFamily() {
+  const entries = [
+    {
+      slug: 'ad-creative',
+      name: 'ad-creative',
+      repo: AD_CREATIVE.repo,
+      filePath: `${AD_CREATIVE.root}/SKILL.md`,
+      licence: AD_CREATIVE.licence,
+      why:
+        'The performance-creative playbook: angles, platform character limits, the copy blacklist that stops ' +
+        'output reading as machine-written, grounded inputs, and the loop that turns last month\'s results into ' +
+        'next month\'s briefs. Load it before writing ANY ad copy, headline or offer line.',
+    },
+  ];
+  for (const [slug, title, why] of AD_CREATIVE_REFERENCES) {
+    entries.push({
+      slug: `ad-creative-ref-${slug}`,
+      name: `ad-creative--${slug}`,
+      title,
+      kind: 'reference',
+      belongsTo: 'ad-creative',
+      repo: AD_CREATIVE.repo,
+      filePath: `${AD_CREATIVE.root}/references/${slug}.md`,
+      licence: AD_CREATIVE.licence,
+      why,
+    });
+  }
+  return entries;
+}
+
+/**
+ * Everything we vendor, and the exact upstream file it came from.
+ *
+ * `kind: 'reference'` marks a companion file that is NOT its own skill: it is one of the
+ * `references/*.md` documents an upstream SKILL.md points at. References are emitted as a
+ * separate shape and are loaded by `get_skill_reference` rather than `get_skill`, so they
+ * never take a slot in the skill catalogue — an upstream skill's footnotes should not cost
+ * every routing decision a prompt line.
+ */
 const SOURCES = [
   {
     slug: 'meta-ads-creative',
@@ -139,6 +277,11 @@ const SOURCES = [
       'Cinematic shot design for product promos — shot recipes, beat sync, sound design and edit ' +
       'structure. Load it before designing any promo or reel; it is what stops the motion looking generic.',
   },
+  // ── The ad-copy layer ───────────────────────────────────────────────────────────────────────────────────────────
+  // Everything above is about how a creative LOOKS. This family is about what it SAYS, and about which creative to
+  // make next: the angle, the character budget, the phrases that make copy read as generated, and the loop from
+  // measured results back into new variations.
+  ...adCreativeFamily(),
 ];
 
 const raw = (repo, filePath) =>
@@ -211,11 +354,31 @@ async function headSha(repo, cache) {
 }
 
 const checkOnly = process.argv.includes('--check');
+
+/**
+ * `--only=<slug,slug>` restricts the run to those slugs.
+ *
+ * Adding one skill must not quietly rewrite the others: several repos we vendor from have moved
+ * since we last refreshed them, and adopting upstream's newer text is a separate decision with its
+ * own review. Without this flag, vendoring a new skill drags every stale sibling into the same diff
+ * and the reviewer cannot tell which change was intended.
+ */
+const onlyArg = process.argv.find((arg) => arg.startsWith('--only'));
+const onlySlugs = onlyArg
+  ? new Set(
+      (onlyArg.includes('=') ? onlyArg.slice(onlyArg.indexOf('=') + 1) : '')
+        .split(',')
+        .map((slug) => slug.trim())
+        .filter(Boolean),
+    )
+  : null;
+
 const shas = new Map();
 const written = [];
 const drifted = [];
 
 for (const source of SOURCES) {
+  if (onlySlugs && !onlySlugs.has(source.slug)) continue;
   const url = raw(source.repo, source.filePath);
   let text;
   try {
@@ -230,8 +393,43 @@ for (const source of SOURCES) {
   const sha = await headSha(source.repo, shas);
   const description = describeSkill(meta, body, source.name, source.repo, source.filePath);
 
+  const attribution = `{
+    repo: ${JSON.stringify(source.repo)},
+    path: ${JSON.stringify(source.filePath)},
+    commit: ${JSON.stringify(sha)},
+    licence: ${JSON.stringify(source.licence)},
+    url: ${JSON.stringify(`https://github.com/${source.repo}/blob/${sha === 'unknown' ? 'HEAD' : sha}/${source.filePath}`)},
+  }`;
+
+  // A reference is a companion document, not a skill: it is loaded by `get_skill_reference` and never takes a
+  // catalogue slot, so it is emitted in a different shape rather than being smuggled in as a bad skill.
+  const emitted = source.kind === 'reference'
+    ? `export const reference = {
+  name: ${JSON.stringify(source.name)},
+  /** Human title, ours — the upstream file has no frontmatter to read one from. */
+  title: ${JSON.stringify(source.title)},
+  /** The skill this document belongs to, so the loader can list a skill's companions. */
+  belongsTo: ${JSON.stringify(source.belongsTo)},
+  description: ${JSON.stringify(String(description).replace(/\s+/g, ' ').slice(0, 400))},
+  content: ${JSON.stringify(body.trimStart())},
+  attribution: ${attribution},
+} as const;`
+    : `export const skill = {
+  name: ${JSON.stringify(source.name)},
+  description: ${JSON.stringify(String(description).replace(/\s+/g, ' ').slice(0, 400))},
+  content: ${JSON.stringify(body.trimStart())},
+  /**
+   * What WE use it for. The router can only see text, and upstream descriptions are written
+   * for a human browsing a repo — scroll-craft's never says "landing page", so it was
+   * invisible to routing for exactly the task it is best at. This line is ours, it is
+   * honest about our purpose, and it is what makes the skill findable.
+   */
+  useFor: ${JSON.stringify(source.why)},
+  attribution: ${attribution},
+} as const;`;
+
   const module = `/**
- * VENDORED SKILL — do not hand-edit. Refresh with \`node scripts/vendor-skills.mjs\`.
+ * VENDORED ${source.kind === 'reference' ? 'REFERENCE' : 'SKILL'} — do not hand-edit. Refresh with \`node scripts/vendor-skills.mjs\`.
  *
  *   upstream : ${source.repo}
  *   path     : ${source.filePath}
@@ -244,25 +442,7 @@ for (const source of SOURCES) {
  * carries and what the gate checks. If upstream changes its licence, refresh this file
  * and update the constant — do not strip the attribution to make a test pass.
  */
-export const skill = {
-  name: ${JSON.stringify(source.name)},
-  description: ${JSON.stringify(String(description).replace(/\s+/g, ' ').slice(0, 400))},
-  content: ${JSON.stringify(body.trimStart())},
-  /**
-   * What WE use it for. The router can only see text, and upstream descriptions are written
-   * for a human browsing a repo — scroll-craft's never says "landing page", so it was
-   * invisible to routing for exactly the task it is best at. This line is ours, it is
-   * honest about our purpose, and it is what makes the skill findable.
-   */
-  useFor: ${JSON.stringify(source.why)},
-  attribution: {
-    repo: ${JSON.stringify(source.repo)},
-    path: ${JSON.stringify(source.filePath)},
-    commit: ${JSON.stringify(sha)},
-    licence: ${JSON.stringify(source.licence)},
-    url: ${JSON.stringify(`https://github.com/${source.repo}/blob/${sha === 'unknown' ? 'HEAD' : sha}/${source.filePath}`)},
-  },
-} as const;
+${emitted}
 `;
 
   const target = path.join(OUT_DIR, `${source.slug}.ts`);

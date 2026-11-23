@@ -17,7 +17,7 @@
  *
  * into a brief that says what the day needs and which tools to compose it with.
  * The recipes are FIRST-DRAFT GUIDANCE, not the implementation: they say what a
- * good artefact looks like and â€” critically â€” what "still acceptable" looks like
+ * good artefact looks like and — critically — what "still acceptable" looks like
  * when the ideal is not achievable, because an agent composing from scratch has
  * far more failure modes than a fixed pipeline.
  *
@@ -27,6 +27,8 @@
 import type { Playbook } from './ceo';
 import { industryVocabulary } from './industry';
 import { resolveRecipes, type RecipeSet } from './recipes';
+import { adCopyRulesForPrompt } from '../ads/creative-specs';
+import { learningsBriefLines, type CreativeLearnings } from '../ads/creative-learning';
 import { observanceBriefLines, upcomingObservances } from './observance-calendar';
 import { directiveBriefLines, mergeDirectives } from './creative-directives';
 
@@ -61,6 +63,14 @@ export interface RoutineBriefInput {
   festivals?: string[];
   recentOutputs?: string[];
   lastWeekNotes?: string | null;
+  /**
+   * What the account's ads have actually done, from `optimize_meta_campaign`.
+   *
+   * Optional because composing a brief must never depend on Meta being reachable: when it is absent the
+   * brief still tells the agent to go and look, and says nothing false about performance. When it is
+   * present, the day's creative starts from what worked instead of from a blank page.
+   */
+  creativeLearnings?: CreativeLearnings | null;
 }
 
 const MAX_LIST = 6;
@@ -86,7 +96,7 @@ function listBlock(title: string, items: unknown, limit = MAX_LIST): string[] {
 /**
  * Render the playbook's `daily_routine` as readable slots.
  *
- * The stored shape is free-form by design â€” the CEO writes it in plain language â€”
+ * The stored shape is free-form by design — the CEO writes it in plain language —
  * so anything that is not a simple scalar/array is rendered as JSON rather than
  * silently dropped. A schedule the agent cannot read is worse than no schedule.
  */
@@ -138,14 +148,14 @@ function describeSlot(slot: any): string {
   const channel = slot.channel || slot.channels || '';
   const bits = [when && String(when), what && String(what), channel && `on ${Array.isArray(channel) ? channel.join('/') : channel}`]
     .filter(Boolean);
-  return bits.length ? bits.join(' â€” ') : JSON.stringify(slot).slice(0, 200);
+  return bits.length ? bits.join(' — ') : JSON.stringify(slot).slice(0, 200);
 }
 
 /** Human-readable recipe guidance, including its degraded path. */
 export function renderRecipe(name: 'creative' | 'video' | 'copy', recipe: Record<string, unknown>): string[] {
   const lines: string[] = [];
   const goal = recipe.goal ? String(recipe.goal) : '';
-  lines.push(`### ${name.toUpperCase()}${goal ? ` â€” aim: ${goal}` : ''}`);
+  lines.push(`### ${name.toUpperCase()}${goal ? ` — aim: ${goal}` : ''}`);
 
   lines.push(...listBlock('must include', recipe.must_include));
   lines.push(...listBlock('structure', recipe.structure));
@@ -156,7 +166,7 @@ export function renderRecipe(name: 'creative' | 'video' | 'copy', recipe: Record
     const f = recipe.format as Record<string, unknown>;
     const bits = Object.entries(f)
       .filter(([, v]) => v !== null && v !== undefined && v !== '')
-      .map(([k, v]) => `${k.replace(/_/g, ' ')} ${Array.isArray(v) ? v.join('â€“') : v}`);
+      .map(([k, v]) => `${k.replace(/_/g, ' ')} ${Array.isArray(v) ? v.join('“') : v}`);
     if (bits.length) lines.push(`  format: ${bits.join(', ')}`);
   }
 
@@ -234,7 +244,7 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
 
   // ---- today's context ----
   lines.push('');
-  lines.push('TODAY, BEFORE YOU PLAN â€” look with tools, not memory:');
+  lines.push('TODAY, BEFORE YOU PLAN — look with tools, not memory:');
   lines.push(`- new and open leads, what stage they are in, and anything waiting on a reply`);
   lines.push(`- the catalogue: what ${vocab.productNounPlural} are actually available right now`);
   lines.push(`- what went out in the last 7 days and what happened to it`);
@@ -242,7 +252,7 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   if (input.festivals?.length) lines.push(`- known for today: ${input.festivals.slice(0, MAX_LIST).join(', ')}`);
   // OBSERVANCE DAYS (Women's Day, Earth Day, Environment Day, Yoga Day, Mother's/Father's Day, ...)
   // were nobody's job: they are not festivals, so the festival calendar never carried them, and the
-  // routine was told only to "check the calendar" â€” which it had no way to do. They arrive here with
+  // routine was told only to "check the calendar" — which it had no way to do. They arrive here with
   // the date, the commercial angle and the lead time, so the creative exists BEFORE the day.
   const observances = upcomingObservances(input.now ?? new Date(), {
     withinDays: OBSERVANCE_WINDOW_DAYS,
@@ -250,13 +260,13 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   });
   if (observances.length) {
     lines.push('');
-    lines.push('OBSERVANCE DAYS â€” in the window right now (not festivals; fixed national/international days):');
+    lines.push('OBSERVANCE DAYS — in the window right now (not festivals; fixed national/international days):');
     lines.push(...observanceBriefLines(observances));
     lines.push(
       '- An observance creative is a real piece of work, not a greeting card: use the angle given, and tie it to what this business actually sells. If the honest angle does not exist, skip that day and say why.'
     );
   }
-  // CREATIVE DIRECTIVES â€” the owner's standing rules for what a creative may contain.
+  // CREATIVE DIRECTIVES — the owner's standing rules for what a creative may contain.
   //
   // This is the half that makes "no phone number in any daily creative" a rule rather than a hope: the
   // same directives are enforced on the compiled spec by build_ad_creative_prompt, and stating them in
@@ -291,6 +301,35 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   if (input.recentOutputs?.length) {
     lines.push(`- already published recently: ${input.recentOutputs.slice(0, MAX_LIST).join('; ')}`);
   }
+
+  // ── WHAT ALREADY RAN, AND WHAT IT TAUGHT US ─────────────────────────────────────────────────────
+  //
+  // The loop closes here for the daily flow. Two states, both honest:
+  //   WITH data   the measured verdicts go into the brief, so today's creative argues what won.
+  //   WITHOUT     the brief says to go and read the numbers first, and says nothing false.
+  // A brief that quietly implies it knows performance when it does not is worse than one that asks.
+  const learned = learningsBriefLines(input.creativeLearnings);
+  lines.push('');
+  if (learned.length) {
+    lines.push('WHAT THE ADS HAVE ACTUALLY DONE (measured, not guessed — build on this):');
+    lines.push(...learned);
+    lines.push(
+      '- Before you design today\'s creative, call optimize_meta_campaign for the current numbers and pass its',
+    );
+    lines.push(
+      '  guidance.avoid into build_ad_creative_prompt as avoidAngles, and prefer its winners. Do not re-propose an',
+    );
+    lines.push('  angle that already lost on this account unless the owner asks for it by name.');
+  } else {
+    lines.push('WHAT THE ADS HAVE ACTUALLY DONE: not read yet.');
+    lines.push(
+      '- Call optimize_meta_campaign BEFORE designing anything. If campaigns are running, its learnings decide which',
+    );
+    lines.push(
+      '  angle today\'s creative argues; if the account is too new to judge, it will say so and you should vary the',
+    );
+    lines.push('  angle rather than repeat the last one. Either way, say which it was.');
+  }
   if (input.lastWeekNotes) lines.push(`- last week's conclusion: ${input.lastWeekNotes}`);
   if (input.creditsLeft !== null && input.creditsLeft !== undefined) {
     lines.push(`- wallet: ${input.creditsLeft} credits`);
@@ -301,20 +340,45 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
 
   // ---- first-draft guidance ----
   lines.push('');
-  lines.push('HOW A GOOD FIRST DRAFT LOOKS (guidance, not a script â€” adapt it to this business):');
+  lines.push('HOW A GOOD FIRST DRAFT LOOKS (guidance, not a script — adapt it to this business):');
   lines.push(...renderRecipe('creative', recipes.creative));
   lines.push(...renderRecipe('video', recipes.video));
   lines.push(...renderRecipe('copy', recipes.copy));
+
+  // THE COPY RULE THAT IS ACTUALLY CHECKED.
+  //
+  // The recipes above are guidance a business can edit. This block is not: it is the same limits table
+  // that lib/ads/creative-specs.ts enforces and that a Meta launch is refused against, printed here so
+  // the first draft is written inside the budget instead of being rejected after it. One source of
+  // truth — the numbers come from the code, never retyped into prose.
+  lines.push('');
+  lines.push('AD COPY — THE RULE THAT GETS CHECKED (not guidance; a launch that breaks it is refused):');
+  lines.push(
+    ...adCopyRulesForPrompt()
+      .split('\n')
+      .slice(1) // drop the heading, which is already stated above
+      .map((line) => (line.startsWith('-') || line.startsWith('  ') ? `  ${line}` : line)),
+  );
+  lines.push(
+    '  Say which angle each creative uses and why, and state a hypothesis a result could disprove —',
+  );
+  lines.push(
+    '  the metric, what it is measured against, and the direction. Full method: load the skill',
+  );
+  lines.push(
+    '  "nobogent-ad-copy" for the rule, or "ad-creative" for the whole playbook plus its reference documents.',
+  );
+
   lines.push('');
   lines.push(`AUDIO RULE (does not bend): ${AUDIO_RULE}`);
 
   // ---- the tools ----
   lines.push('');
-  lines.push('HOW TO MAKE IT â€” compose with your own tools, in this order:');
+  lines.push('HOW TO MAKE IT — compose with your own tools, in this order:');
   lines.push('- composeCreative: one poster/creative. It applies the creative recipe and takes the degraded');
   lines.push('  path by itself when there is no usable photo. Pass the facts you verified, never guesses.');
   lines.push('- composeVideo: one short vertical clip. It applies the video recipe, decides the audio mode,');
-  lines.push('  and returns a task id â€” poll it with check_media_task before you call it delivered.');
+  lines.push('  and returns a task id — poll it with check_media_task before you call it delivered.');
   lines.push('- deliverArtefact: sends a finished artefact to the owner (or publishes it) on the channel you');
   lines.push('  choose. Never deliver something whose task is still running.');
   lines.push('- If a composition fails, re-read its degraded path and make the simpler thing. Producing');
@@ -353,18 +417,18 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   lines.push('- if the real cost would exceed what you told the owner, STOP and ask. A silently overdrawn');
   lines.push('  balance is unrecoverable trust.');
   lines.push('- NEVER spend ad budget. Credits are not ad spend; ad spend is on the business\'s own');
-  lines.push('  Meta/Google card. Stop at "campaign ready â€” launch with Rs X/day?" and wait.');
+  lines.push('  Meta/Google card. Stop at "campaign ready — launch with Rs X/day?" and wait.');
   lines.push(`- approval policy for today: ${routine.approval_policy}`);
   lines.push(`- channels available: ${(routine.channels || []).join(', ') || 'none configured'}`);
   if (input.pendingApprovals) {
-    lines.push(`- there are already ${input.pendingApprovals} approval(s) waiting â€” do not duplicate them`);
+    lines.push(`- there are already ${input.pendingApprovals} approval(s) waiting — do not duplicate them`);
   }
 
   // ---- invariants ----
   lines.push('');
   lines.push('RULES THAT DO NOT BEND:');
   lines.push(`- never invent a price, a registration number, an availability, an approval or a performance figure`);
-  lines.push(`- if you do not have a fact, say what you need â€” do not fill the gap with something plausible`);
+  lines.push(`- if you do not have a fact, say what you need — do not fill the gap with something plausible`);
   lines.push('- a reference creative is a style guide, never this business\'s own product');
   lines.push('- nothing goes to a paid channel or a broadcast without approval');
   lines.push(

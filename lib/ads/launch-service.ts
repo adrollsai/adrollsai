@@ -34,6 +34,8 @@ import {
   describeLeadFormFields,
   type CampaignPlan,
 } from '@/lib/ads/campaign-plan';
+import { checkAdCopy, sanitizeCopy, MECHANICALLY_REPAIRED_RULES } from '@/lib/ads/creative-specs';
+import type { LaunchedCreative } from '@/lib/ads/creative-learning';
 
 /** Meta will not run a daily budget below this in INR; quoting less creates a campaign that never delivers. */
 export const MIN_DAILY_BUDGET_INR = 100;
@@ -72,6 +74,28 @@ export interface LaunchRequest {
   leadFormFields?: string[];
   /** Pause the campaign at creation instead of running it (the safe default when the owner is unsure). */
   startPaused?: boolean;
+  /**
+   * WHICH ARGUMENT THIS LAUNCH MAKES, recorded so the result can teach the next batch.
+   *
+   * This is the missing half of the performance loop. Meta returns numbers against an ad, never against an
+   * idea; without a note of which angle an ad argued, a winning campaign tells you nothing you can repeat.
+   * It rides in `campaign_jobs.payload` — a JSON column that already exists, whose other keys the processor
+   * reads by name, so an extra key is inert to it. No migration, and nothing the client sees in Ads Manager.
+   *
+   * See lib/ads/creative-learning.ts, which joins this to the insights and decides what to make next.
+   */
+  creativePlan?: CreativePlan;
+}
+
+/** The creative identity worth remembering about a launch. Deliberately small: it is a label, not an asset. */
+export interface CreativePlan {
+  /** One of AD_ANGLES ids from lib/agent/creative/ad-prompt-compiler. */
+  angleId?: string | null;
+  headline?: string | null;
+  subhead?: string | null;
+  offerLine?: string | null;
+  /** The canvas it was designed for: 1:1, 4:5, 9:16, 16:9. */
+  format?: string | null;
 }
 
 export interface LaunchContext {
@@ -168,6 +192,8 @@ export interface LaunchValidation {
   missing?: string[];
   error?: string;
   plan?: CampaignPlan;
+  /** True but worth saying: a field Meta will drop, copy that was mechanically repaired at build time. */
+  notes?: string[];
 }
 
 /**
@@ -178,6 +204,7 @@ export interface LaunchValidation {
  */
 export function validateLaunchRequest(req: LaunchRequest, ctx?: Partial<LaunchContext>): LaunchValidation {
   const missing: string[] = [];
+  const notes: string[] = [];
   const request = req || {};
 
   const plan = resolveCampaignPlan({
@@ -207,6 +234,53 @@ export function validateLaunchRequest(req: LaunchRequest, ctx?: Partial<LaunchCo
   ].filter(Boolean);
   if (!creatives.length && !request.adCopy?.headline) {
     missing.push('a creative - an image or video URL, a catalogue item, or at least the headline copy');
+  }
+
+  // COPY THAT FITS, AND READS AS WRITTEN BY A PERSON.
+  //
+  // Meta does not reject an over-long headline — it truncates it at 40 characters and reports nothing, so
+  // the advertiser finds out when a customer reads "...starting at ₹85,00,0". The check therefore has to
+  // happen before the launch, not after the bill.
+  //
+  // Two different failures, two different responses, and mixing them up is what makes an agent route
+  // around a check instead of writing better copy:
+  //   DOES NOT FIT     a writing problem. Refused, with a trimmed version quoted so the rewrite has a
+  //                    starting point. Cutting it here would ship a sentence with its end missing.
+  //   A COPY TIC       a stock phrase ("unlock the power") is refused. A dash or a curly quote is
+  //                    repaired by sanitizeCopy in buildCampaignJobPayload, so it is not refused —
+  //                    refusing punctuation we are about to fix would be theatre.
+  const copyCheck = checkAdCopy('meta', request.adCopy || {});
+  const mustRewrite = copyCheck.violations.filter(
+    (issue) =>
+      issue.severity === 'block' && !(MECHANICALLY_REPAIRED_RULES as readonly string[]).includes(issue.rule),
+  );
+  if (copyCheck.overLimit.length || mustRewrite.length) {
+    const parts: string[] = [];
+    for (const verdict of copyCheck.overLimit) {
+      parts.push(
+        `${verdict.field} is ${verdict.length} characters but Meta shows ${verdict.limit}` +
+          (verdict.trimmed ? ` — rewrite it, or use "${verdict.trimmed}"` : ' — rewrite it shorter'),
+      );
+    }
+    for (const issue of mustRewrite) {
+      parts.push(`replace "${issue.match}" in ${issue.field || 'the copy'} — ${issue.fix}`);
+    }
+    return {
+      ok: false,
+      plan,
+      error:
+        `The ad copy needs a rewrite before this can launch. ${parts.join('. ')}. ` +
+        'Nothing was created and no money was spent.',
+    };
+  }
+
+  if (copyCheck.unknownFields.length) {
+    // Not fatal — Meta drops an unknown field anyway — but silence is how a caller spends an hour
+    // wondering why the description never appeared. Notes reach the caller without stopping the launch.
+    notes.push(
+      `${copyCheck.unknownFields.join(', ')} ${copyCheck.unknownFields.length === 1 ? 'is' : 'are'} not ` +
+        'a Meta copy field and will be dropped (Meta uses headline, primary_text, description)',
+    );
   }
 
   if (plan.requiresPixel) {
@@ -239,7 +313,89 @@ export function validateLaunchRequest(req: LaunchRequest, ctx?: Partial<LaunchCo
     };
   }
 
-  return { ok: true, plan };
+  return { ok: true, plan, ...(notes.length ? { notes } : {}) };
+}
+
+/**
+ * Repair the copy tics whose fix is not a matter of taste, on the way into the payload.
+ *
+ * This runs at BUILD time rather than in validation on purpose. `validateLaunchRequest` already refused
+ * anything that needs a human rewrite, so what is left here is punctuation: an em dash, a curly quote, a
+ * doubled word, a trailing space. Refusing a launch over those would teach the agent that the check is an
+ * obstacle to route around; repairing them means the ad that goes live is the good version of the sentence
+ * the owner approved.
+ */
+function sanitiseAdCopy(copy: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [field, raw] of Object.entries(copy || {})) {
+    out[field] = typeof raw === 'string' ? sanitizeCopy(raw).text : raw;
+  }
+  return out;
+}
+
+/** A plan field, clipped to something a label should be. Anything else is dropped rather than forwarded. */
+function planText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
+}
+
+/**
+ * Keep only the creative-plan fields we understand, each clipped.
+ *
+ * Defensive rather than trusting: this value is written into a JSON column and read back months later to
+ * decide what to make next, so a stray 4 KB prompt accidentally passed as `headline` would be attributed to
+ * an angle forever. An unknown key is dropped, not stored.
+ */
+export function normaliseCreativePlan(raw: unknown): CreativePlan | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const source = raw as Record<string, unknown>;
+  const plan: CreativePlan = {
+    angleId: planText(source.angleId, 60),
+    headline: planText(source.headline, 200),
+    subhead: planText(source.subhead, 300),
+    offerLine: planText(source.offerLine, 200),
+    format: planText(source.format, 10),
+  };
+  // A plan with no angle teaches nothing, so it is not worth persisting at all.
+  return plan.angleId ? plan : null;
+}
+
+/**
+ * The launches we recorded, newest first, for attribution.
+ *
+ * Read-only and best-effort: a missing table, an old row with no payload or a malformed plan all collapse to
+ * "no launches", which makes the learning pass report nothing rather than assert something wrong.
+ */
+export async function loadRecordedLaunches(
+  db: any,
+  userId: string,
+  opts: { limit?: number } = {},
+): Promise<{ launches: LaunchedCreative[]; readError?: string }> {
+  const limit = Math.max(1, Math.min(200, Number(opts.limit ?? 50)));
+  try {
+    const { data, error } = await db
+      .from('campaign_jobs')
+      .select('id, campaign_id, payload, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) return { launches: [], readError: error.message };
+
+    const launches: LaunchedCreative[] = [];
+    for (const row of data ?? []) {
+      const plan = normaliseCreativePlan((row as any)?.payload?.creativePlan);
+      if (!plan?.angleId) continue;
+      launches.push({
+        campaignId: (row as any).campaign_id ? String((row as any).campaign_id) : null,
+        angleId: plan.angleId,
+        headline: plan.headline ?? null,
+      });
+    }
+    return { launches };
+  } catch (e: any) {
+    return { launches: [], readError: e?.message || 'could not read recorded launches' };
+  }
 }
 
 /**
@@ -276,7 +432,10 @@ export function buildCampaignJobPayload(ctx: LaunchContext, req: LaunchRequest, 
     ageMin: request.ageMin ?? 18,
     ageMax: request.ageMax ?? 65,
     customAudienceIds: request.customAudienceIds || [],
-    adCopy: request.adCopy || {},
+    adCopy: sanitiseAdCopy(request.adCopy || {}),
+    // Recorded, not read by the processor. This is the only durable trace of WHICH ARGUMENT the ad made, and
+    // it is what lets a future insights pass attribute performance back to an angle (lib/ads/creative-learning).
+    creativePlan: normaliseCreativePlan(request.creativePlan),
     adCopies: [],
     whatsappNumber: request.whatsappNumber || ctx.whatsappNumber || '',
     businessName: ctx.businessName,

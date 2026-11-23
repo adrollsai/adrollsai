@@ -2,7 +2,14 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { houseSkill, houseSkillCatalogue } from '../house-skills';
-import { vendoredSkill, vendoredSkillCatalogue, englishOnly, skillContentFor } from '../skills-vendor';
+import {
+  vendoredSkill,
+  vendoredSkillCatalogue,
+  englishOnly,
+  skillContentFor,
+  vendoredReference,
+  vendoredReferencesFor,
+} from '../skills-vendor';
 import { describeRoute, rankSkills, type RoutableSkill } from '../skill-router';
 
 /**
@@ -21,7 +28,7 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
     list_skills: tool({
       description:
         'List every skill you can load, with a one-line description of each: the platform rules (names ' +
-        'starting "nobogent-"), the vendored craft skills (design, meta ads), and this business\'s own ' +
+        'starting "nobogent-"), the vendored craft skills (design, meta ads, ad copy), and this business\'s own ' +
         'written procedures. Prefer pick_skill(requirement) over reading this list when you already know ' +
         'what the task is — it ranks them for you. Then get_skill with the ONE that applies.',
       inputSchema: z.object({}),
@@ -96,12 +103,21 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
         // only read when the agent asks for it by name.
         const vendored = vendoredSkill(name);
         if (vendored) {
+          // A skill with companion documents is useless if the agent cannot reach them: the body says
+          // "see references/platform-specs.md" and that path does not exist here. So the names come back
+          // with the body, and get_skill_reference fetches exactly one.
+          const references = vendoredReferencesFor(vendored.name).map((reference) => ({
+            name: reference.name,
+            title: reference.title,
+            description: reference.description,
+          }));
           return {
             success: true,
             name: vendored.name,
             description: englishOnly(vendored.description),
             source: 'vendor',
             attribution: vendored.attribution,
+            ...(references.length ? { references } : {}),
             // Most vendored bodies are English. `video-shotcraft` comes from a
             // Chinese-language upstream, and a Chinese document in context is enough
             // to pull a Chinese-trained model into answering in Chinese — so a
@@ -110,7 +126,11 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
             content: skillContentFor(vendored),
             message:
               `Vendored from ${vendored.attribution.repo} (${vendored.attribution.licence}). ` +
-              'Follow it where it applies; our own platform rules win where they disagree.',
+              'Follow it where it applies; our own platform rules win where they disagree.' +
+              (references.length
+                ? ' It has reference documents: call get_skill_reference with one of the names in `references`' +
+                  ' when the task needs those specifics — do not load them all.'
+                : ''),
           };
         }
 
@@ -147,6 +167,57 @@ export function createSkillTools(supabase: SupabaseClient, userId: string) {
         } catch (err: any) {
           return { success: false, error: err?.message || 'Could not load that skill.' };
         }
+      },
+    }),
+
+    /**
+     * Read one companion document of a vendored skill.
+     *
+     * `ad-creative` points at eleven reference files totalling ~160 KB — platform specs, the static
+     * template library, the hook system, the format taxonomy, the strategy loop. Loading them with the
+     * skill body would cost a turn the budget of a conversation, and loading none of them leaves the
+     * skill referring to files that are not there. So this fetches exactly the one a task needs.
+     *
+     * It is deliberately NOT in the catalogue and NOT routable: it returns a document, it does not
+     * decide anything, and eleven extra catalogue lines would make every routing decision worse.
+     */
+    get_skill_reference: tool({
+      description:
+        'Read one reference document that belongs to a vendored skill — for example the platform character ' +
+        'limits, the static ad template library, or the hook system behind get_skill("ad-creative"). The names ' +
+        'are listed in the `references` field of a get_skill result. Fetch the ONE the task needs; do not ' +
+        'fetch several to be safe. These are upstream documents, so where one disagrees with a "nobogent-" ' +
+        'platform rule or with the limits build_ad_creative_prompt reports, the platform rule wins.',
+      inputSchema: z.object({
+        name: z
+          .string()
+          .describe('The reference name from a skill\'s `references` list, e.g. "ad-creative--platform-specs"'),
+      }),
+      execute: async ({ name }: { name: string }) => {
+        const reference = vendoredReference(name);
+        if (!reference) {
+          // Name the alternatives rather than only refusing: a bare "not found" makes the agent guess
+          // again, and guessing is what the whole catalogue split exists to avoid.
+          const available = [...new Set(vendoredReferencesFor(name.split('--')[0] || ''))].map((entry) => entry.name);
+          return {
+            success: false,
+            error: `No reference document named "${name}".`,
+            available: available.length ? available : undefined,
+            hint: 'The exact names are listed under `references` in the get_skill result for the parent skill.',
+          };
+        }
+        return {
+          success: true,
+          name: reference.name,
+          title: reference.title,
+          belongsTo: reference.belongsTo,
+          description: reference.description,
+          attribution: reference.attribution,
+          content: reference.content,
+          message:
+            `Reference document of "${reference.belongsTo}", vendored from ${reference.attribution.repo} ` +
+            `(${reference.attribution.licence}). Follow it where it applies; our platform rules win where they disagree.`,
+        };
       },
     }),
 

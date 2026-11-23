@@ -29,6 +29,18 @@ import { skill as landingStructure } from './landing-structure';
 import { skill as landingArtDirection } from './landing-art-direction';
 import { skill as uxGuardrails } from './ux-guardrails';
 import { skill as videoShotcraft } from './video-shotcraft';
+import { skill as adCreative } from './ad-creative';
+import { reference as adCreativePlatformSpecs } from './ad-creative-ref-platform-specs';
+import { reference as adCreativeStaticTemplates } from './ad-creative-ref-static-ad-templates';
+import { reference as adCreativeHookSystem } from './ad-creative-ref-hook-system';
+import { reference as adCreativeAwarenessHeadlines } from './ad-creative-ref-awareness-headlines';
+import { reference as adCreativeMetaFormats } from './ad-creative-ref-meta-creative-formats';
+import { reference as adCreativeRoadmap } from './ad-creative-ref-creative-roadmap';
+import { reference as adCreativeReviewPage } from './ad-creative-ref-creative-review-page';
+import { reference as adCreativeGenerativeTools } from './ad-creative-ref-generative-tools';
+import { reference as adCreativeShortForm } from './ad-creative-ref-short-form-video-specs';
+import { reference as adCreativeMotionVideo } from './ad-creative-ref-motion-video-ads';
+import { reference as adCreativeImessageVideo } from './ad-creative-ref-imessage-video-ads';
 
 export interface VendoredSkill {
   name: string;
@@ -51,6 +63,27 @@ export interface VendoredSkill {
   };
 }
 
+/**
+ * A companion document of a vendored skill — an upstream `references/*.md` file.
+ *
+ * WHY THESE ARE NOT SKILLS
+ * `ad-creative` ships with eleven reference documents totalling ~160 KB. Loading them all would
+ * cost a turn the budget of a whole conversation, and registering them as eleven skills would put
+ * eleven extra lines in every routing decision for documents that only one task in twenty needs.
+ * So they are addressable, but they are not in the catalogue: `get_skill` returns the skill's own
+ * body plus the names of its companions, and `get_skill_reference` fetches exactly the one the task
+ * needs. That is the same progressive-disclosure idea, one level deeper.
+ */
+export interface VendoredReference {
+  name: string;
+  title: string;
+  /** The skill this document annotates. */
+  belongsTo: string;
+  description: string;
+  content: string;
+  attribution: VendoredSkill['attribution'];
+}
+
 /** Licences we are allowed to ship. Anything else must be judged by a human, not a regex. */
 export const ALLOWED_LICENCES = ['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC'] as const;
 
@@ -67,6 +100,21 @@ export const VENDORED_SKILLS: readonly VendoredSkill[] = [
   impeccableCraftFloor as VendoredSkill,
   impeccableCritique as VendoredSkill,
   videoShotcraft as VendoredSkill,
+  adCreative as VendoredSkill,
+];
+
+export const VENDORED_REFERENCES: readonly VendoredReference[] = [
+  adCreativePlatformSpecs as VendoredReference,
+  adCreativeStaticTemplates as VendoredReference,
+  adCreativeHookSystem as VendoredReference,
+  adCreativeAwarenessHeadlines as VendoredReference,
+  adCreativeMetaFormats as VendoredReference,
+  adCreativeRoadmap as VendoredReference,
+  adCreativeReviewPage as VendoredReference,
+  adCreativeGenerativeTools as VendoredReference,
+  adCreativeShortForm as VendoredReference,
+  adCreativeMotionVideo as VendoredReference,
+  adCreativeImessageVideo as VendoredReference,
 ];
 
 /**
@@ -116,6 +164,56 @@ export function vendoredSkill(name: string): VendoredSkill | null {
 }
 
 /**
+ * A companion document by exact name, case-insensitively.
+ *
+ * Accepts either the full name (`ad-creative--platform-specs`) or the bare suffix
+ * (`platform-specs`), because the agent will reasonably try the shorter one after reading a body
+ * that referred to `references/platform-specs.md`. Guessing wrong here costs a turn; accepting
+ * both costs nothing.
+ */
+export function vendoredReference(name: string): VendoredReference | null {
+  const wanted = String(name ?? '').trim().toLowerCase();
+  if (!wanted) return null;
+  const exact = VENDORED_REFERENCES.find((reference) => reference.name.toLowerCase() === wanted);
+  if (exact) return exact;
+  const suffixed = VENDORED_REFERENCES.filter((reference) => reference.name.toLowerCase().endsWith(`--${wanted}`));
+  return suffixed.length === 1 ? suffixed[0] : null;
+}
+
+/** Every companion document a skill declares, in the order upstream lists them. */
+export function vendoredReferencesFor(skillName: string): VendoredReference[] {
+  const wanted = String(skillName ?? '').trim().toLowerCase();
+  return VENDORED_REFERENCES.filter((reference) => reference.belongsTo.toLowerCase() === wanted);
+}
+
+/**
+ * The note appended to a skill body that has companions.
+ *
+ * An upstream body tells the reader to "see references/platform-specs.md", which is a file path
+ * that does not exist here. Left alone, the agent either invents its contents or silently skips
+ * the part of the skill that carries the actual numbers. So the body is handed over with a
+ * translation: here is the document, and here is the call that returns it.
+ */
+export function referencePointerNote(skillName: string): string {
+  const references = vendoredReferencesFor(skillName);
+  if (!references.length) return '';
+  const lines = references.map(
+    (reference) => `  - ${reference.title} — get_skill_reference("${reference.name}"): ${reference.description}`,
+  );
+  return [
+    '',
+    '── REFERENCE DOCUMENTS ─────────────────────────────────────────────────────────',
+    'This skill refers to its own `references/*.md` files. Those paths do not exist in this',
+    'installation; the documents do, and each is fetched by name with get_skill_reference:',
+    ...lines,
+    '',
+    'Fetch only the one the task needs. Where a reference disagrees with a `nobogent-` platform',
+    'rule or with the limits enforced by lib/ads/creative-specs.ts, the platform rule wins.',
+    '',
+  ].join('\n');
+}
+
+/**
  * The catalogue entries the prompt and `list_skills` show.
  *
  * `useFor` is folded into the description HERE rather than in the skill body, so the router
@@ -141,11 +239,15 @@ export function vendoredSkillCatalogue(): { name: string; description: string }[
  */
 export function skillContentFor(skill: VendoredSkill): string {
   const body = String(skill.content ?? '');
-  if (!isForeignLanguageBody(body)) return body;
+  // A skill with companion documents is handed over with the pointer list, so the agent can
+  // actually reach the numbers the body refers to instead of guessing at them.
+  const pointers = referencePointerNote(skill.name);
+  const withPointers = pointers ? `${body}\n${pointers}` : body;
+  if (!isForeignLanguageBody(body)) return withPointers;
   return (
     `[NOTE: this skill's reference text is written in another language. Read it for the ` +
     `technique and the numbers, but answer the owner in THEIR language — never switch to ` +
-    `Chinese unless they wrote to you in Chinese.]\n\n${body}`
+    `Chinese unless they wrote to you in Chinese.]\n\n${withPointers}`
   );
 }
 
