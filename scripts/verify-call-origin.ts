@@ -236,6 +236,31 @@ if (process.env.VOBIZ_AUTH_ID && process.env.VOBIZ_AUTH_TOKEN) {
   console.log('SKIP  live DID inventory (no VOBIZ_AUTH_ID / VOBIZ_AUTH_TOKEN in this environment)');
 }
 
+head('10. Booking slots follow the account, not a hardcoded 9-to-5');
+
+const bridgeSource = readFileSync('voice-bridge/server.js', 'utf8');
+check(
+  'the bridge has one place that decides bookable hours',
+  /function bookingWindowFor\(profile\)/.test(bridgeSource),
+);
+check(
+  'that helper prefers booking_hours and falls back to calling_hours',
+  /bi\?\.booking_hours \|\| bi\?\.calling_hours/.test(bridgeSource),
+);
+check(
+  'the slot validator uses it instead of 9 and 17',
+  /bookingWindowFor\(profile\)/.test(bridgeSource) && !/istHour < 9 \|\| istHour >= 17/.test(bridgeSource),
+);
+check(
+  'the tool description no longer tells the model 09:00-17:00',
+  !/between 09:00 and 17:00/.test(bridgeSource),
+  'the model would not even offer an evening slot if told 9-to-5',
+);
+check(
+  'and the rejection message no longer says "9 AM and 5 PM"',
+  !/between 9 AM and 5 PM/.test(bridgeSource),
+);
+
 console.log(`\n${'─'.repeat(62)}`);
 console.log(`${pass} passed, ${fail} failed`);
 if (fail > 0) {

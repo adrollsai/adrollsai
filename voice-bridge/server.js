@@ -674,7 +674,7 @@ ${knownInfoDirective}
                             parameters: {
                                 type: "OBJECT",
                                 properties: {
-                                    slot_time: { type: "STRING", description: "The agreed slot as an ISO-8601 local India date-time, e.g. 2026-11-24T11:00:00. It MUST be a FUTURE date, within 60 days, between 09:00 and 17:00. Never pass a past date, a bare day name, or a month name on its own." },
+                                    slot_time: { type: "STRING", description: `The agreed slot as an ISO-8601 local India date-time, e.g. 2026-11-24T11:00:00. It MUST be a FUTURE date, within 60 days, between ${String(bookingWindowFor(profile).start).padStart(2, '0')}:00 and ${String(bookingWindowFor(profile).end).padStart(2, '0')}:00 (${formatHour12(bookingWindowFor(profile).start)} to ${formatHour12(bookingWindowFor(profile).end)} IST). Never pass a past date, a bare day name, or a month name on its own.` },
                                     notes: { type: "STRING", description: "Customer preferences or notes" }
                                 },
                                 required: ["slot_time"]
@@ -1231,6 +1231,43 @@ function playClipToCaller(wsConn, clipKey, isVobiz = true, streamId = null) {
 function isMaleVoice(vName, gender) {
     const str = `${vName || ''} ${gender || ''}`.toLowerCase();
     return str.includes('male') || str.includes('fenrir') || str.includes('puck') || str.includes('charon') || str.includes('orus') || str.includes('zephyr') || str.includes('alcor') || str.includes('umbriel') || str.includes('guy') || str.includes('orion') || str.includes('pegasus') || str.includes('dipper');
+}
+
+/**
+ * The hours this account will accept an appointment in, in 24-hour local (IST) time.
+ *
+ * This used to be the hardcoded 09:00-17:00 in three separate places: the tool's description, the
+ * slot validator, and the two rejection messages. A coaching institute that runs to 8pm could not
+ * book an evening visit at all, and the model was told 9-to-5 so it would not even offer one.
+ *
+ * `business_info.booking_hours` wins if set, because a business can take calls longer than it takes
+ * visitors; otherwise `calling_hours` applies, and otherwise the historical 9-to-5.
+ */
+function bookingWindowFor(profile) {
+    let start = 9;
+    let end = 17;
+    try {
+        const bi = typeof profile?.business_info === 'string'
+            ? JSON.parse(profile.business_info)
+            : (profile?.business_info || {});
+        const configured = bi?.booking_hours || bi?.calling_hours;
+        if (configured) {
+            const s = Number(configured.start);
+            const e = Number(configured.end);
+            if (Number.isFinite(s) && s >= 0 && s <= 23) start = Math.floor(s);
+            if (Number.isFinite(e) && e >= 1 && e <= 24) end = Math.floor(e);
+        }
+    } catch {
+        /* malformed business_info must never stop a booking: fall back to the default window */
+    }
+    return end > start ? { start, end } : { start: 9, end: 17 };
+}
+
+/** 17 -> "5 PM", 20 -> "8 PM". Used in the messages the model reads back to the prospect. */
+function formatHour12(hour) {
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const h12 = hour % 12 === 0 ? 12 : hour % 12;
+    return `${h12} ${suffix}`;
 }
 
 function calculateRMS(pcm16Array) {
@@ -2490,18 +2527,21 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                         slotDateUtc = new Date(naiveMs - IST_OFFSET_MS);
                                         const daysAhead = (slotDateUtc.getTime() - Date.now()) / 86400000;
                                         const istHour = Number(iso[4]);
+                                        const slotWindow = bookingWindowFor(profile);
                                         if (daysAhead < -0.02) slotError = 'in_the_past';
                                         else if (daysAhead > 60) slotError = 'too_far_ahead';
-                                        else if (istHour < 9 || istHour >= 17) slotError = 'outside_9_to_5';
+                                        else if (istHour < slotWindow.start || istHour >= slotWindow.end) slotError = 'outside_hours';
                                     }
 
                                     if (slotError) {
+                                        const win = bookingWindowFor(profile);
+                                        const winLabel = `between ${formatHour12(win.start)} and ${formatHour12(win.end)} IST`;
                                         const why = {
                                             not_iso: 'The slot must be sent as ISO-8601, e.g. 2026-11-24T11:00:00.',
                                             unparseable: 'That date and time could not be understood.',
                                             in_the_past: 'That date is already in the past.',
                                             too_far_ahead: 'That date is more than 60 days away.',
-                                            outside_9_to_5: 'Appointments can only be scheduled between 9 AM and 5 PM.',
+                                            outside_hours: `Appointments can only be scheduled ${winLabel}.`,
                                         }[slotError] || 'That slot is not valid.';
                                         console.warn(`[BRIDGE] book_appointment_slot REJECTED (${slotError}) raw="${rawSlot}"`);
                                         // Tell the model to fix it, and DO NOT confirm or write anything.
@@ -2513,7 +2553,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                                     response: {
                                                         success: false,
                                                         error: slotError,
-                                                        instruction: `${why} Do NOT tell the prospect it is booked. Re-confirm a valid future day and time between 9 AM and 5 PM IST, then call this tool again with ISO-8601.`,
+                                                        instruction: `${why} Do NOT tell the prospect it is booked. Re-confirm a valid future day and time ${winLabel}, then call this tool again with ISO-8601.`,
                                                     },
                                                 }],
                                             },
