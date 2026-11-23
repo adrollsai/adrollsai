@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { requireUser, serviceAdmin, canActForUser } from '@/utils/route-auth'
 
 export const dynamic = 'force-dynamic'
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
         }
 
         const res = await fetch(
-            `https://graph.facebook.com/v19.0/search?type=adgeolocation&q=${encodeURIComponent(q)}&access_token=${token}`
+            `${META_GRAPH_URL}/search?type=adgeolocation&q=${encodeURIComponent(q)}&access_token=${token}`
         )
         const data = await res.json()
         return NextResponse.json({ data: data.data || [] })

@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { streamText, generateText, tool, convertToModelMessages, stepCountIs } from 'ai';
@@ -125,7 +126,7 @@ export async function POST(req: Request) {
             if (!userProfile?.facebook_token || !userProfile?.ad_account_id) {
               return { success: false, message: "User has not connected Meta Ads account." };
             }
-            const url = `https://graph.facebook.com/v19.0/${userProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights.date_preset(maximum){spend,impressions,clicks,cpc,inline_link_click_ctr}&limit=20&access_token=${userProfile.facebook_token}`;
+            const url = `${META_GRAPH_URL}/${userProfile.ad_account_id}/campaigns?fields=id,name,status,effective_status,objective,start_time,insights.date_preset(maximum){spend,impressions,clicks,cpc,inline_link_click_ctr}&limit=20&access_token=${userProfile.facebook_token}`;
             const res = await fetch(url);
             const data = await res.json();
 
@@ -180,7 +181,7 @@ export async function POST(req: Request) {
             console.log(`[Tool] get_campaign_details: ${campaignId}`);
             const { data: userProfile } = await supabase.from('profiles').select('facebook_token').eq('id', user.id).single();
             if (!userProfile?.facebook_token) return { success: false, message: "No token." };
-            const url = `https://graph.facebook.com/v19.0/${campaignId}/ads?fields=name,status,creative{name,title,body,image_url,thumbnail_url}&access_token=${userProfile.facebook_token}`;
+            const url = `${META_GRAPH_URL}/${campaignId}/ads?fields=name,status,creative{name,title,body,image_url,thumbnail_url}&access_token=${userProfile.facebook_token}`;
             const res = await fetch(url);
             const data = await res.json();
             return { success: !data.error, ads: data.data || [], error: data.error };

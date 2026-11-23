@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@/utils/supabase/server';
@@ -5,7 +6,7 @@ import { generateKieChat, createKieImageTask, callGemini } from '@/utils/externa
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { MEDIA_MODELS } from '@/lib/agent/media-models';
 
-const FB_GRAPH = "https://graph.facebook.com/v19.0";
+const FB_GRAPH = META_GRAPH_URL;
 
 export async function POST(request: Request) {
     const supabase = await createClient();

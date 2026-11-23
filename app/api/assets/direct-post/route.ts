@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
@@ -45,7 +46,7 @@ export async function POST(req: Request) {
 
             const endpoint = isVideo 
                 ? `https://graph-video.facebook.com/v19.0/${profile.selected_page_id}/videos`
-                : `https://graph.facebook.com/v19.0/${profile.selected_page_id}/photos`;
+                : `${META_GRAPH_URL}/${profile.selected_page_id}/photos`;
 
             const res = await fetch(endpoint, { method: 'POST', body: fbFormData });
             results.facebook = await res.json();
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
                 const tempUrl = `${R2_PUBLIC_URL}/${tempKey}`;
 
                 // Create Container
-                const containerRes = await fetch(`https://graph.facebook.com/v19.0/${profile.ig_business_id}/media`, {
+                const containerRes = await fetch(`${META_GRAPH_URL}/${profile.ig_business_id}/media`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
                     // Poll for video readiness or just try to publish for images
                     if (isVideo) await new Promise(resolve => setTimeout(resolve, 5000));
 
-                    const publishRes = await fetch(`https://graph.facebook.com/v19.0/${profile.ig_business_id}/media_publish`, {
+                    const publishRes = await fetch(`${META_GRAPH_URL}/${profile.ig_business_id}/media_publish`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({

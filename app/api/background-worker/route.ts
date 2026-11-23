@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createClient as createServerClient } from '@/utils/supabase/server';
@@ -300,7 +301,7 @@ export async function POST(req: Request) {
                         const { data: profile } = await supabaseAdmin.from('profiles').select('facebook_token, ad_account_id, selected_page_id, custom_domain').eq('id', userId).single();
                         
                         if (profile?.facebook_token && profile?.ad_account_id) {
-                            const FB_URL = "https://graph.facebook.com/v19.0";
+                            const FB_URL = "${META_GRAPH_URL}";
                             
                             const imgFetch = await fetch(persistedUrl);
                             const imgBlob = await imgFetch.blob();

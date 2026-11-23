@@ -43,6 +43,18 @@ import {
   validateOnly,
 } from '../lib/ads/preflight';
 import {
+  CONNECTION_ALERT_DEDUPE_HOURS,
+  CONNECTION_ALERT_TYPE,
+  accountStatusLabel,
+  diagnoseConnection,
+} from '../lib/ads/token-health';
+import {
+  DUPLICATE_WINDOW_MS,
+  duplicateLaunchMessage,
+  findDuplicateLaunch,
+  launchFingerprint,
+} from '../lib/ads/launch-idempotency';
+import {
   ALERT_DEDUPE_HOURS,
   ALERT_TYPE,
   alertBody,
@@ -442,7 +454,172 @@ const cronRoute = fs.readFileSync('app/api/cron/meta-ad-issues/route.ts', 'utf8'
 check('the watchdog cron exists and reads issues_info', cronRoute.includes('issues_info'));
 check('…asks Meta only for blocked objects', cronRoute.includes("'WITH_ISSUES', 'DISAPPROVED'"));
 check('…de-duplicates before notifying', cronRoute.includes('recentlyAlerted'));
+check(
+  '…checks the connection before reading the objects',
+  cronRoute.indexOf('await probeConnection(') < cronRoute.indexOf('await fetchIssues('),
+  `probe at ${cronRoute.indexOf('await probeConnection(')}, fetch at ${cronRoute.indexOf('await fetchIssues(')}`
+);
 check('…and is registered in vercel.json', fs.readFileSync('vercel.json', 'utf8').includes('/api/cron/meta-ad-issues'));
+
+// ---------------------------------------------------------------------------
+// 13. Token health: the owner is told what is wrong, in words they can act on
+// ---------------------------------------------------------------------------
+const invalidated = diagnoseConnection({
+  ok: false,
+  code: 190,
+  subcode: 460,
+  message: 'Error validating access token: The session has been invalidated because the user changed their password.',
+});
+eq('an invalidated session is a token problem', invalidated.verdict, 'token_invalid');
+check('…which needs action', invalidated.needsAction === true);
+check('…says reconnect', /reconnect/i.test(invalidated.body), invalidated.body);
+check('…and says existing campaigns keep running', /keep running/i.test(invalidated.body), invalidated.body);
+check('…with a stable de-dupe key', invalidated.key === 'token_invalid');
+
+const expired = diagnoseConnection({ ok: false, code: 190, message: 'Session has expired' });
+eq('an expired token is its own verdict', expired.verdict, 'token_expired');
+
+const perms = diagnoseConnection({ ok: false, code: 200, message: 'Permissions error' });
+eq('a permission failure is named as one', perms.verdict, 'missing_permission');
+check('…and points at ads access', /ads access|Business admin/i.test(perms.body), perms.body);
+
+const ineligible = diagnoseConnection({ ok: true, accountStatus: 2 });
+eq('a disabled ad account is caught on a healthy token', ineligible.verdict, 'account_ineligible');
+check('…naming the status', /disabled/i.test(ineligible.title), ineligible.title);
+const unsettled = diagnoseConnection({ ok: true, accountStatus: 3 });
+eq('an unsettled balance is caught too', unsettled.verdict, 'account_unsettled');
+const active = diagnoseConnection({ ok: true, accountStatus: 1 });
+eq('a healthy account needs nothing', active.verdict, 'healthy');
+check('…and produces no message', active.title === '' && active.needsAction === false);
+
+const unreachable = diagnoseConnection({ ok: false, message: 'ECONNRESET', httpStatus: 502 });
+eq('a network failure is not mistaken for a bad token', unreachable.verdict, 'unreachable');
+check('…and says it is probably temporary', /temporary/i.test(unreachable.body), unreachable.body);
+
+const launcherRoute = fs.readFileSync('app/api/meta-ads/launch-campaign/route.ts', 'utf8');
+check('the launcher checks the connection before launching', launcherRoute.includes('diagnoseConnection'));
+check('…and refunds the credit when it refuses', /diagnoseConnection[\s\S]{0,1200}refundLimit/.test(launcherRoute));
+
+// ---------------------------------------------------------------------------
+// 14. Double-launch guard
+// ---------------------------------------------------------------------------
+const baseFingerprint = launchFingerprint({
+  targetUserId: 'user-1',
+  campaignName: 'Diwali Launch',
+  campaignType: 'instant_form',
+  campaignGoal: 'leads',
+  dailyBudget: 500,
+  pageId: 'page-1',
+  adAccountId: 'act_1',
+  creativeKeys: ['asset-b', 'asset-a'],
+  locations: '[{"key":"1021145"}]',
+});
+const sameLaunch = launchFingerprint({
+  targetUserId: 'user-1',
+  campaignName: 'diwali launch ',
+  campaignType: 'instant_form',
+  campaignGoal: 'leads',
+  dailyBudget: '500.00',
+  pageId: 'page-1',
+  adAccountId: 'act_1',
+  // same creatives, different order
+  creativeKeys: ['asset-a', 'asset-b'],
+  locations: '[{"key":"1021145"}]',
+});
+check('the same launch fingerprints the same', baseFingerprint === sameLaunch, `${baseFingerprint} vs ${sameLaunch}`);
+check(
+  'a different budget is a different launch',
+  baseFingerprint !==
+    launchFingerprint({
+      targetUserId: 'user-1',
+      campaignName: 'Diwali Launch',
+      campaignType: 'instant_form',
+      campaignGoal: 'leads',
+      dailyBudget: 800,
+      pageId: 'page-1',
+      adAccountId: 'act_1',
+      creativeKeys: ['asset-a', 'asset-b'],
+    })
+);
+check(
+  'one more creative is a different launch',
+  baseFingerprint !==
+    launchFingerprint({
+      targetUserId: 'user-1',
+      campaignName: 'Diwali Launch',
+      campaignType: 'instant_form',
+      campaignGoal: 'leads',
+      dailyBudget: 500,
+      pageId: 'page-1',
+      adAccountId: 'act_1',
+      creativeKeys: ['asset-a', 'asset-b', 'asset-c'],
+    })
+);
+check(
+  'another tenant never collides',
+  baseFingerprint !==
+    launchFingerprint({
+      targetUserId: 'user-2',
+      campaignName: 'Diwali Launch',
+      campaignType: 'instant_form',
+      campaignGoal: 'leads',
+      dailyBudget: 500,
+      pageId: 'page-1',
+      adAccountId: 'act_1',
+      creativeKeys: ['asset-a', 'asset-b'],
+    })
+);
+
+const now = Date.parse('2026-11-23T10:00:00Z');
+const recent = [
+  { jobId: 'job-new', fingerprint: baseFingerprint, createdAt: '2026-11-23T09:58:00Z', status: 'processing' },
+];
+check('a launch two minutes ago is a duplicate', findDuplicateLaunch(baseFingerprint, recent, now)?.jobId === 'job-new');
+const old = [{ jobId: 'job-old', fingerprint: baseFingerprint, createdAt: '2026-11-23T09:00:00Z', status: 'completed' }];
+check('a launch an hour ago is not', findDuplicateLaunch(baseFingerprint, old, now) === null);
+const failed = [{ jobId: 'job-failed', fingerprint: baseFingerprint, createdAt: '2026-11-23T09:59:00Z', status: 'failed' }];
+check('a failed attempt does not block the retry', findDuplicateLaunch(baseFingerprint, failed, now) === null);
+const otherTenant = [{ jobId: 'j2', fingerprint: 'different', createdAt: '2026-11-23T09:59:00Z', status: 'pending' }];
+check('an unrelated launch is not', findDuplicateLaunch(baseFingerprint, otherTenant, now) === null);
+check('the duplicate message names the existing job', duplicateLaunchMessage('abcdef123456').includes('abcdef12'));
+check('…and explains how to launch a separate campaign', /budget|creative|locations/i.test(duplicateLaunchMessage('abcdef123456')));
+
+check('the launcher computes a fingerprint before inserting the job', /launchFingerprint\(/.test(launcherRoute));
+check('…stores it on the job payload', launcherRoute.includes('_fingerprint'));
+check('…and refuses the duplicate', /duplicateJobId[\s\S]{0,400}duplicate: true/.test(launcherRoute));
+
+// ---------------------------------------------------------------------------
+// 15. Nothing on the ads + Facebook surface pins its own Graph version
+// ---------------------------------------------------------------------------
+const versionSweepFiles: string[] = [];
+const walkTs = (dir: string) => {
+  for (const name of fs.readdirSync(dir)) {
+    const full = `${dir}/${name}`;
+    if (fs.statSync(full).isDirectory()) walkTs(full);
+    else if (full.endsWith('.ts')) versionSweepFiles.push(full);
+  }
+};
+walkTs('app/api/meta-ads');
+versionSweepFiles.push(
+  'utils/campaign-processor.ts',
+  'lib/agent/mcp/meta-ads-mcp.ts',
+  'lib/agent/mcp/meta-graph.ts',
+  'app/api/agent/route.ts',
+  'app/api/analytics/ai/route.ts',
+  'app/api/background-worker/route.ts',
+  'app/api/cron/analyze-campaigns/route.ts',
+  'app/api/cron/meta-warmup/route.ts',
+  'app/api/facebook/pages/route.ts',
+  'app/api/facebook/forms/route.ts'
+);
+const offenders = versionSweepFiles.filter((file) => {
+  if (!fs.existsSync(file)) return false;
+  return /graph\.facebook\.com\/v\d\d\.0/.test(fs.readFileSync(file, 'utf8'));
+});
+eq('no ads or Facebook route pins its own Graph version', offenders, []);
+// WhatsApp keeps its own version on purpose: different product, different track.
+const waStillVersioned = fs.readFileSync('app/api/cron/whatsapp-followup/route.ts', 'utf8').includes('graph.facebook.com/v');
+check('…while the WhatsApp surface stays on its own version deliberately', waStillVersioned);
 
 console.log(`\nverify:advantage — ${passed} passed, ${failures.length} failed`);
 if (failures.length) {

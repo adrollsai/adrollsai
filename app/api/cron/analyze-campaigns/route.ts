@@ -1,9 +1,10 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { analyzeCampaignWithDeepSeek } from '@/utils/campaign-analyzer'
 import { sendPushNotification } from '@/utils/notification-helper'
 
-const FB_GRAPH_URL = "https://graph.facebook.com/v19.0"
+const FB_GRAPH_URL = META_GRAPH_URL
 
 // Admin client to bypass RLS for background cron execution
 const supabaseAdmin = createClient(

@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
 
         // 1. Create Pixel on Meta Graph API
         const name = pixelName || 'AdRolls Auto-Generated Pixel'
-        const metaRes = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}/adspixels`, {
+        const metaRes = await fetch(`${META_GRAPH_URL}/${adAccountId}/adspixels`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
             if (metaData.error.code === 6200 || (metaData.error.message && metaData.error.message.includes('already exists'))) {
                 console.log("[create-pixel API] Pixel already exists. Attempting to fetch existing pixels...")
                 try {
-                    const fetchRes = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}/adspixels?fields=id,name&access_token=${token}`)
+                    const fetchRes = await fetch(`${META_GRAPH_URL}/${adAccountId}/adspixels?fields=id,name&access_token=${token}`)
                     const fetchData = await fetchRes.json()
                     
                     if (fetchData.data && fetchData.data.length > 0) {

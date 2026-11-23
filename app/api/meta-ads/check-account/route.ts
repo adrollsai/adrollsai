@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { logToFile } from '@/utils/logger'
@@ -16,23 +17,23 @@ export async function GET(request: Request) {
 
     const impersonateId = searchParams.get('impersonate')
     const { data: profile } = await supabase.from('profiles').select('role, facebook_token, agency_id, parent_id').eq('id', user.id).single()
-    
+
     logToFile(`[Check-Account API] Request by User: ${user.id} (${profile?.role}), Impersonating: ${impersonateId}`);
 
-    let targetUserId = (profile?.role === 'agent' && (profile?.agency_id || profile?.parent_id)) 
-      ? (profile.agency_id || profile.parent_id) 
-      : user.id
+    let targetUserId = (profile?.role === 'agent' && (profile?.agency_id || profile?.parent_id))
+        ? (profile.agency_id || profile.parent_id)
+        : user.id
 
     if (impersonateId && impersonateId !== user.id) {
         if (['super_admin', 'agency', 'admin', 'agent'].includes(profile?.role || '')) {
             if (profile?.role !== 'super_admin') {
                 const isParent = (profile?.agency_id === impersonateId || profile?.parent_id === impersonateId);
                 const { data: subAccount } = await supabase
-                  .from('profiles')
-                  .select('id')
-                  .eq('id', impersonateId)
-                  .eq('agency_id', profile?.agency_id || user.id)
-                  .single()
+                    .from('profiles')
+                    .select('id')
+                    .eq('id', impersonateId)
+                    .eq('agency_id', profile?.agency_id || user.id)
+                    .single()
 
                 if (isParent || subAccount) {
                     targetUserId = impersonateId
@@ -52,10 +53,10 @@ export async function GET(request: Request) {
     logToFile(`[Check-Account API] targetUserId resolved to: ${targetUserId}`);
 
     const { data: targetProfile } = await supabase
-      .from('profiles')
-      .select('facebook_token, agency_id, parent_id, selected_page_id, business_info')
-      .eq('id', targetUserId)
-      .single()
+        .from('profiles')
+        .select('facebook_token, agency_id, parent_id, selected_page_id, business_info')
+        .eq('id', targetUserId)
+        .single()
 
     let token = targetProfile?.facebook_token
     if (!token) {
@@ -75,8 +76,17 @@ export async function GET(request: Request) {
 
     try {
         // has_payment_method requires restricted permissions and triggers OAuthException. 
-        const res = await fetch(`https://graph.facebook.com/v19.0/${adAccountId}?fields=account_status,disable_reason,funding_source,funding_source_details,balance,spend_cap,amount_spent,currency,capabilities&access_token=${token}`)
-        const data = await res.json()
+        let res = await fetch(`${META_GRAPH_URL}/${adAccountId}?fields=account_status,disable_reason,funding_source,funding_source_details,balance,spend_cap,amount_spent,currency,capabilities&access_token=${token}`)
+        let data = await res.json()
+
+        if (data.error && (data.error.code === 10 || data.error.code === 200)) {
+            // Retry without restricted financial/funding fields (common on accounts where user only has standard roles)
+            const fallbackRes = await fetch(`${META_GRAPH_URL}/${adAccountId}?fields=account_status,disable_reason,balance,spend_cap,amount_spent,currency,capabilities&access_token=${token}`)
+            const fallbackData = await fallbackRes.json()
+            if (!fallbackData.error) {
+                data = fallbackData
+            }
+        }
 
         if (data.error) {
             console.error("[check-account API] Ad Account Graph error:", data.error)
@@ -84,8 +94,8 @@ export async function GET(request: Request) {
         }
 
         const hasPaymentMethod = !!(
-            data.funding_source || 
-            data.funding_source_details || 
+            data.funding_source ||
+            data.funding_source_details ||
             (data.capabilities && data.capabilities.includes('HAS_VALID_PAYMENT_METHODS'))
         )
 
@@ -104,7 +114,7 @@ export async function GET(request: Request) {
                 if (effectivePageId && Array.isArray(bi?.leadgen_tos_accepted_pages) && bi.leadgen_tos_accepted_pages.includes(effectivePageId)) {
                     isTosConfirmedInDb = true
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         let leadgenTos = null
@@ -118,9 +128,9 @@ export async function GET(request: Request) {
         } else if (effectivePageId) {
             try {
                 // leadgen_tos endpoint is deprecated/restricted in v19.0+; we query page fields directly.
-                const tosRes = await fetch(`https://graph.facebook.com/v19.0/${effectivePageId}?fields=leadgen_tos_accepted,name&access_token=${token}`)
+                const tosRes = await fetch(`${META_GRAPH_URL}/${effectivePageId}?fields=leadgen_tos_accepted,name&access_token=${token}`)
                 const tosData = await tosRes.json()
-                
+
                 if (tosData && typeof tosData.leadgen_tos_accepted === 'boolean') {
                     leadgenTos = {
                         leadgen_tos: {
@@ -161,14 +171,14 @@ export async function GET(request: Request) {
                 .maybeSingle();
 
             if (latestJob?.status === 'failed' && (
-                latestJob.message?.toLowerCase().includes('certification') || 
+                latestJob.message?.toLowerCase().includes('certification') ||
                 latestJob.message?.toLowerCase().includes('nondiscrimination') ||
                 latestJob.message?.toLowerCase().includes('non-discrimination')
             )) {
                 certificationRequired = true;
                 certificationMessage = latestJob.message;
             }
-        } catch (jobErr) {}
+        } catch (jobErr) { }
 
         logToFile(`[Check-Account API] Success check results`, {
             account_status: data.account_status,

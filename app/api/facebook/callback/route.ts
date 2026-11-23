@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import fs from 'fs';
@@ -99,7 +100,7 @@ export async function GET(req: Request) {
         const targetRedirectUri = exactRedirectUri || `${baseUrl}/api/facebook/callback`;
         logDebug('Exchanging GET code for token', { targetRedirectUri, code: `${code.substring(0, 10)}...` });
 
-        const tokenUrl = `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_CLIENT_SECRET}&redirect_uri=${encodeURIComponent(targetRedirectUri)}&code=${code}`;
+        const tokenUrl = `${META_GRAPH_URL}/oauth/access_token?client_id=${process.env.NEXT_PUBLIC_FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_CLIENT_SECRET}&redirect_uri=${encodeURIComponent(targetRedirectUri)}&code=${code}`;
         const tokenRes = await fetch(tokenUrl);
         const tokenData = await tokenRes.json();
 
@@ -168,7 +169,7 @@ export async function POST(req: Request) {
         if (rawAccessToken) {
             logDebug('POST received rawAccessToken from JS SDK', { rawAccessToken: `${rawAccessToken.substring(0, 15)}...` });
             try {
-                const exchangeUrl = `https://graph.facebook.com/v19.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${clientSecret}&fb_exchange_token=${rawAccessToken}`;
+                const exchangeUrl = `${META_GRAPH_URL}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${clientSecret}&fb_exchange_token=${rawAccessToken}`;
                 const res = await fetch(exchangeUrl);
                 const data = await res.json();
                 logDebug('POST fb_exchange_token response', { status: res.status, data });
@@ -219,7 +220,7 @@ export async function POST(req: Request) {
 
             for (const uri of possibleRedirectUris) {
                 try {
-                    const tokenUrl = `https://graph.facebook.com/v19.0/oauth/access_token?client_id=${appId}&client_secret=${clientSecret}&redirect_uri=${encodeURIComponent(uri)}&code=${code}`;
+                    const tokenUrl = `${META_GRAPH_URL}/oauth/access_token?client_id=${appId}&client_secret=${clientSecret}&redirect_uri=${encodeURIComponent(uri)}&code=${code}`;
                     const tokenRes = await fetch(tokenUrl);
                     const tokenData = await tokenRes.json();
                     logDebug('POST tried URI candidate', { uri, status: tokenRes.status, tokenData });
@@ -268,7 +269,7 @@ export async function POST(req: Request) {
                 .eq('id', targetUserId)
                 .single();
             if (currentProf?.selected_page_id) {
-                const pRes = await fetch(`https://graph.facebook.com/v19.0/${currentProf.selected_page_id}?fields=access_token&access_token=${accessToken}`);
+                const pRes = await fetch(`${META_GRAPH_URL}/${currentProf.selected_page_id}?fields=access_token&access_token=${accessToken}`);
                 const pData = await pRes.json();
                 if (pData?.access_token) {
                     freshPageToken = pData.access_token;

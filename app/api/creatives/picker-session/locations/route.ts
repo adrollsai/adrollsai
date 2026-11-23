@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { verifyCreativeSessionToken } from '@/utils/creative-token';
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
 
     // Call Meta Marketing API for adgeolocation
     const metaRes = await fetch(
-      `https://graph.facebook.com/v21.0/search?type=adgeolocation&q=${encodeURIComponent(q)}&location_types=["city","region","zip"]&access_token=${facebookToken}`
+      `${META_GRAPH_URL}/search?type=adgeolocation&q=${encodeURIComponent(q)}&location_types=["city","region","zip"]&access_token=${facebookToken}`
     );
 
     const metaData = await metaRes.json();

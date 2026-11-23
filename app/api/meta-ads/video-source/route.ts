@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
             }
 
             if (!targetAdId && lead?.facebook_lead_id) {
-                const fbLeadRes = await fetch(`https://graph.facebook.com/v20.0/${lead.facebook_lead_id}?fields=ad_id&access_token=${token}`)
+                const fbLeadRes = await fetch(`${META_GRAPH_URL}/${lead.facebook_lead_id}?fields=ad_id&access_token=${token}`)
                 const fbLeadData = await fbLeadRes.json()
                 if (fbLeadData?.ad_id) {
                     targetAdId = fbLeadData.ad_id
@@ -74,7 +75,7 @@ export async function GET(request: Request) {
         }
 
         // Fetch Ad Creative details
-        const adUrl = `https://graph.facebook.com/v20.0/${targetAdId}?fields=id,name,adset{name},campaign{name},creative{id,name,title,body,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${token}`
+        const adUrl = `${META_GRAPH_URL}/${targetAdId}?fields=id,name,adset{name},campaign{name},creative{id,name,title,body,image_url,thumbnail_url,object_story_spec,asset_feed_spec}&access_token=${token}`
         const adRes = await fetch(adUrl)
         const adData = await adRes.json()
 
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
         let videoThumbnailUrl: string | null = null
 
         if (videoId) {
-            const vidUrl = `https://graph.facebook.com/v20.0/${videoId}?fields=source,picture&access_token=${token}`
+            const vidUrl = `${META_GRAPH_URL}/${videoId}?fields=source,picture&access_token=${token}`
             const vidRes = await fetch(vidUrl)
             const vidData = await vidRes.json()
             if (vidData?.source) {

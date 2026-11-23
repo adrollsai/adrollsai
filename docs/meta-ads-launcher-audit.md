@@ -168,7 +168,7 @@ missing, with severity in brackets.
 | Rejected-ad reasons surfaced to the client | **partial** | creation-time errors are mapped nicely (payment `1359188`, non-discrimination `2859002`, draft/draft-error `1359188`), and post-review rejections now reach the client through the watchdog instead of staying invisible |
 | Empty-campaign / orphan cleanup | **ok** | campaign archived when the ad set fails, paused when 0 ads are created |
 | Launch credit refund on failure | **ok** | `refundLimit` on every failure path, including a failed pre-flight |
-| Duplicate-campaign guard | **gap** (low) | two rapid clicks create two campaigns; no idempotency key |
+| Duplicate-campaign guard | **fixed** | `lib/ads/launch-idempotency.ts`. The launcher fingerprints a launch from what makes two launches "the same campaign" — tenant, name, budget (in minor units), goal, destination, page, ad account, the creatives in any order, and the locations — and inside a 10-minute window returns the existing job instead of creating a second campaign, a second budget draw and a second credit charge. A *failed* attempt never blocks a retry |
 | Budget sanity checks | **fixed** | a budget under Meta's floor is now caught by the pre-flight instead of half-creating a campaign |
 | Frequency caps | **gap** (low) | `frequency_control_specs` unused; usually fine for CBO lead gen |
 | Learning-phase reporting | **gap** (low) | no "still learning / out of learning" state in analytics, so optimisation decisions can be made on 12 conversions |
@@ -177,10 +177,10 @@ missing, with severity in brackets.
 
 | Item | State | Notes |
 |---|---|---|
-| Graph version | **fixed** for the ads surface | `lib/ads/graph-version.ts` is now the single constant (`v23.0`), used by the campaign processor, both launchers, the ads routes and the agent's Meta tools. WhatsApp keeps its own version on purpose — different product, different deprecation track. The remaining `v19.0` references are on the read-only reporting paths (`app/api/agent/route.ts`, `analytics/ai`, `background-worker`, `analyze-campaigns`) and should follow |
-| Version consistency | **partially fixed** | the ads surface is one version; WhatsApp (v20) and the read-only reporting routes (v19) still differ |
+| Graph version | **fixed** for the ads and Facebook surfaces | `lib/ads/graph-version.ts` is the single constant (`v23.0`). The sweep covered the campaign processor, both launchers, **every** route under `app/api/meta-ads/`, the Facebook connect/pages/forms routes, the creatives geolocation search, the IG direct-post path, and the read-only reporting paths (`agent/route.ts`, `analytics/ai`, `background-worker`, `cron/analyze-campaigns`, `cron/eod-report`, `cron/meta-warmup`). `verify:advantage` fails if any of them pins its own version again |
+| Version consistency | **fixed, except WhatsApp** | WhatsApp Cloud API routes stay on v20/v21 on purpose — a different product surface with its own deprecation track, and changing it would be an unverifiable change to live messaging |
 | Error detail preserved | **ok** | `error_user_msg` / `error_user_title` / `error_subcode` are all used, and the pre-flight preserves them too |
-| Token expiry handling | **gap** (medium) | five tenants returned *"Error validating access token: The session has been invalidated"* during this audit (ADROLLS.in, BlueSquare Infra agent profile, Punitpal Singh, Adrolls Realty, Bioque's account is "not writable"). The pre-flight now surfaces this before a launch, but nothing tells the owner their token died — recommend a token-health check in the same watchdog |
+| Token expiry handling | **fixed** | `lib/ads/token-health.ts` classifies Meta's answer into `token_invalid` / `token_expired` / `missing_permission` / `account_ineligible` / `account_unsettled` / `unreachable`, each with the concrete next step ("reconnect from Dashboard → Settings", "resolve the account status in Ads Manager → Account Quality"). It runs in two places: the launcher refuses to spend a launch credit on an account that cannot publish and says why, and the 6-hourly watchdog notifies the owner (24h de-duplication) instead of waiting for them to press Launch. Five accounts currently affected: ADROLLS.in, BlueSquare Infra, Punitpal Singh and Adrolls Realty (invalidated sessions) and Bioque (ad account not writable) |
 
 ---
 
@@ -190,11 +190,14 @@ missing, with severity in brackets.
   detection, the Advantage+ plan (levers, reasons, blockers), age/gender rules under
   Meta's hard constraints, `attribution_spec`, Advantage+ creative enhancements, and
   the campaign/ad-set payload builders.
-* `lib/ads/graph-version.ts` — one Graph API version for the ads surface.
+* `lib/ads/graph-version.ts` — one Graph API version for the ads and Facebook surfaces.
 * `lib/ads/preflight.ts` — `validate_only` pre-flight for the campaign and the ad set.
 * `lib/ads/ad-review-monitor.ts` — pure decisions for the ad-review watchdog.
+* `lib/ads/token-health.ts` — pure diagnosis of a dead token or a restricted ad
+  account, in words the owner can act on.
+* `lib/ads/launch-idempotency.ts` — launch fingerprint + duplicate-window decision.
 * `app/api/cron/meta-ad-issues/route.ts` + `vercel.json` — the watchdog itself, every
-  6 hours.
+  6 hours: connection check first, then the blocked-object sweep.
 * `utils/campaign-processor.ts` — campaign and ad-set payloads built from the plan;
   both objects pre-flighted before creation; all four `['home']` sites fixed;
   attribution and creative enhancements attached; launch message and job log state the
@@ -214,14 +217,16 @@ missing, with severity in brackets.
 
 ## 5. Recommended next (in order of value)
 
-1. **Token health** — the watchdog already reads every account; have it also report an
-   invalidated token to the owner instead of leaving the launch to fail later.
-2. **Finish the version bump** on the read-only reporting routes (`agent/route.ts`,
-   `analytics/ai`, `background-worker`, `analyze-campaigns`) so nothing is left on v19.
-3. **Idempotency key** on launch, so a double click cannot create two campaigns.
-4. **Local creative pre-checks** (aspect ratio, resolution, file size) before upload.
-5. **Learning-phase state** in the ads analytics, so optimisation decisions are not
+1. **Local creative pre-checks** (aspect ratio, resolution, file size) before upload, so
+   a 1:1 image cannot be published into a Story-only placement. The watchdog now
+   reports the resulting `2490085` ("crop key deprecated") rejections, but catching it
+   before upload is better than reporting it after.
+2. **Learning-phase state** in the ads analytics, so optimisation decisions are not
    taken on 12 conversions.
+3. **Idempotency on the retargeting launcher** — the same guard exists in
+   `lib/ads/launch-idempotency.ts`; `launch-remarketing` should use it too.
+4. **One version constant for WhatsApp** as well, once someone can verify the
+   Cloud API field changes between v20 and current.
 
 ## 6. Data repairs applied alongside the code (2026-11-23)
 

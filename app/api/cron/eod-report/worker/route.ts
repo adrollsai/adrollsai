@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { createClient } from '@supabase/supabase-js'
 import { sendDailyEodReportEmail } from '@/utils/email-helper'
 import { deductCredits } from '@/utils/credits'
@@ -120,7 +121,7 @@ async function fetchMetaCampaigns(profile: any): Promise<EodCampaignFacts | null
   try {
     const cleanAdAccountId = String(adAccountId).startsWith('act_') ? String(adAccountId) : `act_${adAccountId}`
     const url =
-      `https://graph.facebook.com/v19.0/${cleanAdAccountId}/campaigns` +
+      `${META_GRAPH_URL}/${cleanAdAccountId}/campaigns` +
       `?fields=id,name,status,effective_status,insights{spend,actions,results}&limit=25&access_token=${token}`
     const res = await fetch(url)
     if (!res.ok) {
@@ -508,7 +509,7 @@ export async function POST(request: Request) {
 
         console.log(`[EOD Report Worker] Sending EOD WhatsApp report from client WABA (${clientWabaPhoneId}) to admin ${cleanAdminPhone}...`)
 
-        const eodWaMetaUrl = `https://graph.facebook.com/v20.0/${clientWabaPhoneId}/messages`
+        const eodWaMetaUrl = `${META_GRAPH_URL}/${clientWabaPhoneId}/messages`
         const eodWaRes = await fetch(eodWaMetaUrl, {
           method: 'POST',
           headers: {

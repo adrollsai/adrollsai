@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { createClient } from '@/utils/supabase/server';
 
 export async function GET(request: Request) {
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ forms: [] });
         }
 
-        const metaUrl = `https://graph.facebook.com/v20.0/${pageId}/leadgen_forms?fields=id,name,status,created_time,questions&limit=50&access_token=${pageToken}`;
+        const metaUrl = `${META_GRAPH_URL}/${pageId}/leadgen_forms?fields=id,name,status,created_time,questions&limit=50&access_token=${pageToken}`;
         const res = await fetch(metaUrl);
         const json = await res.json();
 

@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
                 const cleanAdAccountId = profile.ad_account_id.startsWith('act_') 
                     ? profile.ad_account_id 
                     : `act_${profile.ad_account_id}`
-                const fbUrl = `https://graph.facebook.com/v19.0/${cleanAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,insights{results,spend,cpc,ctr}&limit=10&access_token=${profile.facebook_token}`
+                const fbUrl = `${META_GRAPH_URL}/${cleanAdAccountId}/campaigns?fields=id,name,status,effective_status,objective,insights{results,spend,cpc,ctr}&limit=10&access_token=${profile.facebook_token}`
                 const fbRes = await fetch(fbUrl)
                 if (fbRes.ok) {
                     const fbData = await fbRes.json()

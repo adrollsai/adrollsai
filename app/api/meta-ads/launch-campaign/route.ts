@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse, after } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
@@ -201,8 +202,45 @@ export async function POST(request: Request) {
         );
     }
 
+    // Is the Meta connection still alive? A dead token used to surface as a generic
+    // "Campaign Error: Invalid parameter" after the launch had already been counted,
+    // which tells the client nothing. Ask first, and answer in those words.
+    {
+        const { diagnoseConnection } = await import('@/lib/ads/token-health');
+        const { META_GRAPH_URL } = await import('@/lib/ads/graph-version');
+        try {
+            const probeRes = await fetch(
+                `${META_GRAPH_URL}/${adAccountId}?fields=id,name,account_status&access_token=${facebookToken}`,
+                { cache: 'no-store' }
+            );
+            const probeJson: any = await probeRes.json().catch(() => ({}));
+            const probeErr = probeJson?.error;
+            const health = diagnoseConnection(
+                probeErr
+                    ? {
+                          ok: false,
+                          code: probeErr.code,
+                          subcode: probeErr.error_subcode,
+                          message: probeErr.error_user_msg || probeErr.message,
+                          httpStatus: probeRes.status,
+                      }
+                    : { ok: true, accountStatus: Number(probeJson?.account_status) }
+            );
+            if (health.needsAction) {
+                await refundLimit(user.id, 'campaign_launches');
+                return NextResponse.json(
+                    { error: `${health.title.replace(/^⚠️\s*/, '')}. ${health.body}`, code: health.verdict },
+                    { status: 400 }
+                );
+            }
+        } catch {
+            // A probe that cannot complete must not block a launch; the campaign
+            // pre-flight and the real call will report the truth.
+        }
+    }
+
     // Guarantee Page is subscribed to Meta webhooks for real-time lead ingestion
-    fetch(`https://graph.facebook.com/v20.0/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
+    fetch(`${META_GRAPH_URL}/${pageId}/subscribed_apps?subscribed_fields=leadgen&access_token=${facebookToken}`, {
         method: 'POST'
     }).catch(() => {});
 
@@ -411,6 +449,67 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
 
     let jobId = null;
     let fallbackWarning = "";
+
+    // --- DOUBLE-LAUNCH GUARD ---
+    //
+    // A second click, a browser retry, or an impatient press while the first response
+    // was still pending used to create a whole second campaign — second budget, second
+    // draw on the launch credits. The fingerprint covers only what makes two launches
+    // the same campaign; change the budget, the creative or the locations and it is
+    // deliberately a different launch.
+    const { launchFingerprint, findDuplicateLaunch, duplicateLaunchMessage } = await import('@/lib/ads/launch-idempotency');
+    const fingerprint = launchFingerprint({
+        targetUserId,
+        campaignName: jobPayload.campaign_name || data.campaign_name || data.campaignName || null,
+        campaignType: effectiveCampaignType,
+        campaignGoal: plan.goal,
+        conversionEvent: plan.conversionEvent,
+        dailyBudget,
+        pageId,
+        adAccountId,
+        pixelId: finalPixelId,
+        creativeKeys: [
+            ...(jobPayload.creativeUrls || []),
+            ...(jobPayload.assetIds || []),
+            ...(jobPayload.inventoryIds || []),
+        ].map(String),
+        locations: jobPayload.metaLocationsStr || jobPayload.droppedPins || null,
+    });
+
+    let duplicateJobId: string | null = null;
+    try {
+        const since = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        const { data: recentJobs } = await supabaseAdmin
+            .from('campaign_jobs')
+            .select('id, payload, created_at, status')
+            .eq('user_id', user.id)
+            .gte('created_at', since)
+            .order('created_at', { ascending: false })
+            .limit(20);
+        const previous = (recentJobs || []).map((row: any) => ({
+            jobId: row.id,
+            fingerprint: String(row.payload?._fingerprint || ''),
+            createdAt: row.created_at,
+            status: row.status,
+        }));
+        const duplicate = findDuplicateLaunch(fingerprint, previous);
+        if (duplicate) duplicateJobId = duplicate.jobId;
+    } catch (e) {
+        // A guard that cannot read history must not block a legitimate launch.
+    }
+
+    if (duplicateJobId) {
+        await refundLimit(user.id, 'campaign_launches');
+        logToFile(`[LaunchCampaign] Duplicate launch suppressed; existing job ${duplicateJobId}`);
+        return NextResponse.json({
+            success: true,
+            duplicate: true,
+            jobId: duplicateJobId,
+            message: duplicateLaunchMessage(duplicateJobId),
+        });
+    }
+
+    (jobPayload as any)._fingerprint = fingerprint;
 
     const { data: job, error: jobErr } = await supabaseAdmin.from('campaign_jobs').insert({
         user_id: user.id,

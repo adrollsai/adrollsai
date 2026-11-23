@@ -1,3 +1,4 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { fetchLeadForms } from '@/utils/external-apis'
@@ -96,8 +97,8 @@ export async function GET(request: Request) {
         const statuses = encodeURIComponent(JSON.stringify(['ACTIVE']));
 
         const [adsRes, campRes] = await Promise.allSettled([
-          fetch(`https://graph.facebook.com/v20.0/${formattedAdAccountId}/ads?fields=id,name,campaign_id,effective_status,creative{id,name,object_story_spec,asset_feed_spec}&effective_status=${statuses}&limit=100&access_token=${fbToken}`).then(r => r.json()),
-          fetch(`https://graph.facebook.com/v20.0/${formattedAdAccountId}/campaigns?fields=id,name,effective_status&effective_status=${statuses}&limit=50&access_token=${fbToken}`).then(r => r.json())
+          fetch(`${META_GRAPH_URL}/${formattedAdAccountId}/ads?fields=id,name,campaign_id,effective_status,creative{id,name,object_story_spec,asset_feed_spec}&effective_status=${statuses}&limit=100&access_token=${fbToken}`).then(r => r.json()),
+          fetch(`${META_GRAPH_URL}/${formattedAdAccountId}/campaigns?fields=id,name,effective_status&effective_status=${statuses}&limit=50&access_token=${fbToken}`).then(r => r.json())
         ]);
 
         const activeFormIds = new Set<string>();
@@ -264,7 +265,7 @@ export async function POST(request: Request) {
         access_token: profile.selected_page_token
     };
 
-    const formCreateRes = await fetch(`https://graph.facebook.com/v19.0/${pageId}/leadgen_forms`, {
+    const formCreateRes = await fetch(`${META_GRAPH_URL}/${pageId}/leadgen_forms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json; charset=utf-8' },
         body: JSON.stringify(leadFormPayload)

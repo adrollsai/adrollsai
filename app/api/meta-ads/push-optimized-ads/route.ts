@@ -1,7 +1,8 @@
+import { META_GRAPH_URL } from '@/lib/ads/graph-version'
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
-const FB_URL = "https://graph.facebook.com/v19.0";
+const FB_URL = META_GRAPH_URL;
 
 function normalizePublicR2Url(url: string): string {
     if (!url) return '';
