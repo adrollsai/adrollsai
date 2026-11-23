@@ -129,3 +129,9 @@ __pycache__/
 # The queryable history lives in Supabase (agent_eval_runs / agent_eval_results).
 evals/reports/
 
+# Timestamped backups of tracked files (voice-bridge/server.js.bak-20261120-122808).
+# A copy of a file that is already tracked is not a change, and committing it would mean two
+# versions of the same source drifting apart with nothing to say which one runs.
+*.bak
+*.bak-*
+

@@ -1246,6 +1246,26 @@ export async function fetchFacebookPixels(accessToken: string, adAccountId: stri
 }
 
 /**
+ * Speech -> text, via the registry's transcription route.
+ *
+ * Exists so a generated talking clip can be checked against the line it was asked to
+ * say: a model that improvises a sentence is a wrong shot, not a wrong take, and no
+ * amount of editing can dub it right afterwards.
+ */
+export async function createTranscribeTask({
+    audioUrl,
+    model = MEDIA_MODELS.transcribe.id,
+}: {
+    audioUrl: string;
+    model?: string;
+}): Promise<{ taskId: string | null; error: string | null }> {
+    if (!/^https?:\/\//i.test(audioUrl)) {
+        return { taskId: null, error: 'transcribe needs a public URL for the audio' };
+    }
+    return createKieTask({ model, input: { audio_url: audioUrl } });
+}
+
+/**
  * 10. Kie.ai Image Generator (For Auto-Optimizer)
  *
  * `model` defaults to the registry's text-to-image id; pass the id you actually

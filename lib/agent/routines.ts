@@ -4,6 +4,7 @@ import { getActivePlaybook } from '@/lib/automation/ceo';
 import { availableCredits } from '@/lib/automation/billing';
 import { composeRoutineBrief } from '@/lib/automation/routine-composer';
 import { nextRunAt } from './routine-schedule';
+import { resolveCountry, upcomingFestivals } from '@/utils/festival-helper';
 
 /**
  * Business routines — the daily loop.
@@ -341,6 +342,21 @@ export async function queueRoutineRun(
     availableCredits(supabase, routine.user_id),
   ]);
 
+  // The brief tells the agent to check "the calendar: any festival, holiday or event
+  // today or tomorrow" — but nothing ever filled the slot in, so it had to guess. A
+  // guessed festival is exactly what the brief forbids inventing, so the calendar is
+  // resolved here and stated as fact.
+  const { data: countryProfile } = await supabase
+    .from('profiles')
+    .select('address, currency, client_features')
+    .eq('id', routine.user_id)
+    .single();
+  const country = resolveCountry({
+    clientFeaturesCountry: (countryProfile as any)?.client_features?.country,
+    address: (countryProfile as any)?.address,
+    currency: (countryProfile as any)?.currency,
+  });
+
   const compiled = composeRoutineBrief({
     businessName: profile?.business_name,
     industry: profile?.industry,
@@ -358,6 +374,7 @@ export async function queueRoutineRun(
     creditsLeft: profile?.credits ?? null,
     availableCredits: available,
     pendingApprovals: pendingApprovals || 0,
+    festivals: upcomingFestivals(country.code, now, 1),
   });
 
   const run = await enqueueRun(supabase, {

@@ -21,11 +21,14 @@
 import {
   MAX_LINE_WORDS,
   BeatsError,
+  dialogueBeats,
   minHoldSeconds,
   parseBeats,
   roundTo,
+  speakableBeats,
   type Beats,
 } from '../lib/agent/tools/skills/video/beats';
+import { planVideoIntake } from '../lib/agent/tools/skills/video/intake';
 import type { EmitError } from '../lib/agent/tools/skills/video/emit';
 import {
   TIMING_DEFAULTS,
@@ -51,6 +54,9 @@ import {
 } from '../lib/agent/tools/skills/video/emit';
 import {
   checkFindings,
+  dialogueCoverage,
+  dialoguePrompt,
+  DIALOGUE_MIN_COVERAGE,
   estimateVideoCredits,
   fatalCheckFindings,
   onsetFromMeasurement,
@@ -1163,6 +1169,287 @@ console.log('\n=== beats.json schema ===');
       'beats[0].lines',
     ),
     'beats[0].lines',
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Dialogue plates: the mode where the CLIP speaks
+//
+// These checks exist because the failure they prevent is invisible in a render: a
+// muted talking head with a TTS track over it looks like a film and is a dub. Every
+// assertion below is about the audio staying attached to the picture.
+// ────────────────────────────────────────────────────────────────────────────
+
+function dialogueFixture(): Record<string, unknown> {
+  const base = fixtureBeats();
+  return {
+    ...base,
+    plates: [
+      {
+        id: 'dlg-a',
+        source: 'dialogue',
+        line: 'Naam yaad rakhna — Doctor Satish Batra!',
+        speaker: 'young Indian woman, bright and confident, close studio microphone',
+        seconds: 15,
+        imageKey: 'assets/brand/host.jpg',
+      },
+      ...(base.plates as any[]),
+    ],
+    beats: [
+      { id: 'p01', vo: '', lines: ['THE REAL GURU'], plate: 'dlg-a' },
+      ...(base.beats as any[]).slice(1),
+    ],
+    scenes: [
+      { id: 's1', kind: 'hook', beats: ['p01'], plate: 'dlg-a' },
+      ...(base.scenes as any[]).slice(1),
+    ],
+  };
+}
+
+{
+  const parsed = throws(() => parseBeats(dialogueFixture()));
+  check('a dialogue plate parses, with its line and performer kept', !parsed.threw, parsed.message.slice(0, 90));
+
+  const beats = parseBeats(dialogueFixture());
+  check(
+    'a beat that performs a dialogue plate is not also sent to TTS',
+    !speakableBeats(beats).some((b) => b.id === 'p01'),
+    `${speakableBeats(beats).length} TTS line(s) left`,
+  );
+  check(
+    'and it is counted as a dialogue beat instead',
+    dialogueBeats(beats).some((b) => b.id === 'p01'),
+    'p01',
+  );
+
+  const onsets: VoOnset[] = [
+    { id: 'p01', start: 0, dur: 6.4 },
+    ...beats.beats
+      .filter((b) => b.id !== 'p01')
+      .map((b, i) => ({ id: b.id, start: i, dur: 3.4 })),
+  ];
+  console.log('DEBUG plan', scenePlanFor(beats).map((p) => `${p.scene.id}:${p.beatIds.join('+')}`).join(' | '));
+  const project = emitProject(beats, measureVoiceover(onsets, scenePlanFor(beats)));
+  const scene1 = (project.files.find((f) => f.path === 'compositions/s1-hook.html')?.content ?? '').replace(/\s+/g, ' ');
+  check(
+    'the talking shot keeps its own audio in the composition',
+    /id="v-plate"[^>]*data-has-audio="true"/.test(scene1),
+    'data-has-audio on v-plate',
+  );
+  check(
+    'and is never emitted muted (a muted talking head is a mime)',
+    !/id="v-plate"[^>]*\bmuted\b/.test(scene1),
+    'no muted attribute',
+  );
+
+  const root = project.files.find((f) => f.path === 'index.html')?.content ?? '';
+  check('no <audio> element is emitted for a line the clip already speaks', !root.includes('vo-p01'), 'vo-p01 absent');
+
+  const grading = project.files.find((f) => f.path === 'grading.sh')?.content ?? '';
+  const dlgLine = grading.split('\n').find((l) => l.includes('dlg-a.raw.mp4')) ?? '';
+  check(
+    'grading.sh transcodes the dialogue track instead of stripping it',
+    dlgLine.includes('-c:a aac') && !dlgLine.includes(' -an '),
+    dlgLine.trim().slice(0, 70),
+  );
+  const silentLine = grading.split('\n').find((l) => l.includes('types-a.raw.mp4')) ?? '';
+  check(
+    'a silent plate is still stripped, so no stray bed rides under the voices',
+    silentLine.includes(' -an '),
+    silentLine.trim().slice(0, 70),
+  );
+}
+
+{
+  // Two beats sharing one performance would mean one stream of speech cut two ways.
+  const baseFixture = dialogueFixture();
+  const sharedScenes = (baseFixture.scenes as any[]).map((scene) =>
+    scene.id === 's1'
+      ? { ...scene, beats: ['p01', 'p02'] }
+      : scene.beats.includes('p02')
+        ? { ...scene, beats: scene.beats.filter((id: string) => id !== 'p02') }
+        : scene,
+  );
+  const shared = throws(() =>
+    parseBeats({
+      ...baseFixture,
+      beats: [
+        { id: 'p01', vo: '', lines: ['THE REAL GURU'], plate: 'dlg-a' },
+        ...(baseFixture.beats as any[]).slice(1).map((beat: any) =>
+          beat.id === 'p02' ? { ...beat, plate: 'dlg-a', vo: '' } : beat,
+        ),
+      ],
+      scenes: sharedScenes,
+    }),
+  );
+  check(
+    'one dialogue plate cannot back two beats',
+    shared.threw && /exactly one beat/.test(shared.message),
+    shared.message.slice(0, 90),
+  );
+
+  const disagreeing = throws(() =>
+    parseBeats({
+      ...dialogueFixture(),
+      beats: [
+        { id: 'p01', vo: 'Something else entirely', lines: ['THE REAL GURU'], plate: 'dlg-a' },
+        ...(fixtureBeats().beats as any[]).slice(1),
+      ],
+    }),
+  );
+  check(
+    'a dialogue beat cannot also carry a different TTS line',
+    disagreeing.threw && /disagrees/.test(disagreeing.message),
+    disagreeing.message.slice(0, 90),
+  );
+
+  const noLine = throws(() =>
+    parseBeats({
+      ...fixtureBeats(),
+      plates: [{ id: 'dlg-a', source: 'dialogue', seconds: 15 }, ...(fixtureBeats().plates as any[])],
+    }),
+  );
+  check(
+    'a dialogue plate without a line is refused before any spend',
+    noLine.threw && /line/.test(noLine.message),
+    noLine.message.slice(0, 80),
+  );
+
+  const tooLong = throws(() =>
+    parseBeats({
+      ...fixtureBeats(),
+      plates: [
+        { id: 'dlg-a', source: 'dialogue', line: 'x '.repeat(80), seconds: 15 },
+        ...(fixtureBeats().plates as any[]),
+      ],
+    }),
+  );
+  check(
+    'a 60+ word line is refused: the model loses the thread and the lip-sync',
+    tooLong.threw && /split it across plates/i.test(tooLong.message),
+    tooLong.message.slice(0, 80),
+  );
+}
+
+{
+  const prompt = dialoguePrompt(
+    {
+      id: 'dlg-a',
+      source: 'dialogue',
+      line: 'Naam yaad rakhna — Doctor Satish Batra!',
+      speaker: 'deep warm male voice, close microphone',
+      seconds: 15,
+    },
+    '16:9',
+  );
+  check(
+    'the prompt carries the exact line, verbatim, and asks for lip-sync',
+    prompt.includes('"Naam yaad rakhna — Doctor Satish Batra!"') && /lip-synced/.test(prompt),
+    `${prompt.length} chars`,
+  );
+  check(
+    'and it forbids the things that ruin a take',
+    /no music/i.test(prompt) && /no other voices/i.test(prompt) && /no captions/i.test(prompt),
+    'no music / voices / captions',
+  );
+
+  check(
+    'a faithful transcript scores 1',
+    dialogueCoverage('Naam yaad rakhna Doctor Satish Batra', 'naam yaad rakhna doctor satish batra') === 1,
+    'exact',
+  );
+  check(
+    'an improvised take scores below the floor and is caught',
+    dialogueCoverage('Naam yaad rakhna Doctor Satish Batra', 'welcome to our channel today we discuss property') <
+      DIALOGUE_MIN_COVERAGE,
+    'below the floor',
+  );
+  check(
+    'a Devanagari transcript of a Hindi line still matches',
+    dialogueCoverage('नाम याद रखना डॉक्टर सतीश बत्रा', 'नाम याद रखना डॉक्टर सतीश बत्रा') === 1,
+    'Devanagari',
+  );
+}
+
+{
+  const fromReference = planVideoIntake({
+    referenceVideo: true,
+    referenceHasSpeech: true,
+    referenceHasTalkingHeads: true,
+  });
+  check(
+    'a reference with people talking to camera asks for dialogue clips',
+    fromReference.speechMode === 'dialogue-clips',
+    fromReference.reasoning.slice(0, 70),
+  );
+  const narrator = planVideoIntake({
+    referenceVideo: true,
+    referenceHasSpeech: true,
+    referenceHasTalkingHeads: false,
+  });
+  check(
+    'a reference with speech but nobody on camera asks for narration',
+    narrator.speechMode === 'tts-narration',
+    narrator.reasoning.slice(0, 70),
+  );
+  const unprobed = planVideoIntake({ brief: 'make a video like this for my project', referenceVideo: true });
+  check(
+    'a one-line brief with an unprobed reference is undecided, and asks',
+    unprobed.speechMode === 'undecided' && unprobed.questions.some((q) => q.id === 'speech'),
+    `speech: ${unprobed.speechMode}`,
+  );
+  const oneLiner = planVideoIntake({ brief: 'a podcast-style promo for our coaching institute' });
+  check(
+    'a brief that names a speaking format picks dialogue without asking',
+    oneLiner.speechMode === 'dialogue-clips' && !oneLiner.questions.some((q) => q.id === 'speech'),
+    oneLiner.reasoning.slice(0, 70),
+  );
+  const asked = planVideoIntake({
+    referenceHasSpeech: true,
+    referenceHasTalkingHeads: true,
+    brand: { name: 'SBG' },
+  });
+  check(
+    'a missing phone number is asked for, never invented',
+    asked.questions.some((q) => q.id === 'phone'),
+    asked.questions.map((q) => q.id).join(', '),
+  );
+  check(
+    'a brand already given is not asked about again',
+    !asked.questions.some((q) => q.id === 'brand'),
+    'brand omitted',
+  );
+  check(
+    'every open question carries a fallback the agent can decide with',
+    asked.questions.every((q) => q.fallback.length > 0),
+    `${asked.questions.length} question(s)`,
+  );
+  check(
+    'the skeleton already speaks in the mode that was decided',
+    (asked.skeleton.plates as any[]).some((p) => p.source === 'dialogue'),
+    'dialogue plate in the skeleton',
+  );
+  check(
+    'and the skeleton is a valid brief once the placeholders are filled',
+    throws(() =>
+      parseBeats({
+        ...(asked.skeleton as Record<string, unknown>),
+        jobId: 'intake-skeleton',
+        targetSeconds: 30,
+        beats: [{ id: 'p01', vo: '', lines: ['THE REAL GURU'], plate: 'dlg-a' }],
+        scenes: [
+          { id: 's1', kind: 'hook', beats: ['p01'], plate: 'dlg-a' },
+          { id: 's2', kind: 'endcard', beats: [], dur: 2.6, plate: 'broll-a' },
+        ],
+        endCard: {
+          name: 'SBG',
+          tagline: 'Learn Grow Prosper',
+          numbers: ['9876500123', '9876500456'],
+          address: ['Jabalpur'],
+        },
+      }),
+    ).threw === false,
+    'skeleton parses',
   );
 }
 

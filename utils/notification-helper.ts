@@ -4,7 +4,7 @@ import { GoogleAuth } from 'google-auth-library';
 import fs from 'fs';
 import path from 'path';
 import { resolveAppUrl } from '@/utils/app-url';
-import { outboundEmail, outboundRecipient, isOutboundTestMode } from '@/lib/automation/test-mode';
+import { isOutboundTestMode } from '@/lib/automation/test-mode';
 import {
   buildRecordingUrl,
   deliverCallReceipt,
@@ -672,9 +672,11 @@ export async function sendAdminMultiChannelNotification({
       try {
         const rawPhone = ownerProfile.whatsapp_personal_number || ownerProfile.contact_number || ownerProfile.whatsapp_phone_number;
         if (rawPhone) {
-          // Outbound test mode: the owner's real number never receives anything
-          // while OUTBOUND_TEST_MODE is on.
-          let cleanPhone = outboundRecipient(rawPhone).replace(/\D/g, '');
+          // Admin alerts are INTERNAL, not customer-facing. OUTBOUND_TEST_MODE exists
+          // to stop accidental sends to PROSPECTS; applying it here meant the business
+          // owner never received their own lead alerts - every one was silently
+          // redirected to the founder's number. Test mode must not mute the client.
+          let cleanPhone = String(rawPhone).replace(/\D/g, '');
           if (cleanPhone.length === 10) {
             cleanPhone = '91' + cleanPhone;
           }
@@ -798,9 +800,9 @@ export async function sendAdminMultiChannelNotification({
     } else {
       const { sendGenericEmail, sendConnectExpertNotificationEmail, sendLeadNotificationEmail, resolveNotificationRecipients } = await import('@/utils/email-helper');
       const { toEmail, bccEmail } = resolveNotificationRecipients(ownerProfile as any);
-      // Outbound test mode: the recipient is swapped for the test inbox, and a
-      // real customer's address must never ride along as a BCC.
-      const emailTo = outboundEmail(toEmail);
+      // Same reasoning as the WhatsApp branch: this is the OWNER's own alert, so it
+      // is never redirected to the test inbox - that only hid the client's alerts.
+      const emailTo = toEmail;
       const emailBcc = isOutboundTestMode() ? undefined : bccEmail;
 
       if (emailTo) {

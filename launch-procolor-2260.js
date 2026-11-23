@@ -6,12 +6,11 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const FB_GRAPH_URL = 'https://graph.facebook.com/v19.0';
+const FB_GRAPH_URL = 'https://graph.facebook.com/v21.0';
 
 async function launchCampaign() {
-  console.log('=== STARTING PROCOLOR CAMPAIGN LAUNCH ===');
+  console.log('=== STARTING PROCOLOR CAMPAIGN LAUNCH ON ACCOUNT 2260 (act_542853643532260) ===');
 
-  // 1. Fetch Profile
   const profileId = '9c0748de-e3da-4ea1-b323-4ce736b5ca7c';
   const { data: profile, error: pErr } = await supabaseAdmin
     .from('profiles')
@@ -24,13 +23,11 @@ async function launchCampaign() {
   }
 
   const facebookToken = profile.facebook_token;
-  const adAccountId = profile.ad_account_id; // 'act_266860069'
-  const pageId = profile.selected_page_id; // '219848425178723'
-  const pageToken = profile.selected_page_token || facebookToken;
+  const adAccountId = 'act_542853643532260'; // Account 2260
+  const pageId = '219848425178723'; // Procolor Film Academy
   const businessName = profile.business_name || 'Procolor Film Academy';
-  const contactNumber = profile.contact_number || '9569919985';
   const linkUrl = profile.custom_domain ? `https://${profile.custom_domain}` : 'https://www.procolorfilmacademy.com';
-  const leadFormId = '1603036087997191'; // Sept cinematography course lead form
+  const leadFormId = '4629765537333584'; // High Intent Qualifying Form
 
   console.log('Profile loaded:', {
     businessName,
@@ -40,16 +37,20 @@ async function launchCampaign() {
     linkUrl
   });
 
-  // 2. Verified Creatives
-  const videoId = '1026909573772363'; // Already uploaded and ready on Meta
-  const videoThumbUri = 'https://scontent.fixc1-8.fna.fbcdn.net/v/t15.5256-10/901235820_2372859940215497_9099161549405853954_n.jpg?_nc_cat=100&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=e3495b&_nc_ohc=0lWQ4RRuO3EQ7kNvwG97W5K&_nc_oc=AdrPxvji9mywATqe3Jv81DJ3nTeEej4FxtgwvLbuuQGfFGTdoeVtziAzAbfFyBDzz1ozJPITL0Blp4FCk4_CyXiU&_nc_zt=23&_nc_ht=scontent.fixc1-8.fna&edm=AF0wKlEEAAAA&_nc_gid=MEtqQa2gOotWCCoPGUvXxw&_nc_tpa=Q5bMBQKj6fP5y2K4JSGOtshSuyJdc83-BNDqWP83mrmZO2NEYGygWw-Zd8rMP0zsnDDqNb2ffRI0zKlj&oh=00_AQQi4ByMpQq06E184xDdDlH6Mje9g1Q2pNzSZX2Q7OY90Q&oe=6B01D10C';
-  const img1Hash = 'dd47e1703eaba029563544ae7e6a97de'; // dr1 (₹15,000 OFF December Batch)
+  // Ensure Supabase profile has ad_account_id set to act_542853643532260
+  await supabaseAdmin.from('profiles').update({ ad_account_id: adAccountId }).eq('id', profileId);
+  console.log('✓ Updated Procolor profile in DB to ad_account_id:', adAccountId);
+
+  // Verified Creative Assets on act_542853643532260
+  const videoId = '1677666347061028'; // Ready on act_542853643532260
+  const videoThumbUri = 'https://scontent.fixc1-2.fna.fbcdn.net/v/t15.5256-10/902253094_1122133437251921_7587803806907214712_n.jpg?stp=dst-jpg_p160x160_tt6&_nc_cat=104&_nc_map=urlgen_bucketless&ccb=1-7&_nc_sid=200999&_nc_ohc=C79BOIgX3NkQ7kNvwEcHPvH&_nc_oc=AdrXmJ1OvvnJZ16gVVg6i1Kzi05TsNERjsphX_00j3fP7WwrPUSmv1_jdNzE969EeKottuguzmmDcGjD1fe_X0QY&_nc_zt=23&_nc_ht=scontent.fixc1-2.fna&edm=APRAPSkEAAAA&_nc_gid=lqh1z4xMr1XK7MQH9YRFyQ&_nc_tpa=Q5bMBQIy9WqtCfRksAzkEnDo951rx5F1RXgWlEqR7UwKx7VLRP9SXrcBtLpRXqA7WvuFJzdUeF6TUXpb&oh=00_AQQIq1xfjc9tTIJNleDCKoUL7EJFwffPSgM2oJW5AAjAbA&oe=6B074299';
+  const img1Hash = 'dd47e1703eaba029563544ae7e6a97de'; // dr1 (Flat ₹15,000 OFF December Batch)
   const img2Hash = 'cb6ebabf9752361055fcad4f6df6051a'; // dr3 (Short Film, Doc, Showreel, Placement)
 
-  // 3. Create Campaign on Meta
+  // 1. Create Campaign
   console.log('\n--- STEP 1: CREATING CAMPAIGN ---');
   const campaignName = `Procolor Academy - Cinematography Diploma (Dec Batch) - ${new Date().toISOString().slice(0, 10)}`;
-  const dailyBudgetPaise = 500 * 100; // 500 INR in paise = 50,000
+  const dailyBudgetPaise = 500 * 100; // ₹500 in paise = 50,000
 
   const campaignPayload = {
     name: campaignName,
@@ -74,7 +75,7 @@ async function launchCampaign() {
   const campaignId = campData.id;
   console.log('✓ Campaign created successfully! Meta Campaign ID:', campaignId);
 
-  // 4. Create Ad Set on Meta
+  // 2. Create Ad Set
   console.log('\n--- STEP 2: CREATING AD SET ---');
   const adsetName = `Chandigarh 20km - Students 18-30 (Cinematography & Film)`;
   const targetingConfig = {
@@ -125,46 +126,43 @@ async function launchCampaign() {
   });
   const adsetData = await adsetRes.json();
   if (!adsetRes.ok) {
-    console.error('AdSet creation failed:', adsetData);
     throw new Error('Meta AdSet creation failed: ' + JSON.stringify(adsetData));
   }
   const adsetId = adsetData.id;
   console.log('✓ AdSet created successfully! Meta AdSet ID:', adsetId);
 
-  // 5. Create Creatives & Ads on Meta
+  // 3. Create 3 Ad Creatives & 3 Ads
   console.log('\n--- STEP 3: CREATING AD CREATIVES & ADS ---');
-  const adsConfig = [
+  const adsToCreate = [
     {
       name: 'Ad 1 - Master Cinematography Video Ad',
       type: 'video',
       videoId: videoId,
       thumbUri: videoThumbUri,
       headline: 'Master Cinematography in 8 Weeks',
-      primaryText: 'Learn to think, light, and shoot like a professional cinematographer. Train on Sony cinema cameras, prime lenses, gimbals, & studio lighting with industry mentors at Sector 35C, Chandigarh.\n\n🎬 8-Week Diploma (40 Practical Sessions)\n🎥 Real Shoots: Short Film & Documentary\n📜 Diploma Certificate & Placement Assistance\n\nAdmissions open for December batch. Limited seats!',
-      description: '8-Week Diploma · Sector 35C, Chandigarh'
+      primaryText: 'Hands-on training on cinema cameras, gimbals & professional lighting. Walk away with a short film, documentary & showreel. Dec Batch enrolling now in Sector 35-C, Chandigarh!'
     },
     {
-      name: 'Ad 2 - Special Offer ₹15k OFF (December Batch)',
+      name: 'Ad 2 - DR1 ₹15,000 OFF December Batch',
       type: 'image',
       imageHash: img1Hash,
-      headline: 'Get ₹15,000 OFF – December Batch',
-      primaryText: '🔥 Special Launch Offer: Get ₹15,000 OFF on the 8-Week Diploma in Cinematography at Procolor Film Academy!\n\nLearn hands-on camera operation, lighting design, shot composition, and visual storytelling on professional Sony cinema gear in Sector 35C, Chandigarh.\n\n⚡ Small Batches with Personal Mentorship\n📞 Call 95699 19985 or tap Learn More to apply!',
-      description: '₹15,000 OFF · Limited Seats Available'
+      headline: 'Flat ₹15,000 OFF · Dec Batch',
+      primaryText: 'Start your filmmaking career in Chandigarh. Professional 8-week Diploma in Cinematography. Early bird discount of ₹15,000 active for December seats. Apply now!',
+      description: 'Sector 35-C, Chandigarh · Hands-on Practical Course'
     },
     {
-      name: 'Ad 3 - Career Outcomes & Portfolio Ad',
+      name: 'Ad 3 - DR3 Course Outcomes & Career',
       type: 'image',
       imageHash: img2Hash,
-      headline: 'Graduate With a Complete Showreel',
-      primaryText: 'Don\'t just get a certificate—graduate with a professional portfolio and career-ready skills.\n\nWhat you will graduate with:\n✔ Short Film & Documentary\n✔ Showreel-Ready Portfolio\n✔ Diploma Certificate from Procolor\n✔ Placement & Freelance Assistance\n\n📍 Sector 35C, Chandigarh. Apply now for the December batch!',
-      description: 'Placement Assistance · 40 Sessions'
+      headline: 'Short Film + Doc + Showreel',
+      primaryText: 'Don\'t just learn theory. Shoot real films, build a verified portfolio, earn your diploma certificate & get 100% placement support. Enroll today in Chandigarh!',
+      description: '100% Practical Shoot Training · Apply for Details'
     }
   ];
 
   const createdAds = [];
 
-  for (let i = 0; i < adsConfig.length; i++) {
-    const config = adsConfig[i];
+  for (const config of adsToCreate) {
     console.log(`\nCreating ${config.name}...`);
 
     const ctaValue = {
@@ -173,8 +171,10 @@ async function launchCampaign() {
     };
 
     const creativePayload = {
-      name: `${config.name} Creative`,
-      object_story_spec: { page_id: pageId },
+      name: `Creative - ${config.name}`,
+      object_story_spec: {
+        page_id: pageId
+      },
       access_token: facebookToken
     };
 
@@ -256,24 +256,22 @@ async function launchCampaign() {
     });
   }
 
-  // 6. Record Job in Supabase
+  // 4. Record in Supabase
   console.log('\n--- STEP 4: RECORDING IN SUPABASE ---');
   const productId = 'cd40f892-81bc-4712-a40d-ac3163588628';
   
-  // Update property
   await supabaseAdmin.from('properties').update({
     meta_campaign_id: campaignId,
     meta_campaign_status: 'ACTIVE'
   }).eq('id', productId);
   console.log('✓ Updated property with meta_campaign_id:', campaignId);
 
-  // Insert completed campaign_job
   const { data: jobData, error: jobErr } = await supabaseAdmin.from('campaign_jobs').insert({
     user_id: profileId,
     target_user_id: profileId,
     status: 'completed',
     campaign_id: campaignId,
-    message: `Campaign Launched Successfully with ${createdAds.length} Ads (1 Video Ad + 2 Direct-Response Image Ads)!`,
+    message: `Campaign Launched Successfully on Account 2260 with ${createdAds.length} Ads (1 Video Ad + 2 Direct-Response Image Ads)!`,
     payload: {
       campaignId,
       campaignName,
@@ -293,23 +291,15 @@ async function launchCampaign() {
 
   console.log('✓ Campaign job recorded in DB with Job ID:', jobData?.id || 'done');
 
-  // 7. Verify Campaign Details from Meta
+  // 5. Verify Campaign & Ads from Meta
   console.log('\n--- STEP 5: VERIFYING CAMPAIGN ON META ---');
   const verifyRes = await fetch(`${FB_GRAPH_URL}/${campaignId}?fields=id,name,status,effective_status,objective,daily_budget,created_time&access_token=${facebookToken}`);
   const metaCampaign = await verifyRes.json();
   console.log('Meta Campaign Verified:', metaCampaign);
 
-  const adsetVerifyRes = await fetch(`${FB_GRAPH_URL}/${adsetId}?fields=id,name,status,effective_status,targeting&access_token=${facebookToken}`);
-  const metaAdset = await adsetVerifyRes.json();
-  console.log('Meta AdSet Verified:', {
-    id: metaAdset.id,
-    name: metaAdset.name,
-    status: metaAdset.status,
-    effective_status: metaAdset.effective_status,
-    geo_locations: metaAdset.targeting?.geo_locations,
-    age_min: metaAdset.targeting?.age_min,
-    age_max: metaAdset.targeting?.age_max
-  });
+  const adsVerifyRes = await fetch(`${FB_GRAPH_URL}/${adsetId}/ads?fields=id,name,status,effective_status,creative{id,name}&access_token=${facebookToken}`);
+  const metaAds = await adsVerifyRes.json();
+  console.log('Meta Ads Verified:', metaAds);
 
   console.log('\n=== CAMPAIGN LAUNCH FINISHED SUCCESSFULLY ===');
   return {
@@ -318,9 +308,10 @@ async function launchCampaign() {
     campaignName,
     adsetId,
     adsetName,
-    dailyBudget: 500,
+    dailyBudgetINR: 500,
     createdAds,
-    metaCampaign
+    metaCampaign,
+    metaAds
   };
 }
 

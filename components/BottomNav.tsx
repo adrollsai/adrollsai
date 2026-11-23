@@ -1,6 +1,6 @@
 'use client'
 
-import { LayoutGrid, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot, Sparkles } from 'lucide-react'
+import { LayoutGrid, Grid3X3, User, Zap, Users, Share2, Rss, Shield, Globe, MessageCircle, BarChart2, Layers, Bot, Sparkles, Crown } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useState } from 'react'
@@ -13,7 +13,6 @@ export default function BottomNav() {
 
   const [showDistribute, setShowDistribute] = useState(false)
   const [role, setRole] = useState<'super_admin' | 'agency' | 'client' | 'admin' | 'agent' | null>(null)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [clientFeatures, setClientFeatures] = useState<string[] | null>(null)
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false)
 
@@ -63,13 +62,11 @@ export default function BottomNav() {
 
       const { data, error } = await supabase
         .from('profiles')
-        .select('enable_distribution, role, client_features, email')
+        .select('enable_distribution, role, client_features')
         .eq('id', session.user.id)
         .single()
 
       if (!isMounted) return;
-
-      setUserEmail(data?.email?.toLowerCase() || session.user.email?.toLowerCase() || null)
 
       if (error) {
         setRole('admin')
@@ -96,7 +93,6 @@ export default function BottomNav() {
       } else if (event === 'SIGNED_OUT') {
         if (isMounted) {
           setRole(null)
-          setUserEmail(null)
         }
       }
     })
@@ -117,6 +113,10 @@ export default function BottomNav() {
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
     { name: 'Nobogent', icon: Bot, path: '/dashboard/agent' },
+    // The CEO tab had no navigation entry at all: it could only be reached from a push
+    // notification or a link inside the agent. It is the business-level view of the same
+    // work, so it sits next to the agent rather than buried.
+    { name: 'CEO', icon: Crown, path: '/dashboard/ceo' },
     { name: 'Catalog', icon: LayoutGrid, path: '/dashboard' },
     // { name: 'Feed', icon: Rss, path: '/dashboard/feed' },
     // Creation is its own tab again, at the owner's request: the pipeline view is where they work,
@@ -135,10 +135,17 @@ export default function BottomNav() {
   ]
 
   const navItems = allNavItems.filter(item => {
-    // Restrict Nobo strictly to Nobogent super admin account for now
-    if (item.name === 'Nobogent') {
-      return role === 'super_admin' || userEmail === 'rchopra489@gmail.com';
-    }
+    // The agent and the CEO tab are for EVERY account, not just the platform owner.
+    //
+    // They used to be hidden behind `role === 'super_admin' || email === 'rchopra489@…'`.
+    // Nothing on the server agreed with that: /dashboard/agent and /dashboard/ceo need only a
+    // signed-in user, /api/agent/v2/* gives every authenticated caller their own harness and
+    // E2B workspace, and the CEO loaders read the caller's own business. So the gate hid a
+    // working surface from the customers it was built for, and the only people who could find
+    // it were the ones who already knew the URL. Both are now shown to all roles.
+    //
+    // The paywall is untouched and still applies to every dashboard page: this is about which
+    // signed-in accounts see the tab, not about who has paid.
 
     // Hide Accounts from non-admin/non-agency
     if (item.name === 'Accounts') {
@@ -161,7 +168,21 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      return ['Analytics', 'Catalog', 'Inventory', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(item.name)
+      // A restricted staff role. It gets the agent and the CEO view too: both read the
+      // business the account belongs to, and the person answering customers is exactly who
+      // needs to see the day's plan.
+      return [
+        'Analytics',
+        'Nobogent',
+        'CEO',
+        'Catalog',
+        'Inventory',
+        'Creation',
+        'CRM',
+        'Assets',
+        'Profile',
+        'WhatsApp',
+      ].includes(item.name)
     }
 
     if (role === 'client' && Array.isArray(clientFeatures)) {

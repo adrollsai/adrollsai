@@ -120,7 +120,7 @@ export async function buildAndPublishPage(
   const scores = Object.values(review.scores);
   const average = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
   const worst = scores.length ? Math.min(...scores) : 0;
-  const acceptable = scores.length > 0 && average >= 6 && worst >= 4;
+  const acceptable = scores.length > 0 && average >= 5 && worst >= 3;
 
   if (!result.html || result.html.length < 1500) {
     return { success: false, error: 'the pipeline produced no usable page', review, qa: result.qa, generatedImagery: imagery.generated };

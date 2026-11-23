@@ -155,15 +155,96 @@ exactly as the reference film's measured timing file had it.
 `grading.sh`, `master.sh`, `package.json` (CLI pinned to `hyperframes@0.9.43`),
 `hyperframes.json`, `meta.json`.
 
+## Two speech modes, and why the difference is structural
+
+A film talks in one of two ways, and they are not interchangeable:
+
+| mode | how it is made | what it costs | what it can never do |
+|---|---|---|---|
+| `dialogue` plate | the line goes INSIDE the video prompt; the model generates voice + lip movement together | video, per second at the plate's `resolution` (480p by default) | nothing — the words and the mouth are one artefact |
+| TTS narration | `vo` is synthesised by the voice model, measured, and laid under silent plates | voice, per line + video per second | be lip-synced: the mouth is performing something else |
+
+That second row is the failure this contract exists to prevent. A silent talking shot
+with a TTS track over it reads as a badly dubbed film, and no edit fixes it afterwards,
+because the picture was never performing the words.
+
+```jsonc
+// a dialogue plate: one performance, one beat
+{ "id": "dlg-a", "source": "dialogue",
+  "line": "नाम याद रखना — डॉक्टर सतीश बत्रा!",       // spoken verbatim, in this script
+  "speaker": "young Indian woman, bright, close studio microphone",
+  "seconds": 15,                                    // 2–15; the model's own ceiling
+  "resolution": "480p",                             // 480p | 720p | 1080p
+  "imageKey": "brand/host.jpg",                     // a still to animate (https or R2 key)
+  "motion": "speaking straight into the lens" }     // optional framing note
+```
+
+What the pipeline does with one, end to end:
+
+1. **Voice step.** The plate is generated from `dialoguePrompt()` (which quotes the line
+   and forbids music, captions and other voices), written to `assets/footage/<id>.raw.mp4`,
+   then **cut to its own speech** with `silencedetect` + `trimDialogueCommand` — picture and
+   sound together, so nothing has to be nudged into sync.
+2. **Verify.** The clip is published and transcribed with `MEDIA_MODELS.transcribe`, and
+   `dialogueCoverage()` compares the heard words with the requested line. Under
+   `DIALOGUE_MIN_COVERAGE` the run logs `video.dialogue.mismatch`: regenerate that plate,
+   do not ship it. The check never fails a run that already paid for its clips.
+3. **Timing.** The beat's onset comes from the clip's own measurement, so the film is cut
+   to what the model actually said.
+4. **Emit.** The scene's `<video>` is `data-has-audio="true"` and never `muted`; no
+   `<audio>` element is emitted for that beat (the line would play twice); `grading.sh`
+   transcodes the track with `-c:a aac` instead of stripping it with `-an`.
+5. **Master.** `master.sh` does not care where the speech came from — it masters whatever
+   audio the render carries, and refuses a film with none.
+
+Parse-time rules that make this safe (each one is a check in `npm run verify:video-skill`):
+
+* a dialogue plate needs a `line` of 2–60 words (`prompt` is rejected: the words go in `line`);
+* it belongs to **exactly one beat** — two beats sharing one performance is one stream of
+  speech cut two ways, and there is no honest way to time that;
+* a beat that performs a dialogue plate must have `vo: ""` (or an identical string), so a
+  line is never both spoken by the clip and synthesised;
+* silent plates stay at 1–6 s and keep `-an`, so no stray bed rides under the voices.
+
+## Intake: what to ask before writing a beats file
+
+`planVideoIntake()` (pure) answers the question a one-line brief cannot: **does anyone
+speak on camera?** It takes the owner's words, whether a reference film exists, and what
+that reference's audio turned out to be (`referenceHasSpeech`, `referenceHasTalkingHeads`),
+and returns:
+
+* the **speech mode** and a one-sentence reason (`dialogue-clips` / `tts-narration` /
+  `undecided` when the evidence is not there yet);
+* only the questions that are still open — phone number, brand, aspect, length, spoken vs
+  on-screen language, which assets must appear — each with a fallback, and `mattersForCost`
+  marked on the ones that change the quote;
+* a `beats.json` skeleton already shaped for the chosen mode.
+
+The agent calls it as `video_intake`, asks the open questions in ONE message, and only then
+calls `plan_video`. Nothing is generated before the plan is approved.
+
+## The escape hatch is part of the contract
+
+The emitter covers a hook/beat/list/info/cta/numbers/endcard film. When the cut genuinely
+does not fit — a dozen cutaways over one continuous take, a beat sheet derived from a
+generated clip's own audio, a score ducked against the voices — the answer is NOT to bend
+the brief: write the HyperFrames project in the sandbox (`sandbox_write_file`), do the
+media work with `sandbox_bash_run`, render with `sandbox_render_hyperframes`, publish with
+`sandbox_publish_artifact`. A `<video data-has-audio="true">` in your own composition keeps
+its own speech exactly as a `dialogue` plate does here. The structured path is the fast
+lane, not a cage.
+
 ## Audio: two gates, because a render is not a deliverable
 
 A render carries whatever level the voice model returned. The first proof film
 measured **-31.6 LUFS with a -26.2 dB peak** — about 4% of full scale, inaudible on
 a phone — and nothing in the composition can fix that. So:
 
-1. **No plate brings sound.** `grading.sh` re-encodes every plate with `-an`, and
-   every `<video>` in every composition is `muted`. A plate is picture only; a scene
-   that shipped its source audio would put a bed under the voice.
+1. **No SILENT plate brings sound.** `grading.sh` re-encodes every silent plate with
+   `-an`, and every silent `<video>` in every composition is `muted`. A silent plate is
+   picture only; a scene that shipped its source audio would put a bed under the voice. The
+   one deliberate exception is a `dialogue` plate, whose own track IS the dialogue: it is
+   transcoded with `-c:a aac` and played with `data-has-audio`.
 2. **`master.sh` masters the film before it is published.** Pass 1 measures the mix
    with `loudnorm=print_format=json`; pass 2 applies a **linear** gain to
    `I=-16 LUFS, TP=-1.5 dBTP, LRA=11` (`linear=true`, so the performance is not

@@ -25,6 +25,7 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { BeatsError, MAX_LINE_WORDS } from './skills/video/beats';
 import { planVideoSkill } from './skills/video/index';
+import { planVideoIntake, type IntakeEvidence } from './skills/video/intake';
 import { planImageSkill } from './skills/image/index';
 
 export interface PlanVideoResult {
@@ -155,6 +156,52 @@ export function planImage(input: unknown): PlanImageResult {
 }
 
 export function createVideoSkillTools() {  return {
+    video_intake: tool({
+      description:
+        'START HERE for any film, especially when the brief is one line like "make a video like this for ' +
+        'my project" with a reference video attached. Pass what you actually know — the owner\'s words, ' +
+        'whether a reference was supplied, and what its audio turned out to be (analyse_video_with_gemini ' +
+        'or the file probe tells you if it has speech and people talking to camera) — and this returns: ' +
+        'the SPEECH MODE the film needs (on-camera dialogue generated with the picture, or a TTS ' +
+        'narrator over b-roll), why, the exact questions that are still open with a fallback for each, and ' +
+        'a beats.json skeleton to fill in. Ask the owner those questions in ONE message, then call ' +
+        'plan_video. Never guess a phone number, a brand name or whether people speak on camera: each ' +
+        'one changes the film and the cost.',
+      inputSchema: z.object({
+        brief: z.string().optional().describe("The owner's words, verbatim"),
+        referenceVideo: z.boolean().optional().describe('A reference film was supplied'),
+        referenceHasSpeech: z
+          .boolean()
+          .nullable()
+          .optional()
+          .describe('The reference has a speech track (probe the audio stream, do not guess)'),
+        referenceHasTalkingHeads: z
+          .boolean()
+          .nullable()
+          .optional()
+          .describe('People speak on camera in the reference'),
+        onScreenLanguage: z.string().optional().describe('Language of the on-screen type, if stated'),
+        aspect: z.string().optional(),
+        targetSeconds: z.number().optional(),
+        brand: z
+          .object({
+            name: z.string().optional(),
+            phone: z.string().optional(),
+            logo: z.string().optional(),
+            tagline: z.string().optional(),
+          })
+          .optional(),
+        assets: z.number().optional().describe('How many existing assets the owner pointed at'),
+      }),
+      execute: async (input: IntakeEvidence) => {
+        try {
+          return { success: true, ...planVideoIntake(input ?? {}) };
+        } catch (error: unknown) {
+          return { success: false, error: String((error as Error)?.message ?? error) };
+        }
+      },
+    }),
+
     plan_video: tool({
       description:
         'Validate a video brief and quote it before anything is spent. Pass a beats file ' +
@@ -163,7 +210,15 @@ export function createVideoSkillTools() {  return {
         'ALWAYS call this before telling the owner a film will be made: it enforces the rules the render ' +
         'refuses later — every line needs 0.5 s + 0.3 s per word on screen, at most ' +
         `${MAX_LINE_WORDS['9:16']} words a line at 9:16, and the film opens with a 0.5 s plate-only lead-in. ` +
-        'Read get_skill("nobogent-video-brief") first.',
+        'PLATES ARE WHERE THE SPEECH COMES FROM, and you choose per plate: a `dialogue` plate puts the ' +
+        'exact line in the video prompt so the model generates the voice AND the lip movement together ' +
+        '(that is the only way to get lip-sync — never pair a silent talking shot with TTS); a `generate` ' +
+        'plate is silent motion and the beat is narrated by TTS instead. Set a dialogue beat\'s `vo` to "" ' +
+        'so it is not spoken twice. ' +
+        'If the emitter cannot express the cut you need, do not force it: the sandbox tools ' +
+        '(sandbox_write_file, sandbox_bash_run, sandbox_render_hyperframes, sandbox_publish_artifact) can ' +
+        'build any HyperFrames project by hand, and a <video> with data-has-audio="true" keeps its own ' +
+        'speech there too. Read get_skill("nobogent-video-brief") first.',
       inputSchema: z.object({
         beats: z
           .record(z.string(), z.any())

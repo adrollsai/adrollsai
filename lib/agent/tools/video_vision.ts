@@ -76,6 +76,22 @@ export function createVideoVisionTools() {
             imageUrl,
             prompt || 'Describe this image in detail: subject, composition, colours, text, and quality.'
           );
+          // The analyzer degrades to a sentinel string when both vision routes fail
+          // (e.g. an invalid GEMINI_API_KEY). Reporting that as `success: true` is a
+          // lie the model then acts on: it read "[VISION UNAVAILABLE]" as a real
+          // answer and retried the same call four times in a measured run. A failed
+          // look must read as a failure, with a way forward.
+          if (analysis.trim().startsWith('[VISION UNAVAILABLE]')) {
+            return {
+              success: false,
+              retryable: false,
+              imageUrl,
+              error:
+                'Vision is unavailable in this deployment (the image analyzer could not be reached). ' +
+                'Do not retry this tool. Work from what you can read instead: the page HTML/CSS, the DOM ' +
+                'tokens from a sandbox probe, or the user-supplied description.',
+            };
+          }
           return { success: true, imageUrl, analysis };
         } catch (err: any) {
           return { success: false, imageUrl, error: err?.message || 'Image analysis failed.' };

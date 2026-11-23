@@ -150,9 +150,17 @@ export async function analyzeImageWithGeminiRaw(imageUrl: string, customPrompt?:
 
 /**
  * Analyze a single image: Primary DeepSeek Flash Vision, with graceful Gemini fallback.
+ *
+ * This is the function every tool, route and prompt-builder calls, and it used to
+ * jump STRAIGHT to the Gemini fallback — so a working DeepSeek vision key was never
+ * tried and a dead Gemini key made vision look unavailable platform-wide. Measured on
+ * a live run: `analyze_image_with_gemini` returned "[VISION UNAVAILABLE]" four times
+ * while the same image described correctly through DeepSeek in 2 s. The DeepSeek
+ * implementation already falls back to Gemini itself, so the entry point only has to
+ * actually call it.
  */
 export async function analyzeImageWithGemini(imageUrl: string, customPrompt?: string): Promise<string> {
-    return analyzeImageWithGeminiRaw(imageUrl, customPrompt);
+    return analyzeImageWithDeepSeek(imageUrl, customPrompt);
 }
 
 /**

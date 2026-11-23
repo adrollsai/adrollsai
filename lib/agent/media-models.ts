@@ -13,7 +13,25 @@
  * "correct" these against it.
  */
 
-export type MediaKind = 'image' | 'imageEdit' | 'video' | 'voice' | 'music';
+export type MediaKind = 'image' | 'imageEdit' | 'video' | 'voice' | 'music' | 'transcribe';
+
+/** What the video model will render at. Billed per second, so this is a real cost lever. */
+export type VideoResolution = '480p' | '720p' | '1080p';
+
+/**
+ * Credits per second of generated video, by resolution.
+ *
+ * From Kie's own Grok Imagine Video 1.5 pricing page (mirrored in
+ * lib/agent/pricing.ts, which quotes the same three rates in dollars): 480p is
+ * 2.4 credits/s, 720p 4.5, 1080p 8. A talking-head podcast at 480p costs a third of
+ * the same shot at 1080p, which is why `dialogue` plates default to 480p and a
+ * caller who wants a different trade can say so per plate.
+ */
+export const VIDEO_CREDITS_PER_SECOND: Record<VideoResolution, number> = {
+  '480p': 2.4,
+  '720p': 4.5,
+  '1080p': 8,
+};
 
 export interface MediaModel {
   /** primary model id, exactly as kie.ai expects it */
@@ -56,7 +74,24 @@ export const MEDIA_MODELS = {
     timeoutMs: 600_000,
     credits: 0,
     creditsPerSecond: 8,
-    notes: 'Grok Imagine 1.5, 1080p = 8 credits/sec. Keep clips at or under 6 s.',
+    notes:
+      'Grok Imagine 1.5. 1080p = 8 credits/sec (see VIDEO_CREDITS_PER_SECOND for 480p/720p). ' +
+      'Silent plates stay at or under 6 s. A clip can also CARRY ITS OWN SPEECH: put the line in ' +
+      'the prompt and the voice and lip movement come out of one generation (see the video skill\'s ' +
+      '`dialogue` plates) — that, not TTS, is how a talking shot is lip-synced. The model takes up ' +
+      'to 15 s, which is what a spoken sentence needs.',
+  },
+
+  /** Speech -> text. Used to prove a generated clip said the line it was given. */
+  transcribe: {
+    id: 'nvidia/nemotron-3-5-transcribe',
+    fallbacks: [] as const,
+    timeoutMs: 120_000,
+    credits: 1,
+    notes:
+      'Word-level transcript of one audio or video file from a public URL. Handles Hindi/Hinglish ' +
+      'and brand names as heard, so compare word SETS against what was asked for, not literal ' +
+      'strings. Cheap enough to run on every dialogue plate.',
   },
 
   /** Voiceover. 3.8 Flash is fast (~5 s) and takes sound-design direction in `scene`. */
@@ -124,9 +159,10 @@ export function estimateCredits(kind: MediaKind, units = 1): number {
   return Math.ceil(perUnit * units);
 }
 
-/** Credits a video clip will cost, given its length. */
-export function videoCredits(seconds: number): number {
-  return estimateCredits('video', seconds);
+/** Credits a video clip will cost, given its length and the resolution it renders at. */
+export function videoCredits(seconds: number, resolution: VideoResolution = '1080p'): number {
+  const rate = VIDEO_CREDITS_PER_SECOND[resolution] ?? VIDEO_CREDITS_PER_SECOND['1080p'];
+  return Math.ceil(rate * seconds);
 }
 
 /** Guard: refuse any model id that is not in the registry. */

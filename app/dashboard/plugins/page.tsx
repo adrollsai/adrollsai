@@ -147,6 +147,9 @@ export default function PluginsPage() {
 
         if (profile) {
           setBusinessName(profile.business_name || '')
+          if (profile.email) {
+            setUserEmail(profile.email)
+          }
           const origin = typeof window !== 'undefined' ? window.location.origin : ''
 
           // 99acres token

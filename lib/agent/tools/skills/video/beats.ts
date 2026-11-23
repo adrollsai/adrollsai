@@ -69,7 +69,19 @@ export type PlateSource =
   /** An asset already in R2 / the brand kit: `key` names it. */
   | 'asset'
   /** Generated motion (kie image-to-video / text-to-video): `prompt` + `seconds`. */
-  | 'generate';
+  | 'generate'
+  /**
+   * Generated motion that ALSO SPEAKS: the line goes into the model's prompt, so
+   * the voice and the lip movement are one generation. This is the only way to get
+   * a talking head that is not dubbed — a silent plate plus a TTS track can never
+   * be lip-synced.
+   *
+   * The audio lives inside the clip. `grading.sh` keeps it, the composition plays it
+   * with `data-has-audio`, and no `<audio>` element is emitted for that beat. Because
+   * the picture and the speech are the same artefact, the beat's timing is measured
+   * from the clip (same `silencedetect` the voice step uses).
+   */
+  | 'dialogue';
 
 export interface PlateSpec {
   /** Stable id referenced by beats and scenes, e.g. `hook-a`. */
@@ -83,6 +95,33 @@ export interface PlateSpec {
   seconds?: number;
   /** Seconds into the source where this usage starts. Defaults per usage index. */
   mediaStart?: number;
+  /**
+   * `dialogue`: the exact words the model must say, in the spoken language. Written
+   * into the prompt verbatim — this is the script the host performs.
+   */
+  line?: string;
+  /**
+   * `dialogue`: who is speaking and how, e.g. `young Indian woman, bright and
+   * confident, close studio microphone`. Becomes the voice note in the prompt.
+   */
+  speaker?: string;
+  /**
+   * `dialogue`: a still to animate (R2 key or https URL). Omit for a shot that is
+   * generated from the prompt alone. 1-7 stills are allowed by the model, but one
+   * is what keeps the identity locked.
+   */
+  imageKey?: string;
+  /**
+   * `dialogue`: how the model should frame and move. Defaults to a plain talking
+   * shot; never put the line in here — that is `line`.
+   */
+  motion?: string;
+  /**
+   * `generate` | `dialogue`: what the model renders at. Defaults to 480p for a
+   * dialogue plate (a talking head, billed per second) and 1080p for a motion plate
+   * (a place, where detail is the point).
+   */
+  resolution?: '480p' | '720p' | '1080p';
 }
 
 export interface Beat {
@@ -332,13 +371,13 @@ export function parseBeats(raw: unknown): Beats {
     plateIds.add(id);
 
     const source = String(entry.source ?? '');
-    if (source !== 'asset' && source !== 'generate') {
-      fail(`plates[${i}].source`, 'must be "asset" or "generate"');
+    if (source !== 'asset' && source !== 'generate' && source !== 'dialogue') {
+      fail(`plates[${i}].source`, 'must be "asset", "generate" or "dialogue"');
     }
 
     if (source === 'asset') {
       line(entry.key, `plates[${i}].key`);
-    } else {
+    } else if (source === 'generate') {
       line(entry.prompt, `plates[${i}].prompt`);
       const seconds = Number(entry.seconds ?? 6);
       if (!Number.isFinite(seconds) || seconds < 1 || seconds > 6) {
@@ -348,11 +387,48 @@ export function parseBeats(raw: unknown): Beats {
             'second and the registry keeps clips at or under 6 s',
         );
       }
+    } else {
+      // A dialogue plate is a performance: the line is what the model performs, so
+      // it is required, and the clip may run to the model's 15 s ceiling because it
+      // has to hold a sentence, not a camera move.
+      const text = line(entry.line, `plates[${i}].line`);
+      const words = text.trim().split(/\s+/).filter(Boolean).length;
+      if (words < 2) {
+        fail(`plates[${i}].line`, 'must be a spoken line of at least two words');
+      }
+      if (words > 60) {
+        fail(
+          `plates[${i}].line`,
+          `is ${words} words: split it across plates — the model loses the thread (and the ` +
+            'lip-sync) on anything much longer than a 15 s sentence',
+        );
+      }
+      const seconds = Number(entry.seconds ?? 15);
+      if (!Number.isFinite(seconds) || seconds < 2 || seconds > 15) {
+        fail(
+          `plates[${i}].seconds`,
+          `must be 2-15 (got ${JSON.stringify(entry.seconds)}): the video model's own ceiling is 15 s`,
+        );
+      }
+      if (entry.imageKey !== undefined) line(entry.imageKey, `plates[${i}].imageKey`);
+      if (entry.speaker !== undefined) line(entry.speaker, `plates[${i}].speaker`);
+      if (entry.motion !== undefined) line(entry.motion, `plates[${i}].motion`);
+      if (entry.prompt !== undefined) {
+        fail(
+          `plates[${i}].prompt`,
+          'a dialogue plate is described by `line` + `speaker` + `motion`; put the words in `line`',
+        );
+      }
     }
 
     const mediaStart = entry.mediaStart === undefined ? undefined : Number(entry.mediaStart);
     if (mediaStart !== undefined && (!Number.isFinite(mediaStart) || mediaStart < 0)) {
       fail(`plates[${i}].mediaStart`, 'must be a number ≥ 0');
+    }
+
+    const resolution = entry.resolution === undefined ? undefined : String(entry.resolution);
+    if (resolution !== undefined && !['480p', '720p', '1080p'].includes(resolution)) {
+      fail(`plates[${i}].resolution`, 'must be "480p", "720p" or "1080p"');
     }
 
     return {
@@ -365,7 +441,17 @@ export function parseBeats(raw: unknown): Beats {
             seconds: roundTo(Number(entry.seconds ?? 6), 2),
           }
         : {}),
+      ...(source === 'dialogue'
+        ? {
+            line: line(entry.line, `plates[${i}].line`).trim(),
+            seconds: roundTo(Number(entry.seconds ?? 15), 2),
+            ...(entry.speaker !== undefined ? { speaker: String(entry.speaker).trim() } : {}),
+            ...(entry.imageKey !== undefined ? { imageKey: String(entry.imageKey).trim() } : {}),
+            ...(entry.motion !== undefined ? { motion: String(entry.motion).trim() } : {}),
+          }
+        : {}),
       ...(mediaStart !== undefined ? { mediaStart: roundTo(mediaStart, 3) } : {}),
+      ...(resolution !== undefined ? { resolution: resolution as '480p' | '720p' | '1080p' } : {}),
     };
   });
   const plateById = new Map(plates.map((p) => [p.id, p]));
@@ -516,6 +602,49 @@ export function parseBeats(raw: unknown): Beats {
     fail('scenes', 'may hold only one "endcard" scene');
   }
 
+  // ── dialogue plates ────────────────────────────────────────────────────────
+  // A dialogue plate IS a performance, so it belongs to exactly one beat: the beat
+  // whose picture it is. Two beats sharing one would mean two different timings for
+  // one stream of speech, and there is no honest way to cut that.
+  const dialoguePlates = plates.filter((p) => p.source === 'dialogue');
+  if (dialoguePlates.length) {
+    const owners = new Map<string, string[]>();
+    for (const beat of beats) {
+      const plateId = beat.plate ?? scenes.find((s) => s.beats.includes(beat.id))?.plate;
+      if (!plateId) continue;
+      const plate = plateById.get(plateId);
+      if (!plate || plate.source !== 'dialogue') continue;
+      owners.set(plateId, [...(owners.get(plateId) ?? []), beat.id]);
+    }
+    for (const plate of dialoguePlates) {
+      const owned = owners.get(plate.id) ?? [];
+      if (owned.length === 0) {
+        fail(
+          `plates`,
+          `"${plate.id}" is a dialogue plate but no beat plays it. A generated line nobody ` +
+            'shows is paid for and never heard — give it a beat, or drop the plate.',
+        );
+      }
+      if (owned.length > 1) {
+        fail(
+          'plates',
+          `"${plate.id}" is played by beats ${owned.join(', ')}. A dialogue plate is one ` +
+            'performance and can belong to exactly one beat; generate a second plate for the ' +
+            'other beat.',
+        );
+      }
+      const beat = beats.find((b) => b.id === owned[0]);
+      if (beat && beat.vo.trim().length > 0 && beat.vo.trim() !== plate.line?.trim()) {
+        fail(
+          `beats`,
+          `beat "${beat.id}" plays dialogue plate "${plate.id}" but its \`vo\` disagrees with the ` +
+            "plate's `line`. The plate speaks; `vo` would be synthesised separately and the two " +
+            'would fight. Leave `vo` empty on a dialogue beat, or make it identical.',
+        );
+      }
+    }
+  }
+
   return {
     version: 1,
     jobId,
@@ -532,9 +661,48 @@ export function parseBeats(raw: unknown): Beats {
   };
 }
 
-/** Beats that carry a spoken line — the ones that cost voice credits. */
+/** True for a plate whose own audio is the dialogue. */
+export function isDialoguePlate(plate: PlateSpec | undefined): boolean {
+  return plate?.source === 'dialogue';
+}
+
+/** How many beats in this film can speak (TTS + dialogue). Zero means no film. */
+export function scoringPlates(beats: Beats): PlateSpec[] {
+  return beats.plates.filter((p) => p.source === 'dialogue');
+}
+
+/** The plate a beat performs, if it performs one. */
+export function dialoguePlateFor(beats: Beats, beat: Beat): PlateSpec | undefined {
+  const scene = beats.scenes.find((s) => s.beats.includes(beat.id));
+  const id = beat.plate ?? scene?.plate;
+  const plate = id ? beats.plates.find((p) => p.id === id) : undefined;
+  return isDialoguePlate(plate) ? plate : undefined;
+}
+
+/**
+ * Beats whose speech comes from a generated clip rather than from TTS.
+ *
+ * The distinction is what stops a film from being dubbed twice: a dialogue beat must
+ * NOT get an `<audio>` element, and its line must not be sent to the voice model.
+ */
+export function dialogueBeats(beats: Beats): Beat[] {
+  return beats.beats.filter((b) => dialoguePlateFor(beats, b) !== undefined);
+}
+
+/** Beats that carry a spoken line and have no clip to speak it — the TTS set. */
 export function speakableBeats(beats: Beats): Beat[] {
-  return beats.beats.filter((b) => b.vo.length > 0);
+  return beats.beats.filter((b) => b.vo.length > 0 && dialoguePlateFor(beats, b) === undefined);
+}
+
+/**
+ * Every beat that makes a sound, in film order — TTS lines AND dialogue performances.
+ *
+ * This is what the timing needs: a dialogue beat speaks, so it must be measured and
+ * placed exactly like a synthesised line. `speakableBeats` is the narrower set that
+ * costs voice credits, and using it here would leave every performed line unplaced.
+ */
+export function speakingBeats(beats: Beats): Beat[] {
+  return beats.beats.filter((b) => b.vo.length > 0 || dialoguePlateFor(beats, b) !== undefined);
 }
 
 /** The beats of one scene, in reveal order. */

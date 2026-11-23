@@ -152,11 +152,24 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
 
     // Resolve target property from catalogue
     let targetProperty = null;
-    const targetPropId = campaign?.property_id || campaign?.audience_filter?.property_id || lead?.property_id;
+    // The Meta ad itself names the project that generated the lead, and that is the
+    // only reliable anchor for WHICH project a prospect asked about. Almost no lead
+    // row has `property_id` populated (4 of 400 Joy leads), but nearly every Facebook
+    // lead carries `custom_fields.meta_ad_origin.product_id`. Without this fallback
+    // the bot had no project for the lead at all and fell back to the Zirakpur-heavy
+    // business profile - which is why a lead for a MOHALI project was told Zirakpur.
+    let metaProductId = null;
+    try {
+        const cf = typeof lead?.custom_fields === 'string' ? JSON.parse(lead.custom_fields) : lead?.custom_fields;
+        metaProductId = cf?.meta_ad_origin?.product_id || cf?.product_id || null;
+    } catch (e) { }
+
+    const targetPropId = campaign?.property_id || campaign?.audience_filter?.property_id || lead?.property_id || metaProductId;
     if (targetPropId) {
         try {
             const { data: tp } = await supabaseAdmin.from('properties').select('*').eq('id', targetPropId).maybeSingle();
-            if (tp) targetProperty = tp;
+            // Only trust it if it belongs to this tenant.
+            if (tp && (!tp.user_id || tp.user_id === effectiveProfileId)) targetProperty = tp;
         } catch (e) { }
     }
     if (!targetProperty) {
@@ -179,6 +192,42 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
     let catalogueInfo = '';
     if (targetProperty) {
         catalogueInfo = `--- PROJECT CATALOGUE & PROPERTY SPECIFICATIONS (${targetProperty.title}) ---\nProject: ${targetProperty.title}\n${targetProperty.address || targetProperty.location ? `Location: ${targetProperty.address || targetProperty.location}\n` : ''}${targetProperty.price ? `Price: ${targetProperty.price}\n` : ''}${targetProperty.description ? `Project Details & Amenities:\n${targetProperty.description}\n` : ''}------------------------------------------------------------\n`;
+    }
+
+    // --- THE TENANT'S WHOLE PROJECT LIST, IN THE PROMPT -------------------
+    // Why this exists at all: the model HAS a search_properties tool, but on real
+    // calls it simply does not choose to call it. An account with 20 projects then
+    // talks as though it has none - which is exactly how a prospect's own city
+    // ("City: Gurgaon" in their CRM note) came to be described as one of OUR
+    // projects, and how Meta ad-set names got read out as project names.
+    // Putting the compact list in the system instruction makes the inventory
+    // ground truth instead of something the model must remember to fetch.
+    let allProperties = [];
+    try {
+        const { data: props } = await supabaseAdmin
+            .from('properties')
+            .select('title, address, property_type, price, status')
+            .eq('user_id', effectiveProfileId);
+        allProperties = props || [];
+    } catch (e) { }
+
+    let inventoryInfo = '';
+    if (allProperties.length > 0) {
+        const lines = allProperties.slice(0, 25).map((p) => {
+            const bits = [p.title];
+            if (p.address) bits.push(p.address);
+            if (p.property_type && String(p.property_type).toLowerCase() !== 'generic') bits.push(p.property_type);
+            if (p.price) bits.push(String(p.price));
+            return '- ' + bits.join(' | ');
+        });
+        inventoryInfo = `--- OUR ACTUAL PROJECT LIST (${allProperties.length} projects - this is the ONLY inventory we have) ---
+${lines.join('\n')}
+GROUND TRUTH RULES: the list above is the complete inventory. If a city, sector or area is not represented there, we do NOT have projects there. NEVER mention, invent or imply a project, location or price that is not on this list. Never repeat a prospect's own city back as one of our locations. If they name a place we are not in, say we do not have projects there and offer the senior consultant.
+`;
+    } else {
+        inventoryInfo = `--- OUR PROJECT LIST ---
+No projects are registered on this account. You therefore MUST NOT name any project, project location, city or price. If asked, say only: "Iske liye senior consultant aapko exact details bata denge ji."
+`;
     }
 
     const resolvedQuestions = flaggedRes?.data || [];
@@ -317,7 +366,14 @@ async function buildGeminiSetupConfig(leadId, profileId, campaignId, voiceName =
         'hinglish'
     ).toLowerCase().trim();
 
-    if (campGuidanceLower.includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ')) {
+    // An explicitly configured campaign language is AUTHORITATIVE. The keyword
+    // sniffing below is only a fallback for campaigns that never set one - it
+    // used to run unconditionally, so a prompt that merely mentioned the word
+    // "English" or "Hindi" silently overrode the tenant's own choice.
+    const explicitAudienceLanguage = String(campaign?.audience_filter?.language || '').toLowerCase().trim();
+    if (explicitAudienceLanguage) {
+        defaultCallingLang = explicitAudienceLanguage;
+    } else if (campGuidanceLower.includes('kannada') || campaignGuidance.includes('ಕನ್ನಡ')) {
         defaultCallingLang = 'kannada';
     } else if (campGuidanceLower.includes('punjabi')) {
         defaultCallingLang = 'punjabi';
@@ -482,6 +538,39 @@ ABSOLUTE VOICE LOCK & CALM MALE TIMBRE (CRITICAL — NEVER VIOLATE):
 - NEVER adopt an American, British, or Western accent. Maintain an authentic, respectful North Indian / Punjabi cadence.
 - Your voice identity is LOCKED for the entire duration of this call session. No exceptions.`;
 
+    // --- WHAT THE CRM ALREADY KNOWS -------------------------------------
+    // `notes` is where the enquiry actually lives for most leads (the Facebook
+    // form text the telecaller saved: budget, city, requirement). custom_fields
+    // reaches the model through formQuestionsSummary, but notes never did on
+    // this path, so a caller asked for a budget the prospect had already given.
+    // previousCallsHistory and whatsappHistory were computed above and then only
+    // used to derive isFirstCall - they are included here so a second call does
+    // not restart the conversation from scratch.
+    let leadNotesBlock = '';
+    try {
+        const notes = typeof lead?.notes === 'string' ? lead.notes.trim() : '';
+        if (notes) {
+            const clipped = notes.length > 1800 ? `${notes.slice(0, 1800)} ...` : notes;
+            leadNotesBlock = `--- CRM NOTES & ENQUIRY DETAILS (already known about this prospect) ---\n${clipped}\n`;
+        }
+    } catch (e) { }
+
+    let priorConversationBlock = '';
+    {
+        const parts = [];
+        if (previousCallsHistory) parts.push(`--- PREVIOUS CALLS WITH THIS PROSPECT ---\n${previousCallsHistory}`);
+        if (whatsappHistory) parts.push(`--- PREVIOUS WHATSAPP CONVERSATION ---\n${whatsappHistory}`);
+        if (parts.length) priorConversationBlock = `${parts.join('\n\n')}\n`;
+    }
+
+    const knownInfoDirective = (leadNotesBlock || formQuestionsSummary || resolvedQuestionsInstruction)
+        ? `ALREADY-KNOWN INFORMATION (CRITICAL - DO NOT RE-ASK):
+- The prospect has ALREADY told us things. Read the CRM notes, the Facebook form answers and the verified answers above BEFORE you ask anything.
+- If the budget, timeline, requirement, city or project is already stated there, NEVER ask for it again. Confirm it conversationally instead, for example: "Aapne 60-80 lakh bataya tha, sahi hai ji?"
+- Only ask what is genuinely still missing.
+- NEVER say "CRM notes", "record", "our system shows" or anything that reveals you are reading a database. Speak like a person who remembers them.`
+        : '';
+
     const systemInstruction = `
 You are an expert, professional outbound AI relationship representative calling on behalf of "${companyName}".
 You are speaking directly over the phone with ${leadName}.
@@ -497,8 +586,12 @@ ${genderGrammarInstruction}
 ${campaignGuidance ? `${campaignGuidance}\n\n${whatsappProhibitionDirective}\n` : defaultFlow}
 
 ${catalogueInfo}
+${inventoryInfo}
 ${formQuestionsSummary}
 ${resolvedQuestionsInstruction}
+${leadNotesBlock}
+${priorConversationBlock}
+${knownInfoDirective}
 `.trim();
 
     const validVoiceNames = ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'];
@@ -532,12 +625,12 @@ ${resolvedQuestionsInstruction}
                         },
                         {
                             name: "search_properties",
-                            description: "Searches available property inventory by location, bedrooms (BHK), budget, or property type.",
+                            description: "Searches THIS business's own property inventory (project titles, addresses, types, price). You MUST call this before answering ANY question about which projects we have, where we operate, what is available, or what a project costs. Never answer those from memory, from the prospect's city, or from an advertisement name.",
                             parameters: {
                                 type: "OBJECT",
                                 properties: {
-                                    query: { type: "STRING", description: "Search keyword or project name" },
-                                    bhk: { type: "STRING", description: "Number of bedrooms (e.g. 2BHK, 3BHK, Plots)" }
+                                    query: { type: "STRING", description: "Search keyword: city, sector, area or project name (e.g. Mohali, Zirakpur, Sector 88)" },
+                                    bhk: { type: "STRING", description: "Number of bedrooms or asset type (e.g. 2BHK, 3BHK, Plots, Commercial)" }
                                 }
                             }
                         },
@@ -547,7 +640,7 @@ ${resolvedQuestionsInstruction}
                             parameters: {
                                 type: "OBJECT",
                                 properties: {
-                                    slot_time: { type: "STRING", description: "Agreed date & time chosen by the caller (e.g. Tomorrow 11:00 AM)" },
+                                    slot_time: { type: "STRING", description: "The agreed slot as an ISO-8601 local India date-time, e.g. 2026-11-24T11:00:00. It MUST be a FUTURE date, within 60 days, between 09:00 and 17:00. Never pass a past date, a bare day name, or a month name on its own." },
                                     notes: { type: "STRING", description: "Customer preferences or notes" }
                                 },
                                 required: ["slot_time"]
@@ -1583,6 +1676,8 @@ wss.on('connection', (wsConnection, req) => {
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
     let greetingPlayed = false;
+    /** Set once an answering machine is heard, so the call is never resumed. */
+    let voicemailDetected = false;
     let voiceName = (queryVoiceName && ['Aoede', 'Kore', 'Puck', 'Charon', 'Fenrir'].includes(queryVoiceName)) ? queryVoiceName : 'Aoede';
 
     let earlyConfigPromise = null;
@@ -1787,7 +1882,25 @@ wss.on('connection', (wsConnection, req) => {
                     geminiReady = true;
 
                     const safeCompanyName = companyName || profile?.business_name || 'Bioque Estates';
-                    const safeProduct = targetProduct || 'our project';
+                    // Never let an internal label reach the prospect's ear.
+                    // targetProduct falls back through ad product name and ad/campaign
+                    // name, which are Meta's internal strings — one real transcript has
+                    // the caller saying "hamare Regalia | Lead | 04-11-2026 ke baare mein
+                    // enquiry ki thi". Anything shaped like an ad name, containing a pipe
+                    // or a date, or mentioning ads/ad-sets/campaigns is replaced with a
+                    // neutral phrase instead of being spoken.
+                    const looksLikeAdLabel = (s) => {
+                        const t = String(s || '').toLowerCase().trim();
+                        if (!t) return true;
+                        if (t.length < 3 || t.length > 60) return true;
+                        return /\||\blead\b|\bads?\b|ad[\s-]?set|meta\s*campaign|campaign|hiring|vacanc|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\b(19|20)\d{2}\b|^\d+$/.test(t);
+                    };
+                    // NOTE: this code runs inside the websocket handler, where the
+                    // inventory list built by buildGeminiSetupConfig is NOT in scope.
+                    // An earlier version referenced `allProperties` here, which threw
+                    // "allProperties is not defined" and crashed the container on every
+                    // call (Vobiz then dropped the line after 1-3 seconds).
+                    const safeProduct = !looksLikeAdLabel(targetProduct) ? String(targetProduct) : 'property';
                     const safeName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : '';
                     const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
                     const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
@@ -1823,7 +1936,14 @@ wss.on('connection', (wsConnection, req) => {
                     // 2. Fallback to audience_filter.greeting if not a stale generic Hindi greeting on an English prompt
                     if (!openGreeting && campaign?.audience_filter?.greeting) {
                         const filterGreeting = campaign.audience_filter.greeting;
-                        const isEnglishPrompt = campPromptLower.includes('english') || campPromptLower.includes('amritha') || campPromptLower.includes('mysore');
+                        // Only distrust the greeting when the campaign is genuinely
+                        // English. An explicit audience_filter.language wins; otherwise a
+                        // prompt that merely mentioned the word "English" threw away the
+                        // tenant's own greeting and spoke the generic Hindi template.
+                        const explicitLangForGreeting = String(campaign?.audience_filter?.language || '').toLowerCase().trim();
+                        const isEnglishPrompt = explicitLangForGreeting
+                            ? explicitLangForGreeting === 'english'
+                            : (campPromptLower.includes('english') || campPromptLower.includes('amritha') || campPromptLower.includes('mysore'));
                         if (isEnglishPrompt && (filterGreeting.includes('kaise') || filterGreeting.includes('haan ji'))) {
                             console.log('[BRIDGE] Rejecting stale Hindi filter greeting on English campaign prompt:', filterGreeting);
                         } else {
@@ -1832,7 +1952,10 @@ wss.on('connection', (wsConnection, req) => {
                     }
 
                     let effectiveLang = sessionConfig?.defaultLanguage || 'hinglish';
-                    if (campPromptLower.includes('kannada')) effectiveLang = 'kannada';
+                    const explicitLangForDefault = String(campaign?.audience_filter?.language || '').toLowerCase().trim();
+                    if (explicitLangForDefault) {
+                        effectiveLang = explicitLangForDefault;
+                    } else if (campPromptLower.includes('kannada')) effectiveLang = 'kannada';
                     else if (campPromptLower.includes('punjabi')) effectiveLang = 'punjabi';
                     else if (campPromptLower.includes('hindi')) effectiveLang = 'hindi';
                     else if (campPromptLower.includes('english')) effectiveLang = 'english';
@@ -1880,6 +2003,7 @@ wss.on('connection', (wsConnection, req) => {
                         ? "in a polite, natural Urban Indian English accent (South Indian / Bangalore professional intonation, crisp non-rhotic Indian pronunciation, strictly NO American accent)"
                         : "in a warm, natural tone in the language of the greeting";
                     const textPrompt = `The phone call has just connected. Speak EXACTLY this greeting message now ${accentDirective}, and nothing else: "${openGreeting}"
+DELIVERY - KEEP THE OPENING CRISP: The very first word is a short greeting. Say it as ONE brisk syllable, exactly the way a person says "hi" in normal conversation. NEVER stretch, drawl, elongate or sing it (never "Haaaai", "Hiiiii", "Haaaay"). Do not put emphasis on it and do not pause after it. The whole opening greeting must be delivered in under 3 seconds at a normal conversational pace, like a busy professional picking up the phone.
 CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIATELY. You MUST wait for the caller to respond before saying another word. Do NOT pitch the project, do NOT describe amenities, and do NOT proceed until the caller explicitly confirms!`;
 
                     const initialTurn = {
@@ -2158,6 +2282,36 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                         if (userText) {
                             console.log(`[User]: ${userText}`);
                             transcriptTurns.push({ role: 'user', message: userText });
+
+                            // --- VOICEMAIL / ANSWERING MACHINE DETECTION ---------
+                            // The greeting is dispatched the instant the call connects, so on
+                            // an answering machine the bot always speaks first and cannot hear
+                            // the recording until after it has already started. What we CAN do
+                            // is stop the moment the recorded greeting is transcribed, instead
+                            // of talking over it and leaving a message.
+                            if (!voicemailDetected && transcriptTurns.filter(t => t.role === 'user').length <= 3) {
+                                const heard = transcriptTurns.filter(t => t.role === 'user').map(t => String(t.message || '')).join(' ').toLowerCase();
+                                const VOICEMAIL_RE = new RegExp([
+                                    'leave (a |your )?message', 'voicemail', 'voice mail', 'after the (beep|tone)',
+                                    'at the (beep|tone)', 'not available', 'cannot (take|answer) your call',
+                                    'can\u2019?t (take|answer) your call', 'record your (message|name)',
+                                    'the person you (are calling|have called)', 'mailbox', 'unavailable right now',
+                                    'aapka call.{0,30}(nahi|nahin)', 'abhi uplabdh nahi', 'sandesh', 'phone switch(ed)? off',
+                                    'number (is )?busy', 'please hold', 'ki wajah se',
+                                ].join('|'), 'i');
+                                if (VOICEMAIL_RE.test(heard)) {
+                                    voicemailDetected = true;
+                                    console.log(`[BRIDGE] Voicemail detected, hanging up without a message. Heard: "${heard.slice(0, 120)}"`);
+                                    try {
+                                        await supabaseAdmin.from('leads').update({
+                                            voice_call_status: 'no_answer',
+                                            notes: `[AI Caller] Answering machine detected - call ended without leaving a message.`,
+                                        }).eq('id', leadId);
+                                    } catch (e) { }
+                                    triggerCallHangup('voicemail_detected');
+                                    return;
+                                }
+                            }
                         }
 
                         // 2. Handle function call tool executions (like end_call)
@@ -2183,31 +2337,51 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                     let propertiesList = [];
                                     try {
                                         const queryTerm = (call.args?.query || call.args?.location || call.args?.bhk || '').trim();
+                                        // NOTE: `properties` has NO `location` column. The old select
+                                        // asked for it, so this query failed on EVERY call with
+                                        // "column properties.location does not exist", the tool returned
+                                        // [], and the model was left with no inventory whatsoever. That
+                                        // is how it came to describe a prospect's own city (Gurgaon) as
+                                        // one of our projects and to read Meta ad-set names out loud.
                                         let q = supabaseAdmin
                                             .from('properties')
-                                            .select('id, title, property_type, price, location, address, configurations, description')
+                                            .select('id, title, property_type, price, address, configurations, description, status')
                                             .eq('user_id', effectiveProfileId);
 
                                         if (queryTerm) {
-                                            q = q.or(`title.ilike.%${queryTerm}%,location.ilike.%${queryTerm}%,address.ilike.%${queryTerm}%,description.ilike.%${queryTerm}%`);
+                                            // Strip characters that would break the PostgREST or() filter.
+                                            const t = String(queryTerm).replace(/[%,()'"]/g, ' ').trim();
+                                            if (t) {
+                                                q = q.or(`title.ilike.%${t}%,address.ilike.%${t}%,description.ilike.%${t}%,property_type.ilike.%${t}%`);
+                                            }
                                         }
-                                        const { data: matched } = await q.limit(3);
+                                        const { data: matched, error: matchErr } = await q.limit(3);
+                                        if (matchErr) console.error('[BRIDGE] search_properties query error:', matchErr.message);
                                         if (matched && matched.length > 0) {
                                             propertiesList = matched.map(p => ({
                                                 title: p.title,
                                                 type: p.property_type,
                                                 price: p.price,
-                                                location: p.address || p.location,
+                                                location: p.address || null,
+                                                status: p.status || null,
                                                 description: p.description?.slice(0, 150)
                                             }));
                                         } else {
                                             const { data: general } = await supabaseAdmin
                                                 .from('properties')
-                                                .select('title, property_type, price, location, address, description')
+                                                .select('title, property_type, price, address, description, status')
                                                 .eq('user_id', effectiveProfileId)
-                                                .limit(2);
-                                            propertiesList = general || [];
+                                                .limit(4);
+                                            propertiesList = (general || []).map((p) => ({
+                                                title: p.title,
+                                                type: p.property_type,
+                                                price: p.price,
+                                                location: p.address || null,
+                                                status: p.status || null,
+                                                description: p.description?.slice(0, 150)
+                                            }));
                                         }
+                                        console.log(`[BRIDGE] search_properties("${queryTerm}") -> ${propertiesList.length} result(s)`);
                                     } catch (sErr) {
                                         console.error('[BRIDGE] search_properties DB error:', sErr);
                                     }
@@ -2241,23 +2415,87 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                     }));
                                 } else if (call.name === 'book_appointment_slot') {
                                     console.log(`[BRIDGE] Gemini triggered live tool: book_appointment_slot for lead ${leadId}`, call.args);
-                                    const slotTime = call.args?.slot_time || 'Tomorrow 4:00 PM';
+                                    const rawSlot = String(call.args?.slot_time || '').trim();
                                     const notes = call.args?.notes || '';
+
+                                    // ---- VALIDATE THE SLOT BEFORE CONFIRMING IT --------
+                                    // Real defect this prevents: the caller once "confirmed"
+                                    // an appointment for "25th October" when it was November -
+                                    // a date nine months in the past - and told the prospect it
+                                    // was booked. A slot is only confirmed when it parses, is in
+                                    // the future, within 60 days, and inside the 09:00-17:00 window.
+                                    const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+                                    let slotDateUtc = null;
+                                    let slotError = '';
+                                    const iso = rawSlot.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+                                    if (!iso) {
+                                        slotError = 'not_iso';
+                                    } else {
+                                        // The model sends local India wall-clock time; build the UTC
+                                        // instant from those parts explicitly rather than letting the
+                                        // server's own timezone decide what "11:00" meant.
+                                        const naiveMs = Date.UTC(+iso[1], +iso[2] - 1, +iso[3], +iso[4], +iso[5], 0);
+                                        slotDateUtc = new Date(naiveMs - IST_OFFSET_MS);
+                                        const daysAhead = (slotDateUtc.getTime() - Date.now()) / 86400000;
+                                        const istHour = Number(iso[4]);
+                                        if (daysAhead < -0.02) slotError = 'in_the_past';
+                                        else if (daysAhead > 60) slotError = 'too_far_ahead';
+                                        else if (istHour < 9 || istHour >= 17) slotError = 'outside_9_to_5';
+                                    }
+
+                                    if (slotError) {
+                                        const why = {
+                                            not_iso: 'The slot must be sent as ISO-8601, e.g. 2026-11-24T11:00:00.',
+                                            unparseable: 'That date and time could not be understood.',
+                                            in_the_past: 'That date is already in the past.',
+                                            too_far_ahead: 'That date is more than 60 days away.',
+                                            outside_9_to_5: 'Site visits run between 9 AM and 5 PM only.',
+                                        }[slotError] || 'That slot is not valid.';
+                                        console.warn(`[BRIDGE] book_appointment_slot REJECTED (${slotError}) raw="${rawSlot}"`);
+                                        // Tell the model to fix it, and DO NOT confirm or write anything.
+                                        geminiSocket.send(JSON.stringify({
+                                            toolResponse: {
+                                                functionResponses: [{
+                                                    name: "book_appointment_slot",
+                                                    id: call.id,
+                                                    response: {
+                                                        success: false,
+                                                        error: slotError,
+                                                        instruction: `${why} Do NOT tell the prospect it is booked. Re-confirm a valid future day and time between 9 AM and 5 PM IST, then call this tool again with ISO-8601.`,
+                                                    },
+                                                }],
+                                            },
+                                        }));
+                                        return;
+                                    }
+
+                                    const istSlot = new Date(slotDateUtc.getTime() + IST_OFFSET_MS)
+                                        .toISOString().replace('T', ' ').slice(0, 16) + ' IST';
+
                                     if (leadId) {
                                         try {
+                                            // Read the existing notes first: this update used to
+                                            // OVERWRITE them with the booking line, silently destroying
+                                            // the CRM/form notes the telecaller had saved.
+                                            const { data: existing } = await supabaseAdmin
+                                                .from('leads').select('notes').eq('id', leadId).maybeSingle();
+                                            const priorNotes = String(existing?.notes || '').trim();
+                                            const bookingNote = `[Booked via AI Call ${istSlot}] ${notes}`.trim();
+
                                             await supabaseAdmin
                                                 .from('leads')
                                                 .update({
-                                                    pipeline_stage: 'APPOINTMENT_BOOKED',
+                                                    pipeline_stage: 'Appointment Booked',
                                                     autonomous_status: 'BOOKED',
-                                                    notes: `Booked via AI Call: ${slotTime}. Notes: ${notes}`
+                                                    booked_time: slotDateUtc.toISOString(),
+                                                    notes: priorNotes ? `${bookingNote}\n\n${priorNotes}` : bookingNote,
                                                 })
                                                 .eq('id', leadId);
 
                                             await supabaseAdmin.from('lead_history').insert({
                                                 lead_id: leadId,
                                                 action_type: 'APPOINTMENT_BOOKED',
-                                                description: `Appointment slot booked during live AI call: ${slotTime}`
+                                                description: `Appointment slot booked during live AI call: ${istSlot} (${slotDateUtc.toISOString()})`,
                                             });
                                         } catch (bErr) {
                                             console.error('[BRIDGE] Error saving booking:', bErr);
@@ -2271,7 +2509,8 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                                 id: call.id,
                                                 response: {
                                                     success: true,
-                                                    confirmed_slot: slotTime
+                                                    confirmed_slot: istSlot,
+                                                    confirmed_slot_utc: slotDateUtc.toISOString(),
                                                 }
                                             }]
                                         }

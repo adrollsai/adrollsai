@@ -296,32 +296,172 @@ export function normalizeCountryCode(countryStr?: string | null): string {
   return 'IN';
 }
 
+// ---------------------------------------------------------------------------
+// The year guard
+// ---------------------------------------------------------------------------
+//
+// THE BUG THIS EXISTS FOR: `getFestivalForToday` matched month and day only, so the
+// 2026 calendar would have fired again on 8 November 2027 — Diwali moved, the greeting
+// did not. Half these festivals are lunar and move every year, so a calendar that
+// ignores the year is worse than no calendar: it sends a client a Happy Diwali post on
+// an ordinary Monday and they lose faith in the whole automation.
+//
+// A year with no calendar in this file resolves to "no festival", which is silent. That
+// is the safe failure. Adding next year is then a deliberate act of adding data, not a
+// silent misfire.
+
+/** Which year the hardcoded entries below describe. */
+export const FESTIVAL_CALENDAR_YEAR = 2026;
+
+/** Every calendar this file knows, keyed by year. Add a year to make it live. */
+export const FESTIVAL_CALENDARS: Record<number, FestivalInfo[]> = {
+  [FESTIVAL_CALENDAR_YEAR]: FESTIVALS_2026,
+};
+
+/** The entries for a year, or null when nobody has entered that year's calendar yet. */
+export function calendarForYear(year: number): FestivalInfo[] | null {
+  return FESTIVAL_CALENDARS[year] || null;
+}
+
+/** The festivals on a given date, or null when that year's calendar is missing. */
+export function festivalsOn(date: Date, countryCode: string): FestivalInfo[] | null {
+  const entries = calendarForYear(date.getFullYear());
+  if (!entries) return null;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return entries.filter((f) => f.month === month && f.day === day && (f.country === countryCode || f.country === 'GLOBAL'));
+}
+
 /**
  * Check if today is a festival day in the given country.
- * Returns FestivalInfo or null.
+ * Returns FestivalInfo or null. Null also means "no calendar for this year".
  */
 export function getFestivalForToday(countryInput?: string | null, targetDate?: Date): FestivalInfo | null {
   const countryCode = normalizeCountryCode(countryInput);
   const now = targetDate || new Date();
 
-  // Determine current month and day in IST (or UTC)
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
+  const matches = festivalsOn(now, countryCode);
+  if (!matches || matches.length === 0) return null;
 
-  // 1. Check exact country festivals
-  const countryFestival = FESTIVALS_2026.find(
-    f => f.country === countryCode && f.month === month && f.day === day
-  );
-  if (countryFestival) return countryFestival;
-
-  // 2. Check global festivals
-  const globalFestival = FESTIVALS_2026.find(
-    f => f.country === 'GLOBAL' && f.month === month && f.day === day
-  );
-  if (globalFestival) return globalFestival;
-
-  return null;
+  // Country-specific beats GLOBAL, so an Indian client gets Diwali and a client whose
+  // country has no entry that day still gets Christmas.
+  return matches.find((f) => f.country === countryCode) || matches[0];
 }
+
+/**
+ * Festivals today and in the next few days — what the agent needs to plan ahead.
+ *
+ * Returns [] (never null) so a caller can spread it into a brief without a guard. An
+ * empty list is honest: it means either no festival or no calendar for that year, and
+ * `festivalContextNote` says which.
+ */
+export function upcomingFestivals(
+  countryInput: string | null | undefined,
+  targetDate?: Date,
+  daysAhead = 1
+): string[] {
+  const countryCode = normalizeCountryCode(countryInput);
+  const from = targetDate || new Date();
+  const names: string[] = [];
+  for (let i = 0; i <= Math.max(0, daysAhead); i++) {
+    const d = new Date(from.getTime() + i * 24 * 60 * 60 * 1000);
+    const matches = festivalsOn(d, countryCode);
+    if (!matches) continue;
+    for (const f of matches) {
+      const label = i === 0 ? f.name : `${f.name} (tomorrow)`;
+      if (!names.includes(label)) names.push(label);
+    }
+  }
+  return names;
+}
+
+/** A one-line explanation of what the calendar knows, for a log or a brief. */
+export function festivalContextNote(countryInput: string | null | undefined, targetDate?: Date): string {
+  const date = targetDate || new Date();
+  const entries = calendarForYear(date.getFullYear());
+  if (!entries) return `the ${date.getFullYear()} festival calendar has not been entered yet`;
+  const matches = festivalsOn(date, normalizeCountryCode(countryInput));
+  if (!matches || matches.length === 0) return 'no festival today';
+  return `today is ${matches.map((m) => m.name).join(' / ')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Which country a tenant is actually in
+// ---------------------------------------------------------------------------
+//
+// THE BUG THIS EXISTS FOR: the festival cron read `client_features.country` and fell
+// straight back to the free-text `address` column. Only 2 of 106 profiles have
+// client_features.country filled, so almost everyone was classified by pattern-matching a
+// postal address — and an address that matches nothing became 'IN'. A Dubai client with a
+// street address and no country field therefore received Indian festival greetings.
+//
+// Currency is the one country signal that is actually populated for every paying account,
+// so it leads. Everything after it is a best-effort improvement on 'IN'.
+
+const CURRENCY_COUNTRY: Record<string, string> = {
+  INR: 'IN',
+  AED: 'AE',
+  USD: 'US',
+  GBP: 'GB',
+  CAD: 'CA',
+  AUD: 'AU',
+};
+
+export function countryFromCurrency(currency?: string | null): string | null {
+  const key = String(currency || '').trim().toUpperCase();
+  return CURRENCY_COUNTRY[key] || null;
+}
+
+export interface CountrySignals {
+  clientFeaturesCountry?: string | null;
+  address?: string | null;
+  currency?: string | null;
+}
+
+/**
+ * Resolve the country a tenant's greetings should follow.
+ *
+ * Order: an explicit country field, then the currency of the ad account, then the
+ * address text, then India (the default this product has always had).
+ */
+export function resolveCountry(signals: CountrySignals): { code: string; from: 'field' | 'currency' | 'address' | 'default' } {
+  const explicit = String(signals.clientFeaturesCountry || '').trim();
+  if (explicit) return { code: normalizeCountryCode(explicit), from: 'field' };
+
+  const byCurrency = countryFromCurrency(signals.currency);
+  if (byCurrency) return { code: byCurrency, from: 'currency' };
+
+  const address = String(signals.address || '');
+  if (address) {
+    const matched = normalizeCountryCode(address);
+    // normalizeCountryCode falls back to 'IN', so only trust it when the text actually
+    // named a country; otherwise a Pune address and a Paris address look identical.
+    const named = /\b(india|usa|united states|america|uae|emirates|dubai|uk|united kingdom|england|britain|canada|australia)\b/i.test(address);
+    if (named) return { code: matched, from: 'address' };
+  }
+
+  return { code: 'IN', from: 'default' };
+}
+
+/** The next festival for a country, or null when this year's calendar is unknown. */
+export function nextFestivalAfter(countryInput: string | null | undefined, from?: Date): { festival: FestivalInfo; daysAway: number; date: Date } | null {
+  const start = from || new Date();
+  const entries = calendarForYear(start.getFullYear());
+  if (!entries) return null;
+  const countryCode = normalizeCountryCode(countryInput);
+
+  const candidates = entries
+    .filter((f) => f.country === countryCode || f.country === 'GLOBAL')
+    .map((f) => ({ festival: f, date: new Date(start.getFullYear(), f.month - 1, f.day) }))
+    .filter((c) => c.date.getTime() >= new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime())
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  if (candidates.length === 0) return null;
+  const next = candidates[0];
+  const daysAway = Math.round((next.date.getTime() - new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime()) / (24 * 60 * 60 * 1000));
+  return { festival: next.festival, daysAway, date: next.date };
+}
+
 
 /**
  * Build bespoke prompt for festival image creative.

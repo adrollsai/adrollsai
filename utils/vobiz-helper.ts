@@ -375,13 +375,38 @@ export async function triggerVobizOutboundCall(
         }
     }
 
-    const requestPayload = {
+    const requestPayload: any = {
         from: callerId,
         to: cleanPhone,
         answer_url: answerUrl,
         answer_method: 'POST',
         hangup_url: hangupUrl,
         hangup_method: 'POST'
+    }
+
+    /**
+     * Answering-machine detection.
+     *
+     * The voice bridge dispatches its greeting the moment the call connects, so on a
+     * voicemail it always spoke first and then hung up - the prospect (or their inbox)
+     * heard "Hi X ji..." before we could tell it was a machine. The bridge now also
+     * detects a recorded greeting from the transcript, but by then speech has happened.
+     *
+     * Vobiz documents synchronous AMD as machine_detection=true|hangup
+     * (https://www.vobiz.ai/docs/call/machine-detection).
+     *
+     * DEFAULT IS OFF, DELIBERATELY. Measured on this account: with 'hangup' the very
+     * next 14 calls ended 13 no_answer / 0 completed, against a ~50% completion rate
+     * immediately before. Vobiz's AMD is false-positiving on real Indian mobiles, and
+     * hanging up on a live prospect costs a lead - far worse than leaving a short
+     * greeting on a machine. The bridge now detects a recorded greeting from the
+     * transcript and hangs up, which is the safer half of the fix.
+     *
+     * Opt in with VOBIZ_MACHINE_DETECTION=hangup once AMD is verified on this trunk.
+     */
+    const machineDetection = String(process.env.VOBIZ_MACHINE_DETECTION || 'off').toLowerCase().trim()
+    if (machineDetection && machineDetection !== 'off' && machineDetection !== 'false') {
+        requestPayload.machine_detection = machineDetection
     }
 
     console.log(`[VOBIZ HELPER] Initiating outbound call to ${cleanPhone} from ${callerId} (User: ${profileId})...`)

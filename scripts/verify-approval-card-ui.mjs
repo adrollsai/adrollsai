@@ -241,12 +241,14 @@ const SNAPSHOT_JS = `
     .filter((t) => /^call tool$/i.test(t));
   const danger = Array.from(document.querySelectorAll('.dsh-danger')).map(text).filter(Boolean);
   const toasts = Array.from(document.querySelectorAll('[data-sonner-toast]')).map(text).filter(Boolean);
+  const approveButtons = Array.from(document.querySelectorAll('button')).filter((b) => /approve & execute/i.test(text(b))).length;
   return JSON.stringify({
     hasCardTitle: body.includes('Approve: nobogent_whatsapp_send_template'),
     hasCardReason: body.includes('a real customer receives it'),
     hasTemplateName: body.includes('auto_drip_followup_24h'),
     hasPhone: body.includes('82888 35235') || body.includes('8288835235') || body.includes('+918288835235'),
     cardButtons,
+    approveButtons,
     callToolRows: callToolRows.length,
     danger, toasts,
     transcriptLen: body.length,
@@ -257,9 +259,30 @@ const SNAPSHOT_JS = `
 async function main() {
   if (!CHROME) throw new Error('no Chrome or Edge found');
   const { userId, cookies } = await signIn();
-  const actionId = 'act_ui' + Date.now().toString(36);
-  const seeded = await seedSession(userId, actionId);
-  console.log(`\nAPPROVAL CARD UI  ${BASE}  (session ${seeded.sessionId.slice(0, 8)}, action ${actionId})`);
+
+  // Two modes:
+  //   default            seed a session with the production event shape and check
+  //                      the renderer (deterministic, no model tokens, cleans up)
+  //   --session=<uuid>   open a REAL conversation and check the card is there
+  //                      (reads someone's data; changes nothing)
+  const existingSessionId = arg('session', '');
+  let seeded = { sessionId: '', title: '' };
+  let actionId = '';
+
+  if (existingSessionId) {
+    const { data: row } = await admin
+      .from('harness_sessions')
+      .select('id, title')
+      .eq('id', existingSessionId)
+      .maybeSingle();
+    if (!row) throw new Error(`no session ${existingSessionId}`);
+    seeded = { sessionId: row.id, title: String(row.title || '') };
+    console.log(`\nAPPROVAL CARD UI  ${BASE}  (existing session ${seeded.sessionId.slice(0, 8)}, title "${seeded.title}")`);
+  } else {
+    actionId = 'act_ui' + Date.now().toString(36);
+    seeded = await seedSession(userId, actionId);
+    console.log(`\nAPPROVAL CARD UI  ${BASE}  (seeded session ${seeded.sessionId.slice(0, 8)}, action ${actionId})`);
+  }
 
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nobo-approval-'));
   const chrome = spawn(
@@ -353,14 +376,21 @@ async function main() {
       snap.cardButtons.some((t) => /approve/i.test(t)) && snap.cardButtons.some((t) => /cancel/i.test(t)),
       snap.cardButtons
     );
+    check(
+      '…and exactly ONE card, however many times the gate staged it',
+      snap.approveButtons === 1,
+      `${snap.approveButtons} approve button(s)`
+    );
     check('the row is not left labelled a bare "call tool"', snap.callToolRows === 0, `"call tool" rows: ${snap.callToolRows}`);
     check('no red error text on the screen', snap.danger.length === 0, snap.danger);
     check('no error toasts', snap.toasts.length === 0, snap.toasts);
     console.log(`   screenshot: ${shotPath}`);
 
-    await admin.from('harness_events').delete().eq('session_id', seeded.sessionId);
-    await admin.from('harness_sessions').delete().eq('id', seeded.sessionId);
-    await admin.from('agent_events').delete().eq('payload->>actionId', actionId);
+    if (!existingSessionId) {
+      await admin.from('harness_events').delete().eq('session_id', seeded.sessionId);
+      await admin.from('harness_sessions').delete().eq('id', seeded.sessionId);
+      await admin.from('agent_events').delete().eq('payload->>actionId', actionId);
+    }
 
     console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} checks passed\n`);
     process.exitCode = fail === 0 ? 0 : 1;

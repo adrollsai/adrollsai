@@ -32,18 +32,23 @@ import {
   MEDIA_MODELS,
   videoCredits,
   withMediaFallback,
+  type VideoResolution,
 } from '../../../media-models';
 import {
   describeBeats,
+  dialoguePlateFor,
   MAX_LINE_WORDS,
   minHoldSeconds,
   parseBeats,
   roundTo,
   sceneBeats,
+  scoringPlates,
+  speakingBeats,
   speakableBeats,
   type AspectRatio,
   type Beats,
   type EndCardFields,
+  type PlateSpec,
 } from './beats';
 import { measureVoiceover, timingJsonText, type Timing, type VoOnset } from './timing';
 import { emitProject, projectSlug, PROJECT_CLI_VERSION, type EmittedProject } from './emit';
@@ -197,25 +202,38 @@ export interface VideoSkillPlan {
 export function estimateVideoCredits(beats: Beats, renderCredits = RENDER_CREDITS): CreditEstimate {
   const lines = speakableBeats(beats);
   const generated = beats.plates.filter((plate) => plate.source === 'generate');
-  const clipSeconds = roundTo(
+  const dialogued = scoringPlates(beats);
+  const motionSeconds = roundTo(
     generated.reduce((sum, plate) => sum + (plate.seconds ?? 6), 0),
+    3,
+  );
+  // A dialogue plate is video, not voice: the model charges per second of picture, and
+  // at its declared resolution. This is the number that stops a 480p talking head from
+  // being quoted at 1080p prices.
+  const dialogueSeconds = roundTo(
+    dialogued.reduce((sum, plate) => sum + (plate.seconds ?? 15), 0),
     3,
   );
 
   const voice = estimateCredits('voice', lines.length);
-  const clips = clipSeconds > 0 ? videoCredits(clipSeconds) : 0;
+  const clips =
+    (motionSeconds > 0 ? videoCredits(motionSeconds, '1080p') : 0) +
+    (dialogueSeconds > 0 ? videoCredits(dialogueSeconds, dialogueResolution(beats)) : 0);
   const render = renderCredits;
 
   const breakdown: CreditLine[] = [
     {
       media: VOICE_MODEL,
       credits: voice,
-      detail: `${lines.length} line(s) x ${estimateCredits('voice', 1)} credits`,
+      detail: `${lines.length} TTS line(s) x ${estimateCredits('voice', 1)} credits`,
     },
     {
       media: CLIP_MODEL,
       credits: clips,
-      detail: `${clipSeconds}s of generated motion (${generated.length} plate(s))`,
+      detail:
+        `${motionSeconds}s of silent motion (${generated.length} plate(s)) + ` +
+        `${dialogueSeconds}s of dialogue clips (${dialogued.length} plate(s), ` +
+        `${dialogueResolution(beats)})`,
     },
     {
       media: 'render',
@@ -231,6 +249,20 @@ export function estimateVideoCredits(beats: Beats, renderCredits = RENDER_CREDIT
     total: voice + clips + render,
     lines: breakdown,
   };
+}
+
+/**
+ * The resolution a film's dialogue plates render at.
+ *
+ * Per-plate `resolution` wins; otherwise the film's own default, which is 480p because
+ * a talking head is bought by the second and 480p is a third of the 1080p price.
+ */
+export function dialogueResolution(beats: Beats): VideoResolution {
+  for (const plate of beats.plates) {
+    if (plate.source !== 'dialogue') continue;
+    return plate.resolution ?? '480p';
+  }
+  return '480p';
 }
 
 /**
@@ -272,7 +304,22 @@ export function planVideoSkill(input: VideoSkillInput, options: { renderCredits?
       `${generated.length} generated plate(s) at ${beats.plates
         .filter((p) => p.source === 'generate')
         .map((p) => `${p.id}:${p.seconds}s`)
-        .join(', ')} — the video registry keeps clips at or under 6 s`,
+        .join(', ')} — the video registry keeps silent clips at or under 6 s`,
+    );
+  }
+  const dialogue = scoringPlates(beats);
+  if (dialogue.length > 0) {
+    const voiceLines = speakableBeats(beats).length;
+    notes.push(
+      `${dialogue.length} dialogue clip(s) at ${dialogueResolution(beats)}: the line is inside the ` +
+        'video prompt, so the voice and the lips are one generation — not dubbed' +
+        (voiceLines === 0
+          ? ', and no TTS is used at all'
+          : `; ${voiceLines} beat(s) still use TTS for narration between them`),
+    );
+    notes.push(
+      'a dialogue clip is one performance and belongs to exactly one beat; its speech is ' +
+        'measured from the clip, so the cut follows what the model actually said',
     );
   }
 
@@ -370,7 +417,9 @@ export function onsetFromMeasurement(
 
 /** The scene plan `measureVoiceover` needs, derived from validated beats. */
 export function scenePlanFor(beats: Beats): { scene: Beats['scenes'][number]; beatIds: string[] }[] {
-  const spoken = new Set(speakableBeats(beats).map((b) => b.id));
+  // speakingBeats, not speakableBeats: a beat that performs a dialogue clip speaks too,
+  // and its measured onset has to be placed or the timing refuses the whole film.
+  const spoken = new Set(speakingBeats(beats).map((b) => b.id));
   return beats.scenes.map((scene) => ({
     scene,
     beatIds: sceneBeats(beats, scene)
@@ -411,6 +460,12 @@ export interface ClipRequest {
   seconds: number;
   aspect: AspectRatio;
   model: string;
+  /** 'motion' is a silent camera move; 'dialogue' is a performance with its own speech. */
+  kind?: 'motion' | 'dialogue';
+  /** Stills to animate (image-to-video). Empty/undefined = text-to-video. */
+  imageUrls?: string[];
+  /** Resolution the model should render at. Dialogue shots default to 480p. */
+  resolution?: VideoResolution;
 }
 
 export interface UploadResult {
@@ -440,8 +495,18 @@ export interface RecordResult {
 export interface VideoSkillDeps {
   /** Render one voice line. Default: the registry's voice model (MEDIA_MODELS.voice.id) via createGeminiTTS. */
   tts?: (request: VoiceRequest) => Promise<Uint8Array | { path: string }>;
-  /** Render one motion plate. Default: the registry's video model (MEDIA_MODELS.video.id). */
+  /**
+   * Render one plate. Used for silent motion plates AND for `dialogue` plates, where
+   * the request carries the spoken line and the model generates voice + lip movement
+   * together. Default: the registry's video model (MEDIA_MODELS.video.id).
+   */
   clip?: (request: ClipRequest) => Promise<Uint8Array | { path: string }>;
+  /**
+   * Transcribe a dialogue clip so the run can prove the model said the line it was
+   * given. Optional: without it the film is still made, the check is just skipped.
+   * Default: the registry's transcription model, via R2 + kie.
+   */
+  transcribe?: (args: { sandbox: AgentSandbox; path: string; plate: string }) => Promise<string>;
   /** Load a supplied plate (`asset` source): an https URL or an R2 key. */
   loadAsset?: (key: string) => Promise<Uint8Array>;
   /** Read an earlier step's artefact back (so a resumed run need not re-measure). */
@@ -497,6 +562,79 @@ export const SILENCE_TRIM_FILTER =
 
 /** The reference thresholds: -35 dB, 0.10 s (the numbers the delivered film used). */
 export const SILENCE_DETECT_FILTER = 'silencedetect=noise=-35dB:d=0.10';
+
+/**
+ * Dialogue clips: how much of the model's own silence to keep on each side.
+ *
+ * A talking shot comes back with air before the first word and after the last. Cut it
+ * to the speech and the clip becomes the beat: the picture and the words start
+ * together, so nothing has to be nudged into sync afterwards.
+ */
+export const DIALOGUE_PRE_ROLL = 0.18;
+export const DIALOGUE_POST_ROLL = 0.34;
+
+/**
+ * The prompt a dialogue plate sends to the video model.
+ *
+ * This is the whole trick of a lip-synced film: the line is IN the prompt, so the
+ * model performs it — voice and mouth from one generation. Pure and exported so the
+ * wording is reviewable without spending a credit.
+ */
+export function dialoguePrompt(plate: PlateSpec, aspect: AspectRatio): string {
+  const speaker = plate.speaker ?? 'a natural on-camera speaker';
+  const motion = plate.motion ?? 'speaking straight into the lens, natural head movement';
+  const shape = aspect === '16:9' ? '16:9 landscape' : aspect === '1:1' ? 'square' : '9:16 vertical';
+  return [
+    `${shape} shot. ${speaker} is on camera, ${motion}.`,
+    'Continuous natural motion from the very first frame, no freeze, blinking, real micro-expressions.',
+    `The speaker says exactly this line, word for word, in a natural voice with perfectly lip-synced delivery: "${plate.line ?? ''}"`,
+    'Recorded on a close microphone, clean room sound, no music, no other voices.',
+    'No captions, no subtitles, no on-screen text, no watermark, no cuts, no scene change, no morphing.',
+  ].join(' ');
+}
+
+/**
+ * How much of a requested line the model actually performed.
+ *
+ * Compared word-set to word-set, because a transcriber writes Hindi, Hinglish and
+ * brand names the way it hears them ("बत्रा" / "बतरा", "SBG" / "एसबीजी"). The point
+ * is not to grade the voice: it is to catch the clip that speaks something else
+ * entirely, which no amount of cutting can rescue.
+ */
+export function dialogueCoverage(requested: string, heard: string): number {
+  const norm = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const words = (text: string) => new Set(norm(text).split(' ').filter((w) => w.length > 1));
+  const want = words(requested);
+  if (want.size === 0) return 1;
+  const got = words(heard);
+  if (got.size === 0) return 0;
+  let hit = 0;
+  for (const word of want) if (got.has(word)) hit += 1;
+  return roundTo(hit / want.size, 3);
+}
+
+/** A line under this share of its words is treated as "the model improvised". */
+export const DIALOGUE_MIN_COVERAGE = 0.4;
+
+/**
+ * Cut a generated talking shot down to its speech.
+ *
+ * -ss/-t before -i so the cut is on a keyframe boundary and the audio is not
+ * re-timed, and both picture and sound are re-encoded because the clip's audio is
+ * the deliverable, not a by-product.
+ */
+export function trimDialogueCommand(input: string, output: string, from: number, duration: number): string {
+  return (
+    `$FFMPEG -y -v error -ss ${from.toFixed(3)} -t ${duration.toFixed(3)} -i "${input}" ` +
+    `-c:v libx264 -preset veryfast -crf 19 -pix_fmt yuv420p -c:a aac -ar 48000 -ac 2 -b:a 192k ` +
+    `-movflags +faststart "${output}"`
+  );
+}
 
 export function probeDurationCommand(path: string): string {
   return `ffprobe -v error -show_entries format=duration -of csv=p=0 ${shellQuote(path)}`;
@@ -562,11 +700,14 @@ async function runVoiceStep(
   sandbox: AgentSandbox,
   beats: Beats,
   workDir: string,
-  deps: Required<Pick<VideoSkillDeps, 'tts'>>,
+  deps: Required<Pick<VideoSkillDeps, 'tts'>> & Pick<VideoSkillDeps, 'clip' | 'transcribe'>,
   log: (event: string, data?: Record<string, unknown>) => void,
 ): Promise<StepOutput> {
   const lines = speakableBeats(beats);
   const onsets: VoOnset[] = [];
+  const spoken: Record<string, number> = {};
+  /** Onsets measured from a clip that was already cut, so there is no wav to re-probe. */
+  const measuredFromClip = new Set<string>();
 
   for (const beat of lines) {
     const raw = `${workDir}/assets/voice/${beat.id}.raw.wav`;
@@ -596,8 +737,98 @@ async function runVoiceStep(
     log('video.voice.line', { beat: beat.id, rawSeconds: total, speechSeconds: onsets[onsets.length - 1].dur });
   }
 
+  // ── dialogue clips: the speech is generated WITH the picture ────────────────
+  // Same step, different vendor call. These land in assets/footage (they are plates,
+  // not voice files) and each one's own audio becomes the beat that plays it.
+  for (const plate of scoringPlates(beats)) {
+    const owner = beats.beats.find((b) => dialoguePlateFor(beats, b)?.id === plate.id);
+    if (!owner) continue; // parse-time validation already refuses this
+    const raw = `${workDir}/assets/footage/${plate.id}.raw.mp4`;
+    const speechful = `${workDir}/assets/footage/${plate.id}.speech.mp4`;
+
+    const imageUrls: string[] = [];
+    if (plate.imageKey) {
+      if (/^https?:\/\//i.test(plate.imageKey)) {
+        imageUrls.push(plate.imageKey);
+      } else {
+        // R2 key -> the public URL the vendor can fetch. A signed URL would expire
+        // before a queued generation ran; the bucket's public base is what the rest
+        // of the app already hands out.
+        const { R2_PUBLIC_URL } = await import('@/utils/r2');
+        imageUrls.push(`${R2_PUBLIC_URL.replace(/\/$/, '')}/${plate.imageKey.replace(/^\/+/, '')}`);
+      }
+    }
+
+    const rendered = await (deps.clip ?? defaultClip)({
+      plate: plate.id,
+      kind: 'dialogue',
+      prompt: dialoguePrompt(plate, beats.aspect),
+      seconds: plate.seconds ?? 15,
+      aspect: beats.aspect,
+      model: CLIP_MODEL,
+      resolution: plate.resolution ?? '480p',
+      ...(imageUrls.length ? { imageUrls } : {}),
+    });
+
+    if (rendered instanceof Uint8Array) {
+      await writeBytes(sandbox, raw, rendered);
+    } else {
+      await sandbox.exec(
+        `mkdir -p ${shellQuote(dirOf(raw))} && cp -f ${shellQuote(rendered.path)} ${shellQuote(raw)}`,
+      );
+    }
+
+    const total = await probeDuration(sandbox, raw);
+    const silences = await detectSilences(sandbox, raw);
+    const measured = onsetFromMeasurement(owner.id, total, silences);
+    const from = Math.max(0, roundTo(measured.start - DIALOGUE_PRE_ROLL, 3));
+    const duration = Math.min(
+      roundTo(total - from, 3),
+      roundTo(measured.dur + DIALOGUE_PRE_ROLL + DIALOGUE_POST_ROLL, 3),
+    );
+
+    await sandbox.exec(trimDialogueCommand(raw, speechful, from, duration));
+    await sandbox.exec(`mv -f ${shellQuote(speechful)} ${shellQuote(raw)}`);
+
+    const clippedSeconds = await probeDuration(sandbox, raw);
+    onsets.push({ id: owner.id, start: 0, dur: roundTo(clippedSeconds, 3) });
+    measuredFromClip.add(owner.id);
+    log('video.dialogue.clip', {
+      plate: plate.id,
+      beat: owner.id,
+      modelSeconds: total,
+      speechSeconds: measured.dur,
+      clipSeconds: clippedSeconds,
+      from,
+    });
+
+    // The verification that makes this mode trustworthy: the clip was ASKED to say a
+    // line. If it said something else, the shot is wrong and no cut can fix it — so
+    // say so loudly, on the record, without failing a run we already paid for.
+    if (deps.transcribe && plate.line) {
+      try {
+        const heard = await deps.transcribe({ sandbox, path: raw, plate: plate.id });
+        const coverage = dialogueCoverage(plate.line, heard);
+        spoken[plate.id] = coverage;
+        log('video.dialogue.verify', { plate: plate.id, coverage, heard: heard.slice(0, 400) });
+        if (coverage < DIALOGUE_MIN_COVERAGE) {
+          log('video.dialogue.mismatch', {
+            plate: plate.id,
+            coverage,
+            line: plate.line,
+            heard: heard.slice(0, 400),
+            next: 'regenerate this plate with --only, or rewrite the line shorter',
+          });
+        }
+      } catch (err) {
+        log('video.dialogue.verify_skipped', { plate: plate.id, reason: String(detailOf(err)) });
+      }
+    }
+  }
+
   // Re-verify against the TRIMMED files: that is what the film actually plays.
   for (const onset of onsets) {
+    if (measuredFromClip.has(onset.id)) continue; // a dialogue clip: already measured after its cut
     const trimmedSeconds = await probeDuration(sandbox, `${workDir}/assets/voice/${onset.id}.wav`);
     if (trimmedSeconds + 0.02 < onset.dur) {
       // The trim took more than silence; trust the file that exists.
@@ -608,7 +839,18 @@ async function runVoiceStep(
   const { timing, project } = buildProject(beats, onsets);
   await sandbox.writeFile(
     `${workDir}/voiceover.json`,
-    `${JSON.stringify({ onsets, total: timing.total, drift: timing.drift, notes: timing.notes, timing: JSON.parse(timingJsonText(timing)) }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        onsets,
+        total: timing.total,
+        drift: timing.drift,
+        notes: timing.notes,
+        dialogue: spoken,
+        timing: JSON.parse(timingJsonText(timing)),
+      },
+      null,
+      2,
+    )}\n`,
   );
   log('video.voice.measured', {
     lines: onsets.length,
@@ -645,6 +887,11 @@ async function runClipsStep(
   log: (event: string, data?: Record<string, unknown>) => void,
 ): Promise<StepOutput> {
   for (const plate of beats.plates) {
+    // Dialogue plates were generated in the voice step, because their audio has to
+    // exist before the film can be measured. Re-generating one here would pay twice
+    // and could come back with a different performance than the timing was cut to.
+    if (plate.source === 'dialogue') continue;
+
     if (plate.source === 'asset') {
       const source = plate.key ?? '';
       const bytes = await (deps.loadAsset ?? defaultLoadAsset)(source);
@@ -1070,15 +1317,26 @@ async function defaultTts(request: VoiceRequest): Promise<Uint8Array> {
   return download(polled.url);
 }
 
-/** Default motion plate: the registry's video model (MEDIA_MODELS.video.id), one slow move. */
+/**
+ * Default plate generator: the registry's video model (MEDIA_MODELS.video.id).
+ *
+ * One call serves both kinds. A `motion` plate is a silent camera move at up to 6 s.
+ * A `dialogue` plate is a performance: the prompt already carries the line, the clip
+ * may run to the model's 15 s ceiling, and the returned file has an audio track that
+ * IS the dialogue — nothing here mutes it.
+ */
 async function defaultClip(request: ClipRequest): Promise<Uint8Array> {
   const api = await import('@/utils/external-apis');
+  const dialogue = request.kind === 'dialogue';
   const routed = await withMediaFallback('video', async (model: string) =>
     api.createGrokVideoTask({
       prompt: request.prompt,
       aspectRatio: request.aspect,
-      resolution: '1080p',
-      duration: Math.min(6, Math.max(1, Math.round(request.seconds))),
+      resolution: request.resolution ?? (dialogue ? '480p' : '1080p'),
+      duration: dialogue
+        ? Math.min(15, Math.max(2, Math.round(request.seconds)))
+        : Math.min(6, Math.max(1, Math.round(request.seconds))),
+      ...(request.imageUrls && request.imageUrls.length ? { imageUrls: request.imageUrls } : {}),
       model,
     }),
   );
@@ -1088,6 +1346,33 @@ async function defaultClip(request: ClipRequest): Promise<Uint8Array> {
   const polled = await pollForUrl(routed.value.taskId, CLIP_POLL_TRIES, CLIP_POLL_MS);
   if (!polled.url) throw new Error(`[video-skill] plate ${request.plate} produced no clip: ${polled.reason}`);
   return download(polled.url);
+}
+
+/**
+ * Default dialogue verification: publish the clip, transcribe it with the registry's
+ * transcription model, and hand the text back.
+ *
+ * It costs one cheap task per dialogue plate and it is the only thing standing
+ * between "the model spoke the script" and "the model spoke something plausible".
+ * A failure here never fails the run — the caller logs it and keeps the film.
+ */
+async function defaultTranscribe(args: { sandbox: AgentSandbox; path: string; plate: string }): Promise<string> {
+  const api = await import('@/utils/external-apis');
+  const key = `agent_render/dialogue-check/${args.plate}.mp4`;
+  const published = await defaultPublish({
+    sandbox: args.sandbox,
+    sandboxPath: args.path,
+    key,
+    contentType: 'video/mp4',
+  });
+  const task = await api.createTranscribeTask({ audioUrl: published.url });
+  if (task.taskId === null) throw new Error(task.error ?? 'transcription task was refused');
+  const polled = await pollForUrl(task.taskId, TTS_POLL_TRIES, TTS_POLL_MS);
+  if (!polled.url) throw new Error(polled.reason ?? 'transcription produced no result');
+  const res = await fetch(polled.url);
+  if (!res.ok) throw new Error(`transcription result ${res.status}`);
+  const payload = (await res.json()) as { resultObject?: { text?: string }; text?: string };
+  return payload.resultObject?.text ?? payload.text ?? '';
 }
 
 /** Default supplied plate: an https URL, or an R2 key in the app bucket. */
@@ -1321,12 +1606,19 @@ export async function runVideoSkill(options: VideoSkillRunOptions): Promise<Vide
     run: {
       async voiceover(sandbox: SandboxLike, ctx: StepContext) {
         const exec = sandboxOf(sandbox, 'voiceover');
-        await exec.exec(`mkdir -p ${shellQuote(workDir)}/assets/voice`);
+        await exec.exec(`mkdir -p ${shellQuote(workDir)}/assets/voice ${shellQuote(workDir)}/assets/footage`);
         const output = await runVoiceStep(
           exec,
           beats,
           workDir,
-          { tts: deps.tts ?? defaultTts },
+          {
+            tts: deps.tts ?? defaultTts,
+            ...(deps.clip ? { clip: deps.clip } : {}),
+            // On by default: a dialogue plate was ASKED to say a specific line, and one
+            // transcription per plate is what proves the model said it. A caller can pass its
+            // own, or one that resolves to '' to skip the check.
+            transcribe: deps.transcribe ?? defaultTranscribe,
+          },
           ctx.log,
         );
         measured = output.timing;
