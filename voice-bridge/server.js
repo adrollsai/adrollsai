@@ -346,6 +346,13 @@ No projects are registered on this account. You therefore MUST NOT name any proj
                 : /health|clinic|hospital/.test(industryLower) ? 'our treatments'
                     : /real.?estate|propert|realt|infra|homes|realty/.test(industryLower) ? 'our projects'
                         : 'what we offer';
+    // The same noun without the possessive, for sentences already phrased "hamare ___" / "our ___".
+    const bareOfferingNoun =
+        /educat|academy|film|school|institute|coach|training/.test(industryLower) ? 'courses'
+            : /immigra|visa/.test(industryLower) ? 'services'
+                : /health|clinic|hospital/.test(industryLower) ? 'treatments'
+                    : /real.?estate|propert|realt|infra|homes|realty/.test(industryLower) ? 'projects'
+                        : 'offerings';
     targetProduct = (targetProperty && targetProperty.title) || adProductName || formAdCampaignName || (campaign?.target_product) || offeringNoun;
 
     // Build Hinglish system instruction
@@ -1399,7 +1406,7 @@ async function finalizeAgentCall(session) {
                 const audioBase64 = audioBuffer.toString('base64');
                 const defaultKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
 
-                const analysisPrompt = `You are an expert sales call QA and intelligence analyst for real estate.
+                const analysisPrompt = `You are an expert sales call QA and intelligence analyst.
 Analyze this recorded phone call between a human sales agent and a prospective client/lead.
 Output JSON ONLY with the following schema:
 {
@@ -1698,7 +1705,10 @@ wss.on('connection', (wsConnection, req) => {
     let activeQuestionsList = [];
     let leadPhone = null;
     let leadName = 'there';
-    let companyName = 'Bioque Estates';
+    // Neutral, not a real company name: this default is spoken if the profile fails to load, and it
+    // used to be the literal 'Bioque Estates' — so a broken profile lookup introduced the agent to
+    // the lead as a different business entirely.
+    let companyName = 'your business';
     let targetProduct = null;
     let greetingMessage = 'Hi, kaise ho aap?';
     const transcriptTurns = [];
@@ -1908,7 +1918,7 @@ wss.on('connection', (wsConnection, req) => {
                     greetingTurnSent = true;
                     geminiReady = true;
 
-                    const safeCompanyName = companyName || profile?.business_name || 'Bioque Estates';
+                    const safeCompanyName = companyName || profile?.business_name || 'your business';
                     // Never let an internal label reach the prospect's ear.
                     // targetProduct falls back through ad product name and ad/campaign
                     // name, which are Meta's internal strings — one real transcript has
@@ -1927,7 +1937,22 @@ wss.on('connection', (wsConnection, req) => {
                     // An earlier version referenced `allProperties` here, which threw
                     // "allProperties is not defined" and crashed the container on every
                     // call (Vobiz then dropped the line after 1-3 seconds).
-                    const safeProduct = !looksLikeAdLabel(targetProduct) ? String(targetProduct) : 'property';
+                    // When the product label is really an ad/campaign name ("Procolor Academy - Cinematography
+    // Diploma (Dec Batch) - 2026-11-21"), reading it out is useless, so a generic noun replaces it —
+    // and that noun used to be the literal 'property', which is how a film academy's lead was told
+    // about "our property" on a Facebook ad enquiry. It now follows the tenant's industry.
+    //
+    // Computed here rather than reused from buildGeminiSetupConfig: that function has its own
+    // `targetProduct` and this one has another, so a variable from over there would be a
+    // ReferenceError the moment a real call started.
+    const greetingIndustry = String(profile?.industry || '').toLowerCase();
+    const bareOfferingNoun =
+        /educat|academy|film|school|institute|coach|training/.test(greetingIndustry) ? 'courses'
+            : /immigra|visa/.test(greetingIndustry) ? 'services'
+                : /health|clinic|hospital/.test(greetingIndustry) ? 'treatments'
+                    : /real.?estate|propert|realt|infra|homes|realty/.test(greetingIndustry) ? 'projects'
+                        : 'offerings';
+    const safeProduct = !looksLikeAdLabel(targetProduct) ? String(targetProduct) : bareOfferingNoun;
                     const safeName = (leadName && leadName !== 'there') ? leadName.split(' ')[0] : '';
                     const nameGreeting = safeName ? `Hi ${safeName} ji` : `Hi ji`;
                     const bolRaha = isMaleVoice(voiceName, profile?.voice_gender) ? 'bol raha hoon' : 'bol rahi hoon';
@@ -2725,7 +2750,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                     });
 
                     const analysisPrompt = `
-You are analyzing an audio phone call transcript between an AI real estate voice agent and a prospect.
+You are analyzing an audio phone call transcript between an AI voice agent and a prospect.
 Here is the transcript:
 ${fullTranscript}
 
@@ -2755,13 +2780,13 @@ STRICT QUALIFICATION & CLASSIFICATION CRITERIA:
    - If the prospect only asked for a callback, is_qualified MUST be FALSE.
 
 3. "lead_priority": "HOT" | "WARM" | "COLD"
-   - "HOT": Prospect explicitly confirmed an in-person physical site visit or confirmed high budget and immediate purchase readiness.
-   - "WARM": Prospect confirmed genuine interest in buying the property and asked for specific pricing/inventory details.
+   - "HOT": Prospect explicitly confirmed an in-person meeting or visit, or confirmed budget and immediate readiness to proceed.
+   - "WARM": Prospect confirmed genuine interest and asked for specific pricing or availability details.
    - "COLD": ANY of the following: Requested callback (without prior confirmed interest), said they are busy, price too high, no budget, not interested, job seeker, wrong number, or disconnected.
    CRITICAL NOTE: Merely asking for a callback or saying "call tomorrow" MUST be classified as "COLD", NEVER "WARM"!
 
 4. "booking_time": string or null
-   - Return an ISO-8601 string (with +05:30 offset or UTC) ONLY IF the prospect EXPLICITLY agreed to or scheduled a future PHYSICAL IN-PERSON SITE VISIT or IN-PERSON OFFICE MEETING on a specific future day/date (e.g. "Saturday at 11 AM I will come to the site").
+   - Return an ISO-8601 string (with +05:30 offset or UTC) ONLY IF the prospect EXPLICITLY agreed to or scheduled a future IN-PERSON APPOINTMENT or VISIT (office, campus, site or studio) on a specific future day/date (e.g. "Saturday at 11 AM I will come to the site").
    - CRITICAL PROHIBITIONS:
      * NEVER return booking_time for a PHONE CALL or FOLLOW-UP CALL! If the prospect agreed to a phone call tomorrow at 10 AM or 11 AM, booking_time MUST BE NULL and callback_time must be set instead!
      * NEVER return the current call timestamp (${nowUtc.toISOString()})! If no specific future in-person appointment date was confirmed, booking_time MUST be null.
@@ -2810,7 +2835,7 @@ Extract the details as a valid JSON object ONLY. Do NOT use markdown tags, ticks
                                     messages: [
                                         {
                                             role: 'system',
-                                            content: 'You are an expert real estate AI CRM call analyst. Return a valid JSON object ONLY. Do not wrap in markdown or backticks.'
+                                            content: 'You are an expert AI CRM call analyst. Return a valid JSON object ONLY. Do not wrap in markdown or backticks.'
                                         },
                                         {
                                             role: 'user',
