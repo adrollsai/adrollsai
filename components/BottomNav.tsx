@@ -168,21 +168,13 @@ export default function BottomNav() {
     }
 
     if (role === 'agent') {
-      // A restricted staff role. It gets the agent and the CEO view too: both read the
-      // business the account belongs to, and the person answering customers is exactly who
-      // needs to see the day's plan.
-      return [
-        'Analytics',
-        'Nobo AI',
-        'CEO',
-        'Catalog',
-        'Inventory',
-        'Creation',
-        'CRM',
-        'Assets',
-        'Profile',
-        'WhatsApp',
-      ].includes(item.name)
+      // A restricted staff role: the people who actually work the leads. It deliberately does NOT
+      // get the agent console or the CEO view — those are the owner's business-level surfaces
+      // (what the business is spending, what it should do next), not a telecaller's tool. Giving
+      // them to this role exposed the whole account's strategy to staff.
+      return ['Analytics', 'Catalog', 'Inventory', 'Creation', 'CRM', 'Assets', 'Profile', 'WhatsApp'].includes(
+        item.name,
+      )
     }
 
     if (role === 'client' && Array.isArray(clientFeatures)) {

@@ -198,6 +198,28 @@ export function analyseDay(metrics: DayMetrics, options: { quiet?: boolean } = {
     });
   }
 
+  // ── the engine never ran at all
+  //
+  // Without this, a business whose daily routine is switched off scored a perfect "A quiet day —
+  // nothing needed your attention", because every metric it measures is zero and zero reads as
+  // calm. The owner reads reassurance while nothing is running and nothing is being produced, which
+  // is the most expensive kind of quiet. Zero output is not a quiet day; it is a stalled engine.
+  if (routines.ran === 0) {
+    findings.push({
+      id: 'engine-not-run',
+      severity: 'risk',
+      title: 'Your daily engine did not run',
+      evidence:
+        `0 routine(s) ran and 0 failed in this window, so nothing was planned, produced or analysed ` +
+        `for you. The other zeros on this report (${leads.created} lead(s), ${campaigns.active} ` +
+        'campaign(s)) follow from that, not from a genuinely quiet day.',
+      recommendation:
+        'Turn the daily routine on (CEO tab → Start it). Until it runs, the daily plan, the creative ' +
+        'work and this report are all idle.',
+      needsReview: false,
+    });
+  }
+
   // ── output
   if (content.published === 0 && content.created > 0) {
     findings.push({

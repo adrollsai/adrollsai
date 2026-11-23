@@ -21,6 +21,14 @@ export interface DigestInput {
   dateLabel: string;
   /** What was produced / is planned. */
   done?: DigestItem[];
+  /**
+   * The analysis: where this business is losing money and what we would do about it.
+   *
+   * This is the part the owner actually bought. It was missing from the email entirely — the
+   * findings lived only on the CEO tab — so the twice-daily report arrived without the half of it
+   * that says "here is the bottleneck and here is the fix".
+   */
+  bottlenecks?: DigestItem[];
   /** Approvals or missing inputs the owner must resolve. */
   needsYou?: DigestItem[];
   /** Explicitly skipped, and why. Never omit: silence is what erodes trust. */
@@ -90,6 +98,7 @@ export function buildDigest(input: DigestInput): { subject: string; html: string
         input.slot === 'morning' ? 'nothing planned yet' : 'nothing went out today',
         accent
       )}
+      ${section('Where you are losing money, and what I would do', input.bottlenecks, 'nothing measurable is holding you back', '#b45309')}
       ${section('Needs you', input.needsYou, 'nothing — no action needed', accent)}
       ${section('Not done, and why', input.notDone, 'nothing skipped', accent)}
       ${
@@ -114,6 +123,11 @@ export function buildDigest(input: DigestInput): { subject: string; html: string
     '',
     `${input.slot === 'morning' ? 'DOING' : 'WENT OUT'}:`,
     ...(input.done?.length ? input.done.map((i) => `- ${i.label}${i.detail ? ` — ${i.detail}` : ''}`) : ['- nothing']),
+    '',
+    'WHERE YOU ARE LOSING MONEY:',
+    ...(input.bottlenecks?.length
+      ? input.bottlenecks.map((i) => `- ${i.label}${i.detail ? ` — ${i.detail}` : ''}`)
+      : ['- nothing measurable']),
     '',
     'NEEDS YOU:',
     ...(input.needsYou?.length ? input.needsYou.map((i) => `- ${i.label}${i.detail ? ` — ${i.detail}` : ''}`) : ['- nothing']),

@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { buildDigest, type DigestItem } from '@/lib/agent/digest';
 import { sendGenericEmail } from '@/utils/email-helper';
 import { periodKey, periodLabel } from '@/lib/agent/routines';
+import { gatherDayMetrics, supabaseMetricsReader, windowFor } from '@/lib/agent/ceo-metrics';
+import { analyseDay } from '@/lib/agent/ceo-findings';
 
 export const maxDuration = 300;
 
@@ -52,11 +54,24 @@ export async function GET(req: NextRequest) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email, business_name, credits')
+      .select('email, business_name, credits, timezone')
       .eq('id', routine.user_id)
       .single();
 
-    if (!profile?.email) {
+    // `profiles.email` is null for accounts created through some paths — Procolor's is null while
+    // its real address sits on the auth user — and the old code simply skipped them, so the
+    // twice-daily report silently never arrived. Fall back to the auth record.
+    let toEmail: string | null = profile?.email || null;
+    if (!toEmail) {
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(routine.user_id);
+        toEmail = authUser?.user?.email || null;
+      } catch (authErr: any) {
+        console.warn(`[ceo-digest] auth email lookup failed for ${routine.user_id}:`, authErr?.message);
+      }
+    }
+
+    if (!toEmail) {
       skipped.push(`${routine.id}: no email`);
       continue;
     }
@@ -100,22 +115,42 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    // The analysis half of the report: where the business is losing money and what we would do
+    // about it. Same engine the CEO tab renders, so the email and the tab can never disagree.
+    // A failure here must not cost the owner the whole report.
+    let bottlenecks: DigestItem[] = [];
+    try {
+      const tz = (profile as any)?.timezone || routine.timezone || 'Asia/Kolkata';
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const { metrics } = await gatherDayMetrics(
+        supabaseMetricsReader(supabase, routine.user_id),
+        windowFor(yesterday, tz)
+      );
+      bottlenecks = analyseDay(metrics)
+        .filter((f) => f.severity === 'blocked' || f.severity === 'risk')
+        .slice(0, 4)
+        .map((f) => ({ label: f.title, detail: f.recommendation }));
+    } catch (findErr: any) {
+      console.warn(`[ceo-digest] findings failed for ${routine.id}:`, findErr?.message);
+    }
+
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '');
     const digest = buildDigest({
-      businessName: profile.business_name || 'Your business',
+      businessName: profile?.business_name || 'Your business',
       slot,
       dateLabel: label,
       done,
+      bottlenecks,
       needsYou,
       notDone: Array.isArray(digestData.not_done) ? digestData.not_done : undefined,
       tomorrow: digestData.tomorrow,
       creditsSpent: run?.credits_spent != null ? Number(run.credits_spent) : null,
-      creditsLeft: profile.credits ?? null,
+      creditsLeft: (profile as any)?.credits ?? null,
       ceoUrl: `${appUrl}/dashboard/ceo`,
     });
 
     try {
-      await sendGenericEmail(profile.email, digest.subject, digest.html);
+      await sendGenericEmail(toEmail, digest.subject, digest.html);
       sent.push(`${routine.id}: ${slot}`);
       // Stamp the slot on the run so a cron retry cannot send it twice. If there is no
       // run row yet, the agent_events trail is the only place to note it, so skip the

@@ -271,7 +271,8 @@ head('9. A quiet day is still a report');
     campaigns: { active: 0, spendPaise: 0, leads: 0 },
     content: { published: 0, created: 0 },
     credits: { balance: 3_000, spentLast7Days: 0 },
-    routines: { ran: 0, failed: 0 },
+    // The engine RAN and found nothing to do — that is what a quiet day means now.
+    routines: { ran: 1, failed: 0 },
   });
   check(
     'a day with nothing in it says so instead of showing a blank',
@@ -282,6 +283,34 @@ head('9. A quiet day is still a report');
     'and it still carries evidence',
     /0 lead\(s\)/.test(String(quiet[0]?.evidence)) && /3,000|3000/.test(String(quiet[0]?.evidence)),
     quiet[0]?.evidence ?? '',
+  );
+
+  // Zero output is not calm, it is a stalled engine. This used to read as a perfect "nothing
+  // needed your attention" while the daily routine had never run at all — which is exactly what
+  // the owner saw on his own account.
+  const stalled = analyseDay({
+    window: { from: '2026-02-01', to: '2026-02-02' },
+    leads: { created: 0, contacted: 0, replied: 0, booked: 0, lost: 0 },
+    calls: { placed: 0, connected: 0 },
+    whatsapp: { sent: 0, replied: 0 },
+    campaigns: { active: 0, spendPaise: 0, leads: 0 },
+    content: { published: 0, created: 0 },
+    credits: { balance: 24_792, spentLast7Days: 0 },
+    routines: { ran: 0, failed: 0 },
+  });
+  check(
+    'an engine that never ran is a stalled engine, not a quiet day',
+    stalled.some((finding) => finding.id === 'engine-not-run' && finding.severity === 'risk'),
+    stalled[0]?.title ?? 'nothing',
+  );
+  check(
+    'and the quiet-day filler is gone in that case',
+    !stalled.some((finding) => finding.id === 'quiet-day'),
+  );
+  check(
+    'it names the cause and the fix',
+    /0 routine\(s\) ran/.test(String(stalled[0]?.evidence)) && /Start it/.test(String(stalled[0]?.recommendation)),
+    String(stalled[0]?.recommendation ?? '').slice(0, 60),
   );
   check(
     'asking for a quiet report to be silent gives an empty list, not a filler line',
@@ -294,11 +323,30 @@ head('9. A quiet day is still a report');
         campaigns: { active: 0, spendPaise: 0, leads: 0 },
         content: { published: 0, created: 0 },
         credits: { balance: 0, spentLast7Days: 0 },
-        routines: { ran: 0, failed: 0 },
+        // The engine ran, so there is genuinely nothing to say. `quiet` suppresses the filler note
+        // only — it must never suppress the stalled-engine warning, which is tested below.
+        routines: { ran: 1, failed: 0 },
       },
       { quiet: true },
     ).length === 0,
     'quiet: true',
+  );
+  check(
+    'but a stalled engine is never silenced by quiet: true',
+    analyseDay(
+      {
+        window: { from: 'a', to: 'b' },
+        leads: { created: 0, contacted: 0, replied: 0, booked: 0, lost: 0 },
+        calls: { placed: 0, connected: 0 },
+        whatsapp: { sent: 0, replied: 0 },
+        campaigns: { active: 0, spendPaise: 0, leads: 0 },
+        content: { published: 0, created: 0 },
+        credits: { balance: 0, spentLast7Days: 0 },
+        routines: { ran: 0, failed: 0 },
+      },
+      { quiet: true },
+    ).some((finding) => finding.id === 'engine-not-run'),
+    'a real problem is not a filler line',
   );
 }
 
