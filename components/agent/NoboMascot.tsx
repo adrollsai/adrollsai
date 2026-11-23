@@ -321,12 +321,14 @@ export default function NoboMascot({
             transition={{ duration: 0.22, ease: 'easeOut' }}
             className="relative px-3.5 py-2 max-w-xs"
             style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(124,58,237,0.14)',
+              // Tokenised: the orb speaks in both themes, and this bubble used to be a
+              // hardcoded white box with a hardcoded near-black label.
+              background: 'var(--nobo-card)',
+              border: '1px solid var(--nobo-bubble-user-border, rgba(124,58,237,0.14))',
               borderRadius: 16,
               borderBottomLeftRadius: 6,
-              boxShadow: '0 6px 18px rgba(76,29,149,0.10)',
-              color: '#1B1B2F',
+              boxShadow: 'var(--nobo-card-shadow)',
+              color: 'var(--dsw-alias-label-primary)',
               fontSize: Math.max(12, Math.min(15, px * 0.2)),
               lineHeight: 1.35,
               fontWeight: 500,

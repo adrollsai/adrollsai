@@ -76,12 +76,14 @@ export default function AgentWelcome({
           transition={{ delay: 0.25, duration: 0.4, ease: 'easeOut' }}
           className="hidden xs:block absolute -right-2 top-1 sm:top-3 px-3.5 py-2"
           style={{
-            background: '#ffffff',
-            border: '1px solid rgba(124,58,237,0.14)',
+            // Tokens, not literals: this bubble is painted in both themes, and a hardcoded
+            // white box with dark text is the classic "white card on a dark page" bug.
+            background: 'var(--nobo-card)',
+            border: '1px solid var(--nobo-bubble-user-border, rgba(124,58,237,0.14))',
             borderRadius: 16,
             borderBottomLeftRadius: 6,
-            boxShadow: '0 8px 22px rgba(76,29,149,0.12)',
-            color: '#191634',
+            boxShadow: 'var(--nobo-card-shadow)',
+            color: 'var(--dsw-alias-label-primary)',
             fontSize: 13,
             fontWeight: 600,
             whiteSpace: 'nowrap',
@@ -131,7 +133,7 @@ export default function AgentWelcome({
       </motion.button>
 
       {/* Ways in. Each one sends a real prompt. */}
-      <div className="mt-9 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
+      <div className="mt-9 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-3 text-left">
         {SUGGESTIONS.map((s, i) => {
           const Icon = s.icon;
           return (
@@ -143,12 +145,12 @@ export default function AgentWelcome({
               initial={{ y: 10 }}
               animate={{ y: 0 }}
               transition={{ delay: 0.24 + i * 0.05, duration: 0.3 }}
-              className="nobo-suggestion group flex items-start gap-3 p-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="nobo-suggestion group flex items-start gap-3 px-4 py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                background: '#ffffff',
+                background: 'var(--nobo-card)',
                 border: '1px solid var(--dsw-alias-border-l1)',
                 borderRadius: 16,
-                boxShadow: '0 2px 10px rgba(76,29,149,0.05)',
+                boxShadow: 'var(--nobo-card-shadow)',
               }}
             >
               <span

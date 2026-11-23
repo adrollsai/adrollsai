@@ -7,12 +7,21 @@
  * button) keeps working exactly as before.
  *
  * Imported by app/dashboard/agent/page.tsx AFTER dsh-tokens.css, scoped to
- * `.dsh[data-theme='light']`, so it can never leak into the dashboard.
+ * `.dsh[data-theme]`, so it can never leak into the dashboard (dashboard surfaces carry no
+ * data-theme attribute at all).
+ *
+ * TWO THEMES, ONE SET OF RULES. There is a palette block per theme and a single set of
+ * component rules that read only tokens. That is deliberate: the first version of this file
+ * put both the palette AND the component rules under `.dsh[data-theme='light']`, so dark
+ * mode inherited neither — no card colours, no tap feedback, no focus ring, no 44px targets,
+ * and the two rules that used a literal `#ffffff` stayed white. Anything hardcoded here is a
+ * bug waiting for the other theme, so colour lives in the token blocks above the rules.
  *
  * The look: a very light lavender canvas, white cards with a soft violet-tinted
  * shadow, generous rounding, and one violet accent (#7C3AED) that carries the
  * brand. Dark text throughout — a tinted bubble with dark text stays readable and
- * keeps markdown, tables and code blocks legible.
+ * keeps markdown, tables and code blocks legible. Dark mode mirrors it on a near-black
+ * violet canvas with the accent lightened so it still reads as an accent.
  * ========================================================================== */
 
 .dsh[data-theme='light'] {
@@ -83,10 +92,142 @@
   --dsw-shadow-lv2: 0 2px 10px rgba(76, 29, 149, 0.06), 0 1px 2px rgba(76, 29, 149, 0.04);
   --dsw-shadow-lv3: 0 18px 40px rgba(76, 29, 149, 0.12);
 
+  /* Component-level depth and rings, so the rules below can be theme-agnostic instead of
+     carrying a light-only violet glow that would read as a halo on a dark canvas. */
+  --nobo-bubble-shadow: 0 2px 10px rgba(76, 29, 149, 0.05);
+  --nobo-card-shadow: 0 4px 16px rgba(76, 29, 149, 0.06);
+  --nobo-dock-shadow: 0 10px 30px rgba(76, 29, 149, 0.09), 0 2px 6px rgba(76, 29, 149, 0.05);
+  --nobo-dock-shadow-focus: 0 12px 34px rgba(124, 58, 237, 0.16), 0 0 0 4px rgba(124, 58, 237, 0.08);
+  --nobo-dock-border-focus: rgba(124, 58, 237, 0.45);
+  --nobo-bubble-user-border: rgba(124, 58, 237, 0.12);
+  --nobo-question-shadow: 0 18px 44px rgba(76, 29, 149, 0.16), 0 2px 8px rgba(76, 29, 149, 0.06);
+  --nobo-ring: rgba(124, 58, 237, 0.5);
+  --nobo-ring-soft: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  --nobo-hover-border: rgba(124, 58, 237, 0.35);
+  --nobo-lift-shadow: 0 12px 26px rgba(76, 29, 149, 0.12);
+  --nobo-divider: rgba(109, 40, 217, 0.07);
+
   --dsw-alias-scrollbar-bg-l1: rgba(124, 58, 237, 0.12);
   --dsw-alias-scrollbar-bg-l2: rgba(124, 58, 237, 0.16);
   --dsw-alias-scrollbar-hover-l1: rgba(124, 58, 237, 0.28);
   --dsw-alias-scrollbar-hover-l2: rgba(124, 58, 237, 0.32);
+}
+
+/* ── dark ──────────────────────────────────────────────────────────────────
+ *
+ * WHY THIS BLOCK HAD TO EXIST
+ * The skin's whole palette was defined under `.dsh[data-theme='light']` only. In dark
+ * mode `--nobo-card`, `--nobo-canvas` and every `--nobo-violet-*` were UNDEFINED, so
+ * anything painted from them fell back to nothing, and the rules that used a literal
+ * `#ffffff` (the question panel, the option rows) stayed white. That is why dark mode
+ * looked like a white card floating on a dark page: it was not a stray style, the dark
+ * palette simply was never written.
+ *
+ * The violet accent is lightened here rather than reused: #7c3aed on a near-black canvas
+ * has too little contrast to read as an accent, so the dark theme uses the 300/400 ramp
+ * for anything drawn with it and keeps the deep violet only as a fill.
+ * ------------------------------------------------------------------------- */
+.dsh[data-theme='dark'] {
+  /* ---- canvas & surfaces ---- */
+  --nobo-canvas: #0f0d18;
+  --nobo-canvas-tint-1: rgba(124, 58, 237, 0.12);
+  --nobo-canvas-tint-2: rgba(236, 72, 153, 0.07);
+  --nobo-card: #191527;
+  --nobo-card-soft: #201b32;
+  --nobo-bubble-user: #2b2344;
+
+  /* ---- accent ---- */
+  --nobo-violet-50: #221b38;
+  --nobo-violet-100: #2c2347;
+  --nobo-violet-200: #3b2f5e;
+  --nobo-violet-500: #a78bfa;
+  --nobo-violet-600: #c4b5fd;
+  --nobo-pink-500: #f472b6;
+
+  --dsw-alias-bg-base: var(--nobo-canvas);
+  --dsw-alias-bg-layer-1: var(--nobo-card);
+  --dsw-alias-bg-layer-2: var(--nobo-card);
+  --dsw-alias-bg-layer-3: var(--nobo-violet-50);
+  --dsw-alias-bg-overlay: var(--nobo-card-soft);
+
+  --dsw-alias-border-l1: rgba(196, 181, 253, 0.10);
+  --dsw-alias-border-l2: rgba(196, 181, 253, 0.16);
+  --dsw-alias-border-l3: rgba(196, 181, 253, 0.22);
+  --dsw-alias-border-l4: rgba(196, 181, 253, 0.30);
+
+  --dsw-alias-label-primary: #f2eefc;
+  --dsw-alias-label-secondary: #c9c2e0;
+  --dsw-alias-label-tertiary: #a49dbe;
+  --dsw-alias-label-caption: #8b84a6;
+  --dsw-alias-label-dimmed: #605a78;
+
+  --dsw-alias-brand-primary: var(--nobo-violet-500);
+  --dsw-alias-brand-text: var(--nobo-violet-600);
+
+  /* Fills keep the deep violet so white text on them still passes; text and borders use
+     the lighter ramp above. */
+  --dsw-alias-button-primary-fill: #7c3aed;
+  --dsw-alias-button-primary-hover: #6d28d9;
+  --dsw-alias-button-primary-text: #ffffff;
+  --dsw-alias-button-info-fill: #7c3aed;
+  --dsw-alias-button-info-hover: #6d28d9;
+
+  --dsw-alias-state-business-primary: var(--nobo-violet-500);
+  --dsw-alias-state-business-tertiary: var(--nobo-violet-100);
+
+  --dsw-alias-interactive-bg-hover: rgba(196, 181, 253, 0.10);
+  --dsw-alias-interactive-bg-active: rgba(196, 181, 253, 0.16);
+  --dsw-alias-interactive-bg-hover-accent: rgba(196, 181, 253, 0.18);
+
+  --dsw-alias-markdown-code-block: #221b38;
+  --dsw-alias-markdown-code-block-banner: #2c2347;
+  --dsw-alias-markdown-inline-code: #2c2347;
+  --dsw-alias-markdown-citation: #221b38;
+  --dsw-alias-markdown-tag: #221b38;
+  --dsw-alias-markdown-placeholder: #2b2344;
+
+  --dsh-radius-xs: 8px;
+  --dsh-radius-sm: 10px;
+  --dsh-radius-md: 14px;
+  --dsh-radius-lg: 18px;
+  --dsh-radius-xl: 24px;
+
+  /* Depth in dark is shadow, not tint: a violet glow on near-black reads as a halo. */
+  --dsw-shadow-lv1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --dsw-shadow-lv2: 0 2px 10px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --dsw-shadow-lv3: 0 18px 40px rgba(0, 0, 0, 0.6);
+
+  /* Same component slots, dark values: depth is shadow, the focus ring is the light violet
+     so it stays visible against a near-black canvas. */
+  --nobo-bubble-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --nobo-card-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --nobo-dock-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --nobo-dock-shadow-focus: 0 12px 34px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(167, 139, 250, 0.18);
+  --nobo-dock-border-focus: rgba(167, 139, 250, 0.55);
+  --nobo-bubble-user-border: rgba(167, 139, 250, 0.18);
+  --nobo-question-shadow: 0 18px 44px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --nobo-ring: rgba(167, 139, 250, 0.65);
+  --nobo-ring-soft: 0 0 0 3px rgba(167, 139, 250, 0.16);
+  --nobo-hover-border: rgba(167, 139, 250, 0.55);
+  --nobo-lift-shadow: 0 14px 30px rgba(0, 0, 0, 0.55);
+  --nobo-divider: rgba(196, 181, 253, 0.10);
+
+  --dsw-alias-scrollbar-bg-l1: rgba(196, 181, 253, 0.14);
+  --dsw-alias-scrollbar-bg-l2: rgba(196, 181, 253, 0.18);
+  --dsw-alias-scrollbar-hover-l1: rgba(196, 181, 253, 0.3);
+  --dsw-alias-scrollbar-hover-l2: rgba(196, 181, 253, 0.36);
+
+  color-scheme: dark;
+}
+
+/* The same two tint blooms, at dark-mode strength, so the canvas has depth instead of
+   being a flat near-black fill. */
+.dsh[data-theme='dark'] > div,
+.dsh[data-theme='dark'] {
+  background-image:
+    radial-gradient(60rem 40rem at 8% -10%, var(--nobo-canvas-tint-1), transparent 60%),
+    radial-gradient(50rem 34rem at 100% 0%, var(--nobo-canvas-tint-2), transparent 55%);
+  background-attachment: fixed;
 }
 
 /* ---------------------------------------------------------------- canvas --- */
@@ -101,27 +242,29 @@
   background-attachment: fixed;
 }
 
-/* The sidebar must stay a clean white column, not inherit the tint. */
-.dsh[data-theme='light'] .nobo-sidebar {
+/* The sidebar must stay a clean column of its own surface, not inherit the tint. */
+.dsh[data-theme] .nobo-sidebar {
   background-image: none !important;
   background-color: var(--nobo-card) !important;
 }
 
 /* ------------------------------------------------------------- typography --- */
 
-.dsh[data-theme='light'] .dsh-t-prose,
-.dsh[data-theme='light'] .agent-markdown {
+.dsh[data-theme] .dsh-t-prose,
+.dsh[data-theme] .agent-markdown {
   line-height: 1.62;
 }
 
-.dsh[data-theme='light'] .dsh-strong {
+.dsh[data-theme] .dsh-strong {
   font-weight: 600;
 }
 
 /* --------------------------------------------------------------- controls --- */
 
-/* The send button and any other primary control get the brand gradient. */
-.dsh[data-theme='light'] .dsh-btn-primary {
+/* The send button and any other primary control get the brand gradient. It is a fill, so
+   the same gradient works in both themes — the glow around it does not, which is why the
+   shadow is a token. */
+.dsh[data-theme] .dsh-btn-primary {
   background-image: linear-gradient(135deg, #8b5cf6 0%, #a855f7 45%, #ec4899 100%);
   background-color: transparent;
   box-shadow: 0 6px 16px rgba(139, 92, 246, 0.34);
@@ -129,17 +272,17 @@
   transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
 }
 
-.dsh[data-theme='light'] .dsh-btn-primary:hover:not(:disabled) {
+.dsh[data-theme] .dsh-btn-primary:hover:not(:disabled) {
   background-image: linear-gradient(135deg, #7c3aed 0%, #9333ea 45%, #db2777 100%);
   box-shadow: 0 8px 22px rgba(139, 92, 246, 0.42);
   transform: translateY(-1px);
 }
 
-.dsh[data-theme='light'] .dsh-btn-primary:active:not(:disabled) {
+.dsh[data-theme] .dsh-btn-primary:active:not(:disabled) {
   transform: translateY(0) scale(0.96);
 }
 
-.dsh[data-theme='light'] .dsh-btn {
+.dsh[data-theme] .dsh-btn {
   background: var(--nobo-card);
   border-color: var(--dsw-alias-border-l2);
 }
@@ -152,9 +295,9 @@
  * rarely set — the feel: tap feedback, a focus ring, a minimum target size, and the
  * transition — so every control behaves like a button even when it was hand-styled.
  */
-.dsh[data-theme='light'] button,
-.dsh[data-theme='light'] [role='button'],
-.dsh[data-theme='light'] a.dsh-btn {
+.dsh[data-theme] button,
+.dsh[data-theme] [role='button'],
+.dsh[data-theme] a.dsh-btn {
   transition: transform 120ms ease, box-shadow 140ms ease, background-color 140ms ease,
     border-color 140ms ease, color 140ms ease;
   -webkit-tap-highlight-color: transparent;
@@ -162,34 +305,34 @@
   cursor: pointer;
 }
 
-.dsh[data-theme='light'] button:disabled,
-.dsh[data-theme='light'] [role='button'][aria-disabled='true'] {
+.dsh[data-theme] button:disabled,
+.dsh[data-theme] [role='button'][aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
 /* A visible ring for keyboard users, never for a mouse click. */
-.dsh[data-theme='light'] button:focus-visible,
-.dsh[data-theme='light'] [role='button']:focus-visible,
-.dsh[data-theme='light'] a:focus-visible {
+.dsh[data-theme] button:focus-visible,
+.dsh[data-theme] [role='button']:focus-visible,
+.dsh[data-theme] a:focus-visible {
   outline: 2px solid var(--nobo-violet-500, #8b5cf6);
   outline-offset: 2px;
   border-radius: 10px;
 }
 
 /* Pressed state on everything, so a tap always answers back. */
-.dsh[data-theme='light'] button:active:not(:disabled),
-.dsh[data-theme='light'] [role='button']:active:not([aria-disabled='true']) {
+.dsh[data-theme] button:active:not(:disabled),
+.dsh[data-theme] [role='button']:active:not([aria-disabled='true']) {
   transform: scale(0.975);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dsh[data-theme='light'] button,
-  .dsh[data-theme='light'] [role='button'] {
+  .dsh[data-theme] button,
+  .dsh[data-theme] [role='button'] {
     transition: none;
   }
-  .dsh[data-theme='light'] button:active:not(:disabled),
-  .dsh[data-theme='light'] [role='button']:active {
+  .dsh[data-theme] button:active:not(:disabled),
+  .dsh[data-theme] [role='button']:active {
     transform: none;
   }
 }
@@ -200,46 +343,46 @@
  */
 @media (max-width: 640px) {
   /* Every control becomes thumb-sized. 44px is the iOS/Android guideline. */
-  .dsh[data-theme='light'] button,
-  .dsh[data-theme='light'] [role='button'] {
+  .dsh[data-theme] button,
+  .dsh[data-theme] [role='button'] {
     min-height: 44px;
   }
 
   /* …except the icon-only controls inside a row, which would otherwise push the row
      apart. They get the target through padding instead of height. */
-  .dsh[data-theme='light'] [data-compact-control] button,
-  .dsh[data-theme='light'] button[data-compact] {
+  .dsh[data-theme] [data-compact-control] button,
+  .dsh[data-theme] button[data-compact] {
     min-height: 0;
     padding: 10px;
   }
 
   /* Captions and "always on" style chips are the clutter: keep the words that matter. */
-  .dsh[data-theme='light'] .dsh-t-xxxs {
+  .dsh[data-theme] .dsh-t-xxxs {
     font-size: 11px;
     letter-spacing: 0.02em;
   }
 
   /* Tighter prose and gutters buy back vertical space for the conversation. */
-  .dsh[data-theme='light'] .dsh-t-prose {
+  .dsh[data-theme] .dsh-t-prose {
     padding-left: 10px;
     padding-right: 10px;
   }
 
   /* The composer sticks to the bottom and fills the width, so send is always reachable. */
-  .dsh[data-theme='light'] .dsh-composer {
+  .dsh[data-theme] .dsh-composer {
     position: sticky;
     bottom: 0;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
-  .dsh[data-theme='light'] .dsh-composer .dsh-btn-primary {
+  .dsh[data-theme] .dsh-composer .dsh-btn-primary {
     min-height: 44px;
     padding-left: 18px;
     padding-right: 18px;
   }
 }
 
-.dsh[data-theme='light'] .dsh-chip {
+.dsh[data-theme] .dsh-chip {
   background: var(--nobo-violet-50);
   border: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-secondary);
@@ -249,42 +392,42 @@
 
 /* User message bubble: a soft violet tint, dark text, one squared corner so the
    side it came from is obvious without a tail. */
-.dsh[data-theme='light'] .nobo-bubble-user {
+.dsh[data-theme] .nobo-bubble-user {
   background: var(--nobo-bubble-user) !important;
-  border: 1px solid rgba(124, 58, 237, 0.12) !important;
+  border: 1px solid var(--nobo-bubble-user-border) !important;
   border-radius: 20px 20px 6px 20px !important;
   color: var(--dsw-alias-label-primary) !important;
-  box-shadow: 0 2px 10px rgba(76, 29, 149, 0.05);
+  box-shadow: var(--nobo-bubble-shadow);
 }
 
-/* Assistant reply sits on a white card with the matching squared corner. */
-.dsh[data-theme='light'] .nobo-bubble-agent {
+/* Assistant reply sits on a raised card with the matching squared corner. */
+.dsh[data-theme] .nobo-bubble-agent {
   background: var(--nobo-card) !important;
   border: 1px solid var(--dsw-alias-border-l1) !important;
   border-radius: 20px 20px 20px 6px !important;
   padding: 14px 16px;
-  box-shadow: 0 4px 16px rgba(76, 29, 149, 0.06);
+  box-shadow: var(--nobo-card-shadow);
 }
 
 /* ------------------------------------------------------------- composer ----- */
 
-/* The dock: a floating white pill with a violet focus ring. */
-.dsh[data-theme='light'] .nobo-dock {
+/* The dock: a floating pill with a violet focus ring. */
+.dsh[data-theme] .nobo-dock {
   background: var(--nobo-card) !important;
   border: 1px solid var(--dsw-alias-border-l2) !important;
   border-radius: 26px !important;
-  box-shadow: 0 10px 30px rgba(76, 29, 149, 0.09), 0 2px 6px rgba(76, 29, 149, 0.05) !important;
+  box-shadow: var(--nobo-dock-shadow) !important;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.dsh[data-theme='light'] .nobo-dock:focus-within {
-  border-color: rgba(124, 58, 237, 0.45) !important;
-  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.16), 0 0 0 4px rgba(124, 58, 237, 0.08) !important;
+.dsh[data-theme] .nobo-dock:focus-within {
+  border-color: var(--nobo-dock-border-focus) !important;
+  box-shadow: var(--nobo-dock-shadow-focus) !important;
 }
 
 /* The divider above the dock's control row is unnecessary inside a pill. */
-.dsh[data-theme='light'] .nobo-dock .dsh-border-t {
-  border-top-color: rgba(109, 40, 217, 0.07);
+.dsh[data-theme] .nobo-dock .dsh-border-t {
+  border-top-color: var(--nobo-divider);
 }
 
 /* ------------------------------------------------------------- welcome ------ */
@@ -310,8 +453,8 @@
 
 .nobo-suggestion:hover {
   transform: translateY(-2px);
-  border-color: rgba(124, 58, 237, 0.35) !important;
-  box-shadow: 0 12px 26px rgba(76, 29, 149, 0.12) !important;
+  border-color: var(--nobo-hover-border) !important;
+  box-shadow: var(--nobo-lift-shadow) !important;
 }
 
 .nobo-suggestion:active {
@@ -329,8 +472,8 @@
     transform: none;
     transition: none;
   }
-  .dsh[data-theme='light'] .dsh-btn-primary,
-  .dsh[data-theme='light'] .dsh-btn-primary:hover:not(:disabled) {
+  .dsh[data-theme] .dsh-btn-primary,
+  .dsh[data-theme] .dsh-btn-primary:hover:not(:disabled) {
     transform: none;
   }
 }
@@ -342,10 +485,10 @@
  * ========================================================================== */
 
 .nobo-question {
-  background: #ffffff;
-  border: 1px solid rgba(109, 40, 217, 0.16);
+  background: var(--nobo-card);
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 22px;
-  box-shadow: 0 18px 44px rgba(76, 29, 149, 0.16), 0 2px 8px rgba(76, 29, 149, 0.06);
+  box-shadow: var(--nobo-question-shadow);
   animation: nobo-question-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -367,7 +510,7 @@
   width: 100%;
   min-height: 52px;
   padding: 10px 12px;
-  background: #ffffff;
+  background: var(--nobo-card);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
@@ -375,7 +518,7 @@
 }
 
 .nobo-option:hover:not(:disabled) {
-  border-color: rgba(124, 58, 237, 0.4);
+  border-color: var(--nobo-hover-border);
   background: var(--nobo-violet-50);
 }
 
@@ -473,8 +616,8 @@
 }
 
 .nobo-question-input:focus-within {
-  border-color: rgba(124, 58, 237, 0.5);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  border-color: var(--nobo-ring);
+  box-shadow: var(--nobo-ring-soft);
 }
 
 .nobo-question-field {
@@ -612,20 +755,20 @@
 
 /* The log-backed transcript is the path the app actually renders after a reload,
    so it needs the same card treatment as a live message. */
-.dsh[data-theme='light'] .nobo-agent-row {
+.dsh[data-theme] .nobo-agent-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
 }
 
-.dsh[data-theme='light'] .nobo-agent-card {
+.dsh[data-theme] .nobo-agent-card {
   min-width: 0;
   flex: 1;
   background: var(--nobo-card);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 20px 20px 20px 6px;
   padding: 12px 16px;
-  box-shadow: 0 4px 16px rgba(76, 29, 149, 0.06);
+  box-shadow: var(--nobo-card-shadow);
 }
 
 @media (prefers-reduced-motion: reduce) {

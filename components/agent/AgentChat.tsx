@@ -1596,7 +1596,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               <Search size={13} className="cursor-pointer" />
               <button
                 onClick={() => setShowNewWorkspaceModal(true)}
-                className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center dsh-interactive"
+                className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 flex items-center justify-center dsh-interactive"
                 title="New workspace folder"
               >
                 <FolderPlus size={13} />
@@ -1688,14 +1688,14 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                           e.stopPropagation();
                           handleNewSession(ws.id);
                         }}
-                        className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded dsh-label-caption dsh-interactive"
+                        className="min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 flex items-center justify-center rounded dsh-label-caption dsh-interactive"
                         title="New chat in this workspace"
                       >
                         <Plus size={13} />
                       </button>
                       <button
                         onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                        className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
+                        className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 hover:scale-110 ${pendingDelete === ws.id ? 'dsh-strong scale-110 ring-1 ring-current' : ''}`}
                         title={pendingDelete === ws.id ? 'Click again to delete' : 'Delete workspace folder'}
                       >
                         {pendingDelete === ws.id ? <Check size={13} /> : <Trash2 size={13} />}
@@ -1733,7 +1733,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                               <span>{formatTimeAgo(sess.createdAt)}</span>
                               <button
                                 onClick={(e) => handleDeleteSession(sess.id, e)}
-                                className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-7 sm:h-7 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
+                                className={`min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 flex items-center justify-center rounded-md dsh-label-caption dsh-interactive-danger transition-all duration-100 ease-out active:scale-90 active:brightness-125 ${pendingDelete === sess.id ? 'dsh-strong scale-110 ring-1 ring-current' : 'hover:scale-110'}`}
                                 title={pendingDelete === sess.id ? 'Click again to delete' : 'Delete chat session'}
                               >
                                 {pendingDelete === sess.id ? (
@@ -2153,7 +2153,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
 
             {/* Rounded Dock Container */}
             <div
-              className="nobo-dock dsh-composer p-3 transition"
+              className="nobo-dock dsh-composer p-3.5 transition"
               style={{
                 background: 'var(--dsw-alias-bg-layer-1)',
                 border: '1px solid var(--dsw-alias-border-l2)',
@@ -2186,8 +2186,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                 style={{ color: 'var(--dsw-alias-label-primary)' }}
               />
 
-              <div className="flex items-center justify-between pt-2 mt-1 dsh-border-t">
-                <div className="flex items-center gap-1 sm:gap-2 text-xs">
+              <div className="flex items-center justify-between gap-2 pt-2.5 mt-1.5 dsh-border-t">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-xs">
                   {/* File attach + */}
                   <input
                     type="file"
@@ -2199,11 +2199,24 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-9 sm:h-9 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
+                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-10 sm:h-10 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
                     title="Attach file"
                     aria-label="Attach a file"
                   >
-                    <Plus size={18} />
+                    <Plus size={19} />
+                  </button>
+
+                  {/* The asset library, one tap from the composer. Until now the only way
+                      in was the sidebar's Files item, which meant "attach the video I
+                      already made" started by leaving the conversation. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowFileManager(true)}
+                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-10 sm:h-10 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
+                    title="Pick from your asset library"
+                    aria-label="Pick from your asset library"
+                  >
+                    <FolderOpen size={18} />
                   </button>
 
                   {/* Dictation: speak, and the words land in the box to edit and send.
@@ -2218,7 +2231,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   <button
                     type="button"
                     onClick={() => setCreateOpen(true)}
-                    className="flex items-center gap-1.5 min-h-[44px] sm:min-h-9 px-3 dsh-t-xs dsh-strong transition"
+                    className="flex items-center gap-2 min-h-[44px] sm:min-h-9 px-3.5 dsh-t-xs dsh-strong transition"
                     style={{
                       background: 'var(--dsw-alias-bg-layer-2)',
                       color: 'var(--dsw-alias-label-secondary)',
@@ -2227,7 +2240,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     }}
                     title="Start a creative job — pick dimensions and a reference, then talk it through"
                   >
-                    <Sparkles size={13} />
+                    <Sparkles size={14} />
                     Create
                   </button>
 
@@ -2237,7 +2250,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                       clickable. Hidden on phones: at 390px wide it wrapped onto
                       two lines and pushed the send button off the row. */}
                   <span
-                    className="hidden sm:flex items-center gap-1 px-2.5 py-1 dsh-t-xs dsh-mono"
+                    className="hidden sm:flex items-center gap-1 px-3 py-1.5 dsh-t-xs dsh-mono"
                     style={{
                       background: 'var(--dsw-alias-bg-layer-2)',
                       color: 'var(--dsw-alias-label-tertiary)',
@@ -2249,7 +2262,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2">
                   {/* Model badge — the agent always runs on the multimodal
                       flash model, so images attached to a message are seen
                       directly. Static label, not a control. Hidden on phones so
@@ -2272,10 +2285,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     type="button"
                     onClick={handleStartRun}
                     disabled={(!input.trim() && !attachedFile) || isUploading || isLoading}
-                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
+                    className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-9 sm:h-9 rounded-full dsh-btn flex items-center justify-center disabled:opacity-40"
                     title="Run in the background (survives closing this tab)"
                   >
-                    <Rocket size={12} />
+                    <Rocket size={14} />
                   </button>
 
                   {/* Send / Stop Button. While a turn runs, typing shows Send
@@ -2290,20 +2303,20 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                         stopRunStream();
                         stop();
                       }}
-                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-9 sm:h-9 rounded-full dsh-btn-primary flex items-center justify-center"
                       title="Stop"
                     >
-                      <Square size={12} className="fill-current" />
+                      <Square size={13} className="fill-current" />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleSend()}
                       disabled={(!input.trim() && !attachedFile) || isUploading}
-                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-8 sm:h-8 rounded-full dsh-btn-primary flex items-center justify-center"
+                      className="nobo-tap min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-9 sm:h-9 rounded-full dsh-btn-primary flex items-center justify-center"
                       title={isLoading ? 'Queue message (sends when the current turn finishes)' : 'Send'}
                     >
-                      <Send size={12} />
+                      <Send size={14} />
                     </button>
                   )}
                 </div>
@@ -2379,8 +2392,19 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         onClose={() => setShowFileManager(false)}
         userId={impersonateId}
         onSelectAsset={(url, name) => {
+          // Picked from the library: it becomes a real attachment, so the composer shows
+          // what is going to be sent and the agent receives the URL in the same shape as a
+          // freshly uploaded file. The textual reference stays as well — that line is what
+          // tells the agent to USE the asset, not merely look at it.
+          const isVideo = /\.(mp4|mov|webm|mkv|avi)(\?|$)/i.test(name) || /\.(mp4|mov|webm|mkv|avi)(\?|$)/i.test(url);
+          const isImage = /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(name) || /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(url);
+          setAttachedFile({
+            name,
+            url,
+            type: isVideo ? 'video' : isImage ? 'image' : 'file',
+          });
           setInput((prev) => (prev ? `${prev} [Use Asset: ${name} (${url})]` : `Please use asset: ${name} (${url})`));
-          toast.success(`Selected ${name}`);
+          toast.success(`Attached ${name} from your library`);
         }}
       />
 
