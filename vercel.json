@@ -104,6 +104,14 @@
     {
       "path": "/api/cron/ops-watchdog",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/agent-evals?tier=context",
+      "schedule": "30 20 * * *"
+    },
+    {
+      "path": "/api/cron/agent-evals?tier=behaviour&judge=1",
+      "schedule": "0 21 * * 0"
     }
   ]
 }

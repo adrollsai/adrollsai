@@ -125,6 +125,16 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     '/api/**/*': ['./node_modules/ffmpeg-static/**/*', './public/**/*'],
+    // The agent-evals cron reads its case corpus off disk AT RUNTIME
+    // (lib/evals/cases.ts -> fs.readdirSync(path.join(root, 'evals', 'cases'))),
+    // and Next's file tracer cannot follow a path assembled at runtime. Without
+    // this the route deploys cleanly and then throws "no eval cases at …" on its
+    // very first scheduled run — a failure that only appears in production, weeks
+    // after the code looked green.
+    //
+    // Scoped to the one route on purpose: a broader pattern would add the corpus to
+    // every API function's bundle for no benefit.
+    '/api/cron/agent-evals': ['./evals/**/*'],
   },
   images: {
     unoptimized: true,

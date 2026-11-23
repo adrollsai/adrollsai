@@ -1,0 +1,84 @@
+name: agent evals
+
+# WHAT THIS BLOCKS, AND WHAT IT DELIBERATELY DOES NOT
+#
+# This workflow runs only checks that are OFFLINE and DETERMINISTIC:
+#
+#   verify:evals  — the scoring rules themselves. Free, no model, no database.
+#   typecheck     — the whole project.
+#   lint          — scoped to the eval system.
+#
+# It does NOT run the agent eval suites. Those need a live database and, on the
+# behaviour tier, real model turns — so they live in the Vercel cron
+# (app/api/cron/agent-evals, scheduled in vercel.json) where the environment
+# already exists. Putting them here would mean copying the service-role key into a
+# second secret store, paying for model calls on every push, and letting a
+# provider wobble turn a green commit red.
+#
+# The split is deliberate: CI guards the INSTRUMENT, production guards the AGENT.
+#
+# Ordering matters. verify:evals runs first because if the scoring maths is wrong
+# then every eval number is wrong — and wrong in a flattering direction.
+#
+# Cost of a PR: zero rupees.
+
+on:
+  # Every branch, not just main. A CI gate that only runs on the default branch
+  # would not have fired on this work at all — work happens on feature branches,
+  # and a check that never runs is the same as no check.
+  # `cancel-in-progress` below keeps a fast-pushing branch from queueing runs.
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scoring-and-types:
+    name: scoring self-test + typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # A lockfile-driven install keeps CI honest about what production will get.
+      - name: install
+        run: npm ci --no-audit --no-fund
+
+      # 1. THE INSTRUMENT. If this fails, no eval number anywhere can be trusted,
+      #    including the ones in the nightly cron. It needs no secrets.
+      - name: verify the eval scoring rules
+        run: npm run verify:evals
+
+      # 2. The project still compiles. This is the gate that would have caught the
+      #    unescaped-backtick syntax error that briefly made the agent un-buildable.
+      - name: typecheck
+        run: npm run typecheck
+
+      # 3. Keep the eval system itself tidy (scoped: pre-existing lint debt in the
+      #    wider repo must not block a commit that only touches evals).
+      - name: lint the eval system
+        run: npx eslint lib/evals scripts/run-evals.ts scripts/eval-report.ts scripts/verify-evals.ts scripts/evals-from-feedback.ts app/api/cron/agent-evals --max-warnings=0
+
+      # The corpus is only worth anything if it keeps growing. Surface its shape so
+      # the trend is visible in the workflow log.
+      - name: report eval corpus shape
+        if: always()
+        run: |
+          {
+            echo '### Eval corpus'
+            echo ''
+            echo '```'
+            npm run eval:list --silent || echo 'corpus unavailable in CI (no database) — expected, the suites run in the Vercel cron'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

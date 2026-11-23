@@ -124,3 +124,8 @@ __pycache__/
 
 # Chrome screenshot from npm run accept:stream-ui
 .work/accept-stream-ui.png
+
+# Eval run artifacts: full agent transcripts, which can contain customer data.
+# The queryable history lives in Supabase (agent_eval_runs / agent_eval_results).
+evals/reports/
+

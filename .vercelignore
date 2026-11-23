@@ -18,3 +18,8 @@ mobile/
 .demo/
 .nobogent/
 .tmp-*
+
+# Eval run artefacts (markdown + per-run JSON, written by scripts/run-evals.ts).
+# Nothing at runtime reads them — the cron reads evals/cases and evals/suite.json,
+# and history lives in Supabase. Uploading them would bloat every deploy.
+evals/reports/
