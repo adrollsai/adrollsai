@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
 import {
@@ -612,8 +612,18 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   }, [isLoading]);
 
   // Theme. Light is the default; the choice persists per browser.
+  //
+  // `useLayoutEffect`, not `useEffect`, and that matters for dark mode: the saved theme
+  // lives in localStorage, so it can only be applied after the client renders. With a plain
+  // effect that happens after the browser has already painted, and someone who chose dark
+  // sees the whole light UI for a frame before it flips. A layout effect runs after the DOM
+  // is committed but BEFORE paint, so the first frame they ever see is already theirs.
+  //
+  // It is isomorphic because this component still renders on the server, where layout
+  // effects do not run and React would warn about one.
+  const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     let initial: 'light' | 'dark' = 'light';
     try {
       const saved = localStorage.getItem('nobo_agent_theme');
@@ -1894,7 +1904,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             <button
               onClick={() => setShowLogsDrawer(!showLogsDrawer)}
               aria-label="Open the session log"
-              className="flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-9 px-2 sm:px-2.5 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
+              className="flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-9 px-3 rounded-[8px] dsh-t-xs dsh-mono dsh-btn"
             >
               <span className="hidden sm:inline">Session log</span>
               <Download size={13} />
