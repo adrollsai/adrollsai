@@ -100,6 +100,10 @@
     {
       "path": "/api/cron/meta-ad-issues",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/ops-watchdog",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
