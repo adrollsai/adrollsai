@@ -339,6 +339,65 @@ only the reference document the task needs with get_skill_reference.
 Where a vendored document disagrees with anything above, THIS rule wins: it is the one enforced in
 code.`,
   },
+  {
+    name: 'nobogent-product-media',
+    description:
+      "How to use a product's OWN photos, clips and documents instead of inventing them: what to list first, which plate source takes a clip, how to animate a still, and how to actually read a PDF or brochure. Load it before making any creative, film or page for a specific offering.",
+    content: `# Using a product's own material
+
+A catalogue item can carry photos, video clips and documents. Using them is what makes the
+output look like the business instead of like stock. Never reach for generated footage before
+you have looked at what is already attached.
+
+## 1. Look first, always
+
+Call \`product_media\` with the offering id before you compose anything. It returns counts plus
+the first few files of each kind (images, videos, documents). If the owner's request does not
+name an offering, ask which one — do not guess between two courses or two properties.
+
+## 2. Which route can use what
+
+There are two ways to make a video, and they are not interchangeable:
+
+- \`composeVideo\` — one generated clip. It accepts \`photoUrls\` only, and uses them as reference
+  frames. It has NO field for an existing video clip. Good for fast, cheap, single-shot.
+- The film route (\`video_intake\` → \`plan_video\` → render) — a real timeline. Its plates come from
+  three sources:
+    - \`source: "asset"\` with \`key\` = the R2 key / URL of an existing **mp4**, plus \`mediaStart\`
+      to choose where the clip starts. THIS is how a product's own footage is used.
+    - \`source: "generate"\` with \`prompt\` + \`seconds\`, and \`imageKey\` pointing at one of the
+      product's photos to **animate that still** (image-to-video). 1-7 stills are allowed per shot.
+    - \`source: "dialogue"\` when someone must speak on camera; the line goes into the prompt so the
+      voice and lip movement are one generation.
+
+So: if the product has footage, say so and use \`asset\` plates. If it has photos only, animate the
+photos with \`imageKey\` rather than generating an unrelated scene. Mix in generated motion only
+where the real material cannot carry the beat.
+
+## 3. Reading a document (PDF, DOCX, XLSX)
+
+There is no dedicated document tool, and that is not a reason to refuse. The sandbox is a root
+Linux VM with internet — install a reader in one command and use it:
+
+\`\`\`bash
+# PDF text, no install needed on most images:
+apt-get update && apt-get install -y poppler-utils && curl -sL "<url>" -o doc.pdf && pdftotext -layout doc.pdf -
+# or, when pdftotext is unavailable:
+pip install --quiet pdfplumber && python3 -c "import pdfplumber,sys; print('\\\\n'.join((p.extract_text() or '') for p in pdfplumber.open('doc.pdf').pages))"
+\`\`\`
+
+For spreadsheets use \`parse_csv_or_excel\` instead. For a photo of a page, \`analyze_image_with_gemini\`
+will read the text in it.
+
+## 4. What you may and may not do with what you read
+
+- Quote the document. A fee, a duration, a certification, a batch date is usable ONLY if the
+  document says it. Put it in the creative's \`facts\` so the tooling knows it is verified.
+- If the document is silent on something the ad needs, either ask the owner once or leave it out.
+  Never fill the gap with a plausible number — see \`nobogent-never-invent\`.
+- A document is the business's internal material. Do not publish it or link it publicly unless the
+  owner asked for exactly that.`,
+  },
 ];
 
 /** House skills by name, for `get_skill`. */

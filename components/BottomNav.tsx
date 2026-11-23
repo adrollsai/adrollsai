@@ -112,7 +112,7 @@ export default function BottomNav() {
 
   const allNavItems = [
     { name: 'Analytics', icon: BarChart2, path: '/dashboard/analytics' },
-    { name: 'Nobogent', icon: Bot, path: '/dashboard/agent' },
+    { name: 'Nobo AI', icon: Bot, path: '/dashboard/agent' },
     // The CEO tab had no navigation entry at all: it could only be reached from a push
     // notification or a link inside the agent. It is the business-level view of the same
     // work, so it sits next to the agent rather than buried.
@@ -173,7 +173,7 @@ export default function BottomNav() {
       // needs to see the day's plan.
       return [
         'Analytics',
-        'Nobogent',
+        'Nobo AI',
         'CEO',
         'Catalog',
         'Inventory',
@@ -234,7 +234,7 @@ export default function BottomNav() {
                   />
                   {/* The agent is the newest and least-settled surface in the product, and the owner should
                       be able to see that at a glance rather than discover it from a surprise. */}
-                  {item.name === 'Nobogent' && (
+                  {item.name === 'Nobo AI' && (
                     <span
                       title="Alpha — the agent is new and still changing"
                       className="absolute -top-1 -right-1 px-1 py-[1px] rounded-full bg-amber-400 text-slate-950 text-[7px] xs:text-[8px] font-black uppercase leading-none tracking-wider shadow-sm"

@@ -119,8 +119,10 @@ console.log('\n▸ 4. the agent tab is labelled alpha');
 const nav = fs.readFileSync('components/BottomNav.tsx', 'utf8');
 check('the navbar renders an Alpha badge', /Alpha/.test(nav) && /uppercase/.test(nav));
 check(
-  'and it is attached to the Nobogent/agent tab only',
-  /item\.name === 'Nobogent'/.test(nav),
+  "and it is attached to the Nobo AI (agent) tab only",
+  // The tab was renamed from "Nobogent" to "Nobo AI" at the owner's request; the badge must
+  // follow whatever the agent tab is called, so this asserts the current name.
+  /item\.name === 'Nobo AI'/.test(nav),
   'not on every tab',
 );
 check('with a title explaining it', /title="Alpha/.test(nav));

@@ -42,8 +42,12 @@ export const GROUP_RULES: Record<Exclude<ToolGroup, 'core'>, GroupRule> = {
     // Any real video work should be verifiable before it is delivered, so the
     // Gemini vision tools ride along with the sandbox.
     with: ['recipes', 'vision'],
+    // Documents belong here because the sandbox is the only thing that can READ one. A product
+    // brochure, a fee sheet or a course PDF used to match nothing in this list, so the agent was
+    // never handed `sandbox_bash_run` and truthfully answered that it could not open the file —
+    // even though the sandbox is a root Linux VM where `pdftotext` takes ten seconds to install.
     signals:
-      /\b(render|hyperframes|ffmpeg|video|mp4|reel|composition|gsap|animate|animation|matte|composite|montage|subtitles?|captions?|encode|sandbox|python|script|convert|resize|crop|clip|concat|frame|code|html|css|json|csv|zip|file|folder|terminal|bash|install)\b/i,
+      /\b(render|hyperframes|ffmpeg|video|mp4|reel|composition|gsap|animate|animation|matte|composite|montage|subtitles?|captions?|encode|sandbox|python|script|convert|resize|crop|clip|concat|frame|code|html|css|json|csv|zip|file|folder|terminal|bash|install|pdfs?|docx?|documents?|brochures?|pptx?|xlsx?|spreadsheet|ocr|extract|parse)\b/i,
   },
   media: {
     // `research` rides along because the house video doctrine is REFERENCE-FIRST: the agent is told

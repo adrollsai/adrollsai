@@ -1521,7 +1521,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="dsh-t-s dsh-strong dsh-label-primary tracking-tight">
-                  Nobogent
+                  Nobo AI
                 </span>
                 <span
                   className="dsh-t-xxxs dsh-mono px-1.5 py-[1px] uppercase"
@@ -2299,7 +2299,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — sends when this turn finishes
                 </span>
               ) : (
-                <span className="hidden sm:inline">Nobogent Autonomous Operator • Standard mode • Full Access</span>
+                <span className="hidden sm:inline">Nobo AI Autonomous Operator • Standard mode • Full Access</span>
               )}
             </div>
           </div>
