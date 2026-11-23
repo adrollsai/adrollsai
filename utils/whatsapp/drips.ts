@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { catalogueButtonFor } from '@/lib/automation/ceo'
 
 export function isNobogentAccount(ownerId: string, profile?: any): boolean {
     if (
@@ -253,7 +254,7 @@ export async function sendInstantFormCatalogMessage(
         // Fetch owner's WhatsApp credentials & Business profile
         const { data: profile } = await supabaseAdmin
             .from('profiles')
-            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain')
+            .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, custom_domain, industry')
             .eq('id', ownerId)
             .maybeSingle();
 
@@ -284,6 +285,23 @@ export async function sendInstantFormCatalogMessage(
         const companyName = profile?.business_name || 'our company';
         const catalogUrlParam = ownerId;
         const metaUrl = `https://graph.facebook.com/v20.0/${phoneId}/messages`;
+
+        // What the FIRST button should say, and where it should go.
+        //
+        // This used to be implied by hardcoded copy: every non-DigiPro business was told its
+        // lead had asked "about our properties and projects" with a View Properties button, so
+        // Procolor Film Academy's students were shown a property catalogue. The decision now
+        // comes from the tenant's own industry and website (lib/automation/ceo.ts).
+        const firstButton = catalogueButtonFor({
+            industry: (profile as any)?.industry,
+            website: (profile as any)?.custom_domain,
+        });
+        // Industry-neutral wording for the lead-facing copy this file writes into the chat log.
+        const interestNoun = firstButton.url
+            ? 'your enquiry'
+            : /propert/i.test(firstButton.label)
+                ? 'our properties and projects'
+                : 'your enquiry';
 
         let messageSent = false;
         let sentMessageText = '';
@@ -332,7 +350,7 @@ export async function sendInstantFormCatalogMessage(
                 messageSent = true;
                 sentMessageText = isDigiPro 
                     ? `Hi ${leadFirstName}! 👋 Welcome to DigiPro Business Services. Thank you for connecting with us regarding company formation & business setup in Dubai. [Buttons: Visit Website | Connect with Expert | Book Appointment]`
-                    : `Hi ${leadFirstName}! 👋 Welcome to ${companyName}. Thank you for connecting with us regarding our properties and projects. [Buttons: View Properties | Connect with Expert | Book an appointment]`;
+                    : `Hi ${leadFirstName}! 👋 Welcome to ${companyName}. Thank you for connecting with us regarding ${interestNoun}. [Buttons: ${firstButton.label} | Connect with Expert | Book an appointment]`;
                 console.log(`[INSTANT CATALOG WA] Sent 3-button '${templateName}' to ${cleanPhone}: ${optData.messages[0].id}`);
             } else {
                 console.log(`[INSTANT CATALOG WA] ${templateName} not yet approved/ready on this WABA, falling back to clean welcome:`, optData?.error?.message || optData);
@@ -357,7 +375,7 @@ export async function sendInstantFormCatalogMessage(
                                 parameters: [
                                     { type: 'text', text: leadName || 'Valued Client' },
                                     { type: 'text', text: companyName },
-                                    { type: 'text', text: campaignName || 'our premium properties' }
+                                    { type: 'text', text: campaignName || interestNoun }
                                 ]
                             }
                         ]
@@ -375,7 +393,7 @@ export async function sendInstantFormCatalogMessage(
                 const autoData = await autoRes.json();
                 if (autoRes.ok && autoData.messages?.[0]?.id) {
                     messageSent = true;
-                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || 'our premium properties'} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
+                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for reaching out to ${companyName}. We have received your inquiry regarding ${campaignName || interestNoun} and our team will get back to you shortly. In the meantime, if you have any questions, feel free to reply directly to this message!`;
                     console.log(`[INSTANT CATALOG WA] Sent 'auto_lead_welcome' to ${cleanPhone}: ${autoData.messages[0].id}`);
                 } else {
                     console.warn('[INSTANT CATALOG WA] auto_lead_welcome failed, trying instant_lead_catalog_welcome fallback:', autoData);
@@ -426,7 +444,9 @@ export async function sendInstantFormCatalogMessage(
                 const metaData = await metaRes.json();
                 if (metaRes.ok && metaData.messages?.[0]?.id) {
                     messageSent = true;
-                    sentMessageText = `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to view our complete inventory catalog and current listings:`;
+                    sentMessageText = firstButton.url
+                        ? `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to visit our website:`
+                        : `Hi ${leadName || 'Valued Client'}, thank you for showing interest in ${companyName}! We have received your inquiry. Click the button below to see everything we offer:`;
                     console.log(`[INSTANT CATALOG WA] Sent 'instant_lead_catalog_welcome' to ${cleanPhone}: ${metaData.messages[0].id}`);
                 } else {
                     console.error('[INSTANT CATALOG WA] instant_lead_catalog_welcome also failed:', metaData);

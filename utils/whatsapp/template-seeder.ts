@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { catalogueButtonFor } from '@/lib/automation/ceo'
 
 const samplePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 const sampleBuffer = Buffer.from(samplePngBase64, 'base64');
@@ -71,6 +72,27 @@ export async function registerDefaultTemplates(
 
         const existingNames = new Set((getParsed.data || []).map((t: any) => t.name.toLowerCase()));
         console.log('[TEMPLATE SEEDER] Existing templates on Meta:', Array.from(existingNames));
+
+        // Whose WABA is this? The templates below used to be seeded identically for every
+        // business, so a film academy got a template whose button said "View Properties" and
+        // whose body talked about "curated inventory". Template definitions live per-WABA, so
+        // the right fix is to seed the ones that fit this business.
+        const { data: tenant } = await supabaseAdmin
+            .from('profiles')
+            .select('business_name, industry, custom_domain')
+            .eq('id', userId)
+            .maybeSingle();
+        const firstButton = catalogueButtonFor({
+            industry: (tenant as any)?.industry,
+            website: (tenant as any)?.custom_domain,
+        });
+        const isPropertyBusiness = /propert|real.?estate|realt|infra|homes|realty|land|plot/i.test(
+            String((tenant as any)?.industry || '') + ' ' + String((tenant as any)?.business_name || '')
+        );
+        console.log(
+            `[TEMPLATE SEEDER] ${(tenant as any)?.business_name || userId} · industry=${(tenant as any)?.industry || 'unset'} · ` +
+                `property business=${isPropertyBusiness} · first button="${firstButton.label}" because ${firstButton.reason}`
+        );
 
         const results: any[] = [];
         const postMetaUrl = `https://graph.facebook.com/v20.0/${whatsappWabaId}/message_templates`;
@@ -270,8 +292,18 @@ export async function registerDefaultTemplates(
             results.push({ name: 'instant_lead_catalog_welcome', success: true, cached: true });
         }
 
-        // E. real_estate_tailored_inventory
-        if (!existingNames.has('real_estate_tailored_inventory')) {
+        // E. real_estate_tailored_inventory — a PROPERTY template.
+        //
+        // Skipped for any business that is not in property, because its body promises a
+        // "curated inventory list" and its second button says "View Properties". Seeding it for
+        // a film academy or a clinic put property words in front of their leads.
+        if (!isPropertyBusiness) {
+            results.push({
+                name: 'real_estate_tailored_inventory',
+                success: true,
+                skipped: `not a property business (industry=${(tenant as any)?.industry || 'unset'})`,
+            });
+        } else if (!existingNames.has('real_estate_tailored_inventory')) {
             console.log('[TEMPLATE SEEDER] Registering real_estate_tailored_inventory template...');
             const qualifyPayload = {
                 name: 'real_estate_tailored_inventory',

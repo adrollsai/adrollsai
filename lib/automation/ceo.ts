@@ -64,6 +64,44 @@ const BUTTON_DEFAULTS: Array<Omit<ReplyButton, 'label'> & { fallback: string }> 
 ]
 
 /**
+ * The FIRST button a lead sees, decided in one place.
+ *
+ * WHY THIS IS NOT JUST A LABEL
+ * The first button is the most-tapped control in the lead journey, and it shipped wrong: it was
+ * hardcoded as "View Properties", so a film academy's leads were shown a property catalogue and
+ * a physiotherapy number offered property listings. The industry-aware `defaultProductButtonLabel`
+ * above already existed and was simply not used on that path.
+ *
+ * A business with a verified website wants that website, not a catalogue, so the website wins
+ * when one exists. WhatsApp reply buttons cap at 20 characters, which is why the label is
+ * "Visit Website" rather than the domain: the domain goes in the URL.
+ */
+export function catalogueButtonFor(input: {
+  industry?: string | null
+  /** `profiles.custom_domain`, e.g. "www.procolorfilmacademy.com". */
+  website?: string | null
+  /** True when the business actually has products/properties to show. */
+  hasProducts?: boolean
+}): { label: string; url: string | null; reason: string } {
+  const site = String(input.website || '').trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  if (site) {
+    return {
+      label: 'Visit Website',
+      url: `https://${site}`,
+      reason: 'the business has a verified website, so the first button opens it',
+    }
+  }
+  const label = defaultProductButtonLabel(input.industry)
+  return {
+    label,
+    url: null,
+    reason: input.hasProducts
+      ? `the business has items to show, so the label follows its industry (${label})`
+      : `no website configured, so the label follows its industry (${label})`,
+  }
+}
+
+/**
  * The three mandatory reply buttons. Always returns exactly three, always with
  * the stable ids, so removing or reordering them cannot happen by accident.
  */
