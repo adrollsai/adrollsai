@@ -167,7 +167,10 @@ function LoginForm() {
         
       } else if (mode === 'forgot_password') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/callback?next=/update-password`,
+          // `/update-password` does not exist in this app; the reset form is /auth/reset-password.
+          // That single wrong path is why every emailed reset link 404'd: the callback verified the
+          // token, then redirected to a page nobody had built.
+          redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
         })
         if (error) throw error
         setSuccessMessage('Password reset instructions have been sent to your email.')

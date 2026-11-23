@@ -39,7 +39,10 @@ const APP_PATH_PREFIXES = [
   '/login',
   '/signup',
   '/auth',
-  '/update-password',
+  // '/update-password' used to sit here as if it were a real page. It never was: it is the path the
+  // login page sent password-reset emails to, which is why every reset link 404'd after the token had
+  // already been spent. '/auth' above covers the real page (/auth/reset-password), and the auth
+  // callback rewrites the legacy path onto it.
   '/onboarding',
   '/api',
   '/_next',

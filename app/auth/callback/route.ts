@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { type EmailOtpType } from '@supabase/supabase-js'
+// The destination rules live in lib/auth/redirects.ts: `/update-password` (which the login page asked
+// Supabase to send reset links to) has never existed, so every reset link verified its token and then
+// 404'd. Recovery now always lands on the one page that can set a password, and `next` can only ever
+// be an internal path.
+import { RECOVERY_PATH, resolveRedirectTarget } from '@/lib/auth/redirects'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
@@ -11,7 +16,7 @@ export async function GET(request: Request) {
   // 1. Capture parameters
   // linkIdentity redirects might pass 'provider' or it might be in the fragment
   const provider = searchParams.get('provider') 
-  const next = searchParams.get('next') ?? '/dashboard/profile' // Default to profile for linking
+  const next = resolveRedirectTarget(searchParams.get('next'), type)
   
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
@@ -129,19 +134,20 @@ export async function GET(request: Request) {
       }
 
       // Success! Redirect back to the requested page
-      const targetPath = next.includes('/auth/reset-password')
-        ? (next.includes('?') ? `${next}&verified=true` : `${next}?verified=true`)
-        : next
+      const targetPath = next === RECOVERY_PATH ? `${RECOVERY_PATH}?verified=true` : next
       return NextResponse.redirect(`${baseUrl}${targetPath}`)
     } else if (error) {
       console.error("[AUTH CALLBACK] Verification error:", error.message)
-      return NextResponse.redirect(`${baseUrl}${next}?error=${encodeURIComponent(error.message)}`)
+      // A spent or expired token still lands on the page that can explain it and offer a new link,
+      // instead of a 404 that looks like the app is down.
+      const target = next === RECOVERY_PATH ? `${RECOVERY_PATH}?error=${encodeURIComponent(error.message)}` : `${next}?error=${encodeURIComponent(error.message)}`
+      return NextResponse.redirect(`${baseUrl}${target}`)
     }
   }
 
   // Fallback for missing code or session (e.g. hash fragment redirects like #access_token=...)
-  if (next.includes('/auth/reset-password')) {
-    return NextResponse.redirect(`${baseUrl}${next}`)
+  if (next === RECOVERY_PATH) {
+    return NextResponse.redirect(`${baseUrl}${RECOVERY_PATH}`)
   }
 
   return NextResponse.redirect(`${baseUrl}${next}?error=No session could be established`)
