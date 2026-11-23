@@ -1196,7 +1196,45 @@ export async function POST(request: Request) {
         }
 
         // Distinguishable Campaign Naming including Retargeting and Product Name
-        const campaignName = `${businessName} - Retargeting (Retargetting) - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+        const campaignNamePrefix = `${businessName} - Retargeting (Retargetting)`;
+        const campaignName = `${campaignNamePrefix} - ${propertyTitle || "AI Smart Campaign"} - ${new Date().toISOString().slice(0, 10)} - ${Date.now().toString().slice(-4)}`;
+
+        // --- DOUBLE-LAUNCH GUARD ---
+        //
+        // The name carries a random suffix, so a fingerprint of the name can never match
+        // itself. Ask the ad account instead: the same business prefix, the same daily
+        // budget, created in the last ten minutes. That is a second campaign on the same
+        // audience, which would spend the client's money twice.
+        {
+            const { findDuplicateRetargetingCampaign, duplicateRetargetingMessage, DUPLICATE_WINDOW_MS } = await import(
+                '@/lib/ads/launch-idempotency'
+            );
+            try {
+                const recentRes = await fetch(
+                    `${FB_MARKETING_URL}/${adAccountId}/campaigns?fields=id,name,created_time,daily_budget&limit=25&access_token=${facebookToken}`,
+                    { cache: 'no-store' }
+                );
+                const recentJson: any = await recentRes.json();
+                const duplicate = findDuplicateRetargetingCampaign(recentJson?.data || [], {
+                    namePrefix: campaignNamePrefix,
+                    dailyBudgetMinor: Math.round(Number(dailyBudget) * 100),
+                    windowMs: DUPLICATE_WINDOW_MS,
+                });
+                if (duplicate) {
+                    logToFile(`[Remarketing] Duplicate suppressed; existing campaign ${duplicate.id}`);
+                    await refundLimit(user.id, 'campaign_launches');
+                    return NextResponse.json({
+                        success: true,
+                        duplicate: true,
+                        campaignId: duplicate.id,
+                        message: duplicateRetargetingMessage(duplicate.id),
+                    });
+                }
+            } catch (guardErr: any) {
+                // A guard that cannot read the account must not block a legitimate launch.
+                logToFile('[Remarketing] Duplicate check skipped:', guardErr?.message);
+            }
+        }
 
         const campaignPayload = buildCampaignPayload({
             name: campaignName,

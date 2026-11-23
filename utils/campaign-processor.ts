@@ -24,6 +24,7 @@ import {
     validateAdSet,
     validateCampaign,
 } from '@/lib/ads/preflight';
+import { checkCreative, inspectRemoteImage } from '@/lib/ads/creative-checks';
 import { META_GRAPH_URL } from '@/lib/ads/graph-version';
 
 const FB_MARKETING_URL = META_GRAPH_URL;
@@ -362,6 +363,42 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
 
         if (creativeItems.length === 0) {
             throw new Error("No images or videos found in the selected properties or assets.");
+        }
+
+        // --- Step 1b: Check the creatives before Meta sees them ---
+        //
+        // Meta accepts almost any image and then refuses to serve it (or crops it) with
+        // an issue nobody reads until the campaign is live. Reading the header here costs
+        // one 64 KB range request per image and lets us say what is wrong while it is
+        // still fixable: a video is not stopped, an image only when Meta is certain to
+        // reject it.
+        const creativeReport: Array<{ url: string; summary: string; level: string; issues: string[] }> = [];
+        for (const item of creativeItems) {
+            if (!item.url) continue;
+            if (item.type === 'video') {
+                const check = checkCreative({ kind: 'video' });
+                creativeReport.push({ url: item.url, summary: check.summary, level: check.level, issues: check.issues.map((i) => i.code) });
+                continue;
+            }
+            const check = await inspectRemoteImage(item.url);
+            creativeReport.push({
+                url: item.url,
+                summary: check.summary,
+                level: check.level,
+                issues: check.issues.map((i) => i.code),
+            });
+            if (check.blocked) {
+                throw new Error(
+                    `Creative rejected before upload: ${check.summary} Fix the image and launch again — ` +
+                    `nothing was created on Meta.`
+                );
+            }
+        }
+        const creativeWarnings = creativeReport.filter((c) => c.level === 'warning');
+        logToFile("Creative pre-checks:", creativeReport);
+        if (creativeWarnings.length) {
+            logToFile(`[Processor] ${creativeWarnings.length} creative(s) will serve in fewer placements:`,
+                creativeWarnings.map((c) => `${c.url.slice(-40)} — ${c.summary}`).join(' | '));
         }
 
         // --- Step 2: Upload Creatives to Meta ---
@@ -1367,6 +1404,12 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             }
             if (advantage.blockers.length) {
                 finalMessage += ` Note: ${advantage.blockers.join(' ')}`;
+            }
+            if (creativeWarnings.length) {
+                finalMessage +=
+                    ` Creative note: ${creativeWarnings.length === 1 ? 'one image serves in' : `${creativeWarnings.length} images serve in`}` +
+                    ` fewer placements — ${creativeWarnings[0].summary}` +
+                    `${creativeWarnings.length > 1 ? ` (and ${creativeWarnings.length - 1} more)` : ''}.`;
             }
         }
 

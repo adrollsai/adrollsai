@@ -143,7 +143,7 @@ missing, with severity in brackets.
 |---|---|---|
 | Advantage+ placements | **fixed** | no placement fields sent when the lever is on |
 | Advantage+ creative enhancements (`degrees_of_freedom_spec`) | **fixed, but not as the guide says** | `standard_enhancements` — the name almost every guide still shows — is **rejected on v22+**, subcode `3858504`: *"Including standard enhancements field in creative has been deprecated. Please choose to set individual features instead."* The surviving bundle is `STANDARD_ENHANCEMENTS_CATALOG`, which validated cleanly. `IMAGE_ANIMATION`, `PROFILE_CARD` and `TEXT_OVERLAY_TRANSLATION` also validate but change what the creative looks like, so they stay an explicit choice |
-| Creative quality/ratio validation before upload | **gap** (medium) | Meta returns a `percent` coverage warning after upload; a local aspect-ratio/resolution check would avoid publishing a 1:1 image into a Story-only placement. The watchdog now at least reports the resulting `2490085` ("crop key deprecated") rejections |
+| Creative quality/ratio validation before upload | **fixed** | `lib/ads/creative-checks.ts`. The header of every image (PNG / JPEG / GIF / WebP) is read from a 64 KB range request — no dependency, no decode — and judged against Meta's placement limits. A creative Meta is certain to refuse blocks the launch *before* anything is created on Meta (`unusable` under 200 px, over the 30 MB ceiling); anything that merely serves worse (too wide, too tall, under 400 px) is a warning in the launch message instead of a silent bad ad. Unreadable metadata never blocks |
 | Dynamic/catalogue creatives | **gap** (low) | not supported; fine for this product |
 | Brand safety inventory filter | **gap** (low) | `brand_safety_content_filter_levels` unset; Meta's default applies |
 
@@ -171,7 +171,8 @@ missing, with severity in brackets.
 | Duplicate-campaign guard | **fixed** | `lib/ads/launch-idempotency.ts`. The launcher fingerprints a launch from what makes two launches "the same campaign" — tenant, name, budget (in minor units), goal, destination, page, ad account, the creatives in any order, and the locations — and inside a 10-minute window returns the existing job instead of creating a second campaign, a second budget draw and a second credit charge. A *failed* attempt never blocks a retry |
 | Budget sanity checks | **fixed** | a budget under Meta's floor is now caught by the pre-flight instead of half-creating a campaign |
 | Frequency caps | **gap** (low) | `frequency_control_specs` unused; usually fine for CBO lead gen |
-| Learning-phase reporting | **gap** (low) | no "still learning / out of learning" state in analytics, so optimisation decisions can be made on 12 conversions |
+| Learning-phase reporting | **fixed** | `lib/ads/learning-phase.ts` + `GET /api/meta-ads/learning-status?campaignId=…`. Meta's `learning_stage_info` is rolled up per ad set and per campaign with a pessimistic precedence (if any ad set is still learning, the campaign's numbers are provisional), and the advice is specific: learning-limited means "raise the budget or widen the audience, do not edit again", not "optimise". Impersonation-aware like the other read routes |
+| Double-launch guard on the retargeting launcher | **fixed** | the retargeting campaign name carries a random suffix, so the fingerprint check cannot apply; instead the ad account is asked whether a campaign with the same business prefix, the same daily budget, was created in the last ten minutes, and that campaign is returned instead of creating a second one on the same audience |
 
 ### 3.5 API hygiene
 
@@ -195,7 +196,12 @@ missing, with severity in brackets.
 * `lib/ads/ad-review-monitor.ts` — pure decisions for the ad-review watchdog.
 * `lib/ads/token-health.ts` — pure diagnosis of a dead token or a restricted ad
   account, in words the owner can act on.
-* `lib/ads/launch-idempotency.ts` — launch fingerprint + duplicate-window decision.
+* `lib/ads/launch-idempotency.ts` — launch fingerprint + duplicate-window decision, for
+  the main launcher (by fingerprint) and the retargeting launcher (by ad-account state).
+* `lib/ads/creative-checks.ts` — image header parsing (PNG/JPEG/GIF/WebP) and Meta's
+  placement limits, used before any creative is uploaded.
+* `lib/ads/learning-phase.ts` + `app/api/meta-ads/learning-status/route.ts` — whether a
+  campaign's numbers are stable enough to act on.
 * `app/api/cron/meta-ad-issues/route.ts` + `vercel.json` — the watchdog itself, every
   6 hours: connection check first, then the blocked-object sweep.
 * `utils/campaign-processor.ts` — campaign and ad-set payloads built from the plan;
@@ -215,18 +221,19 @@ missing, with severity in brackets.
 * `scripts/verify-advantage-plus.ts` — 148 assertions covering every rule above,
   including the pre-flight, the watchdog's decision logic and the version constant.
 
-## 5. Recommended next (in order of value)
+## 5. What is left, and why
 
-1. **Local creative pre-checks** (aspect ratio, resolution, file size) before upload, so
-   a 1:1 image cannot be published into a Story-only placement. The watchdog now
-   reports the resulting `2490085` ("crop key deprecated") rejections, but catching it
-   before upload is better than reporting it after.
-2. **Learning-phase state** in the ads analytics, so optimisation decisions are not
-   taken on 12 conversions.
-3. **Idempotency on the retargeting launcher** — the same guard exists in
-   `lib/ads/launch-idempotency.ts`; `launch-remarketing` should use it too.
-4. **One version constant for WhatsApp** as well, once someone can verify the
-   Cloud API field changes between v20 and current.
+1. **WhatsApp stays on its own Graph version.** I tried to verify a bump today and could
+   not: every WABA row in this database with a stored token is a demo profile whose token
+   *"expired on Friday, 03-Jul"*, so v20 and v23 answer identically (code 190) and the
+   probe proves nothing. Bumping the messaging surface on an unverified change is not
+   worth it — especially since sending a message is the one action that cannot be
+   undone. It needs one real WABA token to test against.
+2. **Dynamic/catalogue creatives** and **brand-safety inventory filters** are unused
+   features rather than defects.
+3. **Ads-Manager-side rejections that belong to the advertiser** (missing privacy
+   policy, missing WhatsApp number, unavailable posts) are now reported by the watchdog;
+   they cannot be fixed from here.
 
 ## 6. Data repairs applied alongside the code (2026-11-23)
 

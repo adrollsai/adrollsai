@@ -51,9 +51,20 @@ import {
 import {
   DUPLICATE_WINDOW_MS,
   duplicateLaunchMessage,
+  duplicateRetargetingMessage,
   findDuplicateLaunch,
+  findDuplicateRetargetingCampaign,
   launchFingerprint,
 } from '../lib/ads/launch-idempotency';
+import {
+  checkCreative,
+  readImageSize,
+} from '../lib/ads/creative-checks';
+import {
+  normaliseStatus,
+  summariseAdSet,
+  summariseCampaign,
+} from '../lib/ads/learning-phase';
 import {
   ALERT_DEDUPE_HOURS,
   ALERT_TYPE,
@@ -620,6 +631,176 @@ eq('no ads or Facebook route pins its own Graph version', offenders, []);
 // WhatsApp keeps its own version on purpose: different product, different track.
 const waStillVersioned = fs.readFileSync('app/api/cron/whatsapp-followup/route.ts', 'utf8').includes('graph.facebook.com/v');
 check('…while the WhatsApp surface stays on its own version deliberately', waStillVersioned);
+
+// ---------------------------------------------------------------------------
+// 16. Creative pre-checks: read the header before Meta sees the file
+// ---------------------------------------------------------------------------
+const pngOf = (w: number, h: number) => {
+  const buf = new Uint8Array(32);
+  buf.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52], 0);
+  new DataView(buf.buffer).setUint32(16, w, false);
+  new DataView(buf.buffer).setUint32(20, h, false);
+  return buf;
+};
+const jpegOf = (w: number, h: number) => {
+  const buf = new Uint8Array([
+    0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0, 0, 0, 0, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+  ]);
+  const view = new DataView(buf.buffer);
+  view.setUint16(7, h, false);
+  view.setUint16(9, w, false);
+  return buf;
+};
+const gifOf = (w: number, h: number) => {
+  const buf = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0, 0, 0, 0x00, 0x00, 0x00, 0x3b]);
+  const view = new DataView(buf.buffer);
+  view.setUint16(6, w, true);
+  view.setUint16(8, h, true);
+  return buf;
+};
+const webpOf = (w: number, h: number) => {
+  const buf = new Uint8Array(40);
+  buf.set([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58], 0);
+  const wm = w - 1;
+  const hm = h - 1;
+  buf[24] = wm & 0xff;
+  buf[25] = (wm >> 8) & 0xff;
+  buf[26] = (wm >> 16) & 0xff;
+  buf[27] = hm & 0xff;
+  buf[28] = (hm >> 8) & 0xff;
+  buf[29] = (hm >> 16) & 0xff;
+  return buf;
+};
+
+const jpegSize = readImageSize(jpegOf(1080, 1350));
+eq('reads a JPEG header', jpegSize && { format: jpegSize.format, width: jpegSize.width, height: jpegSize.height }, {
+  format: 'jpeg',
+  width: 1080,
+  height: 1350,
+});
+const gifSize = readImageSize(gifOf(600, 600));
+eq('reads a GIF header', gifSize && { format: gifSize.format, width: gifSize.width, height: gifSize.height }, {
+  format: 'gif',
+  width: 600,
+  height: 600,
+});
+const webpSize = readImageSize(webpOf(1080, 1920));
+eq('reads a WebP (VP8X) header', webpSize && { format: webpSize.format, width: webpSize.width, height: webpSize.height }, {
+  format: 'webp',
+  width: 1080,
+  height: 1920,
+});
+const pngSize = readImageSize(pngOf(1200, 628));
+eq('reads a PNG header', pngSize && { format: pngSize.format, width: pngSize.width, height: pngSize.height }, {
+  format: 'png',
+  width: 1200,
+  height: 628,
+});
+check('a video is not mistaken for an image', readImageSize(new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32])) === null);
+check('truncated bytes are not mistaken for an image', readImageSize(new Uint8Array([0x89, 0x50])) === null);
+
+const goodFeed = checkCreative({ kind: 'image', width: 1080, height: 1080, bytes: 400_000 });
+eq('a 1080 square is clean', goodFeed.level, 'ok');
+check('…and is not blocked', goodFeed.blocked === false);
+check('…and names its placements', goodFeed.placements.includes('feed (square)'), JSON.stringify(goodFeed.placements));
+
+const wide = checkCreative({ kind: 'image', width: 2000, height: 500, bytes: 400_000 });
+eq('a 4:1 banner warns rather than blocks', wide.level, 'warning');
+check('…saying the sides will be cropped', wide.issues.some((i) => i.code === 'too_wide'), JSON.stringify(wide.issues));
+const tiny = checkCreative({ kind: 'image', width: 150, height: 150 });
+eq('a 150px image is blocked', tiny.blocked, true);
+check('…because no placement can serve it', tiny.issues.some((i) => i.code === 'unusable'), JSON.stringify(tiny.issues));
+const small = checkCreative({ kind: 'image', width: 320, height: 320 });
+eq('a 320px image only warns', small.level, 'warning');
+check('…and is not blocked', small.blocked === false);
+const heavy = checkCreative({ kind: 'image', width: 1080, height: 1080, bytes: 40 * 1024 * 1024 });
+eq('a 40MB image is blocked', heavy.blocked, true);
+const story = checkCreative({ kind: 'image', width: 1080, height: 1920 });
+check('a 9:16 creative is recognised for stories', story.placements.some((p) => p.includes('stories')), JSON.stringify(story.placements));
+const unknown = checkCreative({ kind: 'image', sizeUnknown: true });
+eq('unreadable dimensions never block a launch', unknown.blocked, false);
+check('…but are reported', unknown.level === 'warning' && unknown.issues[0].code === 'size_unknown');
+const videoCheck = checkCreative({ kind: 'video', width: 1080, height: 1920, bytes: 5_000_000 });
+check('a 9:16 video is fine', videoCheck.blocked === false);
+check('…and is recognised as story-shaped', videoCheck.placements.some((p) => p.includes('stories')), JSON.stringify(videoCheck.placements));
+
+// The launcher must actually use it, before the upload.
+const processorSource = fs.readFileSync('utils/campaign-processor.ts', 'utf8');
+check('the launcher inspects each image before uploading', processorSource.includes('inspectRemoteImage('));
+check('…before the adimages upload', processorSource.indexOf('inspectRemoteImage(') < processorSource.indexOf('/adimages'));
+check('…and refuses a creative Meta is certain to reject', /check\.blocked[\s\S]{0,200}throw new Error/.test(processorSource));
+check('…and reports the ones that only serve in fewer placements', processorSource.includes('creativeWarnings'));
+
+// ---------------------------------------------------------------------------
+// 17. Learning phase: is the number stable enough to act on?
+// ---------------------------------------------------------------------------
+eq('IN_LEARNING is provisional', summariseAdSet({ id: 'a', learning_stage_info: { status: 'IN_LEARNING' } }).provisional, true);
+check(
+  '…and says editing restarts the clock',
+  /restarts the learning phase/i.test(summariseAdSet({ id: 'a', learning_stage_info: { status: 'IN_LEARNING' } }).advice)
+);
+const limited = summariseAdSet({ id: 'a', learning_stage_info: { status: 'LEARNING_LIMITED' } });
+eq('LEARNING_LIMITED is its own verdict', limited.status, 'LEARNING_LIMITED');
+check('…with advice about budget/audience, not more edits', /raise the budget|widen the audience/i.test(limited.advice), limited.advice);
+const done = summariseAdSet({ id: 'a', learning_stage_info: { status: 'SUCCESS', conversions: 50 } });
+eq('SUCCESS is not provisional', done.provisional, false);
+eq('…and keeps Meta’s conversion count', done.conversions, 50);
+eq('a missing stage is UNKNOWN and still provisional', summariseAdSet({ id: 'a' }).status, 'UNKNOWN');
+eq('an unknown string is normalised to UNKNOWN', normaliseStatus('something-else'), 'UNKNOWN');
+eq('a hyphenated value still parses', normaliseStatus('in-learning'), 'IN_LEARNING');
+
+const campaignLearning = summariseCampaign([
+  { id: 'a1', name: 'Set A', learning_stage_info: { status: 'SUCCESS' } },
+  { id: 'a2', name: 'Set B', learning_stage_info: { status: 'IN_LEARNING' } },
+]);
+eq('one learning ad set makes the campaign provisional', campaignLearning.campaign.provisional, true);
+eq('…and the counts add up', campaignLearning.counts.inLearning, 1);
+eq('…and the campaign says how many', campaignLearning.adSets.length, 2);
+const allLimited = summariseCampaign([
+  { id: 'x', learning_stage_info: { status: 'LEARNING_LIMITED' } },
+  { id: 'y', learning_stage_info: { status: 'LEARNING_LIMITED' } },
+]);
+eq('all-limited is reported as learning-limited', allLimited.campaign.status, 'LEARNING_LIMITED');
+const emptyCampaign = summariseCampaign([]);
+eq('a campaign with no ad sets is unknown, not an error', emptyCampaign.campaign.status, 'UNKNOWN');
+check(
+  'the learning endpoint exists and reads learning_stage_info',
+  fs.existsSync('app/api/meta-ads/learning-status/route.ts') &&
+    fs.readFileSync('app/api/meta-ads/learning-status/route.ts', 'utf8').includes('learning_stage_info')
+);
+
+// ---------------------------------------------------------------------------
+// 18. Retargeting launches get the same duplicate guard
+// ---------------------------------------------------------------------------
+const retargetingRows = [
+  { id: '1201', name: 'Acme - Retargeting (Retargetting) - Villa - 2026-11-23 - 1234', created_time: '2026-11-23T10:00:00+0530', daily_budget: '50000' },
+  { id: '1200', name: 'Acme - Retargeting (Retargetting) - Other - 2026-11-20 - 9999', created_time: '2026-11-20T10:00:00+0530', daily_budget: '50000' },
+];
+const dup = findDuplicateRetargetingCampaign(retargetingRows, {
+  namePrefix: 'Acme - Retargeting (Retargetting)',
+  dailyBudgetMinor: 50000,
+  now: Date.parse('2026-11-23T04:35:00Z'),
+  windowMs: 10 * 60 * 1000,
+});
+eq('a retargeting campaign created minutes ago is a duplicate', dup?.id, '1201');
+const notDupBudget = findDuplicateRetargetingCampaign(retargetingRows, {
+  namePrefix: 'Acme - Retargeting (Retargetting)',
+  dailyBudgetMinor: 90000,
+  now: Date.parse('2026-11-23T04:35:00Z'),
+});
+check('a different budget is a new campaign', notDupBudget === null);
+const notDupTime = findDuplicateRetargetingCampaign(retargetingRows, {
+  namePrefix: 'Acme - Retargeting (Retargetting)',
+  dailyBudgetMinor: 50000,
+  now: Date.parse('2026-11-23T09:00:00Z'),
+});
+check('an old campaign is not a duplicate', notDupTime === null);
+check('a different business never matches', findDuplicateRetargetingCampaign(retargetingRows, { namePrefix: 'Other Co - Retargeting', dailyBudgetMinor: 50000 }) === null);
+check('an empty prefix matches nothing', findDuplicateRetargetingCampaign(retargetingRows, { namePrefix: '  ', dailyBudgetMinor: 50000 }) === null);
+check('the retargeting message names the campaign', duplicateRetargetingMessage('120344').includes('120344'));
+const remarketingSource = fs.readFileSync('app/api/meta-ads/launch-remarketing/route.ts', 'utf8');
+check('the retargeting launcher checks before creating', remarketingSource.includes('findDuplicateRetargetingCampaign'));
+check('…and refunds the credit when it refuses', /duplicate[\s\S]{0,400}refundLimit/.test(remarketingSource));
 
 console.log(`\nverify:advantage — ${passed} passed, ${failures.length} failed`);
 if (failures.length) {

@@ -116,3 +116,54 @@ export function duplicateLaunchMessage(jobId: string): string {
     `separate campaign.`
   );
 }
+
+// ---------------------------------------------------------------------------
+// Retargeting launches
+// ---------------------------------------------------------------------------
+
+/**
+ * The retargeting launcher is a different animal: it creates everything inline (no
+ * `campaign_jobs` row to point at) and its campaign name carries a random suffix, so a
+ * fingerprint of the name can never match itself.
+ *
+ * Instead the check is made against the ad account: the same business, the same
+ * "Retargeting" prefix, the same daily budget, inside the same window. That is the
+ * state that actually costs money — a second retargeting campaign on the same audience.
+ */
+export interface RetargetingCampaignRow {
+  id: string;
+  name?: string;
+  created_time?: string;
+  daily_budget?: string | number;
+}
+
+export function findDuplicateRetargetingCampaign(
+  rows: RetargetingCampaignRow[],
+  input: { namePrefix: string; dailyBudgetMinor: number; now?: number; windowMs?: number }
+): RetargetingCampaignRow | null {
+  const now = input.now ?? Date.now();
+  const windowMs = input.windowMs ?? DUPLICATE_WINDOW_MS;
+  const prefix = input.namePrefix.trim().toLowerCase();
+  if (!prefix) return null;
+
+  for (const row of rows) {
+    const name = String(row.name || '').trim().toLowerCase();
+    if (!name.startsWith(prefix)) continue;
+    const created = Date.parse(String(row.created_time || ''));
+    if (!Number.isFinite(created)) continue;
+    if (now - created > windowMs) continue;
+    const budget = Number(row.daily_budget);
+    if (Number.isFinite(budget) && budget !== input.dailyBudgetMinor) continue;
+    return row;
+  }
+  return null;
+}
+
+/** The sentence the client sees when a retargeting campaign was just created. */
+export function duplicateRetargetingMessage(campaignId: string): string {
+  return (
+    `A retargeting campaign for this audience was created a few minutes ago (${campaignId}), so it ` +
+    `was not created twice. Open Ads to watch it, or change the budget or audience to launch a ` +
+    `separate campaign.`
+  );
+}
