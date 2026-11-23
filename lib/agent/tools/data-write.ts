@@ -191,6 +191,15 @@ export function createDataWriteTools(supabase: SupabaseClient, userId: string) {
     const resolved = resolveScopeFrom(requested, (caller || { id: userId }) as any, (children || []) as any);
 
     if (!resolved.ok) return resolved;
+
+    const isSuperAdmin = String((caller as any)?.role ?? '').toLowerCase() === 'super_admin';
+
+    // A super admin may write to ANY named account — that is what super admin means, and it is how a
+    // client account that is not in the caller's subtree (GNR HOMES is one) can be helped at all.
+    if (accountId && isSuperAdmin) {
+      return { ...resolved, accountIds: [accountId], accountCount: 1, label: `account ${accountId} (as super admin)` };
+    }
+
     // A write targets ONE account. With an org/all scope the caller must name which account.
     if (accountId) {
       if (resolved.accountIds && !resolved.accountIds.includes(accountId)) {

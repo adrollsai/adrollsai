@@ -393,6 +393,12 @@ export function createDataQueryTools(supabase: SupabaseClient, userId: string) {
           .enum(['me', 'org', 'all'])
           .default('me')
           .describe('me = this account; org = this account + its sub-accounts; all = platform (super admin only)'),
+        accountId: z
+          .string()
+          .optional()
+          .describe(
+            'Read ONE specific account (e.g. a client you looked up with list_accounts). Allowed when that account is inside your scope — a super admin may name any account.'
+          ),
         columns: z.array(z.string()).optional().describe('Columns to return (list) or read (distinct). Defaults are sensible per operation.'),
         filters: z
           .array(
@@ -424,6 +430,31 @@ export function createDataQueryTools(supabase: SupabaseClient, userId: string) {
           const context = await loadScopeContext(db, userId);
           const scope = resolveScopeFrom(input.scope, context.caller, context.children);
           if (!scope.ok) return { ok: false, error: scope.error };
+
+          // TARGET ONE ACCOUNT.
+          //
+          // "GNR Homes' leads" is the question that exposed the gap: GNR HOMES is an independent client
+          // account, so it is not in the caller's subtree and `scope: "org"` never covered it — the agent
+          // had to answer "I cannot see it" for an account the owner owns. A super admin may name any
+          // account; everyone else only one that is already inside their scope.
+          if (input.accountId) {
+            const target = String(input.accountId).trim();
+            const isSuperAdmin = String(context.caller.role ?? '').toLowerCase() === 'super_admin';
+            const inScope = scope.accountIds === null || (scope.accountIds || []).includes(target);
+            if (!isSuperAdmin && !inScope) {
+              return {
+                ok: false,
+                error: `account "${target}" is outside the scope you may read (${scope.label}). Use list_accounts to see which accounts you can reach.`,
+              };
+            }
+            const { data: targetProfile } = await db.from('profiles').select('id, business_name, email').eq('id', target).maybeSingle();
+            if (!targetProfile?.id) {
+              return { ok: false, error: `no account with id "${target}". Find the id with list_accounts (search by business name).` };
+            }
+            scope.accountIds = [target];
+            scope.accountCount = 1;
+            scope.label = `${targetProfile.business_name || target} (one account${isSuperAdmin && !inScope ? ', reached as super admin' : ''})`;
+          }
 
           const filters = validation.filters || [];
           const ownerColumn = spec.ownerColumn;
