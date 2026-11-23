@@ -333,7 +333,20 @@ No projects are registered on this account. You therefore MUST NOT name any proj
         } catch (e) { }
     }
 
-    targetProduct = (targetProperty && targetProperty.title) || adProductName || formAdCampaignName || (campaign?.target_product) || 'our prime properties';
+    // What we are asking whether they are still interested in.
+    //
+    // This defaulted to the literal string 'our prime properties', so ANY tenant without a
+    // property, ad product or campaign name had the bot open with "are you still looking into
+    // our prime properties" — a film academy, a clinic, an immigration consultancy. The noun now
+    // follows the tenant's own industry, and falls back to something any business can say.
+    const industryLower = String(profile?.industry || '').toLowerCase();
+    const offeringNoun =
+        /educat|academy|film|school|institute|coach|training/.test(industryLower) ? 'our courses'
+            : /immigra|visa/.test(industryLower) ? 'our services'
+                : /health|clinic|hospital/.test(industryLower) ? 'our treatments'
+                    : /real.?estate|propert|realt|infra|homes|realty/.test(industryLower) ? 'our projects'
+                        : 'what we offer';
+    targetProduct = (targetProperty && targetProperty.title) || adProductName || formAdCampaignName || (campaign?.target_product) || offeringNoun;
 
     // Build Hinglish system instruction
     const isQualifyingEnabled = profile?.qualifying_enabled !== false;
@@ -2449,7 +2462,7 @@ CRITICAL INSTRUCTION: After speaking this opening greeting, STOP TALKING IMMEDIA
                                             unparseable: 'That date and time could not be understood.',
                                             in_the_past: 'That date is already in the past.',
                                             too_far_ahead: 'That date is more than 60 days away.',
-                                            outside_9_to_5: 'Site visits run between 9 AM and 5 PM only.',
+                                            outside_9_to_5: 'Appointments can only be scheduled between 9 AM and 5 PM.',
                                         }[slotError] || 'That slot is not valid.';
                                         console.warn(`[BRIDGE] book_appointment_slot REJECTED (${slotError}) raw="${rawSlot}"`);
                                         // Tell the model to fix it, and DO NOT confirm or write anything.

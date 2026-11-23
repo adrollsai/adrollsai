@@ -97,6 +97,12 @@ export default function BillingPage() {
         const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.creditsBalance || 0;
     });
+    // The voice wallet. A separate pot from the AI credits above: calls draw on calling_credits,
+    // creatives and videos draw on credits. Shown side by side, never combined.
+    const [callingCredits, setCallingCredits] = useState<number>(() => {
+        const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
+        return cached?.callingCredits || 0;
+    });
     const [isUnlimited, setIsUnlimited] = useState<boolean>(() => {
         const cached = typeof window !== 'undefined' ? getCachedValue<any>(cacheKey) : null;
         return cached?.isUnlimited || false;
@@ -131,6 +137,7 @@ export default function BillingPage() {
 
                 setActivePlanName(resolvedPlanName);
                 setCreditsBalance(data.credits || 0);
+                setCallingCredits(Number(data.callingCredits ?? 0) || 0);
                 setIsUnlimited(!!data.isUnlimited);
                 setIsManagedClient(!!data.isManagedClient);
 
@@ -172,6 +179,7 @@ export default function BillingPage() {
                     activePlanName: resolvedPlanName,
                     renewalDate: formattedDate,
                     creditsBalance: data.credits || 0,
+                    callingCredits: Number(data.callingCredits ?? 0) || 0,
                     isUnlimited: !!data.isUnlimited
                 });
             }
@@ -341,8 +349,19 @@ export default function BillingPage() {
                         <div className="flex items-center gap-3 bg-slate-50 px-5 py-3.5 rounded-2xl border border-slate-100 shadow-inner">
                             <Coins className="text-indigo-600" size={22} />
                             <div>
-                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Credits Balance</span>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">AI Credits</span>
                                 <span className="text-base font-black text-slate-800">{isUnlimited ? '∞' : `${creditsBalance.toLocaleString()} Credits`}</span>
+                            </div>
+                        </div>
+
+                        {/* The voice wallet, on its own. It pays for calls and runs down separately
+                            from the AI credits, so showing one combined number hid how many calls
+                            were actually left. */}
+                        <div className="flex items-center gap-3 bg-slate-50 px-5 py-3.5 rounded-2xl border border-slate-100 shadow-inner">
+                            <PhoneCall className="text-emerald-600" size={22} />
+                            <div>
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">AI Calling Credits</span>
+                                <span className="text-base font-black text-slate-800">{callingCredits > 0 ? `${callingCredits.toLocaleString()} Credits` : 'None left'}</span>
                             </div>
                         </div>
 

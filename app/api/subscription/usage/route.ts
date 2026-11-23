@@ -159,6 +159,10 @@ export async function GET(request: Request) {
                 }
             },
             credits: effectiveCredits,
+            // The voice wallet is a SEPARATE pot from the AI credits and was never surfaced, so a
+            // tenant could not see how many calls they had left. Reported separately, never summed:
+            // they are spent by different things and priced differently.
+            callingCredits: Number((primaryProfile as any)?.calling_credits ?? 0) || 0,
             isUnlimited: ['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(primaryProfile?.email || ''),
             hasPurchasedTrial: hasPurchasedTrial,
             paymentType: primaryProfile.client_features?.payment_type || 'one_time',
