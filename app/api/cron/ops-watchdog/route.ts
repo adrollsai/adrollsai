@@ -76,11 +76,16 @@ async function handle(request: Request) {
         applyRepairs: false,
         detectors: DETECTORS,
       });
+      // The board belongs in the dry-run response too. Without it the flag reports "created: 3"
+      // and the reader still has to open a console to find out what those three things were —
+      // which defeats the purpose of a cautious first look.
+      const board = sortIncidents(await listIncidents(supabase, { status: 'all', limit: 50 }).catch(() => []));
       return NextResponse.json({
         dryRun: true,
         note: 'Detected and recorded incidents. No repairs applied, no notifications sent.',
         result,
         wouldRepair: Object.keys(REPAIRS),
+        board: board.map(toBoardEntry),
       });
     }
 
@@ -96,21 +101,41 @@ async function handle(request: Request) {
     return NextResponse.json({
       ok: true,
       result,
-      board: board.map((incident) => ({
-        class: incident.class,
-        severity: incident.severity,
-        status: incident.status,
-        title: incident.title,
-        evidence: incident.evidence,
-        suggestedFix: incident.suggested_fix,
-        occurrences: incident.occurrences,
-        repairAttempts: incident.repair_attempts,
-        lastSeenAt: incident.last_seen_at,
-      })),
+      board: board.map(toBoardEntry),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[ops-watchdog] sweep failed:', error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+/**
+ * One incident, shaped for a reader rather than for the database.
+ *
+ * Both the real sweep and the dry run return this, so the two responses cannot drift apart and
+ * a `curl` of either one answers "what is wrong?" without a second request.
+ */
+function toBoardEntry(incident: {
+  class: string;
+  severity: string;
+  status: string;
+  title: string;
+  evidence: string;
+  suggested_fix: string | null;
+  occurrences: number;
+  repair_attempts: number;
+  last_seen_at: string;
+}) {
+  return {
+    class: incident.class,
+    severity: incident.severity,
+    status: incident.status,
+    title: incident.title,
+    evidence: incident.evidence,
+    suggestedFix: incident.suggested_fix,
+    occurrences: incident.occurrences,
+    repairAttempts: incident.repair_attempts,
+    lastSeenAt: incident.last_seen_at,
+  };
 }
