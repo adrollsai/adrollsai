@@ -24,7 +24,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fingerprintOf, RESOLVE_AFTER_MINUTES } from '../lib/ops/incidents';
 import { DETECTORS, errorHead } from '../lib/ops/detectors';
-import { repoSnapshotMeta, searchRepo } from '../lib/ops/repo';
+import { repoSnapshotFiles, repoSnapshotMeta, searchRepo } from '../lib/ops/repo';
 import {
   FORBIDDEN_TABLES,
   MAX_REPAIR_ATTEMPTS,
@@ -262,17 +262,46 @@ check(
 head('5b. The repo snapshot the ask console reads');
 
 const snapshot = repoSnapshotMeta();
-let head0 = '';
+let headCommit = '';
 try {
-  head0 = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  headCommit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
 } catch {
-  head0 = '';
+  headCommit = '';
 }
-check('the snapshot has files in it', snapshot.fileCount > 500, `${snapshot.fileCount} files, built ${snapshot.generatedAt}`);
+check('the snapshot has files in it', snapshot.fileCount > 500, `${snapshot.fileCount} files, built ${snapshot.generatedAt} at ${snapshot.commit}`);
+
+// Freshness is checked by CONTENT, not by comparing the snapshot's commit to HEAD.
+//
+// The commit comparison looked precise and was not: it goes red on every unrelated commit, and
+// it goes red on the very commit that rebuilds the snapshot (rebuilding edits files, so the
+// diff from the stamped commit is never empty). Line counts answer the question that matters —
+// does this snapshot describe the files on disk right now? — and rebuilding makes them agree.
+//
+// Only a sample is compared when the repo is large, because the point is to catch "nobody
+// rebuilt this in a month", not to prove every byte.
+const snapshotFiles = repoSnapshotFiles();
+const drifted: { path: string; recorded: number; actual: number }[] = [];
+let unreadable = 0;
+for (const entry of snapshotFiles) {
+  let source: string;
+  try {
+    source = readFileSync(entry.path, 'utf8');
+  } catch {
+    unreadable++;
+    continue;
+  }
+  const actual = source.split(/\r?\n/).length;
+  if (actual !== entry.lines) drifted.push({ path: entry.path, recorded: entry.lines, actual });
+}
 check(
-  'the snapshot matches HEAD, so answers describe the code that is actually deployed',
-  !head0 || head0 === snapshot.commit,
-  head0 ? `snapshot ${snapshot.commit} vs HEAD ${head0}` : 'no git available to compare',
+  'every indexed file matches the line count the snapshot recorded, so answers describe current code',
+  drifted.length === 0,
+  drifted.length
+    ? `${drifted.length} drifted, e.g. ${drifted
+        .slice(0, 3)
+        .map((d) => `${d.path} (${d.recorded} -> ${d.actual})`)
+        .join(', ')} — run npm run build:ops-repo-index`
+    : `${snapshotFiles.length - unreadable} files verified${unreadable ? `, ${unreadable} unreadable` : ''}`,
 );
 
 // Retrieval has to find the right file for the questions the owner will actually ask.

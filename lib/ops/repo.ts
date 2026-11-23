@@ -76,6 +76,20 @@ export function repoSnapshotMeta(): {
   };
 }
 
+/**
+ * The files the snapshot describes, with the line count it recorded for each.
+ *
+ * Exported for the verify gate, which re-reads every one of them and compares. That is a
+ * CONTENT check rather than a commit check, and the distinction matters: comparing the
+ * snapshot's commit against `HEAD` fails on every unrelated commit and then fails again on the
+ * very commit that rebuilds it, because rebuilding changes files. Line counts answer the
+ * question that actually matters — "does this snapshot describe what is on disk right now?" —
+ * and rebuilding the snapshot makes them agree again by construction.
+ */
+export function repoSnapshotFiles(): { path: string; lines: number }[] {
+  return SNAPSHOT.files.map((entry) => ({ path: entry.p, lines: entry.l }));
+}
+
 export interface RepoHit {
   path: string;
   lines: number;

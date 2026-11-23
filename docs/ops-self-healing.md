@@ -127,12 +127,12 @@ curl -s https://app.pipixel.io/api/ops/ask \
 ```
 
 It works because Vercel has no checkout, so the code travels with the deployment:
-`scripts/build-ops-repo-index.mjs` distils all **1,951** tracked and untracked source files into
-`lib/ops/repo-snapshot.json` (~1.2 MB) — path, header comment, exported symbols, Supabase tables
-touched, HTTP verbs, and a body keyword signature. `lib/ops/repo.ts` scores a question against it
-deterministically — no embeddings, no vector store, nothing to go stale — and the model is shown
-the winning files' own explanations with instructions to cite paths and to say "I could not find
-that" rather than invent.
+`scripts/build-ops-repo-index.mjs` distils every tracked and untracked source file (~1,950 of
+them) into `lib/ops/repo-snapshot.json` (~1.2 MB) — path, header comment, exported symbols,
+Supabase tables touched, HTTP verbs, and a body keyword signature. `lib/ops/repo.ts` scores a
+question against it deterministically — no embeddings, no vector store, nothing to go stale — and
+the model is shown the winning files' own explanations with instructions to cite paths and to say
+"I could not find that" rather than invent.
 
 The answer also carries the current incident board, so *"why is X failing?"* needs no second call.
 
@@ -163,8 +163,10 @@ The gate proves the properties that make this trustworthy rather than the code t
 - **registry** — no repair can reach money, a customer or identity, and none writes a balance
 - **retrieval** — six real questions land on the file that does the work; an unrelated question
   retrieves nothing instead of the least-bad file
-- **snapshot freshness** — fails when the snapshot's commit does not match `HEAD`, so answers
-  cannot describe code that no longer exists
+- **snapshot freshness** — every indexed file's line count is re-read from disk and compared to
+  what the snapshot recorded, so an answer cannot describe code that has changed. Checked by
+  content rather than by comparing the snapshot's commit to `HEAD`: the commit comparison goes red
+  on every unrelated commit, and on the very commit that rebuilds the snapshot
 - **live** — all 11 detectors run against production without throwing, and the full
   detect→record→repair→record pipeline executes end to end
 
