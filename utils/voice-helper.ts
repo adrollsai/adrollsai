@@ -871,6 +871,19 @@ export async function bookAppointment(
                     timeZone
                 )
                 console.log(`[VOICE HELPER] Sent confirmation email to lead: ${leadEmail}`)
+                // Billed to the account at 2× our cost, like every other metered action — and only once the
+                // provider accepted it.
+                if (profile?.id) {
+                    try {
+                        const { chargeEmailSends } = await import('@/lib/automation/email-billing')
+                        await chargeEmailSends(supabaseAdmin, String(profile.id), {
+                            count: 1,
+                            label: 'Booking confirmation',
+                        })
+                    } catch (billingErr: any) {
+                        console.warn('[VOICE HELPER] Billing failed for confirmation email:', billingErr?.message || billingErr)
+                    }
+                }
             } catch (emailErr) {
                 console.error('[VOICE HELPER] Failed to send confirmation email:', emailErr)
             }

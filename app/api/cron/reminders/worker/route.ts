@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       // Fetch host profile
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('email, business_name')
+        .select('id, email, business_name')
         .eq('id', booking.user_id)
         .maybeSingle()
 
@@ -123,6 +123,20 @@ export async function POST(request: Request) {
       }
 
       const { sendBookingReminderEmail } = await import('@/utils/email-helper')
+      /**
+       * Reminder emails are billed to the account at 2× our cost, like every other metered action — and only
+       * once the provider accepted the message. Two senders here (host and lead), so the charge is a small
+       * helper rather than repeated inline.
+       */
+      const chargeEmail = async (count: number) => {
+        if (!profile?.id) return
+        try {
+          const { chargeEmailSends } = await import('@/lib/automation/email-billing')
+          await chargeEmailSends(supabaseAdmin, String(profile.id), { count, label: 'Booking reminder' })
+        } catch (billingErr: any) {
+          console.warn('[Reminders Worker] Billing failed for reminder email:', billingErr?.message || billingErr)
+        }
+      }
 
       // 1. Send email to host
       if (profile?.email) {
@@ -133,7 +147,9 @@ export async function POST(request: Request) {
           booking.booked_time,
           booking.meet_link || '',
           profile.business_name || 'Consultation'
-        ).catch(e => console.error('[Reminders Worker] Failed to send 30m email to host:', e))
+        )
+          .then(() => chargeEmail(1))
+          .catch(e => console.error('[Reminders Worker] Failed to send 30m email to host:', e))
       }
 
       // 2. Send email to lead
@@ -145,7 +161,9 @@ export async function POST(request: Request) {
           booking.booked_time,
           booking.meet_link || '',
           profile?.business_name || 'Consultation'
-        ).catch(e => console.error('[Reminders Worker] Failed to send 30m email to lead:', e))
+        )
+          .then(() => chargeEmail(1))
+          .catch(e => console.error('[Reminders Worker] Failed to send 30m email to lead:', e))
       }
 
       // Update reminder sent status on lead

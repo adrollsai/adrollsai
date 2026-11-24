@@ -164,6 +164,31 @@ export async function weekRecap(
     `Last week (${window.labelFrom} to ${window.labelTo}): ${withTrend(leads.created, leads.previousCreated)} new enquiries.`,
   );
 
+  /**
+   * …and against what is NORMAL for this business, not only against last week.
+   *
+   * One week against one week is a coin toss: a quiet week followed by a normal week reads as a triumph. The
+   * median of the last eight weeks says whether this week is actually unusual, in its own terms, which is the
+   * difference between a comparison and an insight. Best-effort — a business with two weeks of history is told
+   * that its baseline is provisional rather than being given a confident number.
+   */
+  try {
+    const { computeBaselines, compareToBaseline } = await import('./baselines');
+    const baselines = await computeBaselines(reader, now, 8);
+    const enquiriesVsUsual = compareToBaseline(leads.created, baselines.enquiriesPerWeek, 'a week');
+    const contentVsUsual = compareToBaseline(content.published, baselines.contentPerWeek, 'a week');
+    if (enquiriesVsUsual || contentVsUsual) {
+      const bits: string[] = [];
+      if (enquiriesVsUsual) bits.push(`${enquiriesVsUsual}`);
+      if (contentVsUsual) bits.push(`content ${contentVsUsual}`);
+      parts.push(
+        `Against this business's own normal (median of ${baselines.sampleWeeks} week(s)): ${bits.join('; ')}.`,
+      );
+    }
+  } catch {
+    // A baseline we cannot compute is not a finding; the recap stands without it.
+  }
+
   if (adMeasured && spendPaise > 0) {
     const trend = costTrend(costPerEnquiryPaise, ads.previousCplPaise ?? null);
     parts.push(
@@ -175,8 +200,7 @@ export async function weekRecap(
     parts.push('What the ads cost and brought could not be read, so those figures are unknown, not zero.');
   }
 
-  if (leads.booked > 0) parts.push(`${leads.booked} of the enquiries turned into a booking.`);
-  if (calls.placed > 0) parts.push(`We made ${calls.placed} calls and ${calls.connected} were answered.`);
+  if (leads.booked > 0) parts.push(`${leads.booked} of the enquiries turned into a booking.`);  if (calls.placed > 0) parts.push(`We made ${calls.placed} calls and ${calls.connected} were answered.`);
   if (whatsapp.sent > 0) parts.push(`${whatsapp.sent} messages went out and ${whatsapp.replied} came back.`);
   parts.push(
     content.published > 0
