@@ -5,6 +5,7 @@ import { sendGenericEmail } from '@/utils/email-helper';
 import { periodKey, periodLabel } from '@/lib/agent/routines';
 import { gatherDayMetrics, supabaseMetricsReader, windowFor } from '@/lib/agent/ceo-metrics';
 import { analyseDay } from '@/lib/agent/ceo-findings';
+import { chargeEmailSends } from '@/lib/automation/email-billing';
 
 export const maxDuration = 300;
 
@@ -152,6 +153,21 @@ export async function GET(req: NextRequest) {
     try {
       await sendGenericEmail(toEmail, digest.subject, digest.html);
       sent.push(`${routine.id}: ${slot}`);
+      /**
+       * The email is billed to the account at 2× our cost, like every other metered action.
+       *
+       * Charged AFTER the provider accepted the message, never before: an account must not pay for a
+       * mail that did not leave. This is the send that reaches every business twice a day, so it was the
+       * largest unmetered cost in the product. `chargeEmailSends` never throws — a billing failure is
+       * logged, and the report still goes out.
+       */
+      const billed = await chargeEmailSends(supabase, routine.user_id, {
+        count: 1,
+        label: `CEO ${slot} digest`,
+      });
+      if (billed.credits > 0) {
+        console.log(`[ceo-digest] charged ${billed.credits} credits for the ${slot} email (our cost ₹${billed.costInr})`);
+      }
       // Stamp the slot on the run so a cron retry cannot send it twice. If there is no
       // run row yet, the agent_events trail is the only place to note it, so skip the
       // stamping and rely on the log line rather than inventing a row.

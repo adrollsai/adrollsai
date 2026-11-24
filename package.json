@@ -95,6 +95,7 @@
     "verify:ceo-findings": "esbuild scripts/verify-ceo-findings.ts --bundle --platform=node --format=esm --outfile=.tmp-ceof.mjs --log-level=warning && node .tmp-ceof.mjs",
     "verify:ceo-plain-language": "esbuild scripts/verify-ceo-plain-language.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-plain.mjs --log-level=warning && node .tmp-plain.mjs",
     "verify:engine-loop": "esbuild scripts/verify-engine-loop.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-engine-loop.mjs --log-level=warning && node .tmp-engine-loop.mjs",
+    "verify:email-billing": "esbuild scripts/verify-email-billing.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-emailbill.mjs --log-level=warning && node .tmp-emailbill.mjs",
     "verify:voice-scenarios": "esbuild scripts/verify-voice-scenarios.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-voice-scen.mjs --log-level=warning && node .tmp-voice-scen.mjs",
     "scorecard:engine": "esbuild scripts/engine-scorecard.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-scorecard.mjs --log-level=warning && node .tmp-scorecard.mjs",
     "preview:brief": "esbuild scripts/dry-run-brief.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-drybrief.mjs --log-level=warning && node .tmp-drybrief.mjs",
