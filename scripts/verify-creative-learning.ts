@@ -91,6 +91,60 @@ check(
   'zero',
 );
 
+/**
+ * THE DOUBLE-COUNT THAT REACHED A CUSTOMER.
+ *
+ * This is a real row from a production account: one ad, ₹3,240, and 37 leads. Meta reported those 37
+ * leads under five different action ids, and this function SUMMED them — so the report announced "your
+ * ads say 74 enquiries while only 2 reached your list", a 98% catastrophe that was entirely our own
+ * arithmetic. The fixture below is that row, trimmed to the relevant types.
+ */
+const productionRow = {
+  ad_id: '120253296375070153',
+  spend: '3240.31',
+  impressions: '10126',
+  clicks: '328',
+  actions: [
+    { action_type: 'lead', value: '37' },
+    { action_type: 'onsite_conversion.lead_grouped', value: '37' },
+    { action_type: 'offsite_complete_registration_add_meta_leads', value: '37' },
+    { action_type: 'offsite_search_add_meta_leads', value: '37' },
+    { action_type: 'offsite_content_view_add_meta_leads', value: '37' },
+    { action_type: 'link_click', value: '187' },
+    { action_type: 'page_engagement', value: '229' },
+  ],
+};
+check(
+  'the same 37 leads reported under five ids are counted once, not five times',
+  deriveResults(productionRow) === 37,
+  `derived ${deriveResults(productionRow)} (was 185 by summing, 74 in the live report)`,
+);
+check(
+  'a lead is never added to a messaging conversation — they are different meanings, not two results',
+  deriveResults({
+    actions: [
+      { action_type: 'lead', value: '12' },
+      { action_type: 'onsite_conversion.messaging_conversation_started_7d', value: '30' },
+    ],
+  }) === 12,
+  'the lead count wins; it is not 42',
+);
+check(
+  'aliases that disagree take the largest, because they report the same events',
+  deriveResults({
+    actions: [
+      { action_type: 'lead', value: '4' },
+      { action_type: 'onsite_conversion.lead_grouped', value: '6' },
+    ],
+  }) === 6,
+  'max within a family',
+);
+check(
+  'engagement and clicks still never masquerade as enquiries',
+  deriveResults({ actions: productionRow.actions.filter((a) => !a.action_type.includes('lead')) }) === 0,
+  'zero',
+);
+
 head('3. Attribution joins a launch to its numbers, and admits what it cannot join');
 
 const rows = [

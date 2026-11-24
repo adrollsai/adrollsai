@@ -47,6 +47,8 @@ export interface MetricsReader {
     booked: number;
     lost: number;
     previousCreated: number;
+    /** Leads in the last 7 days, so ad figures can be compared against a like-for-like window. */
+    last7Days?: number;
   }>;
   callsInWindow(window: MetricsWindow): Promise<{ placed: number; connected: number; averageSeconds: number }>;
   whatsappInWindow(window: MetricsWindow): Promise<{ sent: number; replied: number }>;
@@ -145,6 +147,12 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
       const previous = await countRows('leads', (query) =>
         query.gte('created_at', window.previousFrom).lt('created_at', window.previousTo),
       );
+      // The ad figures are always a 7-day number, so the matching lead count is read here rather than
+      // letting a caller subtract a one-day lead count from a seven-day ad count (see DayMetrics).
+      const weekStart = new Date(Date.parse(window.to) - 7 * 86_400_000).toISOString();
+      const last7Days = await countRows('leads', (query) =>
+        query.gte('created_at', weekStart).lt('created_at', window.to),
+      );
 
       // "Contacted" is judged on the lead's own state, not on a separate activity log: a lead
       // that has moved past 'new' has been spoken to by someone.
@@ -159,6 +167,7 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
         booked: inWindow.filter((row) => Boolean(row.booked_time) || BOOKED_STATUSES.includes(status(row))).length,
         lost: inWindow.filter((row) => LOST_STATUSES.includes(status(row))).length,
         previousCreated: previous.length,
+        last7Days: last7Days.length,
       };
     },
 
@@ -304,6 +313,7 @@ export async function gatherDayMetrics(
       booked: 0,
       lost: 0,
       previousCreated: 0,
+      last7Days: 0,
     }),
     safe('calls', () => reader.callsInWindow(window), { placed: 0, connected: 0, averageSeconds: 0 }),
     safe('whatsapp', () => reader.whatsappInWindow(window), { sent: 0, replied: 0 }),

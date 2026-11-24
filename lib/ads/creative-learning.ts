@@ -121,42 +121,74 @@ export function parseNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/** Action types Meta reports that mean "this was a result" for the products we run. */
-const RESULT_ACTION_TYPES = [
-  'lead',
-  'onsite_conversion.lead_grouped',
-  'offsite_conversion.fb_pixel_lead',
-  'onsite_conversion.messaging_conversation_started_7d',
-  'onsite_conversion.messaging_first_reply',
-  'complete_registration',
-  'purchase',
+/**
+ * Action types Meta reports that mean "this was a result", grouped into FAMILIES of aliases.
+ *
+ * THE DOUBLE-COUNT THIS FIXES
+ * Meta reports one event under several ids. A single lead arrives as `lead`, as
+ * `onsite_conversion.lead_grouped`, and as three `offsite_*_add_meta_leads` types — five action types,
+ * the SAME lead. Summing the list turned 37 real leads into 74, and the report then announced "your ads
+ * say 74 enquiries while only 2 reached your list", a 98% catastrophe that was entirely an artefact of
+ * our own arithmetic. Measured on a live account before the fix: spend ₹3,240, one ad, 37 leads, reported
+ * as 74.
+ *
+ * So the families are mutually exclusive MEANINGS, and the answer is the highest-priority family that
+ * has data — never a sum across families (a purchase is not an enquiry either).
+ */
+const RESULT_FAMILIES: readonly (readonly string[])[] = [
+  // An enquiry that arrived as a lead. Every id below is the same event counted differently.
+  [
+    'lead',
+    'onsite_conversion.lead_grouped',
+    'offsite_conversion.fb_pixel_lead',
+    'offsite_complete_registration_add_meta_leads',
+    'offsite_search_add_meta_leads',
+    'offsite_content_view_add_meta_leads',
+    'offsite_lead_add_meta_leads',
+  ],
+  // A conversation someone started with the business. An enquiry, but never a lead-form lead.
+  ['onsite_conversion.messaging_conversation_started_7d', 'onsite_conversion.messaging_first_reply'],
+  // A sign-up that is not a lead in this product's sense.
+  ['complete_registration'],
+  // A sale. Reported only when it is the only outcome on the row.
+  ['purchase'],
 ];
 
 /**
  * The results count for a row.
  *
  * Meta does not have a `results` field — it has an `actions` array and the meaning of "a result" depends
- * on the campaign. So an explicit `results`/`leads` wins when a caller already resolved it, and otherwise
- * the known result action types are summed. Returning 0 (rather than null) when nothing matched is
- * deliberate: "spent money and produced nothing" is the single most actionable finding in the loop, and
- * treating it as "unknown" would discard it.
+ * on the campaign. An explicit `results`/`leads` wins when a caller already resolved it. Otherwise the
+ * highest-priority family with data decides, and within a family the MAXIMUM alias value is taken (they
+ * report the same events, so the max is the honest count; a sum would multiply the same lead by however
+ * many ids Meta happened to attach).
+ *
+ * Returning 0 (rather than null) when nothing matched is deliberate: "spent money and produced nothing"
+ * is the single most actionable finding in the loop, and treating it as "unknown" would discard it.
  */
 export function deriveResults(row: Record<string, any>): number {
   const explicit = parseNumber(row?.results) ?? parseNumber(row?.leads);
   if (explicit !== null) return explicit;
 
   const actions = Array.isArray(row?.actions) ? row.actions : [];
-  let total = 0;
-  let found = false;
+  const byType = new Map<string, number>();
   for (const action of actions) {
     const type = String(action?.action_type || '');
-    if (!RESULT_ACTION_TYPES.includes(type)) continue;
     const value = parseNumber(action?.value);
     if (value === null) continue;
-    total += value;
-    found = true;
+    byType.set(type, (byType.get(type) ?? 0) + value);
   }
-  return found ? total : 0;
+
+  for (const family of RESULT_FAMILIES) {
+    let best: number | null = null;
+    for (const type of family) {
+      const value = byType.get(type);
+      if (value === undefined) continue;
+      best = best === null ? value : Math.max(best, value);
+    }
+    if (best !== null) return best;
+  }
+  return 0;
 }
 
 /** Normalise one raw insights row. Returns null for a row that carries no identity to attribute. */

@@ -44,6 +44,16 @@ export interface DayMetrics {
     lost: number;
     /** Leads created in the same window a week ago, for comparison. */
     previousCreated?: number;
+    /**
+     * Enquiries that arrived in the LAST 7 DAYS — the window the ad figures cover.
+     *
+     * Ad spend and ad results are always a 7-day figure (`campaigns.spendPaise` says so), so any
+     * comparison against them must use seven days of leads too. The first version compared the 7-day
+     * ad result against this report's one-day lead count and announced "ads say 74 enquiries while only
+     * 2 reached your list" — a 98% catastrophe invented by subtracting two different units. When this is
+     * absent the ad-versus-list check stays silent rather than comparing unlike things.
+     */
+    last7Days?: number;
   };
   calls: { placed: number; connected: number; averageSeconds?: number };
   whatsapp: { sent: number; replied: number };
@@ -159,23 +169,33 @@ export function analyseDay(metrics: DayMetrics, options: { quiet?: boolean } = {
 
   // ── enquiries the ads claim, that never arrived
   //
-  // Found on a real account: Meta reported 19 enquiries from ads in 7 days while only 8 new enquiries
-  // reached the list. Both numbers are true — a person who enquires may already be on the list — but a
-  // gap that size is either a duplicate or money spent on enquiries that never reach the owner, and the
-  // owner is the only one who can tell which. Stated as a question, not an accusation.
-  if (campaigns.spendPaise > 0 && campaigns.leads > 0 && leads.created < campaigns.leads * 0.6) {
+  // Both halves must cover the SAME seven days: the ad figures always do, and `leads.last7Days` carries
+  // the matching lead count. Comparing the 7-day ad result against a single day's leads is how this once
+  // reported "74 enquiries, only 2 reached your list" on an account where 37 leads had arrived and the
+  // other 36 were the same 37 leads counted twice by Meta.
+  //
+  // Both numbers being true is also possible — a person who enquires may already be on the list — so the
+  // gap is stated as a question, not an accusation, and only when it is large enough to be worth asking.
+  const adsEnquiries = campaigns.leads;
+  const leadsSameWeek = leads.last7Days;
+  if (
+    campaigns.spendPaise > 0 &&
+    adsEnquiries > 0 &&
+    typeof leadsSameWeek === 'number' &&
+    leadsSameWeek < adsEnquiries * 0.6
+  ) {
     findings.push({
       id: 'ads-vs-list-gap',
       severity: 'risk',
-      title: `Ads say ${campaigns.leads} enquiries; only ${leads.created} reached your list`,
+      title: `Ads say ${adsEnquiries} enquiries; ${leadsSameWeek} reached your list`,
       evidence:
-        `Over the last 7 days your ads reported ${campaigns.leads} enquir${campaigns.leads === 1 ? 'y' : 'ies'} ` +
-        `for ${rupees(campaigns.spendPaise)}, but ${leads.created} new enquir${leads.created === 1 ? 'y' : 'ies'} ` +
+        `Over the same 7 days your ads reported ${adsEnquiries} enquir${adsEnquiries === 1 ? 'y' : 'ies'} ` +
+        `for ${rupees(campaigns.spendPaise)}, and ${leadsSameWeek} new enquir${leadsSameWeek === 1 ? 'y' : 'ies'} ` +
         'arrived in your list.',
       recommendation:
-        'Some of those are probably people already on the list. If they are not, the enquiry is being paid for ' +
-        'and then lost before it reaches you — let me trace one enquiry from the ad to your list and find where ' +
-        'it stops.',
+        'Some of those are probably people already on the list, or the same person counted twice. If they are not, the ' +
+        'enquiry is being paid for and then lost before it reaches you — let me trace one enquiry from the ad to your ' +
+        'list and find where it stops.',
       needsReview: false,
     });
   }

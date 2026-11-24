@@ -98,9 +98,24 @@ function scenarios(): { name: string; metrics: DayMetrics }[] {
       metrics: { ...base, campaigns: { active: 1, spendPaise: 480_000, leads: 6, previousCplPaise: 30_000 } },
     },
     {
-      // Seen in production: ads reported 19 enquiries, only 8 reached the list.
+      // Seen in production: the same 37 leads reported under five different Meta ids, and a 7-day ad
+      // figure compared against a one-day lead count. Both halves are now the same seven days.
       name: 'ads claiming more enquiries than arrived',
-      metrics: { ...base, leads: { created: 8, contacted: 6, replied: 4, booked: 1, lost: 0, previousCreated: 57 }, campaigns: { active: 1, spendPaise: 43_400, leads: 19, previousCplPaise: 2_300 } },
+      metrics: {
+        ...base,
+        leads: { created: 2, contacted: 2, replied: 1, booked: 0, lost: 0, previousCreated: 3, last7Days: 8 },
+        campaigns: { active: 1, spendPaise: 43_400, leads: 37, previousCplPaise: 2_300 },
+      },
+    },
+    {
+      // The same account, healthy: 37 ad enquiries and 34 leads in the same week is a rounding gap,
+      // not a catastrophe, and must NOT raise anything.
+      name: 'ads and the list agree',
+      metrics: {
+        ...base,
+        leads: { created: 5, contacted: 4, replied: 2, booked: 1, lost: 0, previousCreated: 4, last7Days: 34 },
+        campaigns: { active: 1, spendPaise: 43_400, leads: 37, previousCplPaise: 2_300 },
+      },
     },
     {
       name: 'nobody contacted anyone',
@@ -165,6 +180,37 @@ for (const { pattern, why } of BANNED) {
 head('2. A number is never left on its own');
 
 {
+  // The mismatch that produced a fake catastrophe in production: a seven-day ad figure against a
+  // one-day lead count. It must not speak unless both halves cover the same week.
+  const gapBase: DayMetrics = {
+    window: { from: '2026-02-01', to: '2026-02-02' },
+    leads: { created: 2, contacted: 2, replied: 1, booked: 0, lost: 0, previousCreated: 3 },
+    calls: { placed: 0, connected: 0 },
+    whatsapp: { sent: 0, replied: 0 },
+    campaigns: { active: 1, spendPaise: 324_031, leads: 37, previousCplPaise: null },
+    content: { published: 1, created: 1 },
+    credits: { balance: 24_792, spentLast7Days: 0 },
+    routines: { ran: 1, failed: 0 },
+  };
+  const mismatched = analyseDay(gapBase);
+  check(
+    'with no seven-day lead count it stays silent instead of comparing unlike windows',
+    !mismatched.some((finding) => finding.id === 'ads-vs-list-gap'),
+    mismatched.map((finding) => finding.id).join(', ') || 'silent',
+  );
+  const matched = analyseDay({ ...gapBase, leads: { ...gapBase.leads, last7Days: 34 } });
+  check(
+    'and 37 ad enquiries against 34 leads in the same week is not a catastrophe',
+    !matched.some((finding) => finding.id === 'ads-vs-list-gap'),
+    matched.map((finding) => finding.id).join(', ') || 'silent',
+  );
+  const realGap = analyseDay({ ...gapBase, leads: { ...gapBase.leads, last7Days: 8 } });
+  check(
+    'but 37 against 8 in the same week IS raised',
+    realGap.some((finding) => finding.id === 'ads-vs-list-gap'),
+    realGap.find((finding) => finding.id === 'ads-vs-list-gap')?.title ?? 'not raised',
+  );
+
   // Where the report HAS a previous figure to compare against, the sentence must use it. This is
   // the difference between a report and a dashboard: a dashboard shows 12, a report says 12 and
   // what that means.
