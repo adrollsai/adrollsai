@@ -144,6 +144,40 @@ console.log('\n▸ a tool with no result is closed, not left dangling');
   );
 }
 
+/**
+ * THE ORDER OF THE WORK IS THE POINT.
+ *
+ * The owner's complaint — "the entire chat comes in one block, so the flow of the conversation is not
+ * maintained" — is only fixable if the projection keeps narration separated from results. It does: each
+ * distinct `assistant.text` id becomes its own row. This pins it, because the fix for the complaint is the
+ * agent narrating in beats (orchestrator prompt), and that fix is invisible if the projection merges the
+ * beats back into one block.
+ */
+console.log('\n▸ narrative beats stay separate, in the order they happened');
+{
+  const beatLog = [
+    ev(1, 'session.opened', { title: 't', workspaceId: 'ws_a' }),
+    ev(2, 'user.message', { id: 'u1', text: 'how are the leads?' }),
+    ev(3, 'assistant.text', { id: 'a1', text: 'Let me look at the last two weeks of leads.' }),
+    ev(4, 'tool.call', { callId: 'c1', name: 'nobogent_crm_query_leads' }),
+    ev(5, 'tool.result', { callId: 'c1', output: { count: 20 } }),
+    ev(6, 'assistant.text', { id: 'a2', text: '14 of those 20 were never called — that is the leak.' }),
+  ];
+  const s = project('s6c', beatLog);
+  check(
+    'four rows: question, beat, tool, beat',
+    s.items.map((i) => i.kind).join(',') === 'user,assistant,tool,assistant',
+    s.items.map((i) => i.kind).join(',')
+  );
+  check('the two beats are not merged', s.items.filter((i) => i.kind === 'assistant').length === 2);
+  check(
+    'and they keep their order around the tool call',
+    s.items[1].kind === 'assistant' && String((s.items[1] as any).text).startsWith('Let me look') &&
+      String((s.items[3] as any).text).startsWith('14 of those'),
+    s.items.map((i: any) => String(i.text || i.kind).slice(0, 22)).join(' | ')
+  );
+}
+
 console.log('\n▸ empty / invalid payloads are ignored, not crashed on');
 {
   const s = project('s7', [

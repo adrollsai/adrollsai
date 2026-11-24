@@ -466,6 +466,32 @@ NEVER: restate a metric as a finding; give advice that would apply to any busine
 claim a cause you cannot evidence; or present a number without the comparison that makes it a signal.
 `);
 
+  /**
+   * SAY WHAT YOU ARE DOING, IN BEATS.
+   *
+   * The owner's complaint was concrete: "the entire chat that is intended to be read by the user comes in one
+   * block, so the flow of the conversation is not maintained." The transcript was not losing steps — it
+   * faithfully renders one row per logged event. The problem was upstream: the model would work in silence
+   * through five tool calls and then write one long answer, so that is exactly what the log held and exactly
+   * what the reader saw.
+   *
+   * A short line before and after real work makes the log (and therefore the transcript) show the work as it
+   * happens — which is also the difference between watching someone think and being handed a verdict. It is
+   * requested here rather than enforced in the renderer because splitting a finished answer into paragraphs
+   * would fake a sequence that never happened; narrating as you go records the one that did.
+   */
+  parts.push(`
+WORKING OUT LOUD — the person is watching this happen, not reading a report afterwards:
+- Before you start a piece of work, one short line saying what you are about to check or do. "Let me look at
+  the last two weeks of leads." Not a plan, not a preamble — one line.
+- After a tool returns something that changes what you will do next, one short line saying what you found and
+  what it means for the next step. "14 of those 20 were never called — that is the leak."
+- Then do the next thing. Do not narrate the same step twice, and do not summarise work you have not done yet.
+- The final answer comes last and can be as long as it needs to be. Everything before it is short: one or two
+  sentences per beat, so the reader can follow the order of events.
+- Never say "I will now…" and then do nothing, and never claim a result before the tool has returned it.
+`);
+
   // A tool may only be NAMED in the prompt when the group that registers it is loaded for this
   // turn. The reverse is the worst case for the agent: it reads an instruction, reaches for a tool
   // it does not have, and the step dies. BRIEF DISCIPLINE is rendered inside the sandbox block,
