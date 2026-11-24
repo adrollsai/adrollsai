@@ -375,7 +375,18 @@ export default function QualifyingPage() {
 
   const currentFlow = flows[activeFlowIndex] || flows[0] || {
     name: 'General Flow',
-    questions: REAL_ESTATE_DEFAULT_QUESTIONS
+    /**
+     * The fallback used to be REAL_ESTATE_DEFAULT_QUESTIONS, unconditionally.
+     *
+     * So any account with no saved flow was shown "What type of property are you interested in?" and
+     * "Under ₹50 Lacs" — a film academy's owners were asked about plots of land. Reported from a live client
+     * (Procolor, an education business) who saw real-estate questions in their own lead view.
+     *
+     * A neutral set is the only safe default when the industry is unknown: "expected timeline" and "budget
+     * scale" are questions every business can ask. Real-estate accounts get their own template from
+     * INDUSTRY_QUALIFYING_TEMPLATES once a flow is saved, and nobody is mis-described in the meantime.
+     */
+    questions: GENERIC_DEFAULT_QUESTIONS
   }
 
   const isCurrentFlowDefault = !currentFlow.linked_campaign_id || currentFlow.linked_campaign_id === '' || currentFlow.linked_campaign_id === 'null'
