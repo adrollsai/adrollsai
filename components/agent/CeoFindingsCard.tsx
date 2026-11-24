@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw, ShieldQuestion, TrendingUp } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, RefreshCw, ShieldQuestion, Sparkles, TrendingUp } from 'lucide-react';
 
 /**
  * Yesterday, in findings.
@@ -237,6 +237,37 @@ export default function CeoFindingsCard({ impersonateId }: { impersonateId?: str
                         <span className="font-semibold">What I would do: </span>
                         {finding.recommendation}
                       </p>
+                      {/**
+                       * ONE CLICK TO ACT.
+                       *
+                       * The tab reported what was wrong and what it would do about it, and then left the owner
+                       * to go and type it somewhere else. Every finding now carries the instruction that acts
+                       * on it: the click opens the CEO conversation with that instruction already sent, so the
+                       * work starts from the number rather than from a retyped summary of it. Anything that
+                       * spends money or messages a customer still stops at the approval card.
+                       */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const instruction =
+                            `Act on this finding: "${finding.title}". ` +
+                            `The numbers: ${finding.evidence} ` +
+                            `You suggested: ${finding.recommendation} ` +
+                            'Do it now, and stop for my approval before anything that spends money or messages a customer.';
+                          const base = impersonateId
+                            ? `/dashboard/agent?ceo=1&impersonate=${encodeURIComponent(impersonateId)}`
+                            : '/dashboard/agent?ceo=1';
+                          window.location.assign(`${base}&ask=${encodeURIComponent(instruction)}`);
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition"
+                        style={{
+                          background: 'var(--dsw-alias-bg-layer-3)',
+                          borderColor: 'var(--dsw-alias-border-l2)',
+                          color: 'var(--dsw-alias-brand-text)',
+                        }}
+                      >
+                        <Sparkles size={11} /> {finding.needsReview ? 'Ask Nobo to do this' : 'Have Nobo do this'}
+                      </button>
                     </div>
                   </div>
                 </li>

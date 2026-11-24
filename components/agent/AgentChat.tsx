@@ -586,6 +586,28 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
           setActiveSessionId(data.ceoSessionId);
           setActiveWorkspaceId(CEO_WORKSPACE_ID);
         }
+        /**
+         * An instruction handed over by the CEO tab (?ask=…).
+         *
+         * The tab could show what was wrong and what it would do about it, and then left the owner to retype
+         * it here. A finding's button — or the "Tell it what you want" box — now arrives as this parameter
+         * and is SENT, not prefilled, so one click starts the work. Everything that spends money or messages
+         * a customer still stops at the review gate, so a one-click instruction cannot spend silently.
+         *
+         * Sent once: the parameter is stripped from the URL immediately, so a refresh or a back-navigation
+         * cannot fire the same instruction twice.
+         */
+        const ask = (params.get('ask') || '').trim();
+        if (ask) {
+          params.delete('ask');
+          const query = params.toString();
+          window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+          // A beat for the thread to be selected and the stream to attach; sending into a session that is
+          // still switching is how a message lands in the wrong conversation.
+          window.setTimeout(() => {
+            void handleSendRef.current(ask);
+          }, 500);
+        }
       } catch {
         /* the tab still works without it; the row simply does not appear */
       }

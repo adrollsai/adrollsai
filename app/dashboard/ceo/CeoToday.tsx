@@ -22,6 +22,14 @@ import CeoFindingsCard from '@/components/agent/CeoFindingsCard';
 export default function CeoTodayPanel({ initial, impersonateId }: { initial: CeoToday; impersonateId?: string | null }) {
   const [data, setData] = useState<CeoToday>(initial);
   const [busy, setBusy] = useState(false);
+  /** What the owner typed in the instruction box, sent to the CEO conversation as-is. */
+  const [instruction, setInstruction] = useState('');
+  const ask = (text: string) => {
+    const base = impersonateId
+      ? '/dashboard/agent?ceo=1&impersonate=' + encodeURIComponent(impersonateId)
+      : '/dashboard/agent?ceo=1';
+    window.location.assign(base + '&ask=' + encodeURIComponent(text.trim()));
+  };
   // The account being viewed (a super admin may be inspecting a tenant). Both the
   // refresh and the switch-on have to stay inside that account.
   const impParam = impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : '';
@@ -201,6 +209,40 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
             </p>
           )
         )}
+      </div>
+
+      {/* Ask the CEO, in your own words */}
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-5">
+        <h2 className="text-sm font-bold text-slate-800">Tell it what you want</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          The cards above say what the numbers show and what it would do about them. This is where you say it in
+          your own words — or agree with one of the suggestions, by name.
+        </p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && instruction.trim()) ask(instruction);
+            }}
+            placeholder="e.g. fix the ads-vs-list gap, or make the November batch creative and send it to me"
+            className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 outline-none transition focus:border-indigo-400"
+            aria-label="Tell the CEO what to do"
+          />
+          <button
+            type="button"
+            onClick={() => instruction.trim() && ask(instruction)}
+            disabled={!instruction.trim()}
+            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-40"
+          >
+            <Bot size={13} /> Ask the CEO
+          </button>
+        </div>
+        <p className="mt-2 text-[10.5px] text-slate-400">
+          It works from your real numbers, and stops for your approval before spending anything or messaging a
+          customer.
+        </p>
       </div>
 
       {/* Needs you */}
