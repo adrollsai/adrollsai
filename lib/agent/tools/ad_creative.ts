@@ -24,7 +24,7 @@ export function createAdCreativeTools(supabase: SupabaseClient, userId: string) 
         'an ad, a poster, an offer card or a reel — every time, whether or not a reference was supplied, because a ' +
         'reference decides the LOOK and this decides the ARGUMENT. It picks a conversion angle that the supplied ' +
         'facts actually support, writes the headline and subhead, states the offer, chooses the call to action, ' +
-        'and returns: a complete imagePrompt to hand to generate_ai_image (or to build in HTML), a layout with real ' +
+        'and returns: a complete imagePrompt to hand to generate_ai_image, a layout with real ' +
         'pixel type sizes and safe areas, a measured contrast verdict, video beats for 9:16, and a checklist. ' +
         'Anything the business has not told you comes back as [NEEDS: …] in `needs` — ask for it or drop that ' +
         'angle. NEVER invent a claim, a statistic, a deadline or a placement rate to fill one.',

@@ -103,7 +103,15 @@ check(
   /checkLimitAndIncrement\(/.test(service) && /refundLimit\(/.test(service),
 );
 
-const goodReq = { dailyBudget: 500, creativeUrls: ['https://cdn.example.com/ad.jpg'], campaignGoal: 'leads' };
+// `locations` is required by validateLaunchRequest — an ad with no explicit geo is refused —
+// so a "complete" request has to carry one. This fixture predated that requirement, which is
+// why this check had been failing against an otherwise fine build.
+const goodReq = {
+  dailyBudget: 500,
+  creativeUrls: ['https://cdn.example.com/ad.jpg'],
+  campaignGoal: 'leads',
+  locations: [{ key: 'IN', type: 'country' as const }],
+};
 check('a complete launch passes validation', validateLaunchRequest(goodReq, FAKE_CTX).ok === true);
 check(
   'no budget is refused and says so',

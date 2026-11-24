@@ -272,11 +272,66 @@ export function isProviderOutOfCreditError(message: unknown): boolean {
   return /insufficient balance|insufficient_quota|exceeded your current quota|payment required|\b402\b/i.test(text);
 }
 
+/**
+ * Ask the provider's own wallet whether it can actually pay, right now.
+ *
+ * WHY THIS EXISTS
+ * Everything above infers "out of credit" from our own history: an in-memory mark that lapses after 15
+ * minutes, plus a database query for balance-failed runs in the last hour. Both are guesses about the
+ * PRESENT made from the PAST, and the owner corrected one of those guesses in person — the account was
+ * funded while the code still believed it was dry. A top-up should not have to wait for an old row to age
+ * out of a window before the platform trusts the primary model again.
+ *
+ * `is_available` and `total_balance` are the authoritative answer, so a funded wallet clears the flag
+ * immediately. A probe that FAILS changes nothing: this may only ever restore the primary model, never
+ * take it away, so a network blip cannot silently switch the agent to the fallback.
+ *
+ * Returns null when it could not tell.
+ */
+async function providerWalletIsFunded(key: string): Promise<boolean | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), 2_500);
+    const res = await fetch(`${DEEPSEEK_BASE_URL}/user/balance`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const body: any = await res.json();
+    if (body?.is_available === false) return false;
+    const infos = Array.isArray(body?.balance_infos) ? body.balance_infos : [];
+    const total = infos.reduce(
+      (sum: number, info: any) => sum + Number(info?.total_balance ?? 0),
+      0,
+    );
+    if (!Number.isFinite(total)) return null;
+    return total > 0;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function isDeepseekAuthorized(): Promise<boolean> {
   // A dry account is not an authorised one for our purposes: the caller wants a model that will answer.
   // Asked of the database too, because a cold instance has no memory of the last failure.
   await refreshOutOfCreditFromDb();
-  if (isProviderOutOfCredit()) return false;
+
+  if (isProviderOutOfCredit()) {
+    const keyNow = getDeepseekApiKey();
+    if (!keyNow) return false;
+    // Believe the wallet over our own history: if it can pay, stop hedging.
+    const funded = await providerWalletIsFunded(keyNow);
+    if (funded !== true) return false;
+    outOfCreditUntil = 0;
+    dbSaidOutOfCredit = false;
+    console.error(
+      '[Agent Model] The provider wallet is funded again — returning to the primary model.',
+    );
+  }
 
   const key = getDeepseekApiKey();
   if (!key) return false;
