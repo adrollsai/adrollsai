@@ -41,6 +41,13 @@
   --nobo-violet-600: #6d28d9;
   --nobo-pink-500: #ec4899;
 
+  /* ---- session status dots ----
+     Read by the sidebar tile markers: light brown means the agent has stopped and is
+     waiting for your approval, green means it finished and you have not looked since.
+     They are component colours, so they belong in the palette and not in a rule. */
+  --nobo-dot-approval: #b9885a;
+  --nobo-dot-done: #2f9e6b;
+
   --dsw-alias-bg-base: var(--nobo-canvas);
   --dsw-alias-bg-layer-1: var(--nobo-card);
   --dsw-alias-bg-layer-2: var(--nobo-card);
@@ -150,6 +157,11 @@
   --nobo-violet-500: #a78bfa;
   --nobo-violet-600: #c4b5fd;
   --nobo-pink-500: #f472b6;
+
+  /* ---- session status dots ----
+     Same two meanings as the light theme, lifted so they read against a dark canvas. */
+  --nobo-dot-approval: #d7a878;
+  --nobo-dot-done: #4fc98d;
 
   --dsw-alias-bg-base: var(--nobo-canvas);
   --dsw-alias-bg-layer-1: var(--nobo-card);

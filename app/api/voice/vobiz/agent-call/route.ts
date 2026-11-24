@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { formatCallPhone } from '@/utils/dialer'
 import { resolveAppUrl, resolveVoiceBridgeHttpUrl } from '@/utils/app-url'
+import { storeRecording } from '@/lib/automation/recording-store'
 
 const BLUESQUARE_DID = '+917965480905'
 const BLUESQUARE_VOBIZ_AUTH_ID = 'SA_RUY0ZNCH'
@@ -135,18 +136,16 @@ export async function POST(req: NextRequest) {
                                 if (audioFetch.ok) {
                                     const audioBuffer = Buffer.from(await audioFetch.arrayBuffer())
                                     if (audioBuffer.byteLength > 1000) {
-                                        const storagePath = `${leadId || 'manual'}/vobiz_voip_${callUuid}.mp3`
-                                        const { error: upErr } = await adminSupabase.storage
-                                            .from('lead-voice-recordings')
-                                            .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
-                                        if (!upErr) {
-                                            const { data: pubData } = adminSupabase.storage
-                                                .from('lead-voice-recordings')
-                                                .getPublicUrl(storagePath)
-                                            recordingUrl = pubData?.publicUrl || mp3
-                                        } else {
-                                            recordingUrl = mp3
-                                        }
+                                        // Archive to R2; fall back to the carrier's own
+                                        // URL when that fails, which is what happened
+                                        // before this existed anyway.
+                                        const stored = await storeRecording({
+                                            leadId,
+                                            filename: `vobiz_voip_${callUuid}.mp3`,
+                                            body: audioBuffer,
+                                            contentType: 'audio/mpeg'
+                                        })
+                                        recordingUrl = stored ? stored.key : mp3
                                         break
                                     }
                                 }

@@ -1,6 +1,13 @@
 import { S3Client } from '@aws-sdk/client-s3';
 
-function getR2Client(): S3Client {
+/**
+ * A real client instance, for callers that need to hand it to a helper rather than
+ * call one method on it. `getSignedUrl` from `s3-request-presigner` reads `config` and
+ * `middlewareStack` off the client, and the `r2` proxy below builds a NEW client on
+ * every property read — so passing the proxy to the presigner would mix one client's
+ * middleware stack with another's config. Use this for presigning.
+ */
+export function getR2Client(): S3Client {
   const endpoint = (process.env.R2_ENDPOINT || '').replace(/\/adrolls-storage\/?$/, '');
   const accessKeyId = (process.env.R2_ACCESS_KEY_ID || '').replace(/^["']|["']$/g, '').trim();
   const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || '').replace(/^["']|["']$/g, '').trim();

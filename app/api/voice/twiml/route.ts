@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { warmupVoiceBridge } from '@/utils/voice-helper'
 import { refreshGoogleAccessToken, getCalendarTimezone } from '@/utils/google-calendar'
 import { industryVocabulary } from '@/lib/automation/industry'
+import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
 import { classifyLeadOrigin } from '@/lib/automation/calling-script'
 
 // Using service role client because this is a public webhook requested by Twilio
@@ -548,24 +549,12 @@ ${whatsappHistory ? `--- PREVIOUS WHATSAPP CHAT HISTORY ---\n${whatsappHistory}`
         //
         // These used to be property questions for every business: a film academy would have been
         // asked "what type of property are you interested in" and offered a ₹50L–₹1.5Cr budget
-        // band. The property set now only applies to a property business; everyone else gets
-        // neutral questions built from their own industry vocabulary.
-        const industryKey = String((profile as any)?.industry || '').toLowerCase();
-        const isPropertyBusiness = /propert|real.?estate|realt|infra|homes|realty|land|plot/.test(
-            industryKey + ' ' + String(companyName || '').toLowerCase()
-        );
+        // band. The set now comes from the account's OWN industry and name — a property business
+        // still gets the property questions, everyone else gets neutral ones phrased with their
+        // own product word. One implementation, shared with the WhatsApp webhook:
+        // lib/automation/qualifying-questions.ts.
         if (isQualifyingEnabled && parsedQuestions.length === 0 && !lead?.notes) {
-            parsedQuestions = isPropertyBusiness
-                ? [
-                    { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                    { question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                    { question: 'What is your purchase timeline?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-                ]
-                : [
-                    { question: `Which ${industryVocab.productNoun} are you interested in?`, options: [] },
-                    { question: 'When are you planning to start?', options: ['This month', '1 - 3 Months', 'Just exploring'] },
-                    { question: 'What would you like to know first?', options: ['Fees / pricing', 'Duration & schedule', 'Career scope'] }
-                ];
+            parsedQuestions = defaultQualifyingQuestions((profile as any)?.industry, companyName);
         }
 
         const formattedQuestionsList = parsedQuestions.map((q: { question: string; options: string[] }, i: number) => {

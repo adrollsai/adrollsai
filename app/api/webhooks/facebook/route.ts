@@ -13,6 +13,7 @@ import { createCreativeSessionToken } from '@/utils/creative-token'
 import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
+import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
 // P7 lead journey: ONE classifier for "opt-out" / "wants a human", and the
@@ -1246,6 +1247,7 @@ export async function POST(request: Request) {
                                     let ownerQualifyingEnabled = false;
                                     let ownerQualifyingQuestions: string[] = [];
                                     let ownerBusinessName = 'our company';
+                                    let ownerIndustry: string | null = null;
                                     let ownerAddress = '';
                                     let ownerBusinessInfo = '';
                                     let ownerContactNumber = '';
@@ -1256,7 +1258,7 @@ export async function POST(request: Request) {
                                     if (wabaPhoneId) {
                                         const { data: ownerProfiles } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, industry, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
                                             .eq('whatsapp_phone_number_id', wabaPhoneId);
                                         
                                         if (ownerProfiles && ownerProfiles.length > 0) {
@@ -1277,6 +1279,7 @@ export async function POST(request: Request) {
                                             ownerQualifyingEnabled = selectedProfile.qualifying_enabled || false;
                                             ownerQualifyingQuestions = selectedProfile.qualifying_questions || [];
                                             ownerBusinessName = selectedProfile.business_name || 'our company';
+                                            ownerIndustry = selectedProfile.industry || null;
                                             ownerAddress = selectedProfile.address || '';
                                             ownerBusinessInfo = selectedProfile.business_info || '';
                                             ownerContactNumber = selectedProfile.contact_number || selectedProfile.whatsapp_phone_number || '';
@@ -1315,7 +1318,7 @@ export async function POST(request: Request) {
                                             ownerUserId = selectedLead.user_id;
                                             const { data: ownerProfile } = await supabaseAdmin
                                                 .from('profiles')
-                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, address, business_info, contact_number, whatsapp_phone_number, enable_distribution, voice_twilio_number, voice_twilio_sid')
+                                                .select('whatsapp_access_token, whatsapp_phone_number_id, facebook_token, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, role, business_name, industry, address, business_info, contact_number, whatsapp_phone_number, enable_distribution, voice_twilio_number, voice_twilio_sid')
                                                 .eq('id', ownerUserId)
                                                 .maybeSingle();
                                             if (ownerProfile) {
@@ -1330,6 +1333,7 @@ export async function POST(request: Request) {
                                                 ownerQualifyingEnabled = ownerProfile.qualifying_enabled || false;
                                                 ownerQualifyingQuestions = ownerProfile.qualifying_questions || [];
                                                 ownerBusinessName = ownerProfile.business_name || 'our company';
+                                            ownerIndustry = ownerProfile.industry || null;
                                                 ownerAddress = ownerProfile.address || ownerAddress || '';
                                                 ownerBusinessInfo = ownerProfile.business_info || ownerBusinessInfo || '';
                                                 ownerContactNumber = ownerProfile.contact_number || ownerProfile.whatsapp_phone_number || ownerContactNumber || '';
@@ -1374,7 +1378,7 @@ export async function POST(request: Request) {
                                     if (!isDedicatedClientAccount && isNobogentAdOrigin) {
                                         const { data: noboProfile } = await supabaseAdmin
                                             .from('profiles')
-                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
+                                            .select('id, whatsapp_access_token, whatsapp_phone_number_id, facebook_token, business_name, industry, address, business_info, contact_number, whatsapp_phone_number, role, whatsapp_catalogue_button_text, whatsapp_buttons, custom_domain, qualifying_enabled, qualifying_questions, auto_call_new_leads, enable_distribution, voice_twilio_number, voice_twilio_sid')
                                             .eq('id', 'bc63c065-9bcc-4793-bedc-f0960406425b')
                                             .maybeSingle();
 
@@ -3181,11 +3185,30 @@ RULES:
                                                 { index: 1, key: 'monthly_leads', question: 'Approximately how many leads do you receive per month?', options: ['Under 50', '50–200', '200+'] },
                                                 { index: 2, key: 'readiness', question: 'When would you be ready to implement Nobogent AI to scale your sales?', options: ['Immediate', 'This week', 'Next week'] }
                                             );
-                                        } else if (hasProperties) {
-                                            parsedQuestionsList.push(
-                                                { index: 0, key: 'property_type', question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                                                { index: 1, key: 'budget', question: 'What is your budget range?', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                                                { index: 2, key: 'timeline', question: 'What is your timeline to purchase?', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
+                                        } else {
+                                            /**
+                                             * This used to be `else if (hasProperties)`, with a hardcoded property
+                                             * questionnaire — so any business holding `properties` rows was asked
+                                             * "What type of property are you interested in?" and offered a
+                                             * ₹50L–₹1.5Cr budget band, whatever it actually sold. A film academy
+                                             * was asked about plots of land.
+                                             *
+                                             * The fallback now comes from the account's OWN industry and name. A
+                                             * property business still gets the property set; everyone else gets
+                                             * neutral questions phrased with their own product word. See
+                                             * lib/automation/qualifying-questions.ts.
+                                             */
+                                            defaultQualifyingQuestions(ownerIndustry, ownerBusinessName).forEach(
+                                                (q, qi) => {
+                                                    const isTextType = q.options.length === 0;
+                                                    parsedQuestionsList.push({
+                                                        index: qi,
+                                                        key: `custom_q_${qi}`,
+                                                        question: q.question,
+                                                        type: isTextType ? 'text' : 'choice',
+                                                        options: q.options,
+                                                    });
+                                                }
                                             );
                                         }
                                     }

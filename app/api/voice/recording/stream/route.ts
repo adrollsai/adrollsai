@@ -3,7 +3,8 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { createClient } from '@/utils/supabase/server'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
 import { resolveRecordingLinkSecret, verifyRecordingToken } from '@/lib/automation/call-receipt'
-import { isOurRecording, signedRecordingUrl, RECORDING_BUCKET } from '@/lib/automation/recording-link'
+import { isOurRecording } from '@/lib/automation/recording-link'
+import { storeRecording, playableRecordingUrl } from '@/lib/automation/recording-store'
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -127,12 +128,12 @@ export async function GET(req: Request) {
             return new NextResponse('Recording not found', { status: 404 })
         }
 
-        // Our own bucket is PRIVATE, so the stored `.../object/public/...` string is
-        // not playable for anyone. Redirect to a short-lived signed URL instead of
-        // the public one; that is what makes this route the way to reach a recording
-        // without the bucket being open to the world.
+        // Our own recordings are PRIVATE, so the stored value is not playable as-is —
+        // neither a Supabase path nor an R2 key is a URL. Mint a short-lived one instead;
+        // that is what makes this route the way to reach a recording without the bucket
+        // being open to the world.
         if (isOurRecording(rawUrl)) {
-            const signed = await signedRecordingUrl(supabaseAdmin, rawUrl)
+            const signed = await playableRecordingUrl(supabaseAdmin, rawUrl)
             if (!signed) {
                 return new NextResponse('Recording could not be signed', { status: 500 })
             }
@@ -167,26 +168,28 @@ export async function GET(req: Request) {
         const rawBuffer = Buffer.from(await vobizRes.arrayBuffer())
         const audioBuffer = await ensureStandardMp3(rawBuffer)
 
-        // In background, upload to Supabase storage so future plays are direct
+        // In background, archive the recording to R2 so future plays are direct
         if (leadId) {
             (async () => {
                 try {
-                    const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`
-                    const { error: upErr } = await supabaseAdmin.storage
-                        .from(RECORDING_BUCKET)
-                        .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
+                    const stored = await storeRecording({
+                        leadId,
+                        filename: `vobiz_${Date.now()}.mp3`,
+                        body: audioBuffer,
+                        contentType: 'audio/mpeg'
+                    })
 
-                    if (!upErr) {
-                        // Store the OBJECT PATH, not a public URL. The bucket is
-                        // private now, so a public URL would be a dead link; callers
-                        // turn this path into a short-lived signed URL.
+                    if (stored) {
+                        // Store the OBJECT KEY, not a URL. A URL is a promise about where
+                        // the object is reachable, and that promise changes; the key does
+                        // not. Callers turn it into a short-lived presigned URL.
                         await supabaseAdmin
                             .from('leads')
-                            .update({ voice_recording_url: storagePath })
+                            .update({ voice_recording_url: stored.key })
                             .eq('id', leadId)
                     }
                 } catch (bErr) {
-                    console.warn('[RECORDING STREAM] Background upload to Supabase failed:', bErr)
+                    console.warn('[RECORDING STREAM] Background archive to R2 failed:', bErr)
                 }
             })()
         }

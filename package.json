@@ -192,6 +192,7 @@
     "verify:tool-artifacts": "esbuild scripts/verify-tool-artifacts.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-tool-artifacts.mjs --log-level=warning && node .tmp-tool-artifacts.mjs",
     "verify:approval-card-ui": "node scripts/verify-approval-card-ui.mjs",
     "verify:agent-theme": "node scripts/verify-agent-theme.mjs",
+    "verify:qualifying-vocabulary": "esbuild scripts/verify-qualifying-vocabulary.ts --bundle --platform=node --format=esm --alias:@=./ --outfile=.tmp-qual-vocab.mjs --log-level=warning && node .tmp-qual-vocab.mjs",
     "verify:crm-csv-filter": "node scripts/verify-crm-csv-filter.mjs",
     "verify:followup-activity": "esbuild scripts/verify-followup-activity.ts --bundle --platform=node --format=cjs --outfile=.tmp-followup-activity.cjs --log-level=warning && node .tmp-followup-activity.cjs",
     "probe:flow-scheduler": "esbuild scripts/probe-flow-scheduler.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probeflow.mjs --log-level=warning && node .tmp-probeflow.mjs",

@@ -60,9 +60,63 @@ export async function GET(req: Request) {
     ensureCeoSession(supabase, actingUserId),
   ]);
 
+  const visible = sessions.filter((s) => s.workspaceId !== 'ceo');
+
+  /**
+   * Two per-session signals the sidebar dots need.
+   *
+   * A pending approval means the agent has STOPPED and is waiting for the owner, which is
+   * the one state worth interrupting for. A terminal run that ended in `completed` or
+   * `cancelled` means "there is something new in there" — the client decides whether the
+   * owner has actually looked at it.
+   *
+   * Both are deliberately fetched as two flat queries rather than per-tile lookups: a
+   * sidebar of 20 threads must not become 40 round trips. The approvals query selects
+   * ONLY the session id alias, because a real approval payload carries whole landing-page
+   * sections and would pull megabytes across the wire for a coloured dot.
+   */
+  const [approvalsRes, runsRes] = await Promise.all([
+    supabase
+      .from('agent_events')
+      .select('sess:payload->>sessionId')
+      .eq('user_id', actingUserId)
+      .eq('event_type', 'PENDING_ACTION_APPROVAL')
+      .eq('status', 'pending'),
+    supabase
+      .from('harness_runs')
+      .select('session_id, status, finished_at, created_at')
+      .eq('user_id', actingUserId)
+      .order('created_at', { ascending: false })
+      .limit(300),
+  ]);
+
+  const approvalCounts = new Map<string, number>();
+  for (const row of (approvalsRes as any)?.data ?? []) {
+    const id = (row as any)?.sess;
+    // Approvals recorded before the session was stamped on them have no id here; they
+    // simply do not light a tile. They expire within 24h anyway.
+    if (typeof id === 'string' && id) approvalCounts.set(id, (approvalCounts.get(id) ?? 0) + 1);
+  }
+
+  const lastRunBySession = new Map<string, { status: string; finishedAt: string | null }>();
+  for (const row of (runsRes as any)?.data ?? []) {
+    const id = (row as any)?.session_id;
+    // Rows arrive newest-first, so the first one seen for a session is its latest run.
+    if (typeof id === 'string' && !lastRunBySession.has(id)) {
+      lastRunBySession.set(id, {
+        status: String((row as any).status ?? ''),
+        finishedAt: ((row as any).finished_at as string | null) ?? null,
+      });
+    }
+  }
+
   return NextResponse.json({
     available: true,
-    sessions: sessions.filter((s) => s.workspaceId !== 'ceo'),
+    sessions: visible.map((s) => ({
+      ...s,
+      pendingApprovals: approvalCounts.get(s.id) ?? 0,
+      lastRun: lastRunBySession.get(s.id) ?? null,
+    })),
     workspaces,
     ceoSessionId,
   });

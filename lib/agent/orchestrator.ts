@@ -58,6 +58,15 @@ export interface AgentContextOptions {
   /** Harness runs: offer only the groups common work needs, so the prompt is not 27k tokens. */
   lean?: boolean;
   operatorUserId?: string;
+  /**
+   * The harness session this turn belongs to, when there is one.
+   *
+   * Recorded on any approval the turn raises (`request_human_approval`), because an
+   * approval is pending FOR A CONVERSATION: without this the sidebar cannot put the
+   * "waiting for you" dot on the right session tile, and `agent_events` has no
+   * session column to recover it from later.
+   */
+  sessionId?: string;
   /** Recent conversation text, used to pick which tool groups a turn needs. */
   intentText?: string;
   /** Force an exact group list (tests, audit scripts, the generic MCP endpoint). */
@@ -185,7 +194,7 @@ export async function createAgentContext(
     // delegation, and the super-admin infrastructure suites.
     ...createNobogentAppMcpTools(supabase, userId),
     ...createFileManagerTools(supabase, userId),
-    ...createHumanApprovalTool(supabase, userId),
+    ...createHumanApprovalTool(supabase, userId, opts.sessionId),
     ...createDelegationTool(),
     ...(isSuperAdmin ? createVercelMcpTools(true) : {}),
     ...(isSuperAdmin ? createSupabaseMcpTools(supabase, true) : {}),
@@ -935,7 +944,7 @@ OPERATING BUSINESS:
     // Nothing that spends money, reaches a customer or deletes data leaves this function
     // ungated. The wrapper is applied LAST so no suite can register a dangerous tool after
     // it — see lib/agent/review-gate.ts for why a prompt instruction was not enough.
-    tools: applyReviewGate(tools, supabaseApprovalStore(supabase, userId)),
+    tools: applyReviewGate(tools, supabaseApprovalStore(supabase, userId, opts.sessionId)),
     targetProfile: profile,
     toolGroups: [...active],
     groupReasons: selection.reasons,

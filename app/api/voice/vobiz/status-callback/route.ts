@@ -5,6 +5,7 @@ import { deductCredits, CREDIT_COSTS } from '@/utils/credits'
 import { callChargeCredits } from '@/lib/automation/call-billing'
 import { fetchVobizCallRecording } from '@/utils/vobiz-helper'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
+import { storeRecording } from '@/lib/automation/recording-store'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -186,7 +187,8 @@ async function handleStatusCallback(req: Request) {
                 }
             }
 
-            // If recordingUrl is present, upload to Supabase storage to provide a permanent public playback URL
+            // If recordingUrl is present, archive it to R2 and store the object key so
+            // playback always goes through a freshly minted URL.
             let publicRecordingUrl = recordingUrl
             if (recordingUrl) {
                 try {
@@ -201,24 +203,22 @@ async function handleStatusCallback(req: Request) {
                     if (recFetchRes.ok) {
                         const rawBuffer = Buffer.from(await recFetchRes.arrayBuffer())
                         const audioBuffer = await ensureStandardMp3(rawBuffer)
-                        const storagePath = `${leadId}/vobiz_${Date.now()}.mp3`
-                        const { error: upErr } = await supabaseAdmin.storage
-                            .from('lead-voice-recordings')
-                            .upload(storagePath, audioBuffer, { contentType: 'audio/mpeg', upsert: true })
+                        const stored = await storeRecording({
+                            leadId,
+                            filename: `vobiz_${Date.now()}.mp3`,
+                            body: audioBuffer,
+                            contentType: 'audio/mpeg'
+                        })
 
-                        if (!upErr) {
-                            const { data: pubData } = supabaseAdmin.storage
-                                .from('lead-voice-recordings')
-                                .getPublicUrl(storagePath)
-
-                            if (pubData?.publicUrl) {
-                                publicRecordingUrl = pubData.publicUrl
-                                console.log(`[VOBIZ STATUS] Saved public recording URL for lead ${leadId}: ${publicRecordingUrl}`)
-                            }
+                        if (stored) {
+                            publicRecordingUrl = stored.key
+                            console.log(`[VOBIZ STATUS] Archived recording for lead ${leadId} to R2: ${stored.key}`)
+                        } else {
+                            console.warn(`[VOBIZ STATUS] R2 archive failed for lead ${leadId}; keeping the carrier URL`)
                         }
                     }
                 } catch (sErr) {
-                    console.warn('[VOBIZ STATUS] Error uploading recording to Supabase storage:', sErr)
+                    console.warn('[VOBIZ STATUS] Error archiving recording to R2:', sErr)
                 }
                 updatePayload.voice_recording_url = publicRecordingUrl
             }

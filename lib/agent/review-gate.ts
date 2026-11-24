@@ -426,8 +426,15 @@ export interface ApprovedAction {
   actionPayload: unknown;
 }
 
-/** `agent_events` rows written by `request_human_approval`, once the owner taps approve. */
-export function supabaseApprovalStore(supabase: any, userId: string): ApprovalStore {
+/**
+ * `agent_events` rows written by `request_human_approval`, once the owner taps approve.
+ *
+ * `sessionId` is stamped onto every pending row this store records. `agent_events` has no
+ * session column, so this is the only link between "an approval is waiting" and the
+ * conversation it is waiting in — which is what the sidebar dot needs to point at the
+ * right tile.
+ */
+export function supabaseApprovalStore(supabase: any, userId: string, sessionId?: string): ApprovalStore {
   return {
     async approved(actionType) {
       const { data, error } = await supabase
@@ -492,6 +499,7 @@ export function supabaseApprovalStore(supabase: any, userId: string): ApprovalSt
             // The exact arguments the tool was called with — not a description of them.
             actionPayload: toolInput ?? {},
             resumePrompt: '',
+            sessionId: sessionId ?? null,
           },
         });
         if (error) {

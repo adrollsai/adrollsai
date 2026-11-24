@@ -1,7 +1,8 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { signedRecordingUrl, RECORDING_LINK_TTL_SECONDS } from '@/lib/automation/recording-link';
+import { playableRecordingUrl } from '@/lib/automation/recording-store';
+import { RECORDING_LINK_TTL_SECONDS } from '@/lib/automation/recording-link';
 // Any read of "all matching rows" goes through here: PostgREST caps a response at 1000 rows and
 // returns HTTP 200, so counting what came back reports a truncated slice as a total.
 import { exactCount, scanAll } from '@/lib/supabase/paged';
@@ -312,13 +313,14 @@ export function createReportingTools(supabase: SupabaseClient, userId: string) {
           }
           const selected = source.slice(0, take);
 
-          // Sign every link at once rather than one per row: signing is a storage
-          // round trip, and a sequential loop turned a 10-lead answer into ten of
-          // them.
+          // Resolve every link at once rather than one per row: resolving is a storage
+          // round trip, and a sequential loop turned a 10-lead answer into ten of them.
+          // `playableRecordingUrl` covers both eras — a presigned R2 GET for recordings
+          // stored since the move, and a signed Supabase URL for the older ones.
           const signedLinks = await Promise.all(
             selected.map((l: any) =>
               l.voice_recording_url
-                ? signedRecordingUrl(supabase, l.voice_recording_url, RECORDING_LINK_TTL_SECONDS)
+                ? playableRecordingUrl(supabase, l.voice_recording_url, RECORDING_LINK_TTL_SECONDS)
                 : Promise.resolve(null)
             )
           );

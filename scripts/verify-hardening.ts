@@ -284,6 +284,78 @@ async function main() {
   check('revive resets attempts', revived?.attempts === 0, revived?.attempts);
   check('revive clears the dead marker', revived?.dead_at === null, revived?.dead_at);
 
+  // ── the deadline follows progress, not the wall clock ────────────────────
+  // Production 2026-11-24, account f0ae1d0b: seven runs were blocked for four minutes by
+  // our own empty provider wallet (five "Insufficient Balance" attempts each), were
+  // revived after the top-up, and the reaper dead-lettered all seven thirteen seconds
+  // later — because revive reset status/attempts/error but left deadline_at at its
+  // already-passed value. Not one of them consumed a slice. These assertions pin both
+  // halves of the fix, on a run this gate owns, and the ceiling that keeps it bounded.
+  console.log('\n▸ run deadlines follow progress (live)');
+  const dlRun = await enqueueRun(admin, { sessionId: session.id, userId, goal: 'deadline window check' });
+  check('deadline probe run created', Boolean(dlRun?.id), dlRun?.id ?? null);
+
+  const pastDeadline = new Date(Date.now() - 120 * 60_000).toISOString();
+  /** Minutes until the deadline; a negative value means it has already gone. */
+  const minutesLeft = (iso: string | null | undefined) =>
+    iso ? Math.round((new Date(iso).getTime() - Date.now()) / 60_000) : -1;
+  // Park the run dead after each assertion: a claimable run would be picked up by the
+  // cron worker and actually executed, which this gate must not cause.
+  const park = () =>
+    admin
+      .from('harness_runs')
+      .update({ status: 'dead', dead_at: new Date().toISOString() })
+      .eq('id', dlRun!.id);
+
+  // (a) a requeue with more work pending must re-open an expired window.
+  await admin
+    .from('harness_runs')
+    .update({
+      status: 'running',
+      lease_owner: 'deadline-worker',
+      lease_expires_at: new Date(Date.now() + 300_000).toISOString(),
+      deadline_at: pastDeadline,
+    })
+    .eq('id', dlRun!.id);
+  const requeued = await finishRun(admin, dlRun!.id, 'deadline-worker', { status: 'queued' });
+  check(
+    'requeueing re-opens an expired window',
+    minutesLeft(requeued?.deadline_at) > 300,
+    `${minutesLeft(requeued?.deadline_at)} min left`
+  );
+  await park();
+
+  // (b) reviving a dead run must not hand it a deadline that is already in the past.
+  await admin
+    .from('harness_runs')
+    .update({ status: 'dead', dead_at: new Date().toISOString(), deadline_at: pastDeadline })
+    .eq('id', dlRun!.id);
+  const revivedDeadline = await reviveRun(admin, dlRun!.id);
+  check(
+    'reviving a dead run gives it a live window',
+    minutesLeft(revivedDeadline?.deadline_at) > 300,
+    `${minutesLeft(revivedDeadline?.deadline_at)} min left`
+  );
+  await park();
+
+  // (c) the ceiling still bounds it: a run older than the cap gains no grace at all, so
+  // this cannot turn into an immortal run.
+  await admin
+    .from('harness_runs')
+    .update({
+      status: 'dead',
+      dead_at: new Date().toISOString(),
+      created_at: new Date(Date.now() - 30 * 3_600_000).toISOString(),
+      deadline_at: pastDeadline,
+    })
+    .eq('id', dlRun!.id);
+  const cappedRevive = await reviveRun(admin, dlRun!.id);
+  check(
+    'a run past the 24h ceiling gains no time',
+    minutesLeft(cappedRevive?.deadline_at) < 0,
+    `${minutesLeft(cappedRevive?.deadline_at)} min left`
+  );
+
   // ── per-user concurrency limit ──────────────────────────────────────────
   console.log('\n▸ per-user concurrency limit (live)');
   await admin.from('harness_runs').delete().eq('session_id', session.id);

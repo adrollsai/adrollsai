@@ -4,6 +4,7 @@ import { callGemini, callGeminiWithUsage } from '@/utils/external-apis'
 import { bookAppointment, dispatchNextCall } from '@/utils/voice-helper'
 import { updateLeadScoreInDB } from '@/utils/lead-scoring'
 import { resolveAppUrl } from '@/utils/app-url'
+import { storeRecording } from '@/lib/automation/recording-store'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -365,23 +366,21 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
                         if (recordingRes.ok) {
                             const audioBuffer = await recordingRes.arrayBuffer()
                             const callSid = formData.get('CallSid') as string || 'gemini_call'
-                            const uploadPath = `${leadId}/${callSid}.wav`
 
-                            const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-                                .from('lead-voice-recordings')
-                                .upload(uploadPath, Buffer.from(audioBuffer), {
-                                    contentType: 'audio/wav',
-                                    upsert: true
-                                })
+                            // Archived to R2, not the Supabase bucket: that bucket does
+                            // not exist in every project, and the owner asked for R2.
+                            const stored = await storeRecording({
+                                leadId,
+                                filename: `${callSid}.wav`,
+                                body: Buffer.from(audioBuffer),
+                                contentType: 'audio/wav'
+                            })
 
-                            if (uploadErr) {
-                                console.error('[TWILIO STATUS CALLBACK] Gemini audio upload error:', uploadErr)
-                            } else if (uploadData) {
-                                const { data: { publicUrl } } = supabaseAdmin.storage
-                                    .from('lead-voice-recordings')
-                                    .getPublicUrl(uploadPath)
-                                publicRecordingUrl = publicUrl
-                                console.log('[TWILIO STATUS CALLBACK] Gemini call recording saved to Supabase Storage:', publicRecordingUrl)
+                            if (!stored) {
+                                console.error('[TWILIO STATUS CALLBACK] Gemini audio archive to R2 failed')
+                            } else {
+                                publicRecordingUrl = stored.key
+                                console.log('[TWILIO STATUS CALLBACK] Gemini call recording saved to R2:', stored.key)
                                 if (!conversationId) conversationId = callSid
                             }
                         } else {
@@ -526,22 +525,18 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
                     if (audioRes.ok) {
                         const audioBuffer = await audioRes.arrayBuffer()
-                        const uploadPath = `${leadId}/${conversationId}.mp3`
 
-                        const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-                            .from('lead-voice-recordings')
-                            .upload(uploadPath, Buffer.from(audioBuffer), {
-                                contentType: 'audio/mpeg',
-                                upsert: true
-                            })
+                        const stored = await storeRecording({
+                            leadId,
+                            filename: `${conversationId}.mp3`,
+                            body: Buffer.from(audioBuffer),
+                            contentType: 'audio/mpeg'
+                        })
 
-                        if (uploadErr) {
-                            console.error('[TWILIO STATUS CALLBACK] Audio upload error:', uploadErr)
-                        } else if (uploadData) {
-                            const { data: { publicUrl } } = supabaseAdmin.storage
-                                .from('lead-voice-recordings')
-                                .getPublicUrl(uploadPath)
-                            publicRecordingUrl = publicUrl
+                        if (!stored) {
+                            console.error('[TWILIO STATUS CALLBACK] Audio archive to R2 failed')
+                        } else {
+                            publicRecordingUrl = stored.key
                         }
                     } else {
                         console.warn('[TWILIO STATUS CALLBACK] Failed to download audio from ElevenLabs:', audioRes.statusText)

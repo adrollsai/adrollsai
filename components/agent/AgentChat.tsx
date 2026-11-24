@@ -92,12 +92,23 @@ interface WorkspaceFolder {
   createdAt: string;
 }
 
+/**
+ * Where the sidebar remembers which threads have been looked at.
+ *
+ * Read-tracking only, in this browser: see `sessionDot` for why there is no column for it.
+ */
+const SEEN_SESSIONS_KEY = 'nobo_agent_seen_sessions';
+
 interface ChatSession {
   id: string;
   title: string;
   workspaceId: string;
   createdAt: string;
   updatedAt: string;
+  /** Approvals on this thread still waiting for the owner (from the sessions API). */
+  pendingApprovals?: number;
+  /** This thread's most recent run, if it has ever run. */
+  lastRun?: { status: string; finishedAt: string | null } | null;
 }
 
 interface AgentChatProps {
@@ -1533,8 +1544,85 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       workspaceId: s.workspaceId,
       createdAt: s.updatedAt,
       updatedAt: s.updatedAt,
+      pendingApprovals: s.pendingApprovals ?? 0,
+      lastRun: s.lastRun ?? null,
     }));
   }, [harness.available, harness.sessions, sessions]);
+
+  /* ── which threads the owner has actually looked at ───────────────────────
+   * "Finished" is only worth a dot if nobody has read it, and there is no read state on
+   * the server — adding one would mean a write on every tile click. So it is kept where
+   * it belongs: in this browser. Opening a thread stamps it, and so does a run finishing
+   * on the thread currently open, so watching a task to the end does not leave a green
+   * dot behind on it.
+   *
+   * Being browser-only means it does not follow the owner between devices. That is the
+   * right trade for a nudge: this dot is never a record of anything.
+   */
+  const [seenAt, setSeenAt] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SEEN_SESSIONS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        // Merge under `prev` so a stamp written in this same commit is not lost.
+        setSeenAt((prev) => ({ ...(parsed as Record<string, string>), ...prev }));
+      }
+    } catch {
+      /* a corrupt value just means no dots — it must never break the sidebar */
+    }
+  }, []);
+
+  const activeSessionFinishedAt = useMemo(() => {
+    const current = allSessions.find((s) => s.id === activeSessionId);
+    return current?.lastRun?.finishedAt ?? null;
+  }, [allSessions, activeSessionId]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const now = new Date().toISOString();
+    setSeenAt((prev) => ({ ...prev, [activeSessionId]: now }));
+  }, [activeSessionId, activeSessionFinishedAt]);
+
+  useEffect(() => {
+    try {
+      if (Object.keys(seenAt).length) {
+        localStorage.setItem(SEEN_SESSIONS_KEY, JSON.stringify(seenAt));
+      }
+    } catch {
+      /* storage full or blocked: the dots simply stop persisting */
+    }
+  }, [seenAt]);
+
+  /**
+   * The dot on a session tile.
+   *
+   *   'approval' — the agent has stopped and will not continue until the owner decides
+   *   'done'     — it finished (completed, or stopped because the owner asked) and the
+   *                owner has not looked at the thread since
+   *   null       — nothing worth saying
+   *
+   * Approval wins when a thread is both: the one that needs a human is the one worth
+   * interrupting for. The thread that is open never gets a dot — the owner is looking at
+   * it, and a marker on the thing under your nose is noise.
+   */
+  const sessionDot = useCallback(
+    (s: ChatSession): 'approval' | 'done' | null => {
+      if ((s.pendingApprovals ?? 0) > 0) return 'approval';
+      if (s.id === activeSessionId) return null;
+      const run = s.lastRun;
+      if (!run?.finishedAt) return null;
+      // Only a thread that came to rest is "finished". `failed` and `dead` are not good
+      // news to flag green, and `queued`/`running` are simply still working.
+      if (run.status !== 'completed' && run.status !== 'cancelled') return null;
+      const seen = seenAt[s.id];
+      if (seen && new Date(seen).getTime() >= new Date(run.finishedAt).getTime()) return null;
+      return 'done';
+    },
+    [activeSessionId, seenAt]
+  );
 
   /* ── the agent's unanswered question, if there is one ────────────────────
    * `request_user_input` writes a `user_input_prompt` artifact into the tool
@@ -1846,6 +1934,13 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     <div className="pl-3.5 space-y-0.5 dsh-tree-rail ml-3 py-0.5">
                       {wsSessions.map((sess) => {
                         const isSelected = sess.id === activeSessionId;
+                        const dot = sessionDot(sess);
+                        const dotLabel =
+                          dot === 'approval'
+                            ? 'Waiting for your approval'
+                            : dot === 'done'
+                              ? 'Finished — not read yet'
+                              : '';
                         return (
                           <div
                             key={sess.id}
@@ -1864,6 +1959,22 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                                 size={12}
                                 className={isSelected ? 'dsh-accent shrink-0' : 'shrink-0 dsh-label-caption'}
                               />
+                              {dot && (
+                                <span
+                                  role="img"
+                                  aria-label={dotLabel}
+                                  title={dotLabel}
+                                  className="shrink-0 rounded-full"
+                                  style={{
+                                    width: 6,
+                                    height: 6,
+                                    background:
+                                      dot === 'approval'
+                                        ? 'var(--nobo-dot-approval)'
+                                        : 'var(--nobo-dot-done)',
+                                  }}
+                                />
+                              )}
                               <span className="truncate">{sess.title}</span>
                             </div>
 

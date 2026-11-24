@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2'
+import { r2, R2_PUBLIC_URL } from '@/utils/r2'
+import { recordingBucket } from '@/lib/automation/recording-store'
 import { PutObjectCommand } from '@aws-sdk/client-s3'
 
 export async function POST(request: Request) {
@@ -54,7 +55,10 @@ export async function POST(request: Request) {
     // Primary: Upload directly to Cloudflare R2 storage
     if (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) {
       try {
-        const bucket = R2_BUCKET || process.env.R2_BUCKET_NAME || 'adrolls-storage'
+        // One resolver owns this now. It used to be
+        // `R2_BUCKET || R2_BUCKET_NAME || 'adrolls-storage'` right here, which disagreed
+        // with the other recording paths the moment either env var changed.
+        const bucket = recordingBucket()
         const publicBase = (R2_PUBLIC_URL || process.env.R2_PUBLIC_URL || 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev').replace(/\/$/, '')
 
         await r2.send(new PutObjectCommand({

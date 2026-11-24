@@ -4,7 +4,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { sendPushNotification } from '@/utils/notification-helper';
 import * as crypto from 'crypto';
 
-export function createHumanApprovalTool(supabase: SupabaseClient, userId: string) {
+export function createHumanApprovalTool(supabase: SupabaseClient, userId: string, sessionId?: string) {
   return {
     request_human_approval: tool({
       description:
@@ -67,6 +67,10 @@ export function createHumanApprovalTool(supabase: SupabaseClient, userId: string
                 previews,
                 resumePrompt,
                 actionPayload,
+                // Which conversation is waiting on this. `agent_events` has no session
+                // column, so this is the only way the sidebar can light up the right
+                // session tile instead of guessing from recency.
+                sessionId: sessionId ?? null,
               },
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),

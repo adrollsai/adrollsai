@@ -24,6 +24,16 @@ export interface HarnessSessionSummary {
   workspaceId: string;
   status: 'idle' | 'running' | 'error';
   updatedAt: string;
+  /**
+   * Approvals on this thread still waiting for the owner. Anything above zero means the
+   * agent has stopped and will not continue until a human decides.
+   */
+  pendingApprovals?: number;
+  /**
+   * The thread's most recent run, if it has ever run. Its terminal status is what tells a
+   * finished thread apart from one still being worked on.
+   */
+  lastRun?: { status: string; finishedAt: string | null } | null;
 }
 
 export interface HarnessWorkspace {

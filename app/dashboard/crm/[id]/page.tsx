@@ -12,6 +12,7 @@ import UpdateFollowupModal from '@/components/UpdateFollowupModal'
 import LeadScoreBadge from '@/components/LeadScoreBadge'
 import { isHistoryRestrictedForViewer, arePendingActionsHiddenFromViewer } from '@/utils/lead-visibility'
 import { normalizeQualifyingQuestion, parseCustomFields } from '@/utils/lead-scoring'
+import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import { getLeadFollowupCount, getLeadReopenCount } from '@/utils/lead-helpers'
 import { openPhoneDialer } from '@/utils/dialer'
@@ -749,21 +750,26 @@ function LeadProfilePageContent() {
                                 } else {
                                     const { data: prof } = await supabase
                                         .from('profiles')
-                                        .select('qualifying_questions')
+                                        .select('qualifying_questions, industry, business_name')
                                         .eq('id', data.user_id)
                                         .single();
                                     if (prof?.qualifying_questions && Array.isArray(prof.qualifying_questions) && prof.qualifying_questions.length > 0) {
                                         loadedQuestions = prof.qualifying_questions;
+                                    } else {
+                                        // Nothing saved anywhere, so fall back to THIS account's own
+                                        // industry. It used to be a property questionnaire for every
+                                        // business, which is how a film academy's leads were asked
+                                        // what type of property they wanted.
+                                        loadedQuestions = defaultQualifyingQuestions(
+                                            (prof as any)?.industry,
+                                            (prof as any)?.business_name
+                                        ).map((q, qi) => ({
+                                            question: q.question,
+                                            field_name: `custom_q_${qi}`,
+                                            options: q.options,
+                                        }));
                                     }
                                 }
-                            }
-
-                            if (loadedQuestions.length === 0) {
-                                loadedQuestions = [
-                                    { question: 'What type of property are you interested in?', field_name: 'property_type', options: ['Residential', 'Commercial', 'Plots / Land'] },
-                                    { question: 'What is your budget range?', field_name: 'budget', options: ['Under ₹50 Lacs', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-                                    { question: 'What is your timeline to purchase?', field_name: 'timeline', options: ['Immediate (<1 Mo)', '1 - 3 Months', 'Exploring'] }
-                                ];
                             }
 
                             const normalized = loadedQuestions.map((q: any, idx: number) => normalizeQualifyingQuestion(q, idx));

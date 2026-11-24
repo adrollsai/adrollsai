@@ -184,6 +184,8 @@ export async function POST(req: Request) {
 
     const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, {
       operatorUserId: user.id,
+      // So an approval raised in this turn is attributable to this conversation.
+      ...(sessionId ? { sessionId } : {}),
       intentText,
     });
     // The agent always runs on the multimodal flash model.

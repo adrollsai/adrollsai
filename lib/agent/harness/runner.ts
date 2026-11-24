@@ -320,6 +320,8 @@ export async function openRunTurn(
     .join('\n');
   const { systemPrompt, tools: baseTools } = await createAgentContext(supabase, run.user_id, {
     operatorUserId: run.user_id,
+    // So an approval this run raises is attributable to this conversation.
+    sessionId: run.session_id,
     intentText,
     ...(opts.prefetchedTenant ? { prefetched: opts.prefetchedTenant } : {}),
   });

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { callGemini } from '@/utils/external-apis'
 import { bookAppointment } from '@/utils/voice-helper'
 import crypto from 'crypto'
+import { storeRecording } from '@/lib/automation/recording-store'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -189,22 +190,18 @@ Extract the following details as a valid JSON object ONLY. Do not use markdown t
 
                 if (audioRes.ok) {
                     const audioBuffer = await audioRes.arrayBuffer()
-                    const uploadPath = `${leadId}/${conversationId}.mp3`
 
-                    const { data: uploadData, error: uploadErr } = await supabaseAdmin.storage
-                        .from('lead-voice-recordings')
-                        .upload(uploadPath, Buffer.from(audioBuffer), {
-                            contentType: 'audio/mpeg',
-                            upsert: true
-                        })
+                    const stored = await storeRecording({
+                        leadId,
+                        filename: `${conversationId}.mp3`,
+                        body: Buffer.from(audioBuffer),
+                        contentType: 'audio/mpeg'
+                    })
 
-                    if (uploadErr) {
-                        console.error('[ELEVENLABS WEBHOOK] Audio upload error:', uploadErr)
-                    } else if (uploadData) {
-                        const { data: { publicUrl } } = supabaseAdmin.storage
-                            .from('lead-voice-recordings')
-                            .getPublicUrl(uploadPath)
-                        publicRecordingUrl = publicUrl
+                    if (!stored) {
+                        console.error('[ELEVENLABS WEBHOOK] Audio archive to R2 failed')
+                    } else {
+                        publicRecordingUrl = stored.key
                     }
                 } else {
                     console.warn('[ELEVENLABS WEBHOOK] Failed to download audio from ElevenLabs:', audioRes.statusText)

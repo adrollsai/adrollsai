@@ -479,11 +479,10 @@ export default function QualifyingPage() {
       name: newFlowName.trim(),
       linked_campaign_id: newFlowCampaignId.trim() || null,
       is_active: false,
-      questions: [
-        { question: 'What type of property are you interested in?', options: ['Residential', 'Commercial', 'Plots'] },
-        { question: 'What is your budget range?', options: ['Under ₹50L', '₹50L - ₹1.5 Cr', 'Above ₹1.5 Cr'] },
-        { question: 'What is your purchase timeline?', options: ['Immediate', '1 - 3 Months', 'Exploring'] }
-      ]
+      // A brand-new flow used to start from the property questionnaire, whatever the
+      // business sold. Neutral questions are the safe starting point; a real-estate
+      // account picks its own preset from INDUSTRY_QUALIFYING_TEMPLATES.
+      questions: GENERIC_DEFAULT_QUESTIONS.map((q) => ({ ...q }))
     }
     const updated = [...flows, newFlow]
     setFlows(updated)
