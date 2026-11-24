@@ -282,7 +282,19 @@
   box-sizing: border-box;
 }
 
-.dsh button {
+/*
+ * The element reset — and why it is written with :where().
+ *
+ * This is what made every button in the agent UI look squashed. As `.dsh button` the selector scores
+ * (0,1,1); a Tailwind utility like `py-2.5` or `px-4` scores (0,1,0). So this reset outranked the
+ * padding, colour and font-size its own call sites asked for, and won silently: measured on the deployed
+ * welcome screen, a button asking for 10px/24px padding computed 0px/0px and stood 32px tall instead of 52.
+ *
+ * `:where(.dsh)` contributes NO specificity, so this rule scores (0,0,1): weaker than every utility class,
+ * which is precisely what a reset should be. Anything a component asks for now wins, and where nothing is
+ * asked for the browser's own button chrome is still removed.
+ */
+:where(.dsh) button {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
