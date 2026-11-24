@@ -355,6 +355,8 @@ export default function ProfilePage() {
   const [loadingFlagged, setLoadingFlagged] = useState(false)
   const [enableEodReport, setEnableEodReport] = useState(true)
   const [credits, setCredits] = useState<number>(0)
+  /** The voice wallet. A separate pot from the AI credits: calls draw on `calling_credits`. */
+  const [callingCredits, setCallingCredits] = useState<number>(0)
   const [selectedTextLlm, setSelectedTextLlm] = useState('gemini')
   const [callTrackingSettings, setCallTrackingSettings] = useState<CallTrackingSettings>(() => getCallTrackingSettings())
   const [isSyncingCallLogs, setIsSyncingCallLogs] = useState(false)
@@ -893,6 +895,7 @@ export default function ProfilePage() {
       if (profileData) {
         setRole(profileData.role as any || 'admin')
         setCredits(profileData.credits || 0)
+        setCallingCredits(Number((profileData as any).calling_credits || 0))
         setSelectedTextLlm(profileData.selected_text_llm || 'gemini')
         setAcceptedTerms(profileData.accepted_terms || false)
 
@@ -2551,10 +2554,24 @@ export default function ProfilePage() {
                   <Coins size={22} className="text-yellow-300" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">Nobo Credits Balance</span>
+                  {/**
+                   * TWO WALLETS, SHOWN AS TWO.
+                   *
+                   * The daily work and the creatives spend AI credits; AI phone calls spend the separate
+                   * calling wallet. This card used to show one combined number, so an account with AI
+                   * credit left and no calling minutes looked funded right up to the moment the calls
+                   * stopped. Each has its own balance and its own label.
+                   */}
+                  <span className="text-[10px] font-bold text-indigo-200 uppercase tracking-widest block">AI Credits</span>
                   <h3 className="text-2xl font-black tracking-tight mt-0.5">
-                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(formData.email)) ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} Credits`}
+                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(formData.email)) ? '∞' : `${credits.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}
                   </h3>
+                  <span className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-indigo-100/90 uppercase tracking-widest">
+                    <Phone size={11} className="text-emerald-300" /> Calling Credits
+                  </span>
+                  <p className="text-lg font-black tracking-tight text-emerald-200 leading-tight">
+                    {(['rchopra489@gmail.com', 'infobluesquareinfra@gmail.com'].includes(formData.email)) ? '∞' : `${callingCredits.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+                  </p>
                 </div>
               </div>
               {isAdminLike && (

@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, Check, Coins, CalendarClock, Bot, ArrowRight, AlertCircle } from 'lucide-react';
+import { Loader2, Sparkles, Check, Coins, Phone, CalendarClock, Bot, ArrowRight, AlertCircle } from 'lucide-react';
 import type { CeoToday } from '@/lib/agent/ceo-today';
 import CeoFindingsCard from '@/components/agent/CeoFindingsCard';
 
@@ -81,10 +81,31 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
             numbers.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/**
+           * Two wallets, two numbers.
+           *
+           * They are separate pots: the daily work and the creatives draw on `credits`, while AI calls
+           * draw on `calling_credits`. One combined badge made a business with ₹7,879 of AI credit and
+           * 2,000 minutes look like it had one big balance, and the first time calls stopped it looked
+           * like the account had been emptied. Each is labelled for what it buys.
+           */}
           {data.credits != null && (
-            <span className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700">
-              <Coins size={13} /> {Number(data.credits).toLocaleString('en-IN')} credits
+            <span
+              className="flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700"
+              title="AI credits — used for making creatives, videos and the daily work"
+            >
+              <Coins size={13} /> {Number(data.credits).toLocaleString('en-IN')}
+              <span className="font-semibold text-slate-500">AI credits</span>
+            </span>
+          )}
+          {data.callingCredits != null && (
+            <span
+              className="flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800"
+              title="Calling credits — the separate wallet AI phone calls draw on"
+            >
+              <Phone size={13} /> {Number(data.callingCredits).toLocaleString('en-IN')}
+              <span className="font-semibold text-emerald-700/80">calling</span>
             </span>
           )}
           <Link

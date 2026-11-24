@@ -26,6 +26,8 @@ export interface CeoApproval {
 export interface CeoToday {
   businessName: string | null;
   credits: number | null;
+  /** The voice wallet. A separate pot: calls draw on calling_credits, never on the AI balance. */
+  callingCredits: number | null;
   period: string;
   dateLabel: string;
   needsMigration: boolean;
@@ -42,6 +44,7 @@ export function emptyCeoToday(now = new Date()): CeoToday {
   return {
     businessName: null,
     credits: null,
+    callingCredits: null,
     period: periodKey(now, DEFAULT_TENANT_TIMEZONE, 'daily'),
     dateLabel: periodLabel(now, DEFAULT_TENANT_TIMEZONE),
     needsMigration: false,
@@ -64,7 +67,7 @@ export async function loadCeoToday(
   const [profileRes, routinesRes, approvalsRes, sessionRes] = await Promise.all([
     supabase
       .from('profiles')
-      .select('business_name, credits, timezone')
+      .select('business_name, credits, calling_credits, timezone')
       .eq('id', userId)
       .maybeSingle(),
     supabase
@@ -118,6 +121,7 @@ export async function loadCeoToday(
   return {
     businessName: profile?.business_name || null,
     credits: profile?.credits ?? null,
+    callingCredits: (profile as any)?.calling_credits ?? null,
     period,
     dateLabel: periodLabel(now, tz),
     needsMigration,
