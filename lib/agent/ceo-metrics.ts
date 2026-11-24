@@ -252,7 +252,13 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
        */
       try {
         const { loadAccountPerformance } = await import('@/lib/ads/account-performance');
-        const perf = await loadAccountPerformance(supabase, userId, { datePreset: 'last_7d', level: 'campaign' });
+        // Totals only: the report needs spend, enquiries and the week before — not the per-argument
+        // join, which is the brief's job. Skipping it halves the reads on a tab a person is waiting on.
+        const perf = await loadAccountPerformance(supabase, userId, {
+          datePreset: 'last_7d',
+          level: 'campaign',
+          skipLearnings: true,
+        });
         if (!perf.measured) {
           return { active: active.length, spendPaise: null, leads: null, previousCplPaise: null };
         }
