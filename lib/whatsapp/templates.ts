@@ -27,7 +27,7 @@ export const MAX_TEMPLATE_BUTTONS = 3;
 export const MAX_TEMPLATE_NAME = 512;
 
 export type TemplateCategory = 'MARKETING' | 'UTILITY';
-export type TemplateHeaderType = 'NONE' | 'TEXT';
+export type TemplateHeaderType = 'NONE' | 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
 
 export interface TemplateButton {
   type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
@@ -42,6 +42,10 @@ export interface TemplateInput {
   language?: string;
   headerType?: TemplateHeaderType;
   headerText?: string;
+  /** Public https URL of the sample picture/clip/file, for IMAGE/VIDEO/DOCUMENT headers. */
+  headerSampleUrl?: string;
+  /** Set internally after the sample is uploaded — never by a caller. */
+  headerHandle?: string;
   bodyText: string;
   footerText?: string;
   buttons?: TemplateButton[];
@@ -91,6 +95,11 @@ export function buildTemplatePayload(input: TemplateInput): TemplatePayload | Te
   if (headerType === 'TEXT' && String(input.headerText ?? '').length > 60) {
     problems.push('a TEXT header is limited to 60 characters');
   }
+  if ((headerType === 'IMAGE' || headerType === 'VIDEO' || headerType === 'DOCUMENT') && !String(input.headerHandle ?? '').trim()) {
+    // Reached only if the upload step was skipped: a media header with no handle is refused by Meta with
+    // a message nobody can act on, so it is named here instead.
+    problems.push(`a ${headerType} header needs a sample file uploaded first (headerSampleUrl)`);
+  }
 
   const rawButtons = Array.isArray(input.buttons) ? input.buttons : [];
   if (rawButtons.length > MAX_TEMPLATE_BUTTONS) {
@@ -118,6 +127,17 @@ export function buildTemplatePayload(input: TemplateInput): TemplatePayload | Te
   const components: Record<string, unknown>[] = [];
   if (headerType === 'TEXT') {
     components.push({ type: 'HEADER', format: 'TEXT', text: String(input.headerText).trim() });
+  } else if (headerType === 'IMAGE' || headerType === 'VIDEO' || headerType === 'DOCUMENT') {
+    /**
+     * Meta wants the sample as a handle from the Resumable Upload API, not a URL. The handle was obtained
+     * before this function ran; it goes in `example.header_handle`, which is what Meta reads to know what
+     * kind of media the template expects.
+     */
+    components.push({
+      type: 'HEADER',
+      format: headerType,
+      example: { header_handle: [String(input.headerHandle).trim()] },
+    });
   }
 
   const bodyComponent: Record<string, unknown> = { type: 'BODY', text: bodyText };
@@ -226,6 +246,101 @@ export interface CreateTemplateResult {
  * Submit a template to Meta.
  *
  * Honest in both directions: a success reports Meta's template id and status (which is normally
+/**
+ * Upload a template's sample media to Meta and return the handle it gives back.
+ *
+ * THE TWO-STEP DANCE
+ * Creating a template with an IMAGE/VIDEO/DOCUMENT header is not a single POST: Meta first opens an
+ * upload session (`POST /{app-id}/uploads`), then takes the bytes (`POST /{session}` with
+ * `file_offset: 0`), and only then returns the `header_handle` the template payload can carry. Skipping
+ * it is why media templates could be sent but never created from this product.
+ */
+async function uploadTemplateHeaderSample(
+  credentials: { token: string; wabaId: string },
+  sampleUrl: string,
+  headerType: 'IMAGE' | 'VIDEO' | 'DOCUMENT'
+): Promise<{ ok: true; handle: string } | { ok: false; error: string }> {
+  if (!sampleUrl) {
+    return { ok: false, error: `A ${headerType} header needs a sample file: give a public https URL.` };
+  }
+  if (!/^https:\/\//i.test(sampleUrl)) {
+    return { ok: false, error: `The sample must be a public https URL; got "${sampleUrl.slice(0, 60)}".` };
+  }
+
+  // Meta's limits, stated up front rather than discovered by rejection.
+  const LIMIT_MB = headerType === 'VIDEO' ? 16 : headerType === 'IMAGE' ? 5 : 100;
+  const defaultType = headerType === 'IMAGE' ? 'image/jpeg' : headerType === 'VIDEO' ? 'video/mp4' : 'application/pdf';
+
+  let bytes: ArrayBuffer;
+  let contentType = defaultType;
+  try {
+    const fileRes = await fetch(sampleUrl);
+    if (!fileRes.ok) {
+      return { ok: false, error: `Could not fetch the sample (${fileRes.status}) from ${sampleUrl}.` };
+    }
+    const declared = fileRes.headers.get('content-type');
+    if (declared) contentType = declared.split(';')[0];
+    bytes = await fileRes.arrayBuffer();
+  } catch (e: any) {
+    return { ok: false, error: `Could not download the sample: ${e?.message || e}` };
+  }
+
+  if (!bytes.byteLength) return { ok: false, error: 'The sample file is empty.' };
+  if (bytes.byteLength > LIMIT_MB * 1024 * 1024) {
+    return {
+      ok: false,
+      error: `The sample is ${(bytes.byteLength / 1024 / 1024).toFixed(1)}MB; Meta allows ${LIMIT_MB}MB for a ${headerType} header.`,
+    };
+  }
+
+  const appId = process.env.META_APP_ID || process.env.NEXT_PUBLIC_META_APP_ID || '';
+  if (!appId) return { ok: false, error: 'META_APP_ID is not configured, so Meta cannot open an upload session.' };
+
+  let sessionId = '';
+  try {
+    const startRes = await fetch(
+      `${GRAPH}/${appId}/uploads?file_length=${bytes.byteLength}&file_type=${encodeURIComponent(contentType)}`,
+      { method: 'POST', headers: { Authorization: `Bearer ${credentials.token}` } }
+    );
+    const startBody: any = await startRes.json().catch(() => ({}));
+    if (startBody?.error || !startBody?.id) {
+      return {
+        ok: false,
+        error: `Meta refused the upload session: ${startBody?.error?.message || `HTTP ${startRes.status}`}`,
+      };
+    }
+    sessionId = String(startBody.id);
+  } catch (e: any) {
+    return { ok: false, error: `Could not open the upload session: ${e?.message || e}` };
+  }
+
+  try {
+    const pushRes = await fetch(`${GRAPH}/${sessionId}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${credentials.token}`,
+        'Content-Type': 'application/octet-stream',
+        file_offset: '0',
+      },
+      body: Buffer.from(bytes),
+    });
+    const pushBody: any = await pushRes.json().catch(() => ({}));
+    const handle = pushBody?.h;
+    if (pushBody?.error || !handle) {
+      return {
+        ok: false,
+        error: `Meta refused the sample upload: ${pushBody?.error?.message || `HTTP ${pushRes.status}`}`,
+      };
+    }
+    return { ok: true, handle: String(handle) };
+  } catch (e: any) {
+    return { ok: false, error: `Could not upload the sample: ${e?.message || e}` };
+  }
+}
+
+/**
+ * Create a template at Meta — text or media header.
+ *
  * PENDING, not approved — approval is Meta's decision and can take minutes to a day), and a refusal
  * carries Meta's own words.
  */
@@ -234,9 +349,6 @@ export async function createWhatsAppTemplate(
   userId: string,
   input: TemplateInput
 ): Promise<CreateTemplateResult> {
-  const built = buildTemplatePayload(input);
-  if ('problems' in built) return { ok: false, problems: built.problems };
-
   const credentials = await whatsAppCredentials(supabase, userId);
   if (!credentials) {
     return {
@@ -246,6 +358,28 @@ export async function createWhatsAppTemplate(
         'create the template on. Connect the WABA in settings first.',
     };
   }
+
+  /**
+   * MEDIA HEADERS NEED A UPLOADED SAMPLE, NOT A URL.
+   *
+   * Meta will not accept `example: { header_image_url }` when creating a template; a media header needs a
+   * `header_handle` minted by the Resumable Upload API. That is the whole reason image and video templates
+   * could be sent but never created from here: the payload builder only knew TEXT.
+   *
+   * So the sample is resolved BEFORE the payload is built: fetch the public URL the owner gave us, push
+   * the bytes to Meta, and put the returned handle into the example. If that fails, creation fails with
+   * Meta's own words rather than silently producing a text template.
+   */
+  let resolvedInput: TemplateInput = input;
+  if (input.headerType && input.headerType !== 'NONE' && input.headerType !== 'TEXT') {
+    const sampleUrl = String(input.headerSampleUrl || '').trim();
+    const upload = await uploadTemplateHeaderSample(credentials, sampleUrl, input.headerType);
+    if (!upload.ok) return { ok: false, name: cleanTemplateName(input.name), error: upload.error };
+    resolvedInput = { ...input, headerHandle: upload.handle };
+  }
+
+  const built = buildTemplatePayload(resolvedInput);
+  if ('problems' in built) return { ok: false, problems: built.problems };
 
   try {
     const res = await fetch(`${GRAPH}/${credentials.wabaId}/message_templates`, {

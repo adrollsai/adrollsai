@@ -470,6 +470,11 @@ export async function POST(request: Request) {
       console.log(
         `[EOD Report Worker] EOD email status for ${toEmail || profile.email} (BCC: ${bccEmail || 'none'}): success=${emailResult.success}`
       )
+      // Billed at twice our cost, like every other metered action — and only when it actually went.
+      if (emailResult.success) {
+        const { chargeEmailSends } = await import('@/lib/automation/email-billing')
+        await chargeEmailSends(supabaseAdmin, billingOwnerId || profileId, { count: 1, label: 'End-of-day report' })
+      }
     } else {
       console.log(`[EOD Report Worker] No email for profile ${profileId}, skipping email dispatch.`)
     }

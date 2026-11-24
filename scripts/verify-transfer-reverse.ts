@@ -60,6 +60,27 @@ head('4. Email is billed at 2× on the paths that carry an account');
 
 check('the digest charges the account', /chargeEmailSends\(supabase, routine\.user_id/.test(fs.readFileSync('app/api/cron/ceo-digest/route.ts', 'utf8')));
 check('the transfer notice charges the account that sent it', /chargeEmailSends\(supabaseAdmin, actingUserId/.test(transfer));
+check(
+  'the subscription reminders charge, through their one shared helper',
+  /chargeEmailSends\(admin, userId, \{ count: 1, label: 'Subscription reminder' \}/.test(fs.readFileSync('app/api/cron/subscription-reminders/route.ts', 'utf8')),
+);
+check(
+  'the end-of-day report charges the billing owner',
+  /chargeEmailSends\(supabaseAdmin, billingOwnerId \|\| profileId/.test(fs.readFileSync('app/api/cron/eod-report/worker/route.ts', 'utf8')),
+);
+
+head('5. The reverse is reachable, and media templates can be created');
+
+check('the account activity page lists reversible transfers', /TransferUndoPanel/.test(fs.readFileSync('app/dashboard/profile/history/page.tsx', 'utf8')));
+check('and offers to put them back', /Put them back/.test(fs.readFileSync('app/dashboard/profile/history/page.tsx', 'utf8')));
+check('there is a GET that lists the batches', /export async function GET/.test(reverse) && /reversibleCount/.test(reverse));
+
+const templates = fs.readFileSync('lib/whatsapp/templates.ts', 'utf8');
+check('media header types exist', /'NONE' \| 'TEXT' \| 'IMAGE' \| 'VIDEO' \| 'DOCUMENT'/.test(templates));
+check('a media header builds a header_handle example', /example: \{ header_handle: \[String\(input\.headerHandle\)/.test(templates));
+check('and the sample is uploaded to Meta first', /uploads\?file_length=/.test(templates) && /file_offset: '0'/.test(templates));
+check('a media header without a handle is refused before Meta sees it', /needs a sample file uploaded first/.test(templates));
+check('the agent tool accepts a sample URL per media kind', /headerImageUrl: z/.test(fs.readFileSync('lib/agent/tools/messaging.ts', 'utf8')));
 
 console.log(`\n${'='.repeat(64)}`);
 console.log(`${pass} passed, ${fail} failed`);

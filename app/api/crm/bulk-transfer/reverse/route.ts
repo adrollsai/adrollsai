@@ -49,6 +49,106 @@ interface Receipt {
   reversed_at?: string | null
 }
 
+/**
+ * GET /api/crm/bulk-transfer/reverse
+ *
+ * The transfers that can still be undone, newest first, grouped by operation. This is what the account
+ * activity page lists: one row per transfer ("200 leads to Priya, 24 Nov"), not 200 rows, because the
+ * thing a person wants to reverse is the operation, not the individual lead.
+ */
+export async function GET(req: Request) {
+  try {
+    const user = await requireUser(req)
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const url = new URL(req.url)
+    const acting = await resolveActingUser(req, url.searchParams.get('impersonate'))
+    if (!acting.ok) return acting.response
+    const actingUserId = acting.userId
+
+    const admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { persistSession: false } }
+    )
+
+    const { data: rows, error } = await admin
+      .from('leads')
+      .select('id, custom_fields')
+      .eq('user_id', actingUserId)
+      .not('custom_fields', 'is', null)
+      .limit(5000)
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    interface BatchRow {
+      batchId: string
+      leads: number
+      at: string | null
+      from: string | null
+      to: string | null
+      hidHistory: boolean
+    }
+    const batches = new Map<string, BatchRow>()
+
+    for (const lead of rows || []) {
+      let cf: any = (lead as any).custom_fields
+      while (typeof cf === 'string') {
+        try {
+          cf = JSON.parse(cf)
+        } catch {
+          cf = null
+          break
+        }
+      }
+      const receipt = cf && typeof cf === 'object' ? cf.transfer_receipt : null
+      if (!receipt || typeof receipt !== 'object') continue
+      if (receipt.reversed_at) continue
+      const id = String(receipt.batch_id || '')
+      if (!id) continue
+      const existing = batches.get(id) || {
+        batchId: id,
+        leads: 0,
+        at: receipt.at ?? null,
+        from: receipt.previous_assignee ?? null,
+        to: receipt.new_assignee ?? null,
+        hidHistory: Boolean(receipt.hid_history),
+      }
+      existing.leads += 1
+      batches.set(id, existing)
+    }
+
+    // Names, so the page reads "Sonia → Priya" rather than two uuids.
+    const ids = new Set<string>()
+    for (const batch of batches.values()) {
+      if (batch.from) ids.add(batch.from)
+      if (batch.to) ids.add(batch.to)
+    }
+    const nameOf = new Map<string, string>()
+    if (ids.size) {
+      const { data: people } = await admin
+        .from('profiles')
+        .select('id, full_name, business_name')
+        .in('id', [...ids])
+      for (const person of people || []) {
+        nameOf.set(String((person as any).id), String((person as any).full_name || (person as any).business_name || ''))
+      }
+    }
+
+    const list = [...batches.values()]
+      .map((batch) => ({
+        ...batch,
+        fromName: batch.from ? nameOf.get(batch.from) || null : null,
+        toName: batch.to ? nameOf.get(batch.to) || null : null,
+      }))
+      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
+      .slice(0, 25)
+
+    return NextResponse.json({ success: true, batches: list, reversibleCount: list.reduce((sum, b) => sum + b.leads, 0) })
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Internal Server Error' }, { status: 500 })
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}))

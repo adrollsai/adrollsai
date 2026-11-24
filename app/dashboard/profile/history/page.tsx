@@ -74,6 +74,111 @@ interface ActivityResponse {
   }
 }
 
+/**
+ * Undo a bulk transfer, from the page where transfers are audited.
+ *
+ * A transfer used to be one-way: it moved the leads, hid their earlier history from the new assignee and
+ * reset their stage, and nothing anywhere said where they came from. The transfer endpoint now records a
+ * receipt per lead and groups the operation under one batch id, so this panel can offer the operation
+ * back. It previews first (dry run), states exactly what will be restored, and never deletes anything —
+ * the follow-ups the receiving agent did stay in the history, attributed to them.
+ */
+function TransferUndoPanel() {
+  type Batch = {
+    batchId: string
+    leads: number
+    at: string | null
+    fromName: string | null
+    toName: string | null
+    hidHistory: boolean
+  }
+  const [batches, setBatches] = useState<Batch[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [done, setDone] = useState<{ batchId: string; restored: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = async () => {
+    try {
+      const res = await fetch('/api/crm/bulk-transfer/reverse')
+      const json = await res.json()
+      if (res.ok) setBatches(json.batches || [])
+    } catch {
+      /* a panel that cannot read its own data must not break the page */
+    }
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  const reverse = async (batchId: string) => {
+    setBusy(batchId)
+    setError(null)
+    try {
+      const res = await fetch('/api/crm/bulk-transfer/reverse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batchId }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Could not put those leads back')
+      setDone({ batchId, restored: json.restoredCount ?? 0 })
+      await load()
+    } catch (e: any) {
+      setError(e?.message || 'Could not put those leads back')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!batches.length && !done && !error) return null
+
+  return (
+    <div className="rounded-2xl border border-amber-200/60 bg-amber-50/60 p-4">
+      <h3 className="flex items-center gap-2 text-sm font-bold text-amber-900">
+        <ArrowLeftRight size={14} /> Transfers you can put back
+      </h3>
+      <p className="mt-1 text-[11px] text-amber-800/80">
+        Putting a transfer back returns each lead to the person it came from, makes the earlier history visible
+        again, and restores the stage and call attempts it had. Nothing is deleted — any follow-up done after the
+        transfer stays in the history, under the name of whoever did it.
+      </p>
+
+      {done && (
+        <p className="mt-2 rounded-lg bg-emerald-100 px-3 py-2 text-[11px] font-bold text-emerald-800">
+          Put {done.restored} lead(s) back.
+        </p>
+      )}
+      {error && <p className="mt-2 rounded-lg bg-rose-100 px-3 py-2 text-[11px] font-bold text-rose-800">{error}</p>}
+
+      <ul className="mt-2 space-y-1.5">
+        {batches.map((batch) => (
+          <li
+            key={batch.batchId}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200/70 bg-white px-3 py-2"
+          >
+            <span className="min-w-0 text-[11.5px] font-semibold text-slate-800">
+              {batch.leads} lead{batch.leads === 1 ? '' : 's'}
+              {batch.fromName || batch.toName ? (
+                <span className="font-normal text-slate-500"> · {batch.fromName || 'previous owner'} → {batch.toName || 'new owner'}</span>
+              ) : null}
+              {batch.at ? <span className="font-normal text-slate-400"> · {new Date(batch.at).toLocaleString()}</span> : null}
+            </span>
+            <button
+              type="button"
+              onClick={() => void reverse(batch.batchId)}
+              disabled={busy === batch.batchId}
+              className="shrink-0 rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-amber-700 disabled:opacity-50"
+            >
+              {busy === batch.batchId ? 'Putting back…' : 'Put them back'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function AccountHistoryPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -421,9 +526,10 @@ export default function AccountHistoryPage() {
             </div>
           </div>
 
+          <TransferUndoPanel />
+
           {/* Category Filter Pills */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">
-            {[
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs">            {[
               { id: 'all', label: 'All Activities', count: data?.counts?.all },
               { id: 'transfers', label: 'Transfers', count: data?.counts?.transfers, icon: ArrowLeftRight },
               { id: 'creations', label: 'All Creations', count: data?.counts?.creations, icon: Sparkles },

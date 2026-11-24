@@ -61,10 +61,30 @@ function determineExpiryStage(daysLeft: number, hasAssignedLine: boolean): { sta
     return null;
 }
 
-async function sendReminderEmail(email: string, businessName: string, subject: string, html: string) {
+/**
+ * Send a reminder and bill the account for it at twice our cost.
+ *
+ * One helper, six call sites: wiring this here is what keeps an account's email spend on the same 2× rule
+ * as its model tokens and its calls. Charged only after the provider accepts the message, and a billing
+ * failure is logged rather than thrown — a reminder that does not go out is worse than one that is not
+ * billed.
+ */
+async function sendReminderEmail(email: string, businessName: string, subject: string, html: string, userId?: string) {
     try {
         const { sendGenericEmail } = await import('@/utils/email-helper');
         await sendGenericEmail(email, subject, html);
+        if (userId) {
+            const [{ chargeEmailSends }, { createClient }] = await Promise.all([
+                import('@/lib/automation/email-billing'),
+                import('@supabase/supabase-js'),
+            ]);
+            const admin = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.SUPABASE_SERVICE_ROLE_KEY!,
+                { auth: { persistSession: false } }
+            );
+            await chargeEmailSends(admin, userId, { count: 1, label: 'Subscription reminder' });
+        }
     } catch (err: any) {
         console.error(`[Sub Reminder Email Error] ${email}:`, err.message);
     }
@@ -282,7 +302,7 @@ export async function GET(request: Request) {
                                 </p>
                             </div>
                         `;
-                        await sendReminderEmail(profile.email, businessName, subject, html);
+                        await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                     }
 
                     // WhatsApp
@@ -350,7 +370,7 @@ export async function GET(request: Request) {
                                 </p>
                             </div>
                         `;
-                        await sendReminderEmail(profile.email, businessName, subject, html);
+                        await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                     }
 
                     // WhatsApp
@@ -409,7 +429,7 @@ export async function GET(request: Request) {
                                 </p>
                             </div>
                         `;
-                        await sendReminderEmail(profile.email, businessName, subject, html);
+                        await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                     }
 
                     // WhatsApp
@@ -503,7 +523,7 @@ export async function GET(request: Request) {
                                 </div>
                             </div>
                         `;
-                        await sendReminderEmail(profile.email, businessName, subject, html);
+                        await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                     }
 
                     if (waPhone && waToken && waPhoneId) {
@@ -585,7 +605,7 @@ export async function GET(request: Request) {
                             </p>
                         </div>
                     `;
-                    await sendReminderEmail(profile.email, businessName, subject, html);
+                    await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                 }
 
                 // 2. Send WhatsApp
@@ -673,7 +693,7 @@ export async function GET(request: Request) {
                                         </div>
                                     </div>
                                 `;
-                                await sendReminderEmail(profile.email, businessName, subject, html);
+                                await sendReminderEmail(profile.email, businessName, subject, html, profile.id);
                             }
 
                             // 2. WhatsApp

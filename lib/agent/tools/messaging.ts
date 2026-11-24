@@ -31,6 +31,14 @@ export function createMessagingTools(supabase: SupabaseClient, userId: string) {
         category: z.enum(['MARKETING', 'UTILITY']).optional().describe('MARKETING for offers, UTILITY for account/service updates'),
         bodyText: z.string().describe('The message body. Use {{1}} style variables where the values differ per send.'),
         headerText: z.string().optional().describe('Optional TEXT header (max 60 characters)'),
+        /**
+         * Media headers. An image/video/document template shows the picture at the top of the message; Meta
+         * needs a sample file to approve it, so pass the public https URL of one. Without a sample Meta
+         * refuses the template, and a template with no header media cannot carry a picture later.
+         */
+        headerImageUrl: z.string().optional().describe('Public https URL of a sample image — makes an IMAGE header'),
+        headerVideoUrl: z.string().optional().describe('Public https URL of a sample clip (max 16MB) — makes a VIDEO header'),
+        headerDocumentUrl: z.string().optional().describe('Public https URL of a sample PDF — makes a DOCUMENT header'),
         footerText: z.string().optional().describe('Optional footer line'),
         language: z.string().optional().describe('Language code, default en_US'),
         buttons: z
@@ -45,11 +53,27 @@ export function createMessagingTools(supabase: SupabaseClient, userId: string) {
           .describe('Up to three buttons'),
       }),
       execute: async (input: any) => {
+        /**
+         * One header, chosen by what the caller supplied. A media header needs its sample file, so the URL
+         * decides the format rather than a separate flag the caller could set inconsistently.
+         */
+        const mediaHeader: { type: 'IMAGE' | 'VIDEO' | 'DOCUMENT'; url: string } | null = input?.headerImageUrl
+          ? { type: 'IMAGE', url: String(input.headerImageUrl) }
+          : input?.headerVideoUrl
+            ? { type: 'VIDEO', url: String(input.headerVideoUrl) }
+            : input?.headerDocumentUrl
+              ? { type: 'DOCUMENT', url: String(input.headerDocumentUrl) }
+              : null;
+
         const result = await createWhatsAppTemplate(supabase, userId, {
           name: String(input?.name ?? ''),
           category: input?.category === 'UTILITY' ? 'UTILITY' : 'MARKETING',
           bodyText: String(input?.bodyText ?? ''),
-          ...(input?.headerText ? { headerType: 'TEXT' as const, headerText: String(input.headerText) } : {}),
+          ...(mediaHeader
+            ? { headerType: mediaHeader.type as any, headerSampleUrl: mediaHeader.url }
+            : input?.headerText
+              ? { headerType: 'TEXT' as const, headerText: String(input.headerText) }
+              : {}),
           ...(input?.footerText ? { footerText: String(input.footerText) } : {}),
           ...(input?.language ? { language: String(input.language) } : {}),
           ...(Array.isArray(input?.buttons) ? { buttons: input.buttons } : {}),
