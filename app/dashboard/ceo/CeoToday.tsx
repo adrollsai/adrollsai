@@ -47,7 +47,13 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Could not start the daily routine');
-      toast.success('Daily engine on — first run is tomorrow morning.');
+      // Say the real next slot rather than a promise: the route returns the instant it
+      // scheduled, which is the routine's own hour in this business's timezone.
+      toast.success(
+        json.nextRunAt
+          ? `Daily engine on — next run ${new Date(json.nextRunAt).toLocaleString()}`
+          : 'Daily engine on.'
+      );
       await load();
     } catch (e: any) {
       toast.error(e?.message || 'Could not start the daily routine');
@@ -150,7 +156,15 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
             <div>
               <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Next run</dt>
               <dd className="text-sm text-slate-800">
-                {routine.next_run_at ? new Date(routine.next_run_at).toLocaleString() : '—'}
+                {/* A switched-off routine keeps whatever `next_run_at` it had when it was last
+                    switched off, because only a real run advances it. Printing that froze date
+                    under "Next run" claimed a slot in the PAST — seen in production as "11/23"
+                    on the 24th, which reads like the engine is due when it is actually idle. */}
+                {!routine.enabled
+                  ? 'paused — nothing is scheduled'
+                  : routine.next_run_at
+                    ? new Date(routine.next_run_at).toLocaleString()
+                    : '—'}
               </dd>
             </div>
           </dl>
