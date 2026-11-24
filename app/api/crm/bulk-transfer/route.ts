@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { sendPushNotification } from '@/utils/notification-helper'
 import { sendLeadTransferEmail } from '@/utils/email-helper'
+import { chargeEmailSends } from '@/lib/automation/email-billing'
 import { requireUser, serviceAdmin } from '@/utils/route-auth'
 import { buildCampaignFilter, buildFormFilter, buildStageFilter } from '@/lib/crm/transfer-filters'
 
@@ -17,6 +18,14 @@ const supabaseAdmin = createSupabaseAdmin(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
+
+    /**
+     * One id for one operation, so it can be undone as an operation.
+     *
+     * The client may pass its own (a retry of the same click reuses it); otherwise one is minted here.
+     * Every row in this call is stamped with it, and the reverse endpoint takes nothing else.
+     */
+    const batchId = String(body?.batchId || '').trim() || `tr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
     // Authentication: session cookie or Bearer token only. A caller-supplied
     // `userId`/`impersonateId` is NOT an identity — it is a *scope* request that
@@ -433,6 +442,33 @@ export async function POST(req: Request) {
             delete cf.pending_actions_hidden_at
           }
 
+          /**
+           * THE RECEIPT.
+           *
+           * Everything a reverse needs, written at the moment of transfer. Without this a transfer could
+           * not be undone: the route archived the old stage and attempt counters, but never recorded WHO
+           * the lead came from, so "transfer it back" had nothing to transfer it back to. The receipt is
+           * the difference between an audit trail and a reversible action.
+           *
+           * `batchId` groups every row of one operation, so reversing is one click on the operation
+           * rather than 200 clicks on 200 leads. `previousAssignee` is the lead's owner immediately
+           * before this call, which is what a reverse restores.
+           */
+          cf.transfer_receipt = {
+            batch_id: batchId,
+            previous_assignee: (lead as any).assigned_to ?? null,
+            new_assignee: targetAgentId,
+            at: cutoffTimestamp,
+            by: actingUserId,
+            hid_history: Boolean(hideHistoryFromAssignee),
+            reset_stage: Boolean(shouldResetStage || stageToUse),
+            stage_before: String(lead.pipeline_stage || '').trim() || null,
+            status_before: String((lead as any).status || '').trim() || null,
+            attempts_before: Number((lead as any).voice_call_retry_count) || 0,
+            next_followup_before: (lead as any).next_followup ?? null,
+            hid_pending_actions: !transferWithScheduledActions,
+          }
+
           updatePayload.custom_fields = cf
 
           // Audit trail: an admin should be able to see that this lead was moved, from where, and by whom.
@@ -533,7 +569,11 @@ export async function POST(req: Request) {
           agentName,
           senderName,
           validLeadIds.length
-        ).catch((err: any) => console.error('[Bulk Transfer Email Error]:', err))
+        )
+          // Billed at twice what it costs us, like every other metered action — and only once the
+          // provider accepted it, which is what resolving means here.
+          .then(() => chargeEmailSends(supabaseAdmin, actingUserId, { count: 1, label: 'Lead transfer notice' }))
+          .catch((err: any) => console.error('[Bulk Transfer Email Error]:', err))
       )
     }
 
@@ -543,6 +583,12 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      /**
+       * The handle for undoing exactly this operation. Every transferred lead carries it in
+       * `custom_fields.transfer_receipt.batch_id`, so POST /api/crm/bulk-transfer/reverse with this id
+       * puts them all back where they came from.
+       */
+      batchId,
       transferredCount: validLeadIds.length,
       // Counts, not a claim. The UI can now say "200 sent, 197 updated, 3 failed" instead of implying every id moved.
       updatedCount,

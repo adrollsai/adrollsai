@@ -353,8 +353,22 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
               'Meta, which is almost always right — a wrong locale is rejected as "template name ' +
               'does not exist in the translation".',
           ),
+        /**
+         * Media templates. An IMAGE/VIDEO/DOCUMENT template carries a REQUIRED header parameter at send
+         * time; without it Meta refuses the message. This is the primitive that makes those sendable —
+         * pass the public URL of the picture or clip. `headerMediaKind` must match the template's own
+         * header format (check it with nobogent_whatsapp_list_templates).
+         */
+        headerMediaUrl: z
+          .string()
+          .optional()
+          .describe('Public https URL of the header image/video/document, for a media template'),
+        headerMediaKind: z
+          .enum(['image', 'video', 'document'])
+          .optional()
+          .describe('The template header format this URL fills: image, video or document'),
       }),
-      execute: async ({ phone, templateName, variables, languageCode }) => {
+      execute: async ({ phone, templateName, variables, languageCode, headerMediaUrl, headerMediaKind }) => {
         try {
           // Previously this returned "queued for delivery" and posted nothing at all.
           const { sendWhatsAppTemplate } = await import('@/lib/agent/tools/outbound');
@@ -365,6 +379,10 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
             templateName,
             variables,
             languageCode,
+            headerMedia:
+              headerMediaUrl && headerMediaKind
+                ? { kind: headerMediaKind, link: String(headerMediaUrl) }
+                : null,
           });
           if (!result.success) {
             return { success: false, error: result.error, templateName, attemptedTo: result.to ?? phone };

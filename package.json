@@ -146,7 +146,8 @@
     "verify:transfer-columns": "esbuild scripts/verify-transfer-columns.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-transfer-cols.mjs --log-level=warning && node .tmp-transfer-cols.mjs",
     "verify:artefact-qa": "esbuild scripts/verify-artefact-qa.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-artefact-qa.mjs --log-level=warning && node .tmp-artefact-qa.mjs",
     "verify:call-queue": "esbuild scripts/verify-call-queue.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-call-queue.mjs --log-level=warning && node .tmp-call-queue.mjs",
-    "verify:parity": "esbuild scripts/verify-agent-parity.ts --bundle --platform=node --format=esm --outfile=.tmp-verify-parity.mjs --log-level=warning && node .tmp-verify-parity.mjs",    "verify:inbound": "esbuild scripts/verify-inbound.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-inbound.mjs --log-level=warning && node .tmp-verify-inbound.mjs",
+    "verify:parity": "esbuild scripts/verify-agent-parity.ts --bundle --platform=node --format=esm --outfile=.tmp-verify-parity.mjs --log-level=warning && node .tmp-verify-parity.mjs",
+    "verify:inbound": "esbuild scripts/verify-inbound.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-inbound.mjs --log-level=warning && node .tmp-verify-inbound.mjs",
     "verify:wide-limits": "node scripts/audit-wide-limits.mjs",
     "verify:max-rows": "esbuild scripts/verify-max-rows.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-max-rows.mjs --log-level=warning && node .tmp-verify-max-rows.mjs",
     "verify:primitives": "esbuild scripts/verify-primitives.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-primitives.mjs --log-level=warning && node .tmp-verify-primitives.mjs",
@@ -156,7 +157,6 @@
     "verify:creative-directives": "esbuild scripts/verify-creative-directives.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-creative-directives.mjs --log-level=warning && node .tmp-verify-creative-directives.mjs",
     "verify:observances": "esbuild scripts/verify-observances.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-observances.mjs --log-level=warning && node .tmp-verify-observances.mjs",
     "verify:schedule": "esbuild scripts/verify-routine-schedule.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-schedule.mjs --log-level=warning && node .tmp-verify-schedule.mjs",
-
     "verify:behaviour": "esbuild scripts/verify-behaviour-controls.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-verify-behaviour.mjs --log-level=warning && node .tmp-verify-behaviour.mjs",
     "verify:voice-pipeline": "esbuild scripts/verify-voice-pipeline.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-voice-pipeline.mjs --log-level=warning && node .tmp-voice-pipeline.mjs",
     "verify:whatsapp-templates": "esbuild scripts/verify-whatsapp-templates.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-wa-templates.mjs --log-level=warning && node .tmp-wa-templates.mjs",
@@ -176,7 +176,6 @@
     "verify:flow-creation": "esbuild scripts/verify-flow-creation.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-flow-create.mjs --log-level=warning && node .tmp-flow-create.mjs",
     "accept:behaviour": "esbuild scripts/accept-behaviour-via-agent.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-behaviour.mjs --log-level=warning && node .tmp-accept-behaviour.mjs",
     "accept:parity": "esbuild scripts/accept-agent-parity.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-parity.mjs --log-level=warning && node .tmp-accept-parity.mjs",
-
     "accept:agent-capabilities": "esbuild scripts/accept-agent-capabilities.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-agent-caps.mjs --log-level=warning && node .tmp-accept-agent-caps.mjs",
     "accept:catalog": "esbuild scripts/accept-catalog.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-catalog.mjs --log-level=warning && node .tmp-accept-catalog.mjs",
     "accept:campaign-tabs": "esbuild scripts/accept-campaign-tabs.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-accept-campaign-tabs.mjs --log-level=warning && node .tmp-accept-campaign-tabs.mjs",
@@ -198,7 +197,8 @@
     "probe:flow-scheduler": "esbuild scripts/probe-flow-scheduler.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probeflow.mjs --log-level=warning && node .tmp-probeflow.mjs",
     "probe:flow-chain": "esbuild scripts/probe-flow-chain.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-probechain.mjs --log-level=warning && node .tmp-probechain.mjs",
     "verify:advantage": "esbuild scripts/verify-advantage-plus.ts --bundle --platform=node --format=esm --packages=external --alias:@=./ --outfile=.tmp-verify-advantage.mjs --log-level=warning && node .tmp-verify-advantage.mjs",
-    "verify:bulk-filters": "esbuild scripts/verify-bulk-filters.ts --bundle --platform=node --format=esm --packages=external --alias:@=./ --outfile=.tmp-verify-bulk-filters.mjs --log-level=warning && node .tmp-verify-bulk-filters.mjs"
+    "verify:bulk-filters": "esbuild scripts/verify-bulk-filters.ts --bundle --platform=node --format=esm --packages=external --alias:@=./ --outfile=.tmp-verify-bulk-filters.mjs --log-level=warning && node .tmp-verify-bulk-filters.mjs",
+    "verify:transfer-reverse": "esbuild scripts/verify-transfer-reverse.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-trev.mjs --log-level=warning && node .tmp-trev.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.81",

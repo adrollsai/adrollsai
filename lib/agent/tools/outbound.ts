@@ -97,6 +97,17 @@ export async function sendWhatsAppTemplate(params: {
   templateName: string;
   variables?: string[];
   languageCode?: string;
+  /**
+   * Header media for templates whose header is IMAGE, VIDEO or DOCUMENT.
+   *
+   * A media template carries a REQUIRED header parameter at send time. Without it Meta rejects the
+   * message — which is why the 15 approved image/video templates on a real account were unsendable even
+   * though the send path looked fine: it only ever attached `body` text parameters.
+   *
+   * `kind` must match the template's own header format; passing an image link to a VIDEO template is
+   * refused by Meta, so it is sent as-is and Meta's words are returned rather than a guess.
+   */
+  headerMedia?: { kind: 'image' | 'video' | 'document'; link: string } | null;
 }): Promise<WhatsAppSendResult> {
   const { supabase, userId, templateName } = params;
 
@@ -132,15 +143,25 @@ export async function sendWhatsAppTemplate(params: {
       templateName,
     }));
 
-  const components =
-    params.variables && params.variables.length
-      ? [
-          {
-            type: 'body',
-            parameters: params.variables.map((value) => ({ type: 'text', text: String(value) })),
-          },
-        ]
-      : undefined;
+  /**
+   * The components, in Meta's order: the HEADER first (when the template has a media header), then the
+   * body variables. A media template without its header parameter is refused by Meta, and a body-only
+   * payload is exactly what used to be sent — so the header is built here, once, for every caller.
+   */
+  const components: any[] = [];
+  const media = params.headerMedia;
+  if (media?.link && (media.kind === 'image' || media.kind === 'video' || media.kind === 'document')) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: media.kind, [media.kind]: { link: String(media.link) } }],
+    });
+  }
+  if (params.variables && params.variables.length) {
+    components.push({
+      type: 'body',
+      parameters: params.variables.map((value) => ({ type: 'text', text: String(value) })),
+    });
+  }
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -149,7 +170,7 @@ export async function sendWhatsAppTemplate(params: {
     template: {
       name: templateName,
       language: { code: languageCode },
-      ...(components ? { components } : {}),
+      ...(components.length ? { components } : {}),
     },
   };
 
