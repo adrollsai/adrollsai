@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FolderOpen,
+  Package,
   BookOpen,
   Mic,
   Crown,
@@ -62,6 +63,7 @@ import ActionConfirmationCard from './ActionConfirmationCard';
 import CreatePanel from './CreatePanel';
 import ProgressTrackerCard from './ProgressTrackerCard';
 import FileManagerDrawer from './FileManagerDrawer';
+import CataloguePicker, { type CatalogueItem } from './CataloguePicker';
 import SkillsDrawer from './SkillsDrawer';
 import DictateButton from './DictateButton';
 import AgentMarkdown from './AgentMarkdown';
@@ -323,6 +325,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     } catch {}
   }, []);
   const [showFileManager, setShowFileManager] = useState(false);
+  /** Catalogue items attached as context for the next message (ids, so the agent can act on them). */
+  const [catalogue, setCatalogue] = useState<CatalogueItem[]>([]);
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'chat' | 'trajectory'>('chat');
@@ -2293,6 +2298,27 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                     <FolderOpen size={18} />
                   </button>
 
+                  {/* Catalogue context. The agent can search the catalogue with a tool, but it has to
+                      guess what to search for; pointing at the row you are already looking at is
+                      unambiguous, and the id it carries is what every downstream tool keys on. */}
+                  <button
+                    type="button"
+                    onClick={() => setCatalogueOpen(true)}
+                    className="nobo-tap relative min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 sm:w-10 sm:h-10 rounded-full dsh-label-tertiary dsh-interactive flex items-center justify-center"
+                    title={catalogue.length ? catalogue.length + ' catalogue item(s) attached' : 'Attach catalogue items as context'}
+                    aria-label="Attach catalogue items as context"
+                  >
+                    <Package size={18} />
+                    {catalogue.length > 0 && (
+                      <span
+                        className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-black text-white"
+                        style={{ background: 'var(--dsw-alias-brand-primary)' }}
+                      >
+                        {catalogue.length}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Dictation: speak, and the words land in the box to edit and send.
                       Part of the composer, so it is in every session automatically. */}
                   <DictateButton
@@ -2461,6 +2487,25 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       )}
 
       {/* File & Asset Manager Drawer */}
+      {/* Catalogue context picker. The chosen items are appended to the message as a context line, so the
+          owner can see exactly what was handed over and edit it like any other text  nothing is silently
+          attached behind their back. */}
+      <CataloguePicker
+        open={catalogueOpen}
+        onClose={() => setCatalogueOpen(false)}
+        selected={catalogue}
+        impersonateId={impersonateId}
+        onConfirm={(items) => {
+          setCatalogue(items);
+          if (!items.length) return;
+          const line =
+            '[Catalogue context: ' +
+            items.map((item) => item.title + ' (id: ' + item.id + ')').join(', ') +
+            ']';
+          setInput((prev) => (prev ? prev + ' ' + line : line));
+        }}
+      />
+
       <FileManagerDrawer
         isOpen={showFileManager}
         onClose={() => setShowFileManager(false)}
