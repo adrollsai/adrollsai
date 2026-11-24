@@ -448,6 +448,43 @@ export async function openRunTurn(
       return;
     }
 
+    /**
+     * AN OUT-OF-CREDIT PROVIDER IS NEVER RETRIED.
+     *
+     * Measured in production: eight runs in 24 hours across two accounts died with
+     * "Insufficient Balance (request_id: …)", every one of them burning all five attempts. The cause was OUR
+     * model-provider account being empty — nothing to do with the customer's credits — and the only visible
+     * effect on their side was a spinner that never resolved: a website "circling for 25 minutes", an image
+     * "running in background for 20".
+     *
+     * Retrying cannot fix an empty wallet, so it now fails immediately, and says whose problem it is. The
+     * customer should not be told to top up credits they already have, and an operator should see the truth
+     * in one line.
+     */
+    const outOfProviderCredit = /insufficient balance|insufficient_quota|exceeded your current quota|payment required|\b402\b/i.test(
+      message
+    );
+    if (outOfProviderCredit) {
+      console.error(
+        `[Harness runner] run ${run.id.slice(0, 8)} stopped: the model provider account is out of credit — ${message}`
+      );
+      await appendRunStatus(
+        supabase,
+        run.session_id,
+        'failed',
+        'Our AI provider account is out of credit, so this task could not run. This is ours to fix, not yours — ' +
+          'nothing was charged and the task can be resumed once it is topped up.',
+        sliceNumber
+      );
+      await settleOnce({
+        status: 'dead',
+        steps,
+        error: `Platform AI provider out of credit (not the customer's balance): ${message}`,
+        incrementAttempt: true,
+      });
+      return;
+    }
+
     const attempt = run.attempts + 1;
     if (attempt < run.max_attempts) {
       const delay = nextBackoffMs(attempt);

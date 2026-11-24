@@ -213,22 +213,40 @@ export const deadLetterDetector: Detector = {
       const systemic = bucket.length >= SYSTEMIC_FAILURE_THRESHOLD;
       const tenants = new Set(bucket.map((row) => row.user_id).filter(Boolean));
 
+      /**
+       * AN EMPTY PROVIDER ACCOUNT IS NOT A CUSTOMER'S PROBLEM, AND IT MUST NOT READ LIKE ONE.
+       *
+       * Eight runs in 24 hours across two accounts died with "Insufficient Balance" — our model provider, not
+       * the tenant's credits. The generic dead-letter wording ("N agent runs were given up on", "read one
+       * run's error") buries the one fact an operator needs: nothing can succeed until somebody tops up the
+       * platform account, so every other fix is wasted effort.
+       */
+      const providerOutOfCredit = /insufficient balance|insufficient_quota|exceeded your current quota|payment required|\b402\b/i.test(
+        head
+      );
+
       detections.push({
         class: 'harness-run-dead-lettered',
-        severity: systemic || neverAttempted ? 'critical' : 'warning',
-        title: neverAttempted
-          ? 'Agent runs are dying before they are ever attempted'
-          : `${bucket.length} agent run(s) were given up on`,
+        severity: providerOutOfCredit ? 'critical' : systemic || neverAttempted ? 'critical' : 'warning',
+        title: providerOutOfCredit
+          ? 'The platform AI provider account is out of credit — no agent work can run'
+          : neverAttempted
+            ? 'Agent runs are dying before they are ever attempted'
+            : `${bucket.length} agent run(s) were given up on`,
         evidence:
           `${bucket.length} run(s) in the last ${DEAD_LETTER_LOOKBACK_HOURS}h ended dead with the same cause: ` +
           `"${head}". The newest died ${ago(newest.dead_at as string, ctx.now)}` +
           (tenants.size ? `, across ${tenants.size} tenant(s)` : '') +
-          (neverAttempted
-            ? '. Every one of them recorded 0 attempts, so the runner never ran once — this is the caller, not a flaky model call.'
-            : '.'),
-        suggestedFix: neverAttempted
-          ? 'Read what creates the run (the routine or cron that calls the harness runner) and check it supplies a user message before the session is used.'
-          : "Read one run's error and trail, fix the cause, then re-queue the affected runs.",
+          (providerOutOfCredit
+            ? '. This is the PLATFORM provider account running dry, not any tenant running out of credits — every tenant is affected equally, and no retry can succeed until it is topped up.'
+            : neverAttempted
+              ? '. Every one of them recorded 0 attempts, so the runner never ran once — this is the caller, not a flaky model call.'
+              : '.'),
+        suggestedFix: providerOutOfCredit
+          ? 'Top up the model-provider account (DeepSeek), then re-queue the affected runs. Customers were shown a spinner, not an error — tell them it was ours.'
+          : neverAttempted
+            ? 'Read what creates the run (the routine or cron that calls the harness runner) and check it supplies a user message before the session is used.'
+            : "Read one run's error and trail, fix the cause, then re-queue the affected runs.",
         blastRadius: 'needs_approval',
         subjectTable: 'harness_runs',
         // The fingerprint belongs to the cause, so the same bug tomorrow is the same incident.
