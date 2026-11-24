@@ -292,6 +292,29 @@ export function validateLaunchRequest(req: LaunchRequest, ctx?: Partial<LaunchCo
     if (!wa) missing.push('the WhatsApp number the ad should open a chat with');
   }
 
+  /**
+   * WHERE IT RUNS AND WHAT IT IS FOR ARE NOT DEFAULTS.
+   *
+   * A real instruction — "launch a campaign for <project> on ₹500/day, paused" — went straight through,
+   * because the creative could be auto-written from the profile, the objective resolved itself, and the
+   * targeting silently became the account's country. Nothing asked which cities, which creative, or which
+   * goal, and the owner watched a launch they had not specified.
+   *
+   * For an ad on a real ad account those two are choices, not preferences: the wrong city is wasted money
+   * and the wrong objective is the wrong optimisation altogether. So both must be SUPPLIED. When they are
+   * not, this refuses and lists exactly what to ask — which is the intake the agent should have done
+   * before it ever reached this function.
+   */
+  const locations = (request.locations || []).filter((l: any) => l && (l.key || l.country_code));
+  if (!locations.length) {
+    missing.push(
+      'where the ad should run (the cities, regions or country it targets) — this is a choice, not a default'
+    );
+  }
+  if (!request.campaignGoal) {
+    missing.push('what the campaign is for (leads, whatsapp conversations, or website conversions)');
+  }
+
   const ageMin = request.ageMin === undefined ? null : Number(request.ageMin);
   const ageMax = request.ageMax === undefined ? null : Number(request.ageMax);
   if (ageMin !== null && (!Number.isFinite(ageMin) || ageMin < 13 || ageMin > 65)) {
@@ -309,7 +332,10 @@ export function validateLaunchRequest(req: LaunchRequest, ctx?: Partial<LaunchCo
       ok: false,
       plan,
       missing,
-      error: `This launch is missing ${missing.length} thing(s): ${missing.join('; ')}. Nothing was created and no money was spent.`,
+      error:
+        `This launch is missing ${missing.length} thing(s): ${missing.join('; ')}. Nothing was created and no money was spent. ` +
+        'Ask the owner for each of those, say back what you are about to launch (creative, places, budget, goal, and whether it ' +
+        'starts paused), and only then call this again.',
     };
   }
 
