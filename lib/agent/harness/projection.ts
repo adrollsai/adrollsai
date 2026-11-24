@@ -379,19 +379,42 @@ export function itemsToModelMessages(items: HarnessItem[]): any[] {
           input: item.input ?? {},
         });
         flushAssistant();
-        if (item.status !== 'running') {
-          out.push({
-            role: 'tool',
-            content: [
-              {
-                type: 'tool-result',
-                toolCallId: item.id,
-                toolName: item.name,
-                output: { type: 'json', value: item.output ?? { success: true } },
-              },
-            ],
-          });
-        }
+        /**
+         * A TOOL CALL ALWAYS GETS A RESULT — even when it never produced one.
+         *
+         * This used to skip the result whenever the item was still `running`, which produced a conversation
+         * containing an assistant tool-call with nothing answering it. The provider refuses that outright:
+         * runs were dying with "Tool result is missing for tool call call_00_…", five attempts each, and the
+         * cause was a run that had been interrupted mid-tool — its log holds a `tool.call` with no
+         * `tool.result`, so every retry rebuilt the same broken history and died the same way.
+         *
+         * Closing the loop with an explicit failure is both valid to send and more honest to the model: it
+         * learns the tool did not return, so it must not assume the side effect happened. The alternative —
+         * silently dropping the call — would let it re-issue an action that may already have run.
+         */
+        out.push({
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: item.id,
+              toolName: item.name,
+              output:
+                item.status === 'running'
+                  ? {
+                      type: 'json',
+                      value: {
+                        success: false,
+                        error:
+                          'This tool did not return a result (the previous attempt was interrupted). Treat it as ' +
+                          'failed or unknown, check the real state before repeating any side effect, and continue.',
+                        interrupted: true,
+                      },
+                    }
+                  : { type: 'json', value: item.output ?? { success: true } },
+            },
+          ],
+        });
         break;
       }
       case 'error': {

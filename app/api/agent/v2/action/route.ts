@@ -14,6 +14,51 @@ import { approvalOutcome, rejectionOutcome } from '@/lib/agent/approval-outcome'
  * It used to answer "Successfully launched WhatsApp broadcast to 400 leads" without sending
  * anything. See lib/agent/approval-outcome.ts for why that mattered.
  */
+/**
+ * What happened to a staged action — asked again when the card is re-rendered.
+ *
+ * THE BUG THIS FIXES
+ * Approving a card turns it green, but that was only ever component state inside the card. The decision is
+ * recorded on the `agent_events` row, and the transcript is rebuilt from the harness log — which has no
+ * idea about it. So leaving the tab and coming back re-rendered the card from the original artifact, still
+ * carrying its buttons, as if nothing had ever been approved. An owner reading that concludes the approval
+ * was lost, and presses it again.
+ *
+ * This answers the only question the card needs: is this action already decided?
+ */
+export async function GET(req: Request) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const actionId = new URL(req.url).searchParams.get('actionId') || '';
+    if (!actionId) return NextResponse.json({ error: 'actionId is required' }, { status: 400 });
+
+    const { data, error } = await supabase
+      .from('agent_events')
+      .select('id, status, created_at')
+      .eq('event_type', 'PENDING_ACTION_APPROVAL')
+      .eq('payload->>actionId', actionId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ found: false, status: null });
+
+    // `pending` is the row's own state before anyone decides; anything else is a decision already made.
+    const status = String(data.status || '').toLowerCase();
+    return NextResponse.json({
+      found: true,
+      status,
+      decided: status === 'approved' || status === 'rejected' ? status : null,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = await createClient();

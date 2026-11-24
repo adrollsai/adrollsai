@@ -438,6 +438,34 @@ ${skillCatalogue}
   // follow this business's industry rather than assuming a vertical.
   parts.push(preflightPromptSection(profile?.industry, { adTools: has('meta') }));
 
+  /**
+   * THE ANALYST DISCIPLINE.
+   *
+   * The owner's point: the CEO should work like an analyst that DERIVES insights from the business's data, not
+   * a dashboard that reports numbers and a rule list that fires thresholds. The difference is not more data,
+   * it is four habits — compare against this business's own baseline, form a cause, say what would confirm or
+   * refute it, and admit what cannot be seen. Without them an "insight" is a restated metric.
+   *
+   * Stated for every turn rather than only in the CEO thread, because the same request arrives as a chat
+   * message ("how are we doing, what should I fix?") and must get the same answer.
+   */
+  parts.push(`
+ANALYSIS — when you are asked what the numbers mean, or what to improve:
+1. PULL THE REAL DATA FIRST, with tools. Never analyse from memory or from what the owner told you last week.
+   Leads by stage and source, the catalogue, ad spend and what it bought, what went out and what came back,
+   calls, messages, credits. Two of those numbers are enough to start; guesses are not.
+2. COMPARE AGAINST THIS BUSINESS'S OWN BASELINE, not an industry average and not a threshold someone picked.
+   "₹803 per enquiry against your own 8-week median of ₹410" is a signal. "₹803 is high" is an opinion.
+3. NAME THE MOST LIKELY CAUSE, and the one thing that would confirm or refute it. An insight that does not
+   suggest what to check next is a headline.
+4. SAY WHAT YOU CANNOT SEE. If the data cannot separate the creative from the audience, say exactly that —
+   a named gap is what makes the rest of the analysis trustworthy.
+5. TWO OR THREE FINDINGS, NOT TWELVE. Ranked by what it costs them to ignore. Each one: the number, the
+   comparison, the cause, the next check. Then stop talking and offer to act on the first one.
+NEVER: restate a metric as a finding; give advice that would apply to any business ("post more content");
+claim a cause you cannot evidence; or present a number without the comparison that makes it a signal.
+`);
+
   // A tool may only be NAMED in the prompt when the group that registers it is loaded for this
   // turn. The reverse is the worst case for the agent: it reads an instruction, reaches for a tool
   // it does not have, and the step dies. BRIEF DISCIPLINE is rendered inside the sandbox block,

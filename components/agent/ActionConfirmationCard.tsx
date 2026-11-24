@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShieldAlert, Check, X, Loader2, Coins, Mic, ImageIcon } from 'lucide-react';
 import { ActionConfirmationArtifact } from '@/lib/agent/types';
 import { buildResumePrompt } from '@/lib/agent/resume-prompt';
@@ -62,6 +62,33 @@ function payloadRows(payload: unknown): Array<{ label: string; value: string }> 
 export default function ActionConfirmationCard({ artifact, onDecision, onResume }: ActionConfirmationCardProps) {
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>(artifact.status || 'pending');
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Ask the server what was already decided, every time this card is rendered.
+   *
+   * `status` above is only this component's own state, and the transcript is rebuilt from the harness log —
+   * which does not know about approvals. So a decision made in an earlier visit was invisible on return: the
+   * card came back with its Approve/Reject buttons, as though the owner had never answered. That reads as a
+   * lost approval, and invites a second press on something already done.
+   */
+  useEffect(() => {
+    if (!artifact.actionId) return;
+    if (status !== 'pending') return;
+    let alive = true;
+    fetch(`/api/agent/v2/action?actionId=${encodeURIComponent(artifact.actionId)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (!alive) return;
+        if (body?.decided === 'approved' || body?.decided === 'rejected') setStatus(body.decided);
+      })
+      .catch(() => {
+        /* a card that cannot confirm stays pending rather than claiming a decision it did not see */
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artifact.actionId]);
 
   // Either the artifact's curated spec, or its raw staged arguments.
   const detailRows = artifact.spec && artifact.spec.length > 0 ? artifact.spec : payloadRows(artifact.payload);

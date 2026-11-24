@@ -8,7 +8,7 @@
  * the load-bearing part of the harness: if a fold is wrong, every session
  * replayed from the log renders wrong, and no amount of UI work can fix it.
  */
-import { project, applyEvent, initialState, deriveTitle, toTranscript, itemsToUIMessages } from '../lib/agent/harness/projection';
+import { project, applyEvent, initialState, deriveTitle, toTranscript, itemsToUIMessages, itemsToModelMessages } from '../lib/agent/harness/projection';
 import { stepToEvents } from '../lib/agent/harness/persist';
 import {
   extractAttachments,
@@ -110,6 +110,38 @@ console.log('\n▸ replay is idempotent');
     once: s.items.length,
     twice: twice.items.length,
   });
+}
+
+/**
+ * AN INTERRUPTED TOOL MUST NOT POISON THE HISTORY.
+ *
+ * A run killed mid-tool leaves a `tool.call` with no `tool.result`, so the projected row stays `running`
+ * forever. The model-message reconstruction used to emit the assistant tool-call and NO result for exactly
+ * that case, which the provider rejects outright — production runs died with "Tool result is missing for
+ * tool call call_00_…", five attempts each, every retry rebuilding the same broken history.
+ */
+console.log('\n▸ a tool with no result is closed, not left dangling');
+{
+  const interrupted = project('s6b', [
+    ev(1, 'session.opened', { title: 't', workspaceId: 'ws_a' }),
+    ev(2, 'user.message', { id: 'u1', text: 'go' }),
+    ev(3, 'tool.call', { callId: 'c_missing', name: 'search' }),
+  ]);
+  const messages = itemsToModelMessages(interrupted.items);
+  const parts = messages.flatMap((m: any) => (Array.isArray(m.content) ? m.content : []));
+  const calls = parts.filter((p: any) => p?.type === 'tool-call');
+  const results = parts.filter((p: any) => p?.type === 'tool-result');
+  check('the interrupted tool still emits its call', calls.length === 1, calls.length);
+  check(
+    'and it is answered, so the provider cannot reject the history',
+    results.length === 1 && results[0].toolCallId === 'c_missing',
+    results.map((r: any) => r.toolCallId)
+  );
+  check(
+    'the synthetic answer says it did not return, so the model does not assume the side effect landed',
+    JSON.stringify(results[0]?.output || {}).includes('did not return'),
+    String(results[0]?.output?.value?.error || '').slice(0, 60)
+  );
 }
 
 console.log('\n▸ empty / invalid payloads are ignored, not crashed on');

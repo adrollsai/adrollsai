@@ -4648,6 +4648,18 @@ RULES:
                       profile.business_name || '',
                       adCampaignString
                   );
+                  /**
+                   * Billed to the account at twice our cost, like every other metered action — and only after
+                   * the provider accepted it. One email per captured lead makes this the highest-volume
+                   * unmetered send in the product.
+                   */
+                  if (profile?.id) {
+                      const { chargeEmailSends } = await import('@/lib/automation/email-billing');
+                      await chargeEmailSends(supabaseAdmin, String(profile.id), {
+                          count: 1,
+                          label: 'Lead auto-response',
+                      });
+                  }
               } catch (autoEmailErr) {
                   console.error("[Facebook Webhook] Failed to send auto-response email to lead:", autoEmailErr);
               }
