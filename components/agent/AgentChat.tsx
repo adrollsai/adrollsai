@@ -403,17 +403,39 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // fall back to the previous localStorage behaviour so nothing breaks.
   const harness = useHarnessSession(impersonateId);
   const [logSessionId, setLogSessionId] = useState<string | null>(null);
+  /**
+   * The same id, readable synchronously.
+   *
+   * `handleNewSession` creates a session and then the FIRST message is sent in the same tick. React has not
+   * re-rendered yet, so anything reading the state variable sees the previous value (usually null) — and the
+   * request went out with no session id at all. The turn streamed, the reply appeared, and nothing was
+   * persisted: no event log, no run, no sidebar tile, and after a refresh an owner saw their own question
+   * and no answer. Measured on a real account: three sessions holding exactly one `session.opened` event.
+   *
+   * A ref is set at the moment of creation and is what the request body reads, so "the id exists" and "the
+   * request carries it" can no longer disagree.
+   */
+  const logSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    logSessionIdRef.current = logSessionId;
+  }, [logSessionId]);
   const logEnabled = harness.available === true && logSessionId !== null;
   const projected = harness.state && harness.state.sessionId === logSessionId ? harness.state : null;
 
   const chatTransport = useMemo(() => {
     return new DefaultChatTransport({
       api: apiEndpoint,
-      body: {
-        sessionId: logSessionId || undefined,
-      },
+      /**
+       * Read the id AT SEND TIME, not at transport-construction time.
+       *
+       * With a static object the value was frozen when the transport was built. A session created moments
+       * earlier — during the same click — had not reached this closure yet, so the first message of every
+       * new conversation went out with `sessionId: undefined`: the server had nothing to attach the turn
+       * to, so nothing was written, and a refresh showed a question with no answer.
+       */
+      body: () => ({ sessionId: logSessionIdRef.current || undefined }),
     });
-  }, [apiEndpoint, logSessionId]);
+  }, [apiEndpoint]);
 
   const handleError = useCallback((err: any) => {
     console.error('[Nobo Harness Error]:', err);
@@ -726,6 +748,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       // which is exactly what made naming look broken. Refetch it now.
       void harness.refresh();
     }
+    // Refreshed whether or not this turn had a log id: a session created by this click still needs its tile,
+    // and the previous condition meant a turn that failed to attach a log also never refreshed the list.
+    if (wasStreaming.current && !isLoading) void harness.refresh();
     wasStreaming.current = isLoading;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, logSessionId]);
@@ -1064,6 +1089,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       sid = await sessionCreationRef.current;
       if (sid) {
         setActiveSessionId(sid);
+        logSessionIdRef.current = sid;
         setLogSessionId(sid);
       }
     }
@@ -1071,6 +1097,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       sid = await harness.createSession({ workspaceId: activeWorkspaceId });
       if (sid) {
         setActiveSessionId(sid);
+        logSessionIdRef.current = sid;
         setLogSessionId(sid);
       }
     }
@@ -1200,6 +1227,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       sid = await harness.createSession({ workspaceId: activeWorkspaceId });
       if (sid) {
         setActiveSessionId(sid);
+        logSessionIdRef.current = sid;
         setLogSessionId(sid);
       }
     }
@@ -1228,6 +1256,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     resetRunStream();
 
     if (harness.available !== false) {
+      logSessionIdRef.current = sessionId;
       setLogSessionId(sessionId);
       const nextState = await harness.openSession(sessionId);
       // Rebuild the model context from the log, otherwise the next follow-up
@@ -1235,6 +1264,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       setMessages(nextState ? itemsToUIMessages(nextState.items) : []);
       return;
     }
+
+    logSessionIdRef.current = null;
 
     setLogSessionId(null);
     try {
@@ -1273,7 +1304,11 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       if (serverId) {
         freshSessionRef.current = serverId;
         setActiveSessionId(serverId);
+        logSessionIdRef.current = serverId;
         setLogSessionId(serverId);
+        // The sidebar list was fetched on mount, so a session created now has no tile until something asks
+        // again — which is why a fresh conversation appeared to have vanished from the list.
+        void harness.refresh();
         toast.success('Started a fresh session');
         return;
       }
@@ -1284,6 +1319,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     const newId = 'session_' + Date.now();
     freshSessionRef.current = newId;
     setActiveSessionId(newId);
+    logSessionIdRef.current = null;
     setLogSessionId(null);
     try {
       localStorage.setItem(lastSessionStorageKey, newId);
@@ -1392,6 +1428,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         //
         // A session is now created lazily on the next send (see handleSend), so
         // the sidebar stays empty until the owner actually starts talking.
+        logSessionIdRef.current = null;
         setLogSessionId(null);
         setMessages([]);
         setActiveSessionId(`session_${Date.now()}`);
