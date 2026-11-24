@@ -29,6 +29,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Check,
+  SendHorizontal,
+  Pencil,
+  Clock,
+  X,
   Copy,
   RotateCcw,
   Bot,
@@ -589,6 +593,21 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // in the order they were typed.
   const [queuedCount, setQueuedCount] = useState(0);
   const queueRef = useRef<string[]>([]);
+  /**
+   * The queue, made visible.
+   *
+   * A message typed while a turn was running went into `queueRef` and surfaced as nothing but a number in
+   * the footer — "1 message queued — sends when this turn finishes". Its words were invisible, so it read as
+   * a lost message, and there was no way to take it back, fix a typo in it, or send it now. A queue you
+   * cannot see is a queue you cannot trust, and an owner who cannot see their own message assumes the app
+   * swallowed it.
+   *
+   * So it is staged: each waiting message is listed above the composer with the three things anyone actually
+   * wants — send it now, edit it (which puts it back in the box and takes it out of the queue), or delete it.
+   * When the turn ends the queue still dispatches itself, and the message then appears in the transcript like
+   * any other.
+   */
+  const [staged, setStaged] = useState<{ id: string; text: string }[]>([]);
   const handleSendRef = useRef<(text?: string) => Promise<void>>(async () => {});
 
   // Two-step delete confirmation: holds the id awaiting a second click.
@@ -728,6 +747,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       if (!next) return;
       flushingRef.current = true;
       setQueuedCount(queueRef.current.length);
+      // The staged row goes as it is dispatched; it reappears as a real message in the transcript.
+      setStaged((prev) => prev.slice(1));
       Promise.resolve(handleSendRef.current(next)).finally(() => {
         flushingRef.current = false;
       });
@@ -1050,24 +1071,33 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   };
 
   const handleSend = async (customPrompt?: string) => {
-    const textToSend = customPrompt || input;
+    /** The picked catalogue items, sent as context with the message. Shown as a chip, never typed into the box. */
+  const withCatalogue = (text: string) =>
+    catalogue.length
+      ? text + ' ' + '[Catalogue context: ' + catalogue.map((item) => item.title + ' (id: ' + item.id + ')').join(', ') + ']'
+      : text;
+  const textToSend = customPrompt || input;
     if ((!textToSend.trim() && !attachedFile) || isUploading) return;
 
-    let fullPrompt = textToSend;
+    let fullPrompt = withCatalogue(textToSend);
     if (attachedFile) {
       if (attachedFile.url) {
-        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${textToSend || 'Please inspect this reference video/file and help me create content based on it.'}`;
+        fullPrompt = withCatalogue(`[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${textToSend || 'Please inspect this reference video/file and help me create content based on it.'}`);
       } else if (attachedFile.content) {
-        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 2000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`;
+        fullPrompt = withCatalogue(`[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(0, 2000)}\n\nInstruction: ${textToSend || 'Please inspect this file and help me process it.'}`);
       }
       setAttachedFile(null);
     }
+    // The catalogue is context for THIS message, so it is spent when the message is sent — the next one
+    // should not silently carry items the owner did not pick for it.
+    if (catalogue.length) setCatalogue([]);
 
     // A turn is already running: queue this instead of dropping it, and send it
     // automatically when the current one ends.
     if (isLoading) {
       queueRef.current.push(fullPrompt);
       setQueuedCount(queueRef.current.length);
+      setStaged((prev) => [...prev, { id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text: fullPrompt }]);
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
       return;
@@ -1211,21 +1241,27 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   const handleStartRun = async () => {
     if ((!input.trim() && !attachedFile) || isUploading) return;
 
+  /** The picked catalogue items, sent as context with the message. Shown as a chip, never typed into the box. */
+  const withCatalogue = (text: string) =>
+    catalogue.length
+      ? text + ' ' + '[Catalogue context: ' + catalogue.map((item) => item.title + ' (id: ' + item.id + ')').join(', ') + ']'
+      : text;
     const textToSend = input;
-    let fullPrompt = textToSend;
+    let fullPrompt = withCatalogue(textToSend);
     if (attachedFile) {
       if (attachedFile.url) {
-        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${
+        fullPrompt = withCatalogue(`[Attached File: ${attachedFile.name} (${attachedFile.type})]\nURL: ${attachedFile.url}\n\nInstruction: ${
           textToSend || 'Please inspect this reference and act on it.'
-        }`;
+        }`);
       } else if (attachedFile.content) {
-        fullPrompt = `[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(
+        fullPrompt = withCatalogue(`[Attached File: ${attachedFile.name} (${attachedFile.type})]\nContent preview:\n${attachedFile.content.slice(
           0,
           2000
-        )}\n\nInstruction: ${textToSend || 'Please inspect this file and act on it.'}`;
+        )}\n\nInstruction: ${textToSend || 'Please inspect this file and act on it.'}`);
       }
       setAttachedFile(null);
     }
+    if (catalogue.length) setCatalogue([]);
 
     let sid = logSessionId;
     if (harness.available === true && !sid) {
@@ -2150,6 +2186,105 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
           }}
         >
           <div className="max-w-3xl mx-auto">
+            {/**
+             * Staged messages: waiting, visible, and disposable.
+             *
+             * A message sent mid-turn is not lost, it is waiting — and it says so, in its own words, with the
+             * three actions that make a wait tolerable: send it now, edit it, or drop it.
+             */}
+            {staged.length > 0 && (
+              <div className="mb-2 space-y-1.5">
+                {staged.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-2 rounded-[10px] px-2.5 py-1.5 dsh-chip dsh-t-xs"
+                  >
+                    <Clock size={12} className="mt-0.5 shrink-0 dsh-warn" />
+                    <div className="min-w-0 flex-1">
+                      <span className="dsh-label-caption dsh-t-xxxs block">
+                        Waiting for this turn to finish{index === 0 ? '' : ` · #${index + 1}`}
+                      </span>
+                      <span className="block whitespace-pre-wrap break-words dsh-label-secondary">{item.text}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Dispatch now: it leaves the queue and starts a turn of its own, exactly as if the
+                          // current one had finished.
+                          queueRef.current = queueRef.current.filter((text) => text !== item.text);
+                          setQueuedCount(queueRef.current.length);
+                          setStaged((prev) => prev.filter((entry) => entry.id !== item.id));
+                          void handleSendRef.current(item.text);
+                        }}
+                        className="rounded p-1 dsh-label-tertiary dsh-interactive"
+                        title="Send it now"
+                        aria-label="Send this message now"
+                      >
+                        <SendHorizontal size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Edit: back into the box to fix, and out of the queue so it is not sent twice.
+                          queueRef.current = queueRef.current.filter((text) => text !== item.text);
+                          setQueuedCount(queueRef.current.length);
+                          setStaged((prev) => prev.filter((entry) => entry.id !== item.id));
+                          setInput(item.text);
+                          textareaRef.current?.focus();
+                        }}
+                        className="rounded p-1 dsh-label-tertiary dsh-interactive"
+                        title="Edit it"
+                        aria-label="Edit this message"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          queueRef.current = queueRef.current.filter((text) => text !== item.text);
+                          setQueuedCount(queueRef.current.length);
+                          setStaged((prev) => prev.filter((entry) => entry.id !== item.id));
+                        }}
+                        className="rounded p-1 dsh-label-caption dsh-interactive-danger"
+                        title="Delete it"
+                        aria-label="Delete this message"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Catalogue context, as chips you can take off again — the same shape as an attached file, so it
+                reads as something the message carries rather than words in the box. */}
+            {catalogue.length > 0 && (
+              <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                {catalogue.map((item) => (
+                  <span
+                    key={item.id}
+                    className="inline-flex max-w-[18rem] items-center gap-1.5 rounded-[10px] px-2.5 py-1 dsh-chip dsh-t-xs"
+                    title={item.title}
+                  >
+                    <Package size={12} className="dsh-accent shrink-0" />
+                    <span className="truncate">{item.title}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogue((prev) => prev.filter((entry) => entry.id !== item.id))}
+                      className="dsh-label-caption dsh-interactive-danger shrink-0"
+                      aria-label={`Remove ${item.title}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                <span className="dsh-t-xxxs dsh-label-caption">
+                  sent as context for this message
+                </span>
+              </div>
+            )}
             {isUploading && (
               <div className="mb-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-[12px] dsh-chip dsh-accent dsh-t-xs animate-pulse">
                 <Loader2 size={13} className="animate-spin dsh-accent" />
@@ -2496,13 +2631,10 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         selected={catalogue}
         impersonateId={impersonateId}
         onConfirm={(items) => {
+          // Held as composer context, like an attachment. It used to be pasted into the text box, which
+          // read as though the owner had typed "[Catalogue context: …]" themselves and left them editing
+          // machine text instead of their own instruction.
           setCatalogue(items);
-          if (!items.length) return;
-          const line =
-            '[Catalogue context: ' +
-            items.map((item) => item.title + ' (id: ' + item.id + ')').join(', ') +
-            ']';
-          setInput((prev) => (prev ? prev + ' ' + line : line));
         }}
       />
 
