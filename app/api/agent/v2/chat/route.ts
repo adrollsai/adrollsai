@@ -92,7 +92,45 @@ export async function POST(req: Request) {
     // harness usable before the migration is applied.
     const wantsLog = typeof body.sessionId === 'string' && body.sessionId.length > 0;
     const logReady = wantsLog ? await isAvailable(supabase) : false;
-    const sessionId: string | null = wantsLog && logReady ? body.sessionId : null;
+    let sessionId: string | null = wantsLog && logReady ? body.sessionId : null;
+
+    /**
+     * A TURN MUST NOT STREAM INTO NOTHING.
+     *
+     * Found on a real account: three sessions existed with a single `session.opened` event and no runs at
+     * all, and an owner's instruction ("launch a campaign for X on ₹500/day, paused") had vanished — it
+     * never reached the server as a durable turn, so a refresh showed the question and no answer. The
+     * client had a session id the server did not have a row for, and the only thing that happened was
+     * `setSessionStatus` failing quietly against a missing row.
+     *
+     * So: if the client asked for a log and the row is not there, create it rather than silently running
+     * without one. The id is preserved, so the client's optimistic messages and the persisted events are
+     * the same conversation, and a refresh finds it.
+     */
+    if (sessionId) {
+      try {
+        const { data: existing } = await supabase
+          .from('harness_sessions')
+          .select('id')
+          .eq('id', sessionId)
+          .maybeSingle();
+        if (!existing) {
+          const { error: createErr } = await supabase.from('harness_sessions').insert({
+            id: sessionId,
+            user_id: targetUserId,
+            title: 'New session',
+            workspace_id: 'ws_default',
+            status: 'idle',
+          });
+          if (createErr) {
+            console.warn(`[agent/chat] could not create session ${sessionId}: ${createErr.message}`);
+            sessionId = null;
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[agent/chat] session check failed for ${sessionId}: ${e?.message || e}`);
+      }
+    }
 
     const lastUser = [...messages].reverse().find((m: any) => m?.role === 'user');
     const lastUserText =
