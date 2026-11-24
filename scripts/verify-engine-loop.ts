@@ -28,7 +28,8 @@ import { composeRoutineBrief, type RoutineBriefInput } from '../lib/automation/r
 import { weekRecap, weekWindow } from '../lib/agent/weekly-recap';
 import { gatherDayMetrics, windowFor, type MetricsReader } from '../lib/agent/ceo-metrics';
 import { costPerResultPaise } from '../lib/ads/account-performance';
-import type { CreativeLearnings } from '../lib/ads/creative-learning';
+import { attributePerformance, learningsBriefLines, summariseLearnings, type CreativeLearnings } from '../lib/ads/creative-learning';
+import { digestLine, lastAssistantText } from '../lib/agent/previous-plan';
 
 let pass = 0;
 let fail = 0;
@@ -283,7 +284,128 @@ head('4. The report can see the money, and says when it cannot');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-head('5. The wiring cannot be deleted quietly');
+head('5. A launch that records its argument becomes a lesson');
+
+{
+  /**
+   * The whole chain, end to end: a recorded launch + Meta's numbers for that launch's ads → a verdict
+   * on the argument → a line in tomorrow's brief. Until this passed, "measured verdicts reach the
+   * brief" was only true of a hand-made learnings object; the join that produces it was untested.
+   *
+   * The second launch deliberately carries no angle: it must NOT be judged, and its money must be
+   * counted as spend nobody can learn from. A loop that silently absorbs unattributable money into an
+   * argument's verdict would be worse than no loop at all.
+   */
+  const launched = [
+    { campaignId: 'c_proof', adId: 'a_proof', angleId: 'proof', headline: 'Our students shoot on set' },
+    { campaignId: 'c_blind', adId: 'a_blind', angleId: null as string | null, headline: 'Best course in town' },
+  ];
+  const rows = [
+    { ad_id: 'a_proof', campaign_id: 'c_proof', spend: '3000', impressions: '42000', clicks: '760', actions: [{ action_type: 'lead', value: '9' }] },
+    { ad_id: 'a_blind', campaign_id: 'c_blind', spend: '2000', impressions: '30000', clicks: '210', actions: [{ action_type: 'lead', value: '4' }] },
+  ];
+
+  const attributed = attributePerformance(rows, launched as any);
+  check('only the recorded launch is judged', attributed.observations.length === 1, `${attributed.observations.length} observation(s)`);
+  check(
+    'its spend is tied to the argument it made',
+    attributed.observations[0]?.angleId === 'proof' && attributed.observations[0]?.spend === 3000,
+    `${attributed.observations[0]?.angleId} / ${attributed.observations[0]?.spend}`
+  );
+  check(
+    'the un-recorded launch is counted as money nobody can learn from',
+    attributed.unattributedRows === 1 && attributed.unattributedSpend === 2000,
+    `${attributed.unattributedRows} row(s), ${attributed.unattributedSpend} spent`
+  );
+
+  const judged = summariseLearnings(attributed.observations, { period: 'last_7d', currency: 'INR' });
+  judged.unattributedRows = attributed.unattributedRows;
+  judged.unattributedSpend = attributed.unattributedSpend;
+  check('the argument is judged on the delivery it actually got', judged.angles.length === 1 && judged.angles[0].angleId === 'proof', judged.angles.map((a) => `${a.angleId}:${a.verdict}`).join(', '));
+
+  const lesson = learningsBriefLines(judged);
+  const lessonText = lesson.join('\n');
+  check('and the lesson reaches the brief', /WHAT HAS ACTUALLY RUN/.test(lessonText), lesson[0] ?? '');
+  check('the brief can name the argument that won', /proof/i.test(lessonText), lessonText.slice(0, 90));
+  check(
+    'and the brief is told what it cannot learn from',
+    /could not be tied to an angle/.test(lessonText) && /2000/.test(lessonText),
+    lessonText.split('\n').find((line) => line.includes('tied to an angle')) ?? 'missing'
+  );
+
+  // The launch tool has to SAY which case it was, or the agent cannot know it spent blind.
+  const ads = fs.readFileSync('lib/agent/tools/ads.ts', 'utf8');
+  check('the launch result reports whether attribution was recorded', /attribution:\s*\{/.test(ads) && /recorded:\s*Boolean\(angleId\)/.test(ads));
+  check('and names the consequence when it was not', /CANNOT be learned from/.test(ads) && /ATTRIBUTION NOT RECORDED/.test(ads));
+
+  // And on an account that markets itself daily, a blind launch is refused rather than merely noted.
+  check(
+    'an autonomous account cannot launch without recording its argument',
+    /refused:\s*'attribution-missing'/.test(ads) && /REFUSED: this account runs its marketing daily/.test(ads),
+  );
+  check(
+    'the refusal is recoverable: it names build_ad_creative_prompt and creativePlan.angleId',
+    /build_ad_creative_prompt first/.test(ads) && /creativePlan\.angleId set to that id/.test(ads),
+  );
+  check(
+    'and it is scoped to accounts whose daily job is actually on',
+    /from\('business_routines'\)[\s\S]{0,120}eq\('enabled', true\)/.test(ads),
+  );
+  check(
+    'a person on an account with no routine is not blocked',
+    /If the routine cannot be read, do not block a person's launch/.test(ads),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+head('6. Yesterday’s promise is read back and held to account');
+
+{
+  check('a plain TOMORROW line is read', digestLine('TOMORROW: try the offer angle', 'tomorrow') === 'try the offer angle');
+  check(
+    'markdown and dashes do not hide it',
+    digestLine('**TOMORROW:** raise the price test', 'tomorrow') === 'raise the price test' &&
+      digestLine('- tomorrow – try a video', 'tomorrow') === 'try a video',
+    digestLine('- tomorrow – try a video', 'tomorrow') ?? 'unparsed'
+  );
+  check('a label with nothing after it is absent, not empty', digestLine('TOMORROW:', 'tomorrow') === null);
+  check('an absent promise is reported as absent', digestLine('DONE: made a video', 'tomorrow') === null);
+  check('the other lines are readable too', digestLine('DONE: made 2 videos', 'done') === 'made 2 videos');
+
+  const events = [
+    { type: 'assistant.text', data: { text: 'thinking out loud about the plan' } },
+    { type: 'tool.call', data: { name: 'generate_ai_image' } },
+    { type: 'assistant.text', data: { text: 'DONE: made 2 videos\nTOMORROW: try the offer angle' } },
+    { type: 'assistant.text', data: { text: '   ' } },
+  ];
+  check(
+    'the digest is the last thing said, not the narration before it',
+    lastAssistantText(events) === 'DONE: made 2 videos\nTOMORROW: try the offer angle',
+    String(lastAssistantText(events) ?? '').slice(0, 40)
+  );
+
+  const withPlan = composeRoutineBrief(
+    baseBrief({ previousPlan: { period: '2026-11-23', stated: 'try the offer angle', done: 'made 2 videos', notDone: 'nothing' } })
+  ).text;
+  check('the brief opens the day with what it promised', /WHAT YOU SAID YESTERDAY \(2026-11-23\)/.test(withPlan));
+  check('the promise itself is quoted', /you promised: "try the offer angle"/.test(withPlan));
+  check('and it must judge that promise against the numbers', /Judge that promise against the measured numbers/.test(withPlan));
+  check(
+    'it is told not to re-state an aim that already failed',
+    /Do not re-state an aim that\s+has already failed twice/.test(withPlan),
+  );
+
+  const noPromise = composeRoutineBrief(baseBrief({ previousPlan: { period: '2026-11-23', stated: null, done: null } })).text;
+  check('a day with no readable digest says so instead of inventing one', /no promise to check/.test(noPromise));
+  check('and with no previous plan at all the block is absent', !/WHAT YOU SAID YESTERDAY/.test(composeRoutineBrief(baseBrief()).text));
+
+  const routines = fs.readFileSync('lib/agent/routines.ts', 'utf8');
+  check('the routine reads yesterday back before composing', /previousDayPlan\(/.test(routines) && /previousPlan:/.test(routines));
+  check('and it cannot block the day', /previousDayPlan[\s\S]{0,120}\.catch\(/.test(routines));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+head('7. The wiring cannot be deleted quietly');
 
 {
   const routines = fs.readFileSync('lib/agent/routines.ts', 'utf8');

@@ -89,6 +89,19 @@ export interface RoutineBriefInput {
     /** Launches that carried no record of which argument they made. */
     unattributedLaunches?: number;
   } | null;
+  /**
+   * What the job promised yesterday, in its own words.
+   *
+   * Rendered ABOVE the plan so the first thing the day reads is whether the last one worked. Without
+   * this the loop measured but never held itself to anything: an aim could be stated, missed, and
+   * restated forever.
+   */
+  previousPlan?: {
+    period: string;
+    stated: string | null;
+    done: string | null;
+    notDone?: string | null;
+  } | null;
   creativeLearnings?: CreativeLearnings | null;
 }
 
@@ -319,6 +332,33 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
 
   if (input.recentOutputs?.length) {
     lines.push(`- already published recently: ${input.recentOutputs.slice(0, MAX_LIST).join('; ')}`);
+  }
+
+  // ── YESTERDAY, IN ITS OWN WORDS ──────────────────────────────────────────────────────────────
+  //
+  // The digest has always ended with "TOMORROW: one line on what is next" and nothing ever read it
+  // back, so an aim could be stated, missed and restated forever with no consequence. This is the
+  // accountability half of the loop: what was promised, next to what the numbers say happened.
+  if (input.previousPlan) {
+    const plan = input.previousPlan;
+    lines.push('');
+    lines.push(`WHAT YOU SAID YESTERDAY (${plan.period}), BEFORE YOU DECIDE ANYTHING:`);
+    if (plan.stated) lines.push(`- you promised: "${plan.stated}"`);
+    if (plan.done) lines.push(`- you said you had done: "${plan.done}"`);
+    if (plan.notDone) lines.push(`- you said you had NOT done: "${plan.notDone}"`);
+    if (!plan.stated && !plan.done) {
+      lines.push('- yesterday finished without a digest this can be read from, so there is no promise to check.');
+    }
+    lines.push(
+      '- Judge that promise against the measured numbers above, in one sentence, out loud. If the number it was',
+    );
+    lines.push(
+      '  meant to move did not move, say so plainly and do something different today. Do not re-state an aim that',
+    );
+    lines.push('  has already failed twice — change the approach, not the wording.');
+    if (plan.stated) {
+      lines.push('- If it DID work, keep it and make a bigger version of it. Say which, and why.');
+    }
   }
 
   // ── LAST WEEK, MEASURED ──────────────────────────────────────────────────────────────────────

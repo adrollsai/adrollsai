@@ -7,6 +7,7 @@ import { nextRunAt } from './routine-schedule';
 import { resolveCountry, upcomingFestivals } from '@/utils/festival-helper';
 import { supabaseMetricsReader } from './ceo-metrics';
 import { weekRecap } from './weekly-recap';
+import { previousDayPlan } from './previous-plan';
 import { loadAccountPerformance, type AccountPerformance } from '@/lib/ads/account-performance';
 
 /**
@@ -377,7 +378,7 @@ export async function queueRoutineRun(
    * Both are best-effort by design: Meta being down must degrade the brief to "we could not read
    * it", never block the day. `measured: false` is passed through as an absence, not as a zero.
    */
-  const [performance, recap] = await Promise.all([
+  const [performance, recap, previousPlan] = await Promise.all([
     loadAccountPerformance(supabase, routine.user_id, { datePreset: 'last_7d', level: 'ad' }).catch(
       (e: any): AccountPerformance => ({
         measured: false,
@@ -392,6 +393,7 @@ export async function queueRoutineRun(
       })
     ),
     weekRecap(supabaseMetricsReader(supabase, routine.user_id), now, routine.timezone).catch(() => null),
+    previousDayPlan(supabase, routine.user_id, period).catch(() => null),
   ]);
 
   const compiled = composeRoutineBrief({
@@ -414,6 +416,14 @@ export async function queueRoutineRun(
     pendingApprovals: pendingApprovals || 0,
     festivals: upcomingFestivals(country.code, now, 1),
     lastWeekNotes: recap?.text ?? null,
+    previousPlan: previousPlan
+      ? {
+          period: previousPlan.period,
+          stated: previousPlan.stated,
+          done: previousPlan.done,
+          notDone: previousPlan.notDone,
+        }
+      : null,
     creativeLearnings: performance.learnings,
     adPerformance: {
       measured: performance.measured,

@@ -137,14 +137,76 @@ export function createComposedAdTools(supabase: SupabaseClient, userId: string) 
       }),
       execute: async (input: any) => {
         try {
+          const angleId = input?.creativePlan?.angleId ? String(input.creativePlan.angleId) : null;
+
+          /**
+           * THE ONE LAUNCH THAT IS REFUSED.
+           *
+           * On an account whose daily job is switched on, a launch with no recorded argument is refused
+           * outright. The reasoning is the whole point of the learning loop: a campaign that does not say
+           * what it argued is money that can never be learned from, so the second month repeats the first
+           * month's mistakes at the owner's expense. When a machine is spending on its own schedule, it
+           * does not get to spend blind.
+           *
+           * Scoped deliberately. An account with no routine running keeps the old behaviour — a person
+           * asking for an ad at 11pm should get their ad, not a lecture about attribution. The refusal is
+           * recoverable inside the same turn: call build_ad_creative_prompt, take its angle id, launch again.
+           */
+          if (!angleId) {
+            try {
+              const { data: routine } = await db
+                .from('business_routines')
+                .select('enabled')
+                .eq('user_id', userId)
+                .eq('enabled', true)
+                .limit(1)
+                .maybeSingle();
+              if (routine?.enabled) {
+                return {
+                  ok: false,
+                  refused: 'attribution-missing',
+                  error:
+                    'REFUSED: this account runs its marketing daily, so every campaign must record which argument it makes — ' +
+                    'otherwise its results can never be learned from and next month starts from zero again. ' +
+                    'Call build_ad_creative_prompt first (it returns the angle it chose, plus the headline and image prompt), ' +
+                    'then launch again with creativePlan.angleId set to that id. Nothing was created and nothing was spent.',
+                  attribution: { recorded: false, angleId: null },
+                };
+              }
+            } catch {
+              // If the routine cannot be read, do not block a person's launch on it.
+            }
+          }
+
           const result = await launchCampaignAsAgent(db, userId, input);
           if (!result.ok) return result;
+          /**
+           * DID THIS LAUNCH TEACH THE LOOP ANYTHING?
+           *
+           * A launch that does not record which argument its creative made is money that can never be
+           * learned from: `attributePerformance` has nothing to join the spend to, so the rows land in
+           * `unattributedSpend` and next month starts from zero again. That used to happen silently —
+           * the agent got `ok: true` with no way to know it had just spent money blind.
+           *
+           * So the result now says which it was, in the same words every time. Not a warning to be
+           * skimmed: either the caller passes creativePlan.angleId (the id build_ad_creative_prompt
+           * returned) or it is told, on the record, that this campaign is unlearnable.
+           */
           return {
             ...result,
+            attribution: {
+              recorded: Boolean(angleId),
+              angleId,
+              consequence: angleId
+                ? `Results from this campaign will be attributed to "${angleId}", so next week's report can say whether that argument worked.`
+                : 'This campaign CANNOT be learned from: no angle was recorded, so its spend cannot be tied to what the ad argued. ' +
+                  'Pass creativePlan.angleId — the id build_ad_creative_prompt returned — on the next launch.',
+            },
             planText: result.plan ? describePlan(result.plan, String(result.summary?.currency || 'INR')) : null,
             message:
-              `${result.message} Campaign id ${result.campaignId}. ` +
-              'Read it back with meta_graph_insights or the ads screen before promising any result.',
+              `${result.message} Campaign id ${result.campaignId}.` +
+              (angleId ? '' : ' ATTRIBUTION NOT RECORDED — see `attribution`.') +
+              ' Read it back with meta_graph_insights or the ads screen before promising any result.',
           };
         } catch (e: any) {
           return { ok: false, error: e?.message || 'the campaign launch failed before anything was created' };

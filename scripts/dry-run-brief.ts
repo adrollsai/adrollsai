@@ -9,6 +9,7 @@ import { getActivePlaybook } from '../lib/automation/ceo';
 import { availableCredits } from '../lib/automation/billing';
 import { supabaseMetricsReader } from '../lib/agent/ceo-metrics';
 import { weekRecap } from '../lib/agent/weekly-recap';
+import { previousDayPlan } from '../lib/agent/previous-plan';
 import { loadAccountPerformance } from '../lib/ads/account-performance';
 import { resolveCountry, upcomingFestivals } from '../utils/festival-helper';
 
@@ -32,6 +33,7 @@ const [performance, recap] = await Promise.all([
   loadAccountPerformance(db, profile.id, { datePreset: 'last_7d', level: 'ad' }).catch(() => null),
   weekRecap(supabaseMetricsReader(db, profile.id), now, routine.timezone).catch(() => null),
 ]);
+const previous = await previousDayPlan(db, profile.id, period).catch(() => null);
 const country = resolveCountry({
   clientFeaturesCountry: (profile as any)?.client_features?.country,
   address: (profile as any)?.address,
@@ -58,6 +60,9 @@ const compiled = composeRoutineBrief({
   pendingApprovals: 0,
   festivals: upcomingFestivals(country.code, now, 1),
   lastWeekNotes: recap?.text ?? null,
+  previousPlan: previous
+    ? { period: previous.period, stated: previous.stated, done: previous.done, notDone: previous.notDone }
+    : null,
   creativeLearnings: performance?.learnings ?? null,
   adPerformance: performance
     ? {
