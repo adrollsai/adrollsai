@@ -1095,6 +1095,29 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     // A turn is already running: queue this instead of dropping it, and send it
     // automatically when the current one ends.
     if (isLoading) {
+      /**
+       * STEERING, NOT QUEUEING.
+       *
+       * The owner's point, and it is the right one: if you notice mid-task that it has drifted, a correction
+       * that only lands AFTER the task finishes has already cost the credits and the time spent on the wrong
+       * work. The correction has to reach the model before its next step.
+       *
+       * The engine already supports exactly that — `runner.ts` calls `pullSteering()` at every step boundary
+       * and turns any new `user.message` in the session log into an extra user turn before the next model
+       * call. So while a durable run is in flight, the message is appended to the log and the running task
+       * picks it up; it appears in the transcript immediately, because it IS a user message.
+       *
+       * Queueing stays as the fallback for a turn with no log to steer through: then it waits, visibly, with
+       * send-now / edit / delete.
+       */
+      const liveSession = logSessionIdRef.current;
+      if (harness.runInProgress && liveSession) {
+        void harness.appendUserMessage(fullPrompt, undefined, liveSession);
+        setInput('');
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+        toast.success('Delivered to the running task — it will see this before its next step.');
+        return;
+      }
       queueRef.current.push(fullPrompt);
       setQueuedCount(queueRef.current.length);
       setStaged((prev) => [...prev, { id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text: fullPrompt }]);
