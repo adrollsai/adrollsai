@@ -535,6 +535,54 @@
   animation: nobo-welcome-in 420ms ease-out both;
 }
 
+/*
+ * Short screens.
+ *
+ * The welcome is four stacked blocks (orb, heading, blurb, button, four way-in cards) and it does not
+ * fit a laptop window: measured at 1113x575, the whole lower half — including every suggestion card —
+ * sat below the fold, underneath the composer. A landing screen whose only actions are off-screen is
+ * worse than a plain one, so height is treated as a real constraint rather than assuming a tall page:
+ * the decorative blocks go first (the mascot, then the blurb) and the actions stay.
+ */
+@media (max-height: 780px) {
+  .nobo-welcome {
+    padding-top: 4px;
+    padding-bottom: 12px;
+  }
+
+  /* The orb is pure decoration; the heading already says hello. */
+  .nobo-welcome-orb {
+    display: none;
+  }
+
+  .nobo-welcome-head {
+    margin-top: 0;
+    font-size: 24px;
+  }
+
+  /* The promise ("I'll quote before I spend") is worth keeping on one line rather than cut entirely. */
+  .nobo-welcome-blurb {
+    margin-top: 6px;
+    max-width: 34rem;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .nobo-welcome .nobo-cta {
+    margin-top: 14px;
+  }
+
+  .nobo-welcome-ways {
+    margin-top: 16px;
+    gap: 8px;
+  }
+
+  .nobo-suggestion {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+}
+
 @keyframes nobo-welcome-in {
   from {
     opacity: 0;

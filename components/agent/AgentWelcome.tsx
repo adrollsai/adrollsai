@@ -69,7 +69,7 @@ export default function AgentWelcome({
     <div className="nobo-welcome px-1 pt-4 pb-8 sm:pt-8 sm:pb-10 flex flex-col items-center text-center font-sans">
       {/* Mascot + greeting bubble. `lg` rather than `xl`: 148px of orb is what made this screen feel
           crowded on a laptop, and the words were doing the work anyway. */}
-      <div className="relative flex items-start justify-center">
+      <div className="nobo-welcome-orb relative flex items-start justify-center">
         <NoboOrb size="lg" state="idle" />
         <motion.div
           initial={{ y: 6, scale: 0.9 }}
@@ -98,7 +98,7 @@ export default function AgentWelcome({
         initial={{ y: 8 }}
         animate={{ y: 0 }}
         transition={{ delay: 0.08, duration: 0.35 }}
-        className="mt-5 text-[26px] sm:text-[30px] font-bold tracking-tight"
+        className="nobo-welcome-head mt-5 text-[26px] sm:text-[30px] font-bold tracking-tight"
         style={{ color: 'var(--dsw-alias-label-primary)', letterSpacing: '-0.02em' }}
       >
         Any tasks?
@@ -108,7 +108,7 @@ export default function AgentWelcome({
         initial={{ y: 8 }}
         animate={{ y: 0 }}
         transition={{ delay: 0.14, duration: 0.35 }}
-        className="mt-2 max-w-[30rem] text-[13.5px] sm:text-[14.5px] leading-relaxed"
+        className="nobo-welcome-blurb mt-2 max-w-[30rem] text-[13.5px] sm:text-[14.5px] leading-relaxed"
         style={{ color: 'var(--dsw-alias-label-tertiary)' }}
       >
         I&apos;m Nobo, your marketing department. Ask for a creative, a video, a campaign — or just tell me what
@@ -141,7 +141,7 @@ export default function AgentWelcome({
       </motion.button>
 
       {/* Ways in. Each one sends a real prompt. */}
-      <div className="mt-8 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+      <div className="nobo-welcome-ways mt-8 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-3 text-left">
         {SUGGESTIONS.map((s, i) => {
           const Icon = s.icon;
           return (
