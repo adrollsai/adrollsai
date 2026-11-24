@@ -66,25 +66,26 @@ export default function AgentWelcome({
   disabled?: boolean;
 }) {
   return (
-    <div className="nobo-welcome py-10 sm:py-14 flex flex-col items-center text-center font-sans">
-      {/* Mascot + greeting bubble */}
+    <div className="nobo-welcome px-1 pt-4 pb-8 sm:pt-8 sm:pb-10 flex flex-col items-center text-center font-sans">
+      {/* Mascot + greeting bubble. `lg` rather than `xl`: 148px of orb is what made this screen feel
+          crowded on a laptop, and the words were doing the work anyway. */}
       <div className="relative flex items-start justify-center">
-        <NoboOrb size="xl" state="idle" />
+        <NoboOrb size="lg" state="idle" />
         <motion.div
           initial={{ y: 6, scale: 0.9 }}
           animate={{ y: 0, scale: 1 }}
           transition={{ delay: 0.25, duration: 0.4, ease: 'easeOut' }}
-          className="hidden xs:block absolute -right-2 top-1 sm:top-3 px-3.5 py-2"
+          className="hidden xs:block absolute -right-3 top-2 px-3 py-1.5"
           style={{
             // Tokens, not literals: this bubble is painted in both themes, and a hardcoded
             // white box with dark text is the classic "white card on a dark page" bug.
             background: 'var(--nobo-card)',
             border: '1px solid var(--nobo-bubble-user-border, rgba(124,58,237,0.14))',
-            borderRadius: 16,
+            borderRadius: 14,
             borderBottomLeftRadius: 6,
             boxShadow: 'var(--nobo-card-shadow)',
             color: 'var(--dsw-alias-label-primary)',
-            fontSize: 13,
+            fontSize: 12.5,
             fontWeight: 600,
             whiteSpace: 'nowrap',
           }}
@@ -97,7 +98,7 @@ export default function AgentWelcome({
         initial={{ y: 8 }}
         animate={{ y: 0 }}
         transition={{ delay: 0.08, duration: 0.35 }}
-        className="mt-6 text-[26px] sm:text-[32px] font-bold tracking-tight"
+        className="mt-5 text-[26px] sm:text-[30px] font-bold tracking-tight"
         style={{ color: 'var(--dsw-alias-label-primary)', letterSpacing: '-0.02em' }}
       >
         Any tasks?
@@ -107,7 +108,7 @@ export default function AgentWelcome({
         initial={{ y: 8 }}
         animate={{ y: 0 }}
         transition={{ delay: 0.14, duration: 0.35 }}
-        className="mt-2 max-w-md text-[14px] sm:text-[15px] leading-relaxed"
+        className="mt-2 max-w-[30rem] text-[13.5px] sm:text-[14.5px] leading-relaxed"
         style={{ color: 'var(--dsw-alias-label-tertiary)' }}
       >
         I&apos;m Nobo, your marketing department. Ask for a creative, a video, a campaign — or just tell me what
@@ -117,23 +118,30 @@ export default function AgentWelcome({
       <motion.button
         type="button"
         onClick={onGetStarted}
-        initial={{ y: 8 }}
-        animate={{ y: 0 }}
-        transition={{ delay: 0.2, duration: 0.35 }}
-        className="mt-6 inline-flex items-center gap-2 px-6 py-3 text-[14px] font-semibold"
+        disabled={disabled}
+        initial={{ y: 10, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.2, duration: 0.4, ease: [0.22, 0.9, 0.24, 1] }}
+        whileHover={disabled ? undefined : { y: -2 }}
+        whileTap={disabled ? undefined : { scale: 0.98 }}
+        className="nobo-cta group mt-6 inline-flex items-center gap-2.5 rounded-full pl-6 pr-2.5 py-2.5 text-[14px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
         style={{
-          borderRadius: 999,
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #a855f7 45%, #ec4899 100%)',
+          backgroundImage: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 48%, #ec4899 100%)',
           color: '#ffffff',
-          boxShadow: '0 10px 24px rgba(139,92,246,0.34)',
         }}
       >
-        Get started
-        <ArrowRight size={16} />
+        <span className="tracking-tight">Get started</span>
+        {/* The arrow lives in a glass chip so the button reads as something you press, not a label. */}
+        <span
+          className="nobo-cta-chip flex h-8 w-8 items-center justify-center rounded-full"
+          aria-hidden="true"
+        >
+          <ArrowRight size={15} strokeWidth={2.75} className="nobo-cta-arrow" />
+        </span>
       </motion.button>
 
       {/* Ways in. Each one sends a real prompt. */}
-      <div className="mt-9 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+      <div className="mt-8 grid w-full max-w-lg grid-cols-1 sm:grid-cols-2 gap-3 text-left">
         {SUGGESTIONS.map((s, i) => {
           const Icon = s.icon;
           return (
@@ -145,7 +153,7 @@ export default function AgentWelcome({
               initial={{ y: 10 }}
               animate={{ y: 0 }}
               transition={{ delay: 0.24 + i * 0.05, duration: 0.3 }}
-              className="nobo-suggestion group flex items-start gap-3 px-4 py-3.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="nobo-suggestion group flex items-start gap-3 px-4 py-3 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
                 background: 'var(--nobo-card)',
                 border: '1px solid var(--dsw-alias-border-l1)',

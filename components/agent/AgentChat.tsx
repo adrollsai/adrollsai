@@ -894,7 +894,12 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   }, []);
 
   useEffect(() => {
-    if (isAutoScrollEnabled.current && scrollRef.current) {
+    // Only follow the conversation when there IS one. This ran on mount for an empty session too,
+    // scrolling the welcome screen to its own bottom — which on a laptop-sized window clipped the top
+    // of the mascot off the screen and pushed the "Get started" button up into the heading. A landing
+    // page must not be scrolled by code the moment it appears.
+    const empty = messages.length === 0 && !isLoading;
+    if (!empty && isAutoScrollEnabled.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages.length, isLoading]);
