@@ -70,6 +70,25 @@ export interface RoutineBriefInput {
    * brief still tells the agent to go and look, and says nothing false about performance. When it is
    * present, the day's creative starts from what worked instead of from a blank page.
    */
+  /**
+   * What the ads did, in money, whether or not any creative recorded an argument.
+   *
+   * `creativeLearnings` speaks per argument and stays silent until a launch has recorded which one it
+   * made. That silence was being rendered as "not read yet" even when Meta HAD been read and the money
+   * was known — a dry run on a real account said "not read yet" while holding "₹434 spent, 19 enquiries,
+   * ₹23 each". Throwing away a real measurement is worse than having none, so the account total arrives
+   * separately and the per-argument detail is layered on top when it exists.
+   */
+  adPerformance?: {
+    measured: boolean;
+    currency?: string;
+    spendPaise: number;
+    results: number;
+    costPerResultPaise: number | null;
+    previousCostPerResultPaise?: number | null;
+    /** Launches that carried no record of which argument they made. */
+    unattributedLaunches?: number;
+  } | null;
   creativeLearnings?: CreativeLearnings | null;
 }
 
@@ -302,6 +321,28 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
     lines.push(`- already published recently: ${input.recentOutputs.slice(0, MAX_LIST).join('; ')}`);
   }
 
+  // ── LAST WEEK, MEASURED ──────────────────────────────────────────────────────────────────────
+  //
+  // This is the memory the daily loop did not have. `lastWeekNotes` existed in this signature from
+  // the start and no caller ever passed it, so the day always began at zero — which is why the
+  // engine could produce work every morning and never visibly get better at it. It is now computed
+  // from the numbers (see lib/agent/weekly-recap.ts) and stated as fact before the plan is written.
+  //
+  // It goes ABOVE the ads block on purpose: what actually happened last week outranks what the ad
+  // account says about angles, and reading it first shapes what the agent goes looking for.
+  if (input.lastWeekNotes) {
+    lines.push('');
+    lines.push('LAST WEEK, MEASURED — what actually happened, before you decide what today needs:');
+    lines.push(`- ${String(input.lastWeekNotes).trim()}`);
+    lines.push(
+      '- If a number moved the wrong way, today\'s plan has to answer it by name: say what you are changing and',
+    );
+    lines.push(
+      '  what you expect it to do. If nothing moved, say that too and change one thing deliberately rather than',
+    );
+    lines.push('  repeating the week that produced it.');
+  }
+
   // ── WHAT ALREADY RAN, AND WHAT IT TAUGHT US ─────────────────────────────────────────────────────
   //
   // The loop closes here for the daily flow. Two states, both honest:
@@ -309,6 +350,9 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   //   WITHOUT     the brief says to go and read the numbers first, and says nothing false.
   // A brief that quietly implies it knows performance when it does not is worse than one that asks.
   const learned = learningsBriefLines(input.creativeLearnings);
+  const ads = input.adPerformance;
+  const rupee = (paise: number | null | undefined) => `₹${Math.round(Number(paise || 0) / 100).toLocaleString('en-IN')}`;
+  const hasAccountTotals = Boolean(ads?.measured && ads.spendPaise > 0);
   lines.push('');
   if (learned.length) {
     lines.push('WHAT THE ADS HAVE ACTUALLY DONE (measured, not guessed — build on this):');
@@ -320,6 +364,29 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
       '  guidance.avoid into build_ad_creative_prompt as avoidAngles, and prefer its winners. Do not re-propose an',
     );
     lines.push('  angle that already lost on this account unless the owner asks for it by name.');
+  } else if (hasAccountTotals) {
+    // Measured, but not fine enough to compare arguments yet. Say both halves.
+    lines.push('WHAT THE ADS HAVE ACTUALLY DONE (last 7 days, measured):');
+    lines.push(
+      `- ${rupee(ads!.spendPaise)} spent, ${ads!.results} enquir${ads!.results === 1 ? 'y' : 'ies'} from ads` +
+        (ads!.costPerResultPaise !== null
+          ? ` — ${rupee(ads!.costPerResultPaise)} each` +
+            (ads!.previousCostPerResultPaise
+              ? `, against ${rupee(ads!.previousCostPerResultPaise)} each the week before.`
+              : '.')
+          : ' — no enquiries, so there is no price per enquiry to compare.'),
+    );
+    lines.push(
+      '- No launch recorded WHICH ARGUMENT its creative made, so nothing finer can be compared yet. Record it:',
+    );
+    lines.push(
+      '  pass creativePlan.angleId (the id build_ad_creative_prompt returned) on every launch from today. That is',
+    );
+    lines.push('  the one field that turns next week\'s report from a total into a lesson.');
+    lines.push(
+      '- Today, choose the argument from what the numbers say about the offer and the audience, call',
+    );
+    lines.push('  optimize_meta_campaign to see whether any argument is judgeable, and state your reasoning in one line.');
   } else {
     lines.push('WHAT THE ADS HAVE ACTUALLY DONE: not read yet.');
     lines.push(
@@ -330,7 +397,6 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
     );
     lines.push('  angle rather than repeat the last one. Either way, say which it was.');
   }
-  if (input.lastWeekNotes) lines.push(`- last week's conclusion: ${input.lastWeekNotes}`);
   if (input.creditsLeft !== null && input.creditsLeft !== undefined) {
     lines.push(`- wallet: ${input.creditsLeft} credits`);
   }
@@ -440,13 +506,32 @@ export function composeRoutineBrief(input: RoutineBriefInput): CompiledBrief {
   lines.push('- if nothing needs doing today, say so plainly and stop; a quiet day is a valid outcome');
 
   // ---- the digest ----
+  //
+  // This block becomes the email and the push the owner reads. The person reading it owns a
+  // business, not a marketing department: they know what an enquiry is and what it costs, and
+  // they do not know what CPL, CTR, impressions or "angles" mean. So the shape is fixed (so the
+  // report can be parsed and so two days are comparable) AND the language is pinned to plain
+  // words with a reason attached to every number.
   lines.push('');
   lines.push('FINISH WITH A DIGEST in exactly this shape, because it becomes the email and the push:');
   lines.push('  DONE: what you made, with links');
   lines.push('  SPENT: credits used today');
+  lines.push('  NUMBERS: the two or three figures that moved, in plain words, each with what it means');
   lines.push('  NEEDS YOU: approvals pending, missing inputs, decisions (or "nothing")');
   lines.push('  NOT DONE: what you skipped and why (or "nothing")');
-  lines.push('  TOMORROW: one line on what is next');
+  lines.push('  TOMORROW: one line on what is next, and the number it is meant to move');
+  lines.push('');
+  lines.push('HOW TO WRITE THOSE LINES — the reader is a business owner, not a marketer:');
+  lines.push('- Never use an acronym or a term of art. Not CPL, CPA, CTR, CTR%, ROAS, CPM, impressions,');
+  lines.push('  frequency, reach, attribution, funnel, ad set, adset, angle, cadence, cohort, creative plan,');
+  lines.push('  or "engagement". If a number needs a term to explain it, the term is wrong.');
+  lines.push('- Say money in rupees, enquiries as "enquiries", and people who saw an ad as "people who saw it".');
+  lines.push('- Every number gets a comparison or a consequence in the same sentence: not "12 enquiries" but');
+  lines.push('  "12 enquiries, 4 more than the week before". A number with nothing to compare it to is trivia.');
+  lines.push('- Say what you did about it. "Enquiries cost ₹803 each, up from ₹310, so today I am changing the');
+  lines.push('  opening line to the offer instead of the claim" — that is the whole job in one sentence.');
+  lines.push('- No adjectives about yourself. No "great", no "successfully", no "excited". What happened, then');
+  lines.push('  what it means, then what is next.');
 
   return {
     text: lines.join('\n'),

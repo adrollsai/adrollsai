@@ -98,7 +98,7 @@ head('1. The window is the owner\'s day, not a UTC slice');
         },
         [],
       ).split('\n')[0];
-      return header === 'CEO report — 10 Feb';
+      return header === 'What happened — 10 Feb';
     })(),
     'single date shown once',
   );
@@ -114,7 +114,15 @@ head('1. The window is the owner\'s day, not a UTC slice');
 head('2. A full read produces the metrics the engine expects');
 
 {
-  const { metrics, missing } = await gatherDayMetrics(healthyReader(), windowFor(new Date('2026-02-10T02:00:00Z')));
+  // "Everything reads" now includes the money. The reader is given real ad figures, because a report
+  // that cannot see Meta is no longer allowed to call itself complete — see section 4.
+  const { metrics, missing } = await gatherDayMetrics(
+    {
+      ...healthyReader(),
+      ads: async () => ({ active: 2, spendPaise: 240_000, leads: 8, previousCplPaise: 28_000 }),
+    } as MetricsReader,
+    windowFor(new Date('2026-02-10T02:00:00Z')),
+  );
   check(
     'every section is carried through',
     metrics.leads.created === 10 &&
@@ -171,6 +179,13 @@ head('4. Ad spend we cannot measure must not become an accusation');
     'the reader reports ad spend as null, not as 0',
     metrics.campaigns.spendPaise === 0 && metrics.campaigns.leads === 0 && metrics.campaigns.active === 2,
     'null spend became 0 only at the boundary',
+  );
+  // The 0 above is arithmetic, not a claim: the report has to say the figure is unknown. This is the
+  // difference between "you spent nothing" and "we could not read your ad account".
+  check(
+    'and the report names it as missing rather than implying nothing was spent',
+    missing.includes('ads'),
+    `missing: ${missing.join(', ') || 'nothing'}`,
   );
   const findings = analyseDay(metrics);
   check(

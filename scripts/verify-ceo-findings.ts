@@ -135,7 +135,10 @@ head('4. Leads nobody touched is the loudest thing in the report');
   );
   check(
     'and says how many are waiting',
-    /9 lead\(s\)/.test(String(ignored.find((finding) => finding.id === 'leads-untouched')?.title)),
+    // Plain wording now: "9 people asked and nobody replied". The count and the fact that nobody
+    // answered both have to be in the headline for it to be actionable.
+    /\b9\b/.test(String(ignored.find((finding) => finding.id === 'leads-untouched')?.title)) &&
+      /replied/.test(String(ignored.find((finding) => finding.id === 'leads-untouched')?.title)),
     ignored.find((finding) => finding.id === 'leads-untouched')?.title ?? '',
   );
   const partial = analyseDay({ ...healthy(), leads: { created: 9, contacted: 6, replied: 2, booked: 0, lost: 0 } });
@@ -160,8 +163,8 @@ head('5. Drift is caught before it becomes a loss');
   );
   check(
     'it compares against last week rather than against nothing',
-    /last week/.test(String(expensive.find((finding) => finding.id === 'cpl-rising')?.evidence)),
-    'comparison present',
+    /the week before|last week/.test(String(expensive.find((finding) => finding.id === 'cpl-rising')?.evidence)),
+    expensive.find((finding) => finding.id === 'cpl-rising')?.evidence ?? '',
   );
   const steady = analyseDay({ ...healthy(), campaigns: { active: 1, spendPaise: 300_000, leads: 10, previousCplPaise: 30_000 } });
   check(
@@ -228,7 +231,7 @@ head('7. The report never claims to have done anything');
   const text = renderReport(badMetrics, everything);
   check(
     'the rendered report marks the items that need approval',
-    /needs your approval/.test(text),
+    /I will ask you first/.test(text),
     'approval markers present',
   );
   check(
@@ -281,7 +284,7 @@ head('9. A quiet day is still a report');
   );
   check(
     'and it still carries evidence',
-    /0 lead\(s\)/.test(String(quiet[0]?.evidence)) && /3,000|3000/.test(String(quiet[0]?.evidence)),
+    /0 enquir/.test(String(quiet[0]?.evidence)) && /3,000|3000/.test(String(quiet[0]?.evidence)),
     quiet[0]?.evidence ?? '',
   );
 
@@ -309,7 +312,7 @@ head('9. A quiet day is still a report');
   );
   check(
     'it names the cause and the fix',
-    /0 routine\(s\) ran/.test(String(stalled[0]?.evidence)) && /Start it/.test(String(stalled[0]?.recommendation)),
+    /has not run/.test(String(stalled[0]?.evidence)) && /Start it/.test(String(stalled[0]?.recommendation)),
     String(stalled[0]?.recommendation ?? '').slice(0, 60),
   );
   check(

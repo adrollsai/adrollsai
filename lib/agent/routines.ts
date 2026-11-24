@@ -5,6 +5,9 @@ import { availableCredits } from '@/lib/automation/billing';
 import { composeRoutineBrief } from '@/lib/automation/routine-composer';
 import { nextRunAt } from './routine-schedule';
 import { resolveCountry, upcomingFestivals } from '@/utils/festival-helper';
+import { supabaseMetricsReader } from './ceo-metrics';
+import { weekRecap } from './weekly-recap';
+import { loadAccountPerformance, type AccountPerformance } from '@/lib/ads/account-performance';
 
 /**
  * Business routines — the daily loop.
@@ -357,6 +360,40 @@ export async function queueRoutineRun(
     currency: (countryProfile as any)?.currency,
   });
 
+  /**
+   * WHAT ACTUALLY HAPPENED, BEFORE TODAY IS PLANNED.
+   *
+   * Two reads, both cheap next to a generation, and both were missing from this exact call site:
+   *
+   *   1. Last week, measured — `lastWeekNotes` had a slot in the brief and no supplier, so the
+   *      line never printed and every morning started from zero. Now the week is computed from
+   *      the numbers we own (enquiries, ad money, calls, content) and compared with the week
+   *      before, so today's plan can answer what yesterday's could not.
+   *   2. The per-argument verdicts — `creativeLearnings` likewise had a slot and no supplier, so
+   *      the brief always printed "not read yet" and the day depended on the model choosing to
+   *      call the optimiser mid-run. Now the measured winners and losers are in the brief before
+   *      a single token of today's plan is written.
+   *
+   * Both are best-effort by design: Meta being down must degrade the brief to "we could not read
+   * it", never block the day. `measured: false` is passed through as an absence, not as a zero.
+   */
+  const [performance, recap] = await Promise.all([
+    loadAccountPerformance(supabase, routine.user_id, { datePreset: 'last_7d', level: 'ad' }).catch(
+      (e: any): AccountPerformance => ({
+        measured: false,
+        currency: 'INR',
+        spendPaise: 0,
+        results: 0,
+        costPerResultPaise: null,
+        previousCostPerResultPaise: null,
+        rows: 0,
+        learnings: null,
+        error: String(e?.message || e),
+      })
+    ),
+    weekRecap(supabaseMetricsReader(supabase, routine.user_id), now, routine.timezone).catch(() => null),
+  ]);
+
   const compiled = composeRoutineBrief({
     businessName: profile?.business_name,
     industry: profile?.industry,
@@ -371,10 +408,21 @@ export async function queueRoutineRun(
       timezone: routine.timezone,
     },
     todaysDate: period,
+    now,
     creditsLeft: profile?.credits ?? null,
     availableCredits: available,
     pendingApprovals: pendingApprovals || 0,
     festivals: upcomingFestivals(country.code, now, 1),
+    lastWeekNotes: recap?.text ?? null,
+    creativeLearnings: performance.learnings,
+    adPerformance: {
+      measured: performance.measured,
+      currency: performance.currency,
+      spendPaise: performance.spendPaise,
+      results: performance.results,
+      costPerResultPaise: performance.costPerResultPaise,
+      previousCostPerResultPaise: performance.previousCostPerResultPaise,
+    },
   });
 
   const run = await enqueueRun(supabase, {

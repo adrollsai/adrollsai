@@ -51,8 +51,8 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
       // scheduled, which is the routine's own hour in this business's timezone.
       toast.success(
         json.nextRunAt
-          ? `Daily engine on — next run ${new Date(json.nextRunAt).toLocaleString()}`
-          : 'Daily engine on.'
+          ? `Your daily marketing is on — next run ${new Date(json.nextRunAt).toLocaleString()}`
+          : 'Your daily marketing is on.'
       );
       await load();
     } catch (e: any) {
@@ -77,7 +77,8 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
             {data.businessName || 'Your business'}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Your marketing chief of staff. It runs the day, asks before it spends, and reports twice a day.
+            Your marketing person. It does the day&apos;s work, asks before it spends, and reports back in plain
+            numbers.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -109,12 +110,13 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
           the numbers say and what we would do, and never acts on any of it. */}
       <CeoFindingsCard impersonateId={impersonateId} />
 
-      {/* Engine status */}
+      {/* Engine status. "Daily engine" was the internal name for this and told an owner nothing;
+          "Your daily marketing" says what it is and who does it. */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <CalendarClock size={16} className="text-slate-400" />
-            <h2 className="text-sm font-bold text-slate-800">Daily engine</h2>
+            <h2 className="text-sm font-bold text-slate-800">Your daily marketing</h2>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                 routine?.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
@@ -139,19 +141,21 @@ export default function CeoTodayPanel({ initial, impersonateId }: { initial: Ceo
             <div>
               <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Today</dt>
               <dd className="text-sm text-slate-800">
-                {run ? `${run.status}` : 'not started yet'}
+                {run ? `${run.status}` : 'has not started yet'}
                 {run?.error ? <span className="text-rose-600"> — {run.error}</span> : null}
               </dd>
             </div>
             <div>
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Spend today</dt>
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Spent today</dt>
               <dd className="text-sm text-slate-800">
                 {spent} {cap ? `of ${cap}` : ''} credits
               </dd>
             </div>
             <div>
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cadence</dt>
-              <dd className="text-sm text-slate-800">{routine.cadence} · asks before spending</dd>
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">How often</dt>
+              <dd className="text-sm text-slate-800">
+                {routine.cadence === 'daily' ? 'every day' : routine.cadence} · asks you before it spends
+              </dd>
             </div>
             <div>
               <dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Next run</dt>

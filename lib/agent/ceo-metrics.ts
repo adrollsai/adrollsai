@@ -234,9 +234,37 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
     async ads() {
       const campaigns = await countRows('agent_ad_campaigns', (query) => query);
       const active = campaigns.filter((row) => ['active', 'enabled', 'running'].includes(String(row.status ?? '').toLowerCase()));
-      // Spend and attributed leads are NOT in this table. Returning a number here would be
-      // invention, so they are null and the engine stays quiet about them.
-      return { active: active.length, spendPaise: null, leads: null, previousCplPaise: null };
+
+      /**
+       * THE MONEY, FROM THE ONLY PLACE IT LIVES.
+       *
+       * Spend and results are not in this table — they are in Meta. This used to return nulls for
+       * both, "so the engine stays quiet about them", which sounded honest and was not: `?? 0`
+       * downstream turned "we cannot see Meta" into "you spent nothing", and the two findings that
+       * matter most (paying for ads that bring no leads, cost per lead rising) are guarded on
+       * `spendPaise > 0`, so both were dead code in every account's report.
+       *
+       * A business owner checks ad money first. An engine that cannot see it cannot improve it.
+       *
+       * The window is the last 7 days on purpose: one day of ads is noise, and the judgement
+       * thresholds in creative-learning (1,000 impressions / ₹500) assume a week of delivery. The
+       * finding text says "over the last 7 days" so the number is never mistaken for yesterday's.
+       */
+      try {
+        const { loadAccountPerformance } = await import('@/lib/ads/account-performance');
+        const perf = await loadAccountPerformance(supabase, userId, { datePreset: 'last_7d', level: 'campaign' });
+        if (!perf.measured) {
+          return { active: active.length, spendPaise: null, leads: null, previousCplPaise: null };
+        }
+        return {
+          active: active.length,
+          spendPaise: perf.spendPaise,
+          leads: perf.results,
+          previousCplPaise: perf.previousCostPerResultPaise,
+        };
+      } catch {
+        return { active: active.length, spendPaise: null, leads: null, previousCplPaise: null };
+      }
     },
   };
 }
@@ -278,6 +306,12 @@ export async function gatherDayMetrics(
     safe('wallet', () => reader.wallet(), { balance: 0, spentLast7Days: 0 }),
     safe('ads', () => reader.ads(), { active: 0, spendPaise: null, leads: null, previousCplPaise: null }),
   ]);
+
+  // A null spend means "could not be sourced", and `?? 0` below would otherwise turn that into a
+  // confident zero. `safe()` only reports a section that THREW, so the absence has to be named
+  // here — the comment on `spendPaise` below has always claimed `missing` carries 'ads', and now
+  // it actually does.
+  if (ads.spendPaise === null && !missing.includes('ads')) missing.push('ads');
 
   return {
     metrics: {

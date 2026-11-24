@@ -144,7 +144,7 @@ export default function CeoFindingsCard({ impersonateId }: { impersonateId?: str
         style={{ borderColor: 'var(--dsw-alias-border-l1)' }}
       >
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold dsh-label-primary">Yesterday, in findings</h2>
+          <h2 className="text-sm font-semibold dsh-label-primary">What happened yesterday</h2>
           <p className="text-xs dsh-label-tertiary mt-0.5 truncate">
             {loading ? 'Reading the numbers…' : payload?.summary || 'Nothing to report.'}
             {span && !loading ? ` · ${span}` : ''}
@@ -234,7 +234,7 @@ export default function CeoFindingsCard({ impersonateId }: { impersonateId?: str
                       {/* The evidence stays visible: without the numbers this is an opinion. */}
                       <p className="mt-1 text-xs dsh-label-tertiary">{finding.evidence}</p>
                       <p className="mt-1.5 text-xs dsh-label-secondary">
-                        <span className="font-semibold">We suggest: </span>
+                        <span className="font-semibold">What I would do: </span>
                         {finding.recommendation}
                       </p>
                     </div>
