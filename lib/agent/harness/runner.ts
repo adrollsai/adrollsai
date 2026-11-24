@@ -465,6 +465,14 @@ export async function openRunTurn(
       message
     );
     if (outOfProviderCredit) {
+      // Switch the platform to the fallback model for the next turns, so one dry wallet does not stop every
+      // tenant until somebody tops it up.
+      try {
+        const { markProviderOutOfCredit } = await import('../deepseek');
+        markProviderOutOfCredit(message);
+      } catch {
+        /* the import is best-effort; failing it must not mask the real error */
+      }
       console.error(
         `[Harness runner] run ${run.id.slice(0, 8)} stopped: the model provider account is out of credit — ${message}`
       );

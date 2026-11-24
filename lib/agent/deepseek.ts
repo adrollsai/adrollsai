@@ -186,7 +186,98 @@ export function getDeepseekProvider() {
  */
 const KEY_CHECK_TTL_MS = 5 * 60_000;
 
+/**
+ * AN EMPTY ACCOUNT IS NOT AN UNAUTHORISED KEY, AND THE FALLBACK MISSED IT.
+ *
+ * `getAgentModel()` already degrades to Gemini when the DeepSeek key is REJECTED. But an account with no
+ * balance still answers `/models` with 200 — authorization is fine, the wallet is not — so the probe said
+ * "authorised", every turn was attempted on DeepSeek, and every turn died with "Insufficient Balance". Eight
+ * runs in a day across two tenants, five retries each, and the customers saw a spinner.
+ *
+ * A runtime balance failure is therefore recorded here, and for a while every turn goes straight to the
+ * documented fallback. The window is short on purpose: a top-up should restore the primary model without a
+ * deploy, and a transient billing hiccup should not pin the platform to the fallback model forever.
+ */
+const OUT_OF_CREDIT_TTL_MS = 15 * 60_000;
+let outOfCreditUntil = 0;
+/** How often the durable (database) check may run, per instance. */
+const OUT_OF_CREDIT_DB_CHECK_MS = 5 * 60_000;
+let lastDbCheck = 0;
+let dbSaidOutOfCredit = false;
+
+/** True when a real call reported the provider account is dry. Exported for the UI and the watchdog. */
+export function isProviderOutOfCredit(): boolean {
+  return Date.now() < outOfCreditUntil || dbSaidOutOfCredit;
+}
+
+/**
+ * Ask the database whether the platform has recently failed for want of provider credit.
+ *
+ * The in-memory flag alone was not enough, and production proved it within minutes: the re-queued runs failed
+ * again, because each serverless invocation can be a COLD instance that never saw the failure and therefore
+ * had no reason to stop trusting the primary model. A durable signal is the only thing that survives that.
+ *
+ * Reads the dead run the runner already recorded — no new table, no new column — and treats a balance failure
+ * in the last hour as "the wallet is dry". Cheap, cached per instance, and it heals itself: one successful
+ * top-up and a fresh run with real credit makes the query stop matching.
+ */
+async function refreshOutOfCreditFromDb(): Promise<void> {
+  if (Date.now() - lastDbCheck < OUT_OF_CREDIT_DB_CHECK_MS) return;
+  lastDbCheck = Date.now();
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return;
+    const { createClient } = await import('@supabase/supabase-js');
+    const db = createClient(url, key, { auth: { persistSession: false } });
+    const since = new Date(Date.now() - 60 * 60_000).toISOString();
+    const { data } = await db
+      .from('harness_runs')
+      .select('id')
+      .gte('created_at', since)
+      .ilike('error', '%insufficient balance%')
+      .limit(1);
+    const found = Array.isArray(data) && data.length > 0;
+    if (found && !dbSaidOutOfCredit) {
+      console.error(
+        `[Agent Model] Recent runs failed for want of provider credit — routing new work to ${AGENT_FALLBACK_MODEL}.`,
+      );
+    }
+    dbSaidOutOfCredit = found;
+  } catch {
+    // A failed probe must not change the decision: keep using whatever we already knew.
+  }
+}
+
+/**
+ * Record that the provider account has no balance.
+ *
+ * Called from the places that actually see the failure — the harness runner and the chat route — so the NEXT
+ * turn stops trying a wallet that cannot pay. Safe to call redundantly.
+ */
+export function markProviderOutOfCredit(reason?: string): void {
+  const wasOut = isProviderOutOfCredit();
+  outOfCreditUntil = Date.now() + OUT_OF_CREDIT_TTL_MS;
+  if (!wasOut) {
+    console.error(
+      `[Agent Model] DeepSeek account is out of credit${reason ? ` (${reason.slice(0, 120)})` : ''} — ` +
+        `running on ${AGENT_FALLBACK_MODEL} for the next ${OUT_OF_CREDIT_TTL_MS / 60_000} minutes.`,
+    );
+  }
+}
+
+/** Recognise the provider's own words for "no money". Used by the runner, the chat route and this module. */
+export function isProviderOutOfCreditError(message: unknown): boolean {
+  const text = String(message ?? '');
+  return /insufficient balance|insufficient_quota|exceeded your current quota|payment required|\b402\b/i.test(text);
+}
+
 export async function isDeepseekAuthorized(): Promise<boolean> {
+  // A dry account is not an authorised one for our purposes: the caller wants a model that will answer.
+  // Asked of the database too, because a cold instance has no memory of the last failure.
+  await refreshOutOfCreditFromDb();
+  if (isProviderOutOfCredit()) return false;
+
   const key = getDeepseekApiKey();
   if (!key) return false;
 
@@ -251,8 +342,9 @@ export async function getAgentModel(options: { preferReasoning?: boolean; hasVis
   }
 
   console.warn(
-    `[Agent Model] DeepSeek key not authorized — falling back to ${AGENT_FALLBACK_MODEL}. ` +
-      'The owner should be told the agent is running on the fallback model, not the primary one.'
+    `[Agent Model] ${isProviderOutOfCredit() ? 'DeepSeek account is out of credit' : 'DeepSeek key not authorized'} — ` +
+      `falling back to ${AGENT_FALLBACK_MODEL}. The owner should be told the agent is running on the fallback model, ` +
+      'not the primary one.'
   );
   return google(AGENT_FALLBACK_MODEL);
 }

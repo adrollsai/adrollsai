@@ -402,6 +402,14 @@ export async function POST(req: Request) {
       onError: (err) => {
         console.error('[Nobo Agent Stream Error]:', err);
         const message = err instanceof Error ? err.message : String(err || 'An error occurred during generation.');
+        /**
+         * An empty provider wallet is remembered, so the NEXT turn starts on the fallback model instead of
+         * failing this way again. Without this the platform keeps trying a wallet that cannot pay, once per
+         * turn, and the owner sees failures that look like their own credits ran out.
+         */
+        void import('@/lib/agent/deepseek').then(({ isProviderOutOfCreditError, markProviderOutOfCredit }) => {
+          if (isProviderOutOfCreditError(message)) markProviderOutOfCredit(message);
+        });
         if (sessionId) {
           void persistTurnError(supabase, sessionId, message);
           void setSessionStatus(supabase, sessionId, 'error');
