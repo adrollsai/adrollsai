@@ -163,6 +163,8 @@ export async function GET(req: Request) {
             default_calling_language: profile?.default_calling_language || biKyc?.default_calling_language || 'hinglish',
             voice_provider: profile?.voice_provider || 'gemini',
             voice_name: profile?.voice_name || 'Aoede',
+            // Per-scenario overrides, so the page can show what is set and what is inherited.
+            voice_scenarios: biKyc?.voice_scenarios ?? null,
             hasClaimedVobizNumber: !!vobizNumber,
             claimedNumbers: Array.from(claimedNumbersSet),
         })
@@ -202,6 +204,7 @@ export async function POST(req: Request) {
             voice_twilio_sid,
             voice_twilio_token,
             voice_twilio_number,
+            voice_scenarios,
         } = body
 
         // Fetch current profile to merge business_info safely
@@ -230,6 +233,17 @@ export async function POST(req: Request) {
         }
         if (default_calling_language) {
             bi.default_calling_language = default_calling_language
+        }
+        /**
+         * Per-scenario script/voice overrides. Sanitised on the way in, not on the way out: this JSON is
+         * read by the dialer, and a malformed entry must never become a call with no words. `undefined`
+         * means "the form did not send it" and leaves the stored value alone; an empty object clears it.
+         */
+        if (voice_scenarios !== undefined) {
+            const { parseVoiceScenarios } = await import('@/lib/automation/calling-scenarios')
+            const clean = parseVoiceScenarios(voice_scenarios)
+            if (Object.keys(clean).length) bi.voice_scenarios = clean
+            else delete bi.voice_scenarios
         }
 
         const updatePayload: any = {

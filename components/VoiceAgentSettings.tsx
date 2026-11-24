@@ -42,6 +42,12 @@ import { toast } from 'sonner'
 import { type VobizAvailableNumber } from '@/utils/vobiz-catalog'
 import CreateAudienceGroupModal from '@/components/CreateAudienceGroupModal'
 import { openPhoneDialer } from '@/utils/dialer'
+import {
+  CALL_SCENARIOS,
+  parseVoiceScenarios,
+  type CallScenarioId,
+  type VoiceScenarioMap,
+} from '@/lib/automation/calling-scenarios'
 
 interface VoiceAgentSettingsProps {
   userId: string
@@ -62,6 +68,15 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  /**
+   * Per-scenario script, opener, voice and language.
+   *
+   * Stored in `profiles.business_info.voice_scenarios`, alongside the account defaults it inherits from.
+   * Empty strings mean "inherit", which is why clearing a field restores the default rather than
+   * producing a call with nothing to say.
+   */
+  const [voiceScenarios, setVoiceScenarios] = useState<VoiceScenarioMap>({})
+  const [openScenario, setOpenScenario] = useState<CallScenarioId | null>(null)
   const [saasMode, setSaasMode] = useState(true)
   const [provisioning, setProvisioning] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
@@ -477,6 +492,7 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       const resData = await res.json()
       if (resData.success) {
         setSaasMode(resData.saasMode)
+        setVoiceScenarios(parseVoiceScenarios(resData.voice_scenarios))
         if (resData.vobizNumber !== undefined) {
           setVobizNumber(resData.vobizNumber || '')
         }
@@ -797,6 +813,9 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
           voice_twilio_sid: settings.voice_twilio_sid,
           voice_twilio_token: settings.voice_twilio_token,
           voice_twilio_number: settings.voice_twilio_number,
+          // Per-scenario overrides. Sent as the map itself; the route sanitises it and an empty map
+          // clears the stored value, so "reset everything" is just saving nothing.
+          voice_scenarios: parseVoiceScenarios(voiceScenarios),
 
         })
       })
@@ -1632,6 +1651,184 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* Per-scenario script + voice. Everything here is an OVERRIDE: leave a field empty
+                    and the call uses the account default above, which is the behaviour every account
+                    already had before this existed. */}
+                <div className="space-y-3 border border-slate-100 bg-slate-50/30 p-4 rounded-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <Radio size={14} className="text-indigo-600" /> Script and voice per kind of call
+                      </h4>
+                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed mt-1">
+                        A call to someone who just enquired is not the same call as one confirming a booking. Give
+                        each kind its own words, opening line and voice — anything you leave blank uses the default
+                        voice above.
+                      </p>
+                    </div>
+                    <span className="text-[9px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full border border-slate-200/60 shrink-0">
+                      {Object.keys(voiceScenarios).length} of {CALL_SCENARIOS.length} customised
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {CALL_SCENARIOS.map((scenario) => {
+                      const config = voiceScenarios[scenario.id] || {}
+                      const isOpen = openScenario === scenario.id
+                      const customised = Boolean(config.script || config.firstMessage || config.voice || config.language)
+                      const update = (patch: Partial<typeof config>) => {
+                        setVoiceScenarios((prev) => {
+                          const next: VoiceScenarioMap = { ...prev, [scenario.id]: { ...(prev[scenario.id] || {}), ...patch } }
+                          return parseVoiceScenarios(next)
+                        })
+                      }
+                      return (
+                        <div
+                          key={scenario.id}
+                          className="bg-white border border-slate-200 rounded-xl overflow-hidden"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setOpenScenario(isOpen ? null : scenario.id)}
+                            className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-slate-50 transition"
+                          >
+                            <span className="min-w-0">
+                              <span className="flex items-center gap-2">
+                                <span className="text-[11.5px] font-extrabold text-slate-800">{scenario.label}</span>
+                                {customised ? (
+                                  <span className="text-[8.5px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200/60 px-1.5 py-0.5 rounded">
+                                    custom
+                                  </span>
+                                ) : (
+                                  <span className="text-[8.5px] font-black uppercase tracking-wider bg-slate-50 text-slate-400 border border-slate-200/60 px-1.5 py-0.5 rounded">
+                                    default
+                                  </span>
+                                )}
+                              </span>
+                              <span className="block text-[10px] text-slate-500 font-medium mt-0.5 truncate">
+                                {scenario.when}
+                              </span>
+                            </span>
+                            <ChevronRight
+                              size={14}
+                              className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
+                            />
+                          </button>
+
+                          {isOpen && (
+                            <div className="px-3.5 pb-3.5 space-y-3 border-t border-slate-100 pt-3">
+                              <p className="text-[10px] text-slate-500 font-medium">
+                                <span className="font-bold text-slate-600">The job of this call:</span> {scenario.purpose}
+                              </p>
+
+                              <div className="space-y-1">
+                                <label className="text-[9.5px] font-black text-slate-400 uppercase block ml-0.5">
+                                  Opening line
+                                </label>
+                                <input
+                                  type="text"
+                                  value={config.firstMessage || ''}
+                                  onChange={(e) => update({ firstMessage: e.target.value })}
+                                  placeholder={`Default — e.g. "${scenario.starterOpener.replace(/\{\{\s*name\s*\}\}/gi, 'Gagan').replace(/\{\{\s*business\s*\}\}/gi, 'your business')}"`}
+                                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2 px-3 rounded-lg text-[11.5px] outline-none focus:border-indigo-400 transition-all"
+                                />
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[9.5px] font-black text-slate-400 uppercase block ml-0.5">
+                                  Script for this kind of call
+                                </label>
+                                <textarea
+                                  value={config.script || ''}
+                                  onChange={(e) => update({ script: e.target.value })}
+                                  rows={5}
+                                  placeholder={`Leave empty to use the default script.\n\nSuggested opening: ${scenario.starterOpener}\n\nPlaceholders: {{name}}, {{business}}, {{products}}`}
+                                  className="w-full bg-slate-50 focus:bg-white border border-slate-200 py-2 px-3 rounded-lg text-[11.5px] leading-relaxed outline-none focus:border-indigo-400 transition-all resize-y font-mono"
+                                />
+                                <span className="text-[9px] text-slate-400 block ml-0.5 font-semibold">
+                                  {config.script ? `${config.script.trim().split(/\s+/).length} words` : 'Using the default script'}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <label className="text-[9.5px] font-black text-slate-400 uppercase block ml-0.5">Voice</label>
+                                  <select
+                                    value={config.voice || ''}
+                                    onChange={(e) => update({ voice: e.target.value })}
+                                    className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-lg text-[11.5px] font-bold outline-none focus:border-indigo-400 cursor-pointer"
+                                  >
+                                    <option value="">Use the default voice ({settings.voice_name})</option>
+                                    <option value="Aoede">Aoede (Warm Female)</option>
+                                    <option value="Kore">Kore (Young Female)</option>
+                                    <option value="Charon">Charon (Warm Male)</option>
+                                    <option value="Fenrir">Fenrir (Deep Male)</option>
+                                    <option value="Puck">Puck (Energetic Male)</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[9.5px] font-black text-slate-400 uppercase block ml-0.5">Language</label>
+                                  <select
+                                    value={config.language || ''}
+                                    onChange={(e) => update({ language: e.target.value })}
+                                    className="w-full bg-slate-50 border border-slate-200 py-2 px-3 rounded-lg text-[11.5px] font-bold outline-none focus:border-indigo-400 cursor-pointer"
+                                  >
+                                    <option value="">Use the default ({settings.default_calling_language})</option>
+                                    <option value="hinglish">Hinglish</option>
+                                    <option value="english">English</option>
+                                    <option value="hindi">Hindi</option>
+                                    <option value="punjabi">Punjabi</option>
+                                    <option value="tamil">Tamil</option>
+                                    <option value="telugu">Telugu</option>
+                                    <option value="kannada">Kannada</option>
+                                    <option value="marathi">Marathi</option>
+                                    <option value="bengali">Bengali</option>
+                                    <option value="gujarati">Gujarati</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (config.voice) playVoicePreview(config.voice)
+                                    else playVoicePreview(settings.voice_name)
+                                  }}
+                                  className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition"
+                                >
+                                  <Play size={10} fill="currentColor" /> Hear this voice
+                                </button>
+                                {customised && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setVoiceScenarios((prev) => {
+                                        const next = { ...prev }
+                                        delete next[scenario.id]
+                                        return next
+                                      })
+                                    }
+                                    className="text-[10px] font-bold text-slate-500 hover:text-rose-600 px-2 py-1.5 transition"
+                                  >
+                                    Reset to default
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <p className="text-[9.5px] text-slate-400 font-semibold leading-relaxed">
+                    Which kind of call it is, is decided from the lead itself — a booking, an untouched enquiry, or two
+                    weeks of silence. You do not tag leads by hand, and a lead that gets booked moves to that script on
+                    its own.
+                  </p>
                 </div>
 
                 {/* Default Calling Language */}

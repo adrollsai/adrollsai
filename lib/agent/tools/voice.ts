@@ -7,6 +7,7 @@ import { bulkActionRefusal } from '../preflight';
 import { applyPlaybookPatch } from '@/lib/automation/playbook-service';
 import { getActivePlaybook } from '@/lib/automation/ceo';
 import { callingScriptPatch, resolveCallingScript } from '@/lib/automation/calling-script';
+import { CALL_SCENARIOS, parseVoiceScenarios, resolveCallPlan } from '@/lib/automation/calling-scenarios';
 
 /**
  * The default calling agent, as something the owner can change in words.
@@ -148,6 +149,8 @@ export function createVoiceTools(supabase: SupabaseClient, userId: string) {
       autoCall: data?.auto_call_new_leads === true,
       provider: (data?.voice_provider as string) || 'gemini',
       businessInfo: bi,
+      /** Per-kind-of-call overrides, as stored in `business_info.voice_scenarios`. */
+      scenarios: parseVoiceScenarios(bi?.voice_scenarios),
     };
   };
 
@@ -188,11 +191,52 @@ export function createVoiceTools(supabase: SupabaseClient, userId: string) {
               playbookVersion: (script.playbook as any)?.version ?? null,
               preview: script.resolved.script.slice(0, 600),
             },
+            /**
+             * One entry per kind of call, with what it sets and what it inherits.
+             *
+             * The agent has to be able to answer "what does my caller say when it chases a cold lead?"
+             * and to change it, without the owner hunting through a settings page. Each entry is resolved
+             * with a sample lead in that scenario, so the preview is the words that would actually be
+             * spoken rather than the raw template.
+             */
+            scenarios: CALL_SCENARIOS.map((definition) => {
+              const sample =
+                definition.id === 'booked'
+                  ? { booked_time: new Date().toISOString() }
+                  : definition.id === 're-engage'
+                    ? { pipeline_stage: 'Contacted', last_activity_at: new Date(Date.now() - 30 * 86_400_000).toISOString() }
+                    : definition.id === 'follow-up'
+                      ? { pipeline_stage: 'Contacted', last_activity_at: new Date().toISOString() }
+                      : { pipeline_stage: 'New Lead' };
+              const plan = resolveCallPlan({
+                lead: sample,
+                overrides: profile.scenarios,
+                baseVoice: profile.voice,
+                baseLanguage: profile.language,
+                playbook: script.playbook as any,
+                industry: (script.playbook as any)?.industry ?? null,
+              });
+              return {
+                id: definition.id,
+                label: definition.label,
+                when: definition.when,
+                purpose: definition.purpose,
+                customised: !plan.inherited,
+                scriptSource: plan.scriptSource,
+                voice: plan.voice,
+                voiceSource: plan.voiceSource,
+                language: plan.language,
+                languageSource: plan.languageSource,
+                openingLine: plan.firstMessage,
+                scriptPreview: plan.script.slice(0, 400),
+              };
+            }),
             where: {
               voice: 'profiles.voice_name',
               startingLanguage: 'business_info.default_calling_language',
               autoCall: 'profiles.auto_call_new_leads',
               callingScript: "the active playbook's call_script section",
+              scenarioOverrides: 'business_info.voice_scenarios (empty field = inherit the default above)',
             },
           };
         } catch (e: any) {
