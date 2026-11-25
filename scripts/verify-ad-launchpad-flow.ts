@@ -85,8 +85,32 @@ head('1. The questions come in the launchpad\u2019s order');
   check('nothing is asked once everything is answered', done === null, String(done));
 }
 
-head('2. No question is asked that the account cannot answer');
+head('1b. Choosing "I will upload" asks for the upload, there and then');
 
+{
+  const uploadStep = nextLaunchpadQuestion({ goal: 'leads', creativeSource: 'upload' }, CTX)!;
+  check('it asks for the images rather than moving on', uploadStep.step === 'assets', uploadStep.step);
+  check('with no buttons to mislead', uploadStep.options.length === 0, uploadStep.options.join(' | '));
+  check('and says to attach them in the chat', /attach/i.test(`${uploadStep.question} ${uploadStep.context}`), uploadStep.question);
+
+  const attached = readLaunchpadAnswer('assets', 'here you go https://pub.example.com/a.jpg https://pub.example.com/b.jpg', CTX);
+  check('the attached URLs become the creative', (attached.creativeUrls ?? []).length === 2, JSON.stringify(attached.creativeUrls));
+
+  const afterUpload = nextLaunchpadQuestion(
+    { goal: 'leads', creativeSource: 'upload', creativeUrls: attached.creativeUrls, productIds: [], dailyBudget: 500, instructions: '' },
+    { ...CTX, products: [] }
+  );
+  check('once they are attached, nothing is asked again', afterUpload === null, String(afterUpload));
+
+  const ready = launchpadToLaunchInput(
+    { goal: 'leads', creativeSource: 'upload', creativeUrls: attached.creativeUrls, dailyBudget: 500 },
+    { ...CTX, products: [] }
+  );
+  check('and the upload is a complete launch', ready.ready, ready.blockers.join('; '));
+  check('carried as creativeUrls', JSON.stringify(ready.input?.creativeUrls) === JSON.stringify(attached.creativeUrls));
+}
+
+head('2. No question is asked that the account cannot answer');
 {
   const empty = nextLaunchpadQuestion({}, { ...CTX, library: [], products: [] })!;
   check('goal still comes first', empty.step === 'goal');
@@ -120,6 +144,31 @@ head('3. A tapped answer becomes the value the launch needs');
   check('two names in one sentence resolve to both', (readLaunchpadAnswer('assets', 'use Dholera site photo and Plot walkthrough', CTX).assetIds ?? []).length === 2);
   check('"use the newest 2" resolves to the newest two', JSON.stringify(readLaunchpadAnswer('assets', 'Use the newest 2', CTX).assetIds) === '["a1","a2"]');
   check('a pasted URL is taken as a creative', (readLaunchpadAnswer('assets', 'https://pub.example.com/x.jpg', CTX).creativeUrls ?? []).length === 1);
+
+  // Most library items have no caption, so names repeat. One name must mean one creative: selecting
+  // every asset that shares a label would run photos the owner never pointed at.
+  const withClash: LaunchpadContext = {
+    ...CTX,
+    library: [
+      { id: 'c1', label: 'image 1' },
+      { id: 'c2', label: 'image 1' },
+      { id: 'c3', label: 'Dholera site photo' },
+    ],
+  };
+  check(
+    'a duplicated label selects one asset, not both',
+    JSON.stringify(readLaunchpadAnswer('assets', 'image 1', withClash).assetIds) === '["c1"]',
+    JSON.stringify(readLaunchpadAnswer('assets', 'image 1', withClash).assetIds)
+  );
+  check(
+    'two different names still select two assets',
+    (readLaunchpadAnswer('assets', 'use image 1 and Dholera site photo', withClash).assetIds ?? []).length === 2
+  );
+  check(
+    'an asset with no name is never matched by an empty string',
+    readLaunchpadAnswer('assets', 'anything', { ...CTX, library: [{ id: 'z1', label: '' }] }).assetIds === undefined,
+    String(readLaunchpadAnswer('assets', 'anything', { ...CTX, library: [{ id: 'z1', label: '' }] }).assetIds)
+  );
 
   check('a product name resolves to its id', JSON.stringify(readLaunchpadAnswer('product', 'Umang Residency', CTX).productIds) === '["p1"]');
   check('"not about one product" clears it', JSON.stringify(readLaunchpadAnswer('product', 'Not about one product', CTX).productIds) === '[]');

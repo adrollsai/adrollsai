@@ -40,6 +40,10 @@ export interface LaunchpadAsset {
   id: string;
   label: string;
   kind?: string;
+  /** A public URL, so the chat can show the picture instead of asking the owner to recognise a name. */
+  url?: string;
+  /** A small preview, when the pipeline stores one separately. */
+  thumbnailUrl?: string;
 }
 
 export interface LaunchpadProduct {
@@ -144,6 +148,23 @@ export function nextLaunchpadQuestion(
     };
   }
 
+  /**
+   * "I will upload" needs somewhere to upload TO.
+   *
+   * Without this the flow moved straight on to the budget and only noticed at the end that there was
+   * no creative, which reads as the launchpad forgetting what was just said. Asking here means the
+   * answer arrives in the same conversation, and the attachments are the answer.
+   */
+  if (answers.creativeSource === 'upload' && !(answers.creativeUrls?.length || 0)) {
+    return {
+      step: 'assets',
+      question: 'Send me the images to run',
+      context: 'Attach them in the chat — images or one short video. I will use exactly what you send.',
+      options: [],
+      allowsFreeText: true,
+    };
+  }
+
   if ((ctx.products?.length ?? 0) > 0 && !(answers.productIds?.length || 0)) {
     const products = ctx.products!;
     return {
@@ -240,8 +261,23 @@ export function readLaunchpadAnswer(
       const count = Number((answer.match(/(\d+)/) || [])[1] || 3);
       return { assetIds: library.slice(0, Math.max(1, count)).map((asset) => asset.id) };
     }
-    const matched = library.filter((asset) => lower.includes(asset.label.toLowerCase()));
-    if (matched.length) return { assetIds: matched.map((asset) => asset.id) };
+    /**
+     * Match by name, ONE asset per name.
+     *
+     * Most library items have no caption, so several can end up called "image 2" or share a caption
+     * the owner reused. Matching every asset whose label appears in the sentence would then quietly
+     * select a creative they never pointed at — and this is a list that decides which photos the ad
+     * runs with. First match per label wins; the picker sends distinct labels anyway.
+     */
+    const seen = new Set<string>();
+    const assetIds: string[] = [];
+    for (const asset of library) {
+      const label = asset.label.toLowerCase();
+      if (!label || !lower.includes(label) || seen.has(label)) continue;
+      seen.add(label);
+      assetIds.push(asset.id);
+    }
+    if (assetIds.length) return { assetIds };
     // Anything that is a URL is treated as an uploaded creative.
     const urls = answer.match(/https?:\/\/\S+/g) ?? [];
     if (urls.length) return { creativeUrls: urls };

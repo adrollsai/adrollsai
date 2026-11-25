@@ -328,16 +328,33 @@ export function AiCallingAutomationsView({ flows = [] }: AiCallingViewProps) {
     })
   }
 
-  const handleTestCall = () => {
+  const handleTestCall = async () => {
     if (!testNumber.trim()) {
       toast.error('Please enter a valid phone number to test call')
       return
     }
     setIsTestingCall(true)
-    setTimeout(() => {
+    const pending = toast.loading(`Placing a real call to ${testNumber}...`)
+    try {
+      const res = await fetch('/api/voice/test-call', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: testNumber }),
+      })
+      const data = await res.json().catch(() => ({}))
+      toast.dismiss(pending)
+
+      if (!res.ok || !data.ok) {
+        toast.error(data.error || 'The test call could not be placed.')
+        return
+      }
+      toast.success(data.message || `Test call placed to ${data.to || testNumber}. Answer it to hear the agent.`)
+    } catch (err: any) {
+      toast.dismiss(pending)
+      toast.error(`The test call request failed: ${err?.message || 'network error'}`)
+    } finally {
       setIsTestingCall(false)
-      toast.success(`⚡ Live Test Call initiated to ${testNumber} with voice agent "${selectedVoice}"! Pick up your phone.`)
-    }, 1800)
+    }
   }
 
   const handleCreateNewRule = () => {

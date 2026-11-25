@@ -11,6 +11,7 @@
 import { memo, useState } from 'react';
 import { BrainCircuit, Film, Image as ImageIcon, Loader2, MessageSquare, Mic } from 'lucide-react';
 import ActionConfirmationCard from './ActionConfirmationCard';
+import AssetPickerInline from './AssetPickerInline';
 import { resolveToolPresentation, summarizeToolInput } from '@/lib/agent/presentation';
 import { artifactFrom, isFailedToolOutput, realToolName, realToolOutput } from '@/lib/agent/tool-output';
 
@@ -300,6 +301,14 @@ function ToolFeedRowInner({ tool, isLoading, onOptionSelect, onResume, onApprova
                 </button>
               ))}
             </div>
+          )}
+          {/* A creatives question comes with the creatives, so the owner picks by looking. */}
+          {artifact.picker?.kind === 'assets' && Array.isArray(artifact.picker.items) && artifact.picker.items.length > 0 && (
+            <AssetPickerInline
+              items={artifact.picker.items}
+              allowUpload={artifact.picker.allowUpload !== false}
+              onConfirm={(labels) => onOptionSelect && onOptionSelect(labels.join(', '))}
+            />
           )}
         </div>
       )}

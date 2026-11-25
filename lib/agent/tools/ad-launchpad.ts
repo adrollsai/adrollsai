@@ -67,6 +67,8 @@ export function createAdLaunchpadTools(supabase: SupabaseClient, userId: string)
         id: String(asset.id),
         label: String(asset.caption || `${asset.type ?? 'image'} ${index + 1}`).slice(0, 60),
         kind: String(asset.type ?? 'image'),
+        url: asset.url ? String(asset.url) : undefined,
+        thumbnailUrl: asset.thumbnail_url ? String(asset.thumbnail_url) : undefined,
       }));
     } catch {
       ctx.library = [];
@@ -94,7 +96,10 @@ export function createAdLaunchpadTools(supabase: SupabaseClient, userId: string)
         'renders as buttons and an input box. When the owner replies, call it again with the accumulated answers plus ' +
         'what they just said. When it returns ready:true, call launch_meta_campaign with the launch input it gives you — ' +
         'do not re-ask those questions, and do not hand-build the campaign from primitives while the launchpad fits. ' +
-        'Go straight to launch_meta_campaign only when the owner has already answered everything unprompted.',
+        'Go straight to launch_meta_campaign only when the owner has already answered everything unprompted. ' +
+        'When the card carries a picker of their library creatives, they choose by looking; the chosen names come back ' +
+        'as their reply, so pass that reply as justAnswered. If they attach images for an upload, pass those URLs as ' +
+        'answers.creativeUrls — the attachment IS the answer to "send me the images".',
       inputSchema: z
         .object({
           answers: z
@@ -190,6 +195,31 @@ export function createAdLaunchpadTools(supabase: SupabaseClient, userId: string)
               context: [question.context, progress.label].filter(Boolean).join(' · '),
               suggestedOptions: question.options,
               allowFreeText: question.allowsFreeText,
+              /**
+               * When the question is "which creatives", send the pictures.
+               *
+               * A list of names asks the owner to remember what they called each image; a grid of
+               * thumbnails asks them to look. The picker posts the chosen labels back through the same
+               * `onOptionSelect` path the buttons use, so there is one way an answer reaches the agent
+               * and no second protocol to keep in step.
+               */
+              ...(question.step === 'assets' && (ctx.library?.length ?? 0) > 0
+                ? {
+                    picker: {
+                      kind: 'assets',
+                      items: (ctx.library ?? [])
+                        .filter((asset) => asset.url || asset.thumbnailUrl)
+                        .slice(0, 8)
+                        .map((asset) => ({
+                          id: asset.id,
+                          label: asset.label,
+                          url: asset.thumbnailUrl || asset.url,
+                          kind: asset.kind ?? 'image',
+                        })),
+                      allowUpload: true,
+                    },
+                  }
+                : {}),
               launchpad: { step: question.step, answers },
             },
             question: question.question,
