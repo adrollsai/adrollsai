@@ -145,21 +145,18 @@ const GEMINI_LIVE_VOICES = [
   { id: 'Aoede', name: 'Aoede', tone: 'Melodic, friendly & natural conversationalist', tag: 'Conversational Outreach', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
 ]
 
-// Pre-uploaded CSV Audiences for Instant Selection
-const SAMPLE_CSV_AUDIENCES = [
-  { id: 'csv_1', name: 'Mohali-Luxury-HNIs-Calling-List.csv', count: 450, date: 'Uploaded today', tag: 'HNIs / Investors' },
-  { id: 'csv_2', name: 'Zirakpur-Investors-Calling-Pool.csv', count: 1280, date: 'Uploaded 2 days ago', tag: 'Bulk Audience' },
-  { id: 'csv_3', name: 'Aerocity-Plots-Inquiries-2026.csv', count: 320, date: 'Uploaded last week', tag: 'Commercial / Plots' },
-  { id: 'csv_4', name: 'Joy-Grand-DNP-Retry-List.csv', count: 215, date: 'Uploaded 3 days ago', tag: 'DNP Retry Pool' },
-]
+/**
+ * No invented lists.
+ *
+ * These were four property lists ("Mohali-Luxury-HNIs-Calling-List.csv", 450 leads, and so on) offered
+ * in the trigger picker of every account as though the owner had uploaded them. The picker now offers
+ * what the account actually has, and says so when it has nothing.
+ */
+const SAMPLE_CSV_AUDIENCES: Array<{ id: string; name: string; count: number; date: string; tag: string }> = []
 
 // Pre-configured Custom Audience Groups / Segments
-const SAMPLE_AUDIENCE_GROUPS = [
-  { id: 'grp_1', name: 'Mohali Luxury Segment (HNIs > 2 Cr)', count: 640, tag: 'High Intent', desc: 'Verified prospects with budget > ₹2 Cr' },
-  { id: 'grp_2', name: 'Weekend Site Visit Target Pool', count: 1120, tag: 'Visit Pending', desc: 'Prospects requesting weekend callback' },
-  { id: 'grp_3', name: 'DNP (Did Not Pick) Calling Retry Pool', count: 410, tag: 'Retry Calling', desc: 'Recent unanswered contacts ready for 2nd touch' },
-  { id: 'grp_4', name: 'Cold Leads Re-engagement Segment', count: 890, tag: 'Nurture', desc: '30-day dormant leads for reactivation' },
-]
+/** Same rule as the CSV lists above: a saved audience is one the account actually saved. */
+const SAMPLE_AUDIENCE_GROUPS: Array<{ id: string; name: string; count: number; tag: string; desc: string }> = []
 
 // Realistic Prospect Pool for Live Batch Flow Simulation
 const PROSPECT_POOL = [
@@ -212,10 +209,10 @@ const FLOW_TEMPLATES: {
           id: 'step_1',
           type: 'action_whatsapp_msg',
           title: 'Deliver Live Property Inventory Link',
-          description: 'Sends live property catalog link with interactive CTA button',
+          description: 'Sends your live catalogue link with an interactive CTA button',
           branch: 'main',
           config: {
-            message: 'Thank you for your interest! 🌟 Here is our latest inventory and property catalog for {{business_name}}:\n\n👉 {{inventory_url}}\n\nFeel free to explore available units, floor plans, and pricing.',
+            message: 'Thank you for your interest! 🌟 Here is our latest catalogue for {{business_name}}:\n\n👉 {{inventory_url}}\n\nFeel free to look through it and ask me anything.',
             buttonText: 'View Inventory 🏢',
             buttonUrl: '{{inventory_url}}'
           }
@@ -277,11 +274,11 @@ const FLOW_TEMPLATES: {
           id: 'step_2',
           type: 'action_ig_send_dm',
           title: 'Deliver Interactive Brochure Card in DM',
-          description: 'Sends interactive buttons to book site visit or speak with an agent',
+          description: 'Sends interactive buttons to book an appointment or speak with an agent',
           config: {
-            message: 'Would you like to schedule a private site visit this weekend, or view our 3 & 4 BHK sample flat walkthrough?',
+            message: 'Would you like to book a time with us this weekend, or see the options we have available?',
             buttons: [
-              { id: 'btn_1', title: '📅 Book Site Visit', actionType: 'crm_stage', actionValue: 'Visit Planned' },
+              { id: 'btn_1', title: '📅 Book Appointment', actionType: 'crm_stage', actionValue: 'Appointment Planned' },
               { id: 'btn_2', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: 'Harman Bajwa' }
             ]
           }
@@ -351,10 +348,10 @@ const FLOW_TEMPLATES: {
           id: 'step_3',
           type: 'action_ai_call',
           title: 'Gemini 3.1 Live Voice Qualification Call',
-          description: 'Calls prospect, verifies interest in site visit, and checks investment budget',
+          description: 'Calls prospect, confirms interest and agrees the next step',
           config: {
             voiceAgent: 'Fenrir (Crisp & Focused)',
-            objective: 'Site Visit Confirmation',
+            objective: 'Appointment Confirmation',
             firstLine: 'Hi {{lead.name}}, I am calling from Bluesquare Infra following up on the brochure we just sent to your WhatsApp.'
           }
         },
@@ -398,7 +395,7 @@ const FLOW_TEMPLATES: {
           branch: 'main',
           config: {
             voiceAgent: 'Fenrir (Crisp & Focused)',
-            objective: 'Site Visit Confirmation & Budget Qualification',
+            objective: 'Appointment Confirmation & Requirement Qualification',
             firstLine: 'Hi {{lead.name}}, I am calling from Bluesquare Infra regarding your interest in Joy Grand.',
             questions: [
               {
@@ -1454,12 +1451,21 @@ export default function FlowsPage() {
       setTeam(teamData || [])
 
       // Fetch Group Lead Distribution rules
-      const { data: groupRules } = await supabase
+      //
+      // This queried `.eq('rule_type', 'Group-Distribution')` — a column that does not exist on
+      // `automations` (the table is id, created_at, user_id, title, description, icon_name, is_active,
+      // stats). PostgREST answered 400 and `data` came back null, so every distribution rule vanished
+      // from this tab and the code below quietly built an empty list. The rows ARE there; they are
+      // identified by their title prefix, which is how they are written.
+      const { data: automationsForUser } = await supabase
         .from('automations')
         .select('*')
         .eq('user_id', resolvedUserId)
-        .eq('rule_type', 'Group-Distribution')
-      
+
+      const groupRules = (automationsForUser || []).filter((row: any) =>
+        String(row?.title || '').startsWith('Group-Distribution')
+      )
+
       const parsedGroups = (groupRules || []).map((r: any) => {
         try {
           const desc = JSON.parse(r.description || '{}')
@@ -3708,16 +3714,16 @@ export default function FlowsPage() {
                             Select Uploaded CSV Lead List
                           </span>
                           <span className="px-2 py-0.5 rounded-md bg-violet-100 text-violet-800 font-mono text-[10px] font-bold">
-                            {currentFlow.trigger.csvLeadCount || 450} Leads
+                            {currentFlow.trigger.csvLeadCount || 0} Leads
                           </span>
                         </div>
 
                         <select
-                          value={currentFlow.trigger.csvFileName || 'Mohali-Luxury-HNIs-Calling-List.csv'}
+                          value={currentFlow.trigger.csvFileName || ''}
                           onChange={(e) => {
                             const found = SAMPLE_CSV_AUDIENCES.find(x => x.name === e.target.value)
                             const cName = e.target.value
-                            const count = found ? found.count : 450
+                            const count = found ? found.count : 0
                             setCurrentFlow({
                               ...currentFlow,
                               trigger: { 
@@ -3730,6 +3736,9 @@ export default function FlowsPage() {
                           }}
                           className="w-full bg-white border border-violet-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none cursor-pointer"
                         >
+                          {SAMPLE_CSV_AUDIENCES.length === 0 && (
+                            <option value="">No list uploaded yet — upload one below</option>
+                          )}
                           {SAMPLE_CSV_AUDIENCES.map(csv => (
                             <option key={csv.id} value={csv.name}>
                               {csv.name} ({csv.count} leads • {csv.tag})
@@ -3836,6 +3845,9 @@ export default function FlowsPage() {
                               }}
                               className="w-full bg-white border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 outline-none cursor-pointer"
                             >
+                              {groupsToDisplay.length === 0 && (
+                                <option value="">No saved audience yet — create one in the CRM</option>
+                              )}
                               {groupsToDisplay.map((grp: any) => (
                                 <option key={grp.id} value={grp.name}>
                                   {grp.name} ({grp.count} leads • {grp.tag})
