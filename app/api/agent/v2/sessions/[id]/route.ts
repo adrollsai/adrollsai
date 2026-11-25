@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { resolveActingUser } from '@/utils/route-auth';
+import { harnessDataClient } from '@/lib/agent/harness/acting-db';
 import { loadSession, renameSession, deleteSession, setSessionStatus } from '@/lib/agent/harness/store';
 import { hasLiveRun } from '@/lib/agent/harness/runs';
 
@@ -35,17 +36,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const acting = await resolveActing(req);
   if (!acting.ok) return acting.response;
 
-  const loaded = await loadSession(supabase, acting.userId, id);
+  // Read with a client that can see the acting account's rows (see lib/agent/harness/acting-db.ts).
+  const data = await harnessDataClient(supabase, user.id, acting.userId);
+  const loaded = await loadSession(data, acting.userId, id);
   if (!loaded) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
 
   // Reconcile a status left at 'running' because the browser vanished mid-turn.
   // Without this the sidebar dot shows the session as busy forever.
   let status = loaded.session.status;
   if (status === 'running') {
-    const live = await hasLiveRun(supabase, id);
+    const live = await hasLiveRun(data, id);
     if (!live) {
       status = 'idle';
-      await setSessionStatus(supabase, id, 'idle');
+      await setSessionStatus(data, id, 'idle');
       if (loaded.state.status !== 'idle') {
         loaded.state = { ...loaded.state, status: 'idle' };
       }
@@ -84,7 +87,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const acting = await resolveActing(req, body.impersonate);
   if (!acting.ok) return acting.response;
 
-  const ok = await renameSession(supabase, acting.userId, id, title);
+  const data = await harnessDataClient(supabase, user.id, acting.userId);
+  const ok = await renameSession(data, acting.userId, id, title);
   if (!ok) return NextResponse.json({ error: 'Rename failed' }, { status: 400 });
   return NextResponse.json({ ok: true, title: title.trim() });
 }
@@ -102,7 +106,8 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const acting = await resolveActing(req);
   if (!acting.ok) return acting.response;
 
-  const ok = await deleteSession(supabase, acting.userId, id);
+  const data = await harnessDataClient(supabase, user.id, acting.userId);
+  const ok = await deleteSession(data, acting.userId, id);
   if (!ok) return NextResponse.json({ error: 'Delete failed' }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

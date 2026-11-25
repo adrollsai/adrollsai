@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { harnessDataClient } from '@/lib/agent/harness/acting-db';
 import { streamText, convertToModelMessages } from 'ai';
 import { getAgentModel } from '@/lib/agent/deepseek';
 import { createAgentContext } from '@/lib/agent/orchestrator';
@@ -81,6 +82,19 @@ export async function POST(req: Request) {
       }
     }
 
+    /**
+     * The client every harness write goes through.
+     *
+     * Authorisation has already happened above: `canImpersonate` plus the super-admin/agency check
+     * is what allows `targetUserId` to differ from the caller. But every harness table is RLS-locked
+     * to `auth.uid() = user_id`, so writing the impersonated account's session, log and runs with the
+     * caller's own client is refused — the tab looked empty and a turn sent while impersonating
+     * could not be recorded. See lib/agent/harness/acting-db.ts.
+     *
+     * When there is no impersonation this is the caller's own client and nothing changes.
+     */
+    const hdb = await harnessDataClient(supabase, user.id, targetUserId);
+
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
     }
@@ -91,7 +105,7 @@ export async function POST(req: Request) {
     // Without one the route still works (log disabled) â€” that keeps the
     // harness usable before the migration is applied.
     const wantsLog = typeof body.sessionId === 'string' && body.sessionId.length > 0;
-    const logReady = wantsLog ? await isAvailable(supabase) : false;
+    const logReady = wantsLog ? await isAvailable(hdb) : false;
     let sessionId: string | null = wantsLog && logReady ? body.sessionId : null;
 
     /**
@@ -109,13 +123,13 @@ export async function POST(req: Request) {
      */
     if (sessionId) {
       try {
-        const { data: existing } = await supabase
+        const { data: existing } = await hdb
           .from('harness_sessions')
           .select('id')
           .eq('id', sessionId)
           .maybeSingle();
         if (!existing) {
-          const { error: createErr } = await supabase.from('harness_sessions').insert({
+          const { error: createErr } = await hdb.from('harness_sessions').insert({
             id: sessionId,
             user_id: targetUserId,
             title: 'New session',
@@ -157,9 +171,9 @@ export async function POST(req: Request) {
         }
       }
 
-      await setSessionStatus(supabase, sessionId, 'running');
+      await setSessionStatus(hdb, sessionId, 'running');
       if (lastUserText.trim()) {
-        void maybeAutoTitle(supabase, user.id, sessionId, lastUserText);
+        void maybeAutoTitle(hdb, targetUserId, sessionId, lastUserText);
       }
     }
 
@@ -182,7 +196,7 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join('\n');
 
-    const { systemPrompt, tools, targetProfile } = await createAgentContext(supabase, targetUserId, {
+    const { systemPrompt, tools, targetProfile } = await createAgentContext(hdb, targetUserId, {
       operatorUserId: user.id,
       // So an approval raised in this turn is attributable to this conversation.
       ...(sessionId ? { sessionId } : {}),
@@ -261,12 +275,12 @@ export async function POST(req: Request) {
       if (step?.text) {
         console.log('[Nobo Agent Step Text]:', step.text.slice(0, 100));
       }
-      if (sessionId) await persistStep(supabase, sessionId, step);
+      if (sessionId) await persistStep(hdb, sessionId, step);
     };
 
     const onFinish = async (event: any) => {
       if (!sessionId) return;
-      await setSessionStatus(supabase, sessionId, 'idle');
+      await setSessionStatus(hdb, sessionId, 'idle');
       clearTurnDeadline();
       // Charge measured usage at 2x margin (model tokens, sandbox seconds, media).
       void settleUsage(targetUserId, usageMeter, 'Agent turn');
@@ -283,7 +297,7 @@ export async function POST(req: Request) {
 
       if (!unfinished) return;
 
-      if (!(await runsAvailableCheck(supabase))) {
+      if (!(await runsAvailableCheck(hdb))) {
         console.warn('[Nobo Agent] unfinished turn but the durable queue is unavailable.');
         return;
       }
@@ -291,10 +305,10 @@ export async function POST(req: Request) {
       // Runaway guard: a task that keeps hitting the budget must not re-queue
       // forever and quietly burn credits.
       try {
-        const recent = await listRunsForSession(supabase, sessionId, MAX_CONTINUATIONS_PER_SESSION + 2);
+        const recent = await listRunsForSession(hdb, sessionId, MAX_CONTINUATIONS_PER_SESSION + 2);
         const chained = (recent || []).length;
         if (chained >= MAX_CONTINUATIONS_PER_SESSION) {
-          await appendEvents(supabase, sessionId, [
+          await appendEvents(hdb, sessionId, [
             createEvent('run.status', {
               status: 'failed',
               detail: `Stopped after ${chained} continuations without finishing. This task needs a narrower scope or more time — tell me which part to focus on.`,
@@ -308,7 +322,7 @@ export async function POST(req: Request) {
       }
 
       try {
-        const run = await enqueueRun(supabase, {
+        const run = await enqueueRun(hdb, {
           sessionId,
           userId: targetUserId,
           goal: lastUserText || 'Continue the task that was in progress.',
@@ -320,7 +334,7 @@ export async function POST(req: Request) {
             stopTracker.reason === 'steps'
               ? `step cap (${stopTracker.steps} steps)`
               : `time budget (${Math.round(stopTracker.elapsedMs / 1000)}s)`;
-          await appendEvents(supabase, sessionId, [
+          await appendEvents(hdb, sessionId, [
             createEvent('run.status', {
               status: 'queued',
               detail: `Hit the ${why} with work remaining — picking it back up automatically in the background.`,
@@ -342,15 +356,15 @@ export async function POST(req: Request) {
       console.log(`[Nobo Agent] turn aborted by the client after ${completedSteps} step(s).`);
       if (!sessionId) return;
 
-      await setSessionStatus(supabase, sessionId, 'idle');
+      await setSessionStatus(hdb, sessionId, 'idle');
 
       // Nothing meaningful had happened yet — treat it as a plain cancel.
       if (completedSteps === 0) return;
 
-      if (!(await runsAvailableCheck(supabase))) return;
+      if (!(await runsAvailableCheck(hdb))) return;
 
       try {
-        const run = await enqueueRun(supabase, {
+        const run = await enqueueRun(hdb, {
           sessionId,
           userId: targetUserId,
           goal: lastUserText || 'Continue the task that was interrupted.',
@@ -358,7 +372,7 @@ export async function POST(req: Request) {
           idempotencyKey: `abort_${sessionId}_${Math.floor(Date.now() / 60_000)}`,
         });
         if (run) {
-          await appendEvents(supabase, sessionId, [
+          await appendEvents(hdb, sessionId, [
             createEvent('run.status', {
               status: 'queued',
               detail:
@@ -413,8 +427,8 @@ export async function POST(req: Request) {
           if (isProviderOutOfCreditError(message)) markProviderOutOfCredit(message);
         });
         if (sessionId) {
-          void persistTurnError(supabase, sessionId, message);
-          void setSessionStatus(supabase, sessionId, 'error');
+          void persistTurnError(hdb, sessionId, message);
+          void setSessionStatus(hdb, sessionId, 'error');
         }
         return message;
       },

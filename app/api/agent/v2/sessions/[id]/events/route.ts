@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { appendEvent, loadEvents } from '@/lib/agent/harness/store';
+import { appendEvent, loadEvents, loadSession } from '@/lib/agent/harness/store';
+import { resolveActingUser } from '@/utils/route-auth';
+import { harnessDataClient } from '@/lib/agent/harness/acting-db';
 import { createEvent, HARNESS_EVENT_TYPES, type HarnessEventType } from '@/lib/agent/harness/events';
 
 export const maxDuration = 30;
@@ -19,8 +21,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  /**
+   * Events are read by session id alone, and `loadEvents` does not filter by user — under RLS that
+   * was safe, because the caller's client could only ever see their own sessions. Impersonation reads
+   * with a service-role client, so the ownership proof has to happen HERE instead: the session must
+   * belong to the account being acted for, or this would be a cross-tenant read.
+   */
+  const acting = await resolveActingUser(req, new URL(req.url).searchParams.get('impersonate'));
+  if (!acting.ok) return acting.response;
+
+  const data = await harnessDataClient(supabase, user.id, acting.userId);
+  const owned = await loadSession(data, acting.userId, id);
+  if (!owned) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+
   const after = Number(new URL(req.url).searchParams.get('after') || 0) || 0;
-  const events = await loadEvents(supabase, id, after);
+  const events = await loadEvents(data, id, after);
   return NextResponse.json({ events });
 }
 
@@ -59,7 +74,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  const ok = await appendEvent(supabase, id, event.type, event.data);
+  const acting = await resolveActingUser(req, body.impersonate);
+  if (!acting.ok) return acting.response;
+  const data = await harnessDataClient(supabase, user.id, acting.userId);
+  const owned = await loadSession(data, acting.userId, id);
+  if (!owned) return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+
+  const ok = await appendEvent(data, id, event.type, event.data);
   if (!ok) return NextResponse.json({ error: 'Could not append event' }, { status: 500 });
 
   return NextResponse.json({ ok: true });

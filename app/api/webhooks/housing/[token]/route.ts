@@ -340,7 +340,10 @@ export async function POST(
             if (!existingLeadToReopen.ad_name) {
                 updateData.ad_name = sourceDetail
             }
-            if (assignedAgentId) {
+            // A REOPENED LEAD KEEPS ITS OWNER: the person who already knows the requirement holds on
+            // to it. The distribution engine picks an owner for a NEW lead, not for work that was
+            // deliberately closed and has come back. An unowned lead is still assigned.
+            if (!existingLeadToReopen.assigned_to && assignedAgentId) {
                 updateData.assigned_to = assignedAgentId
             }
 
@@ -348,7 +351,8 @@ export async function POST(
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLeadToReopen.id,
-                user_id: assignedAgentId || profile.id,
+                // Whoever holds the lead after the reopen — not the candidate that would have replaced them.
+                user_id: existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
                 action_type: 'REOPENED',
                 description: `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.`,
                 created_at: new Date().toISOString()
@@ -364,7 +368,7 @@ export async function POST(
                     type: 'new_lead'
                 }).catch(() => {});
 
-                const agentId = assignedAgentId || existingLeadToReopen.assigned_to;
+                const agentId = existingLeadToReopen.assigned_to || assignedAgentId;
                 if (agentId && agentId !== profile.id) {
                     await sendAdminMultiChannelNotification({
                         ownerUserId: agentId,

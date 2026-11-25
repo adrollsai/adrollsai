@@ -405,7 +405,22 @@ export async function handleMagicbricksPost(request: Request, explicitToken?: st
             if (!existingLeadToReopen.ad_name) {
                 updateData.ad_name = sourceDetail;
             }
-            if (assignedAgentId) {
+            /**
+             * A REOPENED LEAD KEEPS ITS OWNER.
+             *
+             * This used to assign the freshly distributed agent unconditionally, so a lead that had
+             * been worked and deliberately put in Lost/NI came back owned by somebody else. Reported
+             * from a live client: their lead "Gaurav" was assigned to Gunheer, marked Lost/NI on the
+             * 23rd, re-enquired on Magicbricks on the 24th, and reappeared under Shubha Baweja — with
+             * no assignment row in the history to explain it, because there was none to write.
+             *
+             * Measured across the CRM at the time: 499 reopened leads, 299 of them owned by an agent
+             * who had never touched the lead before the reopen.
+             *
+             * The distribution engine picks an owner for a NEW lead. A reopen is not new work — the
+             * person who already knows the requirement keeps it. An unowned lead still gets assigned.
+             */
+            if (!existingLeadToReopen.assigned_to && assignedAgentId) {
                 updateData.assigned_to = assignedAgentId;
             }
 
@@ -413,7 +428,9 @@ export async function handleMagicbricksPost(request: Request, explicitToken?: st
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLeadToReopen.id,
-                user_id: assignedAgentId || profile.id,
+                // The owner is whoever holds the lead after the reopen — the one kept above, not the
+                // distribution candidate that would have replaced them.
+                user_id: existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
                 action_type: 'REOPENED',
                 description: `Lead re-enquired via Magicbricks.\nSource Details: ${sourceDetail}\nReset to New Lead.`,
                 created_at: new Date().toISOString()
@@ -433,7 +450,8 @@ export async function handleMagicbricksPost(request: Request, explicitToken?: st
                     leadSource: sourceLabel
                 }).catch(() => {});
 
-                const agentId = assignedAgentId || existingLeadToReopen.assigned_to;
+                // The owner holds the lead, so the owner is the one told about it.
+                const agentId = existingLeadToReopen.assigned_to || assignedAgentId;
                 if (agentId && agentId !== profile.id) {
                     await sendAdminMultiChannelNotification({
                         ownerUserId: agentId,

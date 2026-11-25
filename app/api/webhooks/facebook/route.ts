@@ -4521,7 +4521,12 @@ RULES:
             if (formName) {
               updatePayloadObj.form_name = formName;
             }
-            if (assignedAgentId) {
+            // A REOPENED LEAD KEEPS ITS OWNER. The distribution engine picks an owner for a NEW
+            // lead; a lead that was deliberately closed and has re-enquired is already somebody's
+            // work. Assigning over it silently moved leads between agents with nothing in the
+            // history to explain it (measured: 299 of 499 reopened leads). An unowned lead is
+            // still assigned.
+            if (!existingLead.assigned_to && assignedAgentId) {
               updatePayloadObj.assigned_to = assignedAgentId;
             }
 
@@ -4543,7 +4548,7 @@ RULES:
             // DB schema for lead_history contains: id, lead_id, user_id, action_type, description, created_at
             const { error: histErr } = await supabaseAdmin.from('lead_history').insert({
               lead_id: existingLead.id,
-              user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
+              user_id: existingLead.assigned_to || assignedAgentId || existingLead.user_id,
               action_type: 'REOPENED',
               description: reopenDesc,
               created_at: new Date().toISOString()
@@ -4563,7 +4568,7 @@ RULES:
               type: 'new_lead'
             }).catch(() => {});
 
-            const notifAgent = assignedAgentId || existingLead.assigned_to;
+            const notifAgent = existingLead.assigned_to || assignedAgentId;
             if (notifAgent && notifAgent !== profile.id) {
               await sendAdminMultiChannelNotification({
                 ownerUserId: notifAgent,

@@ -605,7 +605,9 @@ async function handleSync(request: Request) {
                 if (campaignId) {
                   updateLeadData.campaign_id = campaignId;
                 }
-                if (assignedAgentId) {
+                // A REOPENED LEAD KEEPS ITS OWNER — same rule as the Facebook webhook and the portal
+                // handlers. The distribution candidate only fills an empty owner.
+                if (!existingLead.assigned_to && assignedAgentId) {
                   updateLeadData.assigned_to = assignedAgentId;
                 }
 
@@ -627,7 +629,7 @@ async function handleSync(request: Request) {
                 // DB schema for lead_history contains: id, lead_id, user_id, action_type, description, created_at
                 const { error: histErr } = await supabaseAdmin.from('lead_history').insert({
                   lead_id: existingLead.id,
-                  user_id: assignedAgentId || existingLead.assigned_to || existingLead.user_id,
+                  user_id: existingLead.assigned_to || assignedAgentId || existingLead.user_id,
                   action_type: 'REOPENED',
                   description: reopenDesc,
                   created_at: new Date().toISOString()
@@ -647,7 +649,7 @@ async function handleSync(request: Request) {
                   type: 'new_lead'
                 }).catch(() => {});
 
-                const notifAgent = assignedAgentId || existingLead.assigned_to;
+                const notifAgent = existingLead.assigned_to || assignedAgentId;
                 if (notifAgent && notifAgent !== profile.id) {
                   sendAdminMultiChannelNotification({
                     ownerUserId: notifAgent,
