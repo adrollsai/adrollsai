@@ -786,6 +786,12 @@ export async function bookAppointment(
         }
 
         // 4. Update Lead in Supabase
+        /**
+         * An appointment is an event the sequences listen for, and it carries the one piece of
+         * timing that is not ours to choose: the hour the customer agreed to. Booking here, from a
+         * voice call or on the public page all land on this line, so this is the choke point.
+         */
+        const previousBookedTime = (lead as any)?.booked_time ?? null;
         const leadUpdatePayload: Record<string, any> = {
             booked_time: formattedSlot,
             status: 'Appointment Booked',
@@ -816,6 +822,26 @@ export async function bookAppointment(
             .eq('id', leadId)
 
         if (updateError) throw updateError
+
+        /**
+         * The appointment exists now — start the sequence that is timed against it.
+         *
+         * Never allowed to fail the booking: the meeting is real whether or not a reminder could be
+         * scheduled, and a customer who agreed to a time must not be told the booking failed because
+         * a follow-up could not be queued.
+         */
+        try {
+            const { onBookingChanged } = await import('../lib/flows/booking-trigger')
+            const bookingSequence = await onBookingChanged(supabaseAdmin, {
+                userId: (lead as any)?.user_id,
+                leadId,
+                bookedTime: formattedSlot,
+                previousBookedTime,
+            })
+            console.log('[VOICE HELPER] booking sequence:', bookingSequence.action, bookingSequence.notes.join(' | '))
+        } catch (sequenceErr: any) {
+            console.warn('[VOICE HELPER] booking sequence failed:', sequenceErr?.message)
+        }
 
         // Recalculate and persist boosted Lead Score for booked appointment
         try {
@@ -1210,6 +1236,24 @@ export async function cancelAppointment(
             .eq('id', leadId)
 
         if (updateError) throw updateError
+
+        /**
+         * The appointment is gone, so the reminders for it must go too. "Your meeting is in an hour"
+         * for a meeting the customer called off is the worst message this system could send, and
+         * nothing else in the pipeline knows to stop it.
+         */
+        try {
+            const { onBookingChanged } = await import('../lib/flows/booking-trigger')
+            const cancelled = await onBookingChanged(supabaseAdmin, {
+                userId: (lead as any)?.user_id,
+                leadId,
+                bookedTime: null,
+                previousBookedTime: (lead as any)?.booked_time ?? null,
+            })
+            console.log('[VOICE HELPER] booking sequence:', cancelled.action, cancelled.notes.join(' | '))
+        } catch (sequenceErr: any) {
+            console.warn('[VOICE HELPER] booking sequence failed:', sequenceErr?.message)
+        }
 
         // 4. Log history
         try {
