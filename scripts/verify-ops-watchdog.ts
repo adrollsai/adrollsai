@@ -410,10 +410,24 @@ if (!supabaseUrl || !serviceKey) {
     live.detectorErrors.length ? JSON.stringify(live.detectorErrors) : `${Object.keys(live.detected).length} detector(s)`,
   );
   check('the sweep finished inside its route budget', live.durationMs < 60_000, `${live.durationMs}ms`);
+  const detectedAnything = Object.values(live.detected).some((count) => Number(count) > 0);
+  /**
+   * A CLEAN PLATFORM IS NOT A GATE FAILURE.
+   *
+   * This asserted `created + recurring > 0` unconditionally, i.e. "an incident must exist in
+   * production right now". On a healthy day every detector finds nothing, so the gate failed and
+   * said "the board is not silently empty" about a board that was empty because there was nothing
+   * to report — which is exactly the pressure that makes someone fabricate an incident to get a
+   * green run. The property worth asserting is CONSISTENCY: whatever the detectors found must have
+   * been recorded, and finding nothing must genuinely record nothing. The record path itself is
+   * proven end-to-end in section 7 with a synthetic incident.
+   */
   check(
-    'incidents were recorded (the board is not silently empty)',
-    live.created + live.recurring > 0,
-    `${live.created} new, ${live.recurring} recurring`,
+    'whatever the detectors found was recorded (nothing found, nothing invented)',
+    detectedAnything ? live.created + live.recurring > 0 : live.created + live.recurring === 0,
+    detectedAnything
+      ? `${live.created} new, ${live.recurring} recurring`
+      : 'clean platform: no detections, and none recorded',
   );
 
   const found = Object.entries(live.detected)

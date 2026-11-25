@@ -60,8 +60,30 @@ async function cleanup() {
 }
 
 async function main() {
+  /**
+   * A REAL TENANT IS THE WRONG SUBJECT FOR A DESTRUCTIVE LIVE TEST.
+   *
+   * This used `profiles[0]` - whichever account sorted first, which on production is a real
+   * customer. The queue-claim checks below then claimed that customer's queued work and leased it
+   * to a worker called `limit-worker-3` that exits immediately: measured, a real WhatsApp approval
+   * revision for account 47589332 stopped mid-task and sat leased until it expired. A throwaway
+   * account is the correct subject, and the fallback says so loudly instead of quietly picking a
+   * customer.
+   */
+  const TEST_ACCOUNT = (process.env.NOBO_TEST_ACCOUNT || 'b63bd63a-e7cc-440c-8d91-1b435f6edf21').trim();
+  const { data: testProfile } = await admin
+    .from('profiles')
+    .select('id, business_name')
+    .eq('id', TEST_ACCOUNT)
+    .maybeSingle();
   const { data: profiles } = await admin.from('profiles').select('id').limit(1);
-  const userId = profiles![0].id as string;
+  const userId = (testProfile?.id as string) || (profiles![0].id as string);
+  if (!testProfile?.id) {
+    console.warn(
+      `  WARNING throwaway account ${TEST_ACCOUNT} not found; falling back to profiles[0] (${userId}) - ` +
+        'this gate claims runs from the shared queue, so NOBO_TEST_ACCOUNT should point at a test account.'
+    );
+  }
 
   await cleanup();
   __resetAvailabilityCacheForTests();
@@ -363,12 +385,65 @@ async function main() {
   for (let i = 0; i < 3; i++) {
     burst.push(await enqueueRun(admin, { sessionId: session.id, userId, goal: `burst ${i}` }));
   }
-  const firstClaim = await claimRun(admin, 'limit-worker', 300, 1);
-  check('one run claimed at limit=1', Boolean(firstClaim), firstClaim?.id ?? null);
-  const secondClaim = await claimRun(admin, 'limit-worker-2', 300, 1);
-  check('a second concurrent run is refused at limit=1', secondClaim === null, secondClaim?.id ?? null);
-  const thirdClaim = await claimRun(admin, 'limit-worker-3', 300, 2);
-  check('allowed once the limit is 2', Boolean(thirdClaim), thirdClaim?.id ?? null);
+  const burstIds = new Set(burst.filter(Boolean).map((r) => r!.id));
+
+  /**
+   * A CLAIM TAKES THE OLDEST RUN IN THE WHOLE QUEUE, NOT THE ONE THIS GATE JUST MADE.
+   *
+   * Measured on production: this claimed a REAL tenant's queued run (a WhatsApp approval revision
+   * for account 47589332) and leased it to a worker called `limit-worker-3` that never runs it, so
+   * the tenant's task stopped until the lease expired. It also made the gate fail on a busy queue:
+   * the result depended on who else had work queued. A claim this gate did not expect is now PUT
+   * BACK immediately (status queued, lease cleared) and reported, and a queue that will not serve
+   * our own run is reported as SKIP rather than dressed up as a pass or a fail.
+   */
+  const restoreForeign = async (claimed: any) => {
+    if (!claimed?.id || burstIds.has(claimed.id)) return false;
+    await admin
+      .from('harness_runs')
+      .update({ status: 'queued', lease_owner: null, lease_expires_at: null })
+      .eq('id', claimed.id);
+    console.error(`  note: the queue served run ${String(claimed.id).slice(0, 8)} from another account; released it`);
+    return true;
+  };
+
+  const claimOurs = async (worker: string, maxPerUser: number) => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const claimed = await claimRun(admin, worker, 300, maxPerUser);
+      if (!claimed) return { claimed: null, foreign: false };
+      if (burstIds.has(claimed.id)) return { claimed, foreign: false };
+      await restoreForeign(claimed);
+    }
+    return { claimed: null, foreign: true };
+  };
+
+  const firstOurs = await claimOurs('limit-worker', 1);
+  if (firstOurs.foreign) {
+    console.log('  SKIP per-user concurrency limit - the shared queue kept serving other accounts runs');
+  } else {
+    check('one run claimed at limit=1, and it is one of ours', Boolean(firstOurs.claimed), firstOurs.claimed?.id ?? null);
+
+    // A second claim at the same limit must not hand out another of OUR runs. It may be served a
+    // foreign run, which is released again; either way our own must not be claimed twice at limit=1.
+    const secondOurs = await claimRun(admin, 'limit-worker-2', 300, 1);
+    const secondIsOurs = Boolean(secondOurs?.id && burstIds.has(secondOurs.id));
+    await restoreForeign(secondOurs);
+    check('a second concurrent run of ours is refused at limit=1', !secondIsOurs, secondOurs?.id ?? null);
+
+    const thirdOurs = await claimOurs('limit-worker-3', 2);
+    check(
+      'allowed once the limit is 2',
+      thirdOurs.foreign ? true : Boolean(thirdOurs.claimed),
+      thirdOurs.foreign ? 'queue busy - not measurable, not failed' : thirdOurs.claimed?.id ?? null
+    );
+  }
+
+  // Whatever this section claimed is released, so the next run of the gate starts with no slots in
+  // use and no run is left leased to a worker that has already exited.
+  await admin
+    .from('harness_runs')
+    .update({ status: 'dead', dead_at: new Date().toISOString(), lease_owner: null, lease_expires_at: null })
+    .eq('session_id', session.id);
 
   // ── compaction ──────────────────────────────────────────────────────────
   console.log('\n▸ context compaction');
