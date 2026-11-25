@@ -109,5 +109,55 @@ check(
 );
 check('with no invented rows', (empty?.templates ?? []).length === 0);
 
+// ── the tab's template gallery and broadcast composer ────────────────────────
+//
+// The WhatsApp tab was functional but thin: conversations, one template send and WABA status. The
+// gallery and the composer are new, and the thing worth pinning is not that the panels render - it is
+// that the composer CANNOT send. A "Send" button in a second place is exactly how a bulk-message gate
+// gets bypassed by accident, so this reads the component's own source and asserts there is no send
+// call in it, and that its last step hands off to the conversation that owns the approval card.
+console.log('\n-- template gallery, and a composer that cannot send --');
+{
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const component = fs.readFileSync(
+    path.join(process.cwd(), 'components/whatsapp/WhatsAppGrowthTools.tsx'),
+    'utf8'
+  );
+  const page = fs.readFileSync(path.join(process.cwd(), 'app/dashboard/whatsapp/page.tsx'), 'utf8');
+
+  check('the gallery lists templates from the Meta-backed route', component.includes('/api/whatsapp/templates'));
+  check('it can submit a new template for review', /method:\s*'POST'/.test(component) && /bodyText/.test(component));
+  check(
+    'it shows the verdict Meta keeps on each template',
+    /APPROVED/.test(component) && /PENDING/.test(component) && /REJECTED/.test(component)
+  );
+  check(
+    'it says example templates are not the account own',
+    /fallback_unconfigured/.test(component) && /example templates/.test(component)
+  );
+
+  check('the composer resolves the real audience', component.includes('/api/whatsapp/broadcasts/preview'));
+  check('it will not offer a template Meta has not approved', /approvedTemplates/.test(component));
+  check(
+    'it shows the recipient count and the rendered message before anything else',
+    /validPhoneCount/.test(component) && /renderBody\(/.test(component)
+  );
+  // THE GATE: no send path in the component at all.
+  check(
+    'the composer never posts to the broadcast sender',
+    !/\/api\/whatsapp\/broadcasts(?!\/preview)/.test(component),
+    'a second send path would bypass the approval card'
+  );
+  check(
+    'it hands the prepared broadcast to the agent conversation instead',
+    /prepareForApproval/.test(component) && /\?ask=/.test(component) && /agentHref/.test(component)
+  );
+  check('and says plainly that it does not send', /does not send anything/i.test(component));
+
+  check('the WhatsApp tab mounts it', /WhatsAppGrowthTools/.test(page) && /showGrowthTools/.test(page));
+  check('the tab still uses the chat route for conversations', page.includes('/api/whatsapp/chat'));
+}
+
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;

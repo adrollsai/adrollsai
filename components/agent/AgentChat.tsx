@@ -739,6 +739,36 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     handleSendRef.current = handleSend;
   });
 
+  /**
+   * A HAND-OFF FROM ANOTHER SCREEN (`?ask=…`).
+   *
+   * Anything that would message customers has to be approved in this conversation, on an approval
+   * card — that is the review gate, and it is not moved. So a screen that can prepare a bulk send
+   * (the WhatsApp tab's broadcast composer) hands the instruction over here rather than sending
+   * anything itself: it arrives as an ordinary first message, and the agent raises the card.
+   *
+   * Fires once. The parameter is stripped from the URL immediately, so a refresh or a back
+   * navigation cannot send the same instruction twice.
+   */
+  const askHandoffUsedRef = useRef(false);
+  useEffect(() => {
+    if (askHandoffUsedRef.current) return;
+    if (typeof window === 'undefined') return;
+    const asked = new URLSearchParams(window.location.search).get('ask');
+    if (!asked || !asked.trim()) return;
+    askHandoffUsedRef.current = true;
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('ask');
+    window.history.replaceState({}, '', `${clean.pathname}${clean.search ? clean.search : ''}${clean.hash}`);
+    // Wait for the session/log probe before sending, so the turn lands in a real session rather than
+    // racing the availability check.
+    const timer = setTimeout(() => {
+      void handleSendRef.current(asked.trim());
+    }, 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── the send queue ───────────────────────────────────────────────────────
   //
   // A message typed while the agent is working is queued instead of dropped, and this effect

@@ -8,6 +8,7 @@ import { getPropertyTags } from '@/utils/property-tags'
 import { toast } from 'sonner'
 import WhatsAppTemplateMediaPicker from '@/components/WhatsAppTemplateMediaPicker'
 import WhatsAppLivePreview from '@/components/WhatsAppLivePreview'
+import WhatsAppGrowthTools from '@/components/whatsapp/WhatsAppGrowthTools'
 
 const TEMPLATE_BODY_MAP: Record<string, string> = {
   hello_world: 'Hello! This is a standard welcome message from Meta Sandbox.',
@@ -404,6 +405,13 @@ export default function AutomationPage() {
   }
   const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null)
   const [showLeadPanel, setShowLeadPanel] = useState(false)
+  /**
+   * The template gallery and the broadcast composer.
+   *
+   * Closed by default: the tab's day-to-day job is conversations, and the two extra panels are opened
+   * deliberately. Nothing in them sends a message — see components/whatsapp/WhatsAppGrowthTools.tsx.
+   */
+  const [showGrowthTools, setShowGrowthTools] = useState(false)
   const [editingLead, setEditingLead] = useState(false)
   const [leadEditForm, setLeadEditForm] = useState({ name: '', email: '', pipeline_stage: '', remarks: '' })
   const [savingLead, setSavingLead] = useState(false)
@@ -1032,6 +1040,20 @@ export default function AutomationPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">WhatsApp Portal</h1>
           <p className="text-slate-500 text-xs mt-1">Live customer and bot conversations</p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              onClick={() => setShowGrowthTools((v) => !v)}
+              className={`inline-flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border transition-colors ${
+                showGrowthTools
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-700'
+              }`}
+            >
+              <FileText size={12} />
+              Templates &amp; broadcasts
+            </button>
+          </div>
         </div>
 
         {/* Billing Info (Admins Only) */}
@@ -1112,6 +1134,22 @@ export default function AutomationPage() {
           </div>
         )}
       </div>
+
+      {/* Template gallery and broadcast composer. Neither sends anything: a bulk message still has
+          to be approved in the agent conversation, which is where the review gate lives. */}
+      {showGrowthTools && (
+        <div className="mb-6">
+          <WhatsAppGrowthTools
+            impersonateId={getImpersonateId()}
+            agentHref={
+              getImpersonateId()
+                ? `/dashboard/agent?impersonate=${encodeURIComponent(getImpersonateId() as string)}`
+                : '/dashboard/agent'
+            }
+            onClose={() => setShowGrowthTools(false)}
+          />
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200/80 rounded-[2rem] shadow-xl overflow-hidden h-[calc(100vh-230px)] min-h-[500px] max-h-[620px] flex mb-12">
           
