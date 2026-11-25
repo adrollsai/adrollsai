@@ -179,20 +179,43 @@ export function buildGeoLocations(args: GeoLocationArgs): GeoLocations {
 // Special ad categories
 // ---------------------------------------------------------------------------
 
-export type SpecialAdCategory = 'HOUSING' | 'EMPLOYMENT' | 'CREDIT' | 'SOCIAL_ISSUES_ELECTIONS_POLITICS';
+/**
+ * Meta RETIRED the `CREDIT` special ad category.
+ *
+ * Measured on a live client's account: "The credit special ad category is no longer
+ * available. Choose financial products and services instead. (code 100/…)". Every
+ * campaign that declared CREDIT was rejected outright, so a loans or finance business
+ * could not launch anything at all. The replacement is `FINANCIAL_PRODUCTS_SERVICES`.
+ *
+ * `CREDIT` is kept as an ACCEPTED ALIAS rather than deleted: stored launches, saved
+ * payloads and older tool calls still say CREDIT, and the fix has to be "this still
+ * works", not "this now errors".
+ */
+export type SpecialAdCategory =
+  | 'HOUSING'
+  | 'EMPLOYMENT'
+  | 'FINANCIAL_PRODUCTS_SERVICES'
+  | 'SOCIAL_ISSUES_ELECTIONS_POLITICS';
 
 export const SPECIAL_AD_CATEGORIES: SpecialAdCategory[] = [
   'HOUSING',
   'EMPLOYMENT',
-  'CREDIT',
+  'FINANCIAL_PRODUCTS_SERVICES',
   'SOCIAL_ISSUES_ELECTIONS_POLITICS',
 ];
+
+/** What Meta accepts on the wire today, and what older inputs map onto. */
+export const RETIRED_SPECIAL_AD_CATEGORY_ALIASES: Record<string, SpecialAdCategory> = {
+  CREDIT: 'FINANCIAL_PRODUCTS_SERVICES',
+  // Meta's own enum has moved names twice; accept both spellings it has used.
+  ISSUES_ELECTIONS_POLITICS: 'SOCIAL_ISSUES_ELECTIONS_POLITICS',
+};
 
 const CATEGORY_PATTERNS: Array<{ category: SpecialAdCategory; test: RegExp }> = [
   {
     category: 'HOUSING',
-    // Deliberately does not match a bare "home": a "home loans" business is CREDIT,
-    // and declaring HOUSING there would strip age/gender targeting for no reason.
+    // Deliberately does not match a bare "home": a "home loans" business is a financial
+    // product, and declaring HOUSING there would strip age/gender targeting for no reason.
     test: /\b(real\s*estate|realty|realtors?|propert(?:y|ies)|builders?|developers?|construct(?:ion|ions)?|housing|apartments?|flats?|plots?|villas?|townships?|land\s+sale|rent(?:al|als)?|pg\b|hostels?)\b/i,
   },
   {
@@ -200,8 +223,16 @@ const CATEGORY_PATTERNS: Array<{ category: SpecialAdCategory; test: RegExp }> = 
     test: /\b(jobs?|hiring|recruit(?:ment|ers?)?|careers?|vacanc(?:y|ies)|staffing)\b/i,
   },
   {
-    category: 'CREDIT',
-    test: /\b(loans?|credit\s*cards?|mortgages?|lending|emi\b|finance\s*company|nbcf)\b/i,
+    // Was CREDIT. Meta renamed it; the trigger words are the same because the business
+    // is the same — only the label Meta wants changed.
+    //
+    // Deliberately NOT broadened to words like "investment", "wealth" or "insurance":
+    // a property business's own copy says "safe and strategic property investment", and
+    // matching that would declare a real-estate ad a financial product. Two special
+    // categories on one ad strips more targeting than the law asks for, and it happens
+    // silently. Only words that cannot mean anything else belong here.
+    category: 'FINANCIAL_PRODUCTS_SERVICES',
+    test: /\b(loans?|credit\s*cards?|mortgages?|lending|emi\b|finance\s*company|nbcf|mutual\s*funds?)\b/i,
   },
   {
     category: 'SOCIAL_ISSUES_ELECTIONS_POLITICS',
@@ -219,8 +250,11 @@ const normaliseCategories = (input: unknown): SpecialAdCategory[] => {
   for (const item of raw) {
     const value = String(item || '').trim().toUpperCase().replace(/[\s-]+/g, '_');
     if (!value || value === 'NONE') continue;
-    if (SPECIAL_AD_CATEGORIES.includes(value as SpecialAdCategory) && !out.includes(value as SpecialAdCategory)) {
-      out.push(value as SpecialAdCategory);
+    // Accept a retired name and send Meta the current one, so a saved CREDIT launch
+    // keeps working instead of being rejected by the API.
+    const resolved = (RETIRED_SPECIAL_AD_CATEGORY_ALIASES[value] || value) as SpecialAdCategory;
+    if (SPECIAL_AD_CATEGORIES.includes(resolved) && !out.includes(resolved)) {
+      out.push(resolved);
     }
   }
   return out;

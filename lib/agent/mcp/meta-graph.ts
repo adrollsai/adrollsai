@@ -97,7 +97,47 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
     return `${CURRENCY_SYMBOLS[currency] || `${currency} `}${(n / 100).toFixed(2)}`;
   }
 
-  async function graphGet(path: string, params: Record<string, any>, token: string) {
+  /**
+ * Which token a Graph path needs.
+ *
+ * A PAGE-SCOPED path needs a PAGE token. A user token gets "(#190) This method must be
+ * called with a Page Access Token" — which is what a live client's agent hit while trying
+ * to read its own lead forms, and it read as a permissions failure when the page token on
+ * the account was perfectly good.
+ *
+ * Ad-account paths keep the user token: swapping it there would break insights and
+ * campaign management, which the page token cannot do.
+ */
+const PAGE_SCOPED_EDGES = new Set([
+  'leadgen_forms',
+  'leadgen_forms_data',
+  'feed',
+  'photos',
+  'tagged',
+  'promotable_posts',
+  'messages',
+  'conversations',
+  'ratings',
+  'subscribed_apps',
+  'insights',
+  'posts',
+]);
+
+function tokenForPath(
+  path: string,
+  credsValue: { token: string; pageId?: string | null; pageToken?: string | null }
+): string {
+  const { token, pageId, pageToken } = credsValue;
+  if (!pageToken || !pageId) return token;
+  const clean = String(path || '').replace(/^\/+/, '');
+  const segments = clean.split(/[/?]/).filter(Boolean);
+  const [head, edge] = [segments[0] || '', segments[1] || ''];
+  if (head !== String(pageId)) return token;
+  return PAGE_SCOPED_EDGES.has(edge) ? pageToken : token;
+}
+
+
+async function graphGet(path: string, params: Record<string, any>, token: string) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params || {})) {
       if (v === undefined || v === null || v === '') continue;
@@ -226,7 +266,8 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
       }),
       execute: async ({ entity, fields, status, underId, limit, after }) => {
         try {
-          const { token, adAccountId } = await creds();
+          const credential = await creds();
+          const { token, adAccountId } = credential;
           const acct = await account(token, adAccountId);
           const currency = acct.currency || 'INR';
 
@@ -251,7 +292,10 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
           const statusFilter = String(status ?? 'ALL').trim();
           if (statusFilter && statusFilter.toUpperCase() !== 'ALL') params.effective_status = [statusFilter];
 
-          const res = await graphGet(path, params, token);
+          // A lead form lives on the PAGE, not the ad account, so this path needs the page
+          // token; `tokenForPath` hands it over for page-scoped edges and leaves every
+          // ad-account path on the user token.
+          const res = await graphGet(path, params, tokenForPath(path, credential));
 
           const rows = (res.data || []).map((r: any) => {
             const row: any = { ...r };
@@ -862,11 +906,13 @@ export function createMetaGraphTools(supabase: SupabaseClient, userId: string) {
       }),
       execute: async ({ method, path, params }) => {
         try {
-          const { token } = await creds();
+          const credential = await creds();
           const clean = String(path || '').replace(/^\/+/, '');
           if (/^https?:/i.test(clean)) {
             return { success: false, error: 'Pass a Graph path, not a full URL. The host is fixed to graph.facebook.com.' };
           }
+          // Page-scoped paths (lead forms, page feed, page insights) need the page token.
+          const token = tokenForPath(clean, credential);
           const data =
             method === 'GET'
               ? await graphGet(clean, params || {}, token)

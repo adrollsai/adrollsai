@@ -5,12 +5,14 @@ import { campaignLaunchRefusal } from '../preflight';
 import { META_GRAPH_VERSION as GRAPH_VERSION } from '@/lib/ads/graph-version';
 import {
     LOCATION_TYPES,
+    RETIRED_SPECIAL_AD_CATEGORY_ALIASES,
     ageAndGenderTargeting,
     applyAdvantageTargeting,
     buildCampaignPayload,
     describeAdvantagePlan,
     resolveAdvantagePlan,
 } from '@/lib/ads/advantage-plus';
+import { classifyMetaError, describeMetaError } from '@/lib/ads/graph-error';
 
 const META_GRAPH_VERSION = GRAPH_VERSION;
 
@@ -100,7 +102,7 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           'OUTCOME_SALES',
         ]).default('OUTCOME_LEADS').describe('The campaign marketing objective'),
         dailyBudgetInr: z.number().describe('Daily budget in currency amount (e.g. 500 for 500/day)'),
-        specialAdCategory: z.enum(['NONE', 'HOUSING', 'EMPLOYMENT', 'CREDIT']).default('NONE').describe('Special ad category if legally required (e.g. HOUSING for real estate, else NONE)'),
+        specialAdCategory: z.enum(['NONE', 'HOUSING', 'EMPLOYMENT', 'FINANCIAL_PRODUCTS_SERVICES', 'SOCIAL_ISSUES_ELECTIONS_POLITICS', 'CREDIT']).default('NONE').describe('Special ad category if legally required (e.g. HOUSING for real estate, FINANCIAL_PRODUCTS_SERVICES for loans, else NONE). CREDIT is retired by Meta and is sent as FINANCIAL_PRODUCTS_SERVICES.'),
         status: z.enum(['PAUSED', 'ACTIVE']).default('PAUSED').describe('Default to PAUSED for safety so user can review before live spend'),
       }),
       execute: async ({ name, objective, dailyBudgetInr, specialAdCategory, status }) => {
@@ -108,7 +110,15 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const { token, adAccountId } = await getUserMetaCredentials();
 
           const dailyBudgetSubunits = Math.round(dailyBudgetInr * 100);
-          const categoryArray = specialAdCategory === 'NONE' ? '[]' : `["${specialAdCategory}"]`;
+          // Meta retires category names. CREDIT is gone; the alias keeps old callers working
+          // and the wire always carries a name Meta accepts today.
+          const categoryForMeta = specialAdCategory === 'NONE'
+            ? []
+            : [
+                RETIRED_SPECIAL_AD_CATEGORY_ALIASES[String(specialAdCategory)] ||
+                  (specialAdCategory as string),
+              ];
+          const categoryArray = JSON.stringify(categoryForMeta);
 
           const payload = new URLSearchParams({
             name,
@@ -126,7 +136,14 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
 
           const data = await res.json();
           if (data.error) {
-            return { success: false, error: data.error.message, code: data.error.code };
+            // The whole error, not just `message`: "Invalid parameter" alone told a live agent
+            // nothing, so it could not fix its own arguments.
+            return {
+              success: false,
+              error: describeMetaError(data, 'Campaign creation rejected by Meta') || data.error.message,
+              meta: classifyMetaError(data),
+              sent: { objective, special_ad_categories: categoryForMeta, dailyBudget: dailyBudgetInr },
+            };
           }
 
           return {
@@ -283,7 +300,17 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
         }).optional(),
         ageMin: z.number().default(30),
         ageMax: z.number().default(65),
-        specialAdCategory: z.enum(['NONE', 'HOUSING', 'EMPLOYMENT', 'CREDIT', 'SOCIAL_ISSUES_ELECTIONS_POLITICS']).default('NONE').describe('Legally required special ad category. HOUSING for property ads, EMPLOYMENT for job ads, CREDIT for loans/cards. Meta will not publish an ad set that asks for Advantage+ audience inside a special category, so the launcher turns it off and says so.'),
+        specialAdCategory: z
+          .enum(['NONE', 'HOUSING', 'EMPLOYMENT', 'FINANCIAL_PRODUCTS_SERVICES', 'SOCIAL_ISSUES_ELECTIONS_POLITICS', 'CREDIT'])
+          .default('NONE')
+          .describe(
+            'Legally required special ad category. HOUSING for property ads, EMPLOYMENT for job ads, ' +
+              'FINANCIAL_PRODUCTS_SERVICES for loans/cards/insurance. Meta RETIRED the CREDIT category — ' +
+              'sending it is rejected outright ("The credit special ad category is no longer available") — so ' +
+              'CREDIT is accepted here only as a legacy alias and is sent to Meta as FINANCIAL_PRODUCTS_SERVICES. ' +
+              'Meta will not publish an ad set that asks for Advantage+ audience inside a special category, so the ' +
+              'launcher turns that lever off and says so.'
+          ),
         status: z.enum(['ACTIVE', 'PAUSED']).default('ACTIVE'),
       }),
       execute: async ({
@@ -348,6 +375,14 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           const SYMBOLS: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ' };
           const fmtMoney = (n: number) => `${SYMBOLS[currency] || `${currency} `}${n.toFixed(2)}`;
 
+          // The advertiser's own privacy page. `custom_domain` is the tenant's public site;
+          // otherwise their app page. Never a URL belonging to a different customer.
+          const tenantDomain = String((profile as any).custom_domain || '').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+          const appBase = String(process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/+$/, '');
+          const privacyPolicyUrl = tenantDomain
+            ? `https://${tenantDomain}/privacy-policy`
+            : `${appBase}/privacy-policy`;
+
           // Resolve page token
           let pageAccessToken = profile.selected_page_token;
           if (!pageAccessToken && token && pageId) {
@@ -357,7 +392,34 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
               if (pData?.access_token) pageAccessToken = pData.access_token;
             } catch (e) {}
           }
-          const tokenForPage = pageAccessToken || token;
+          /**
+           * A PAGE-LEVEL CALL NEEDS A PAGE TOKEN.
+           *
+           * Creating a lead form is a page operation, so a user token is refused with
+           * "#190 This method must be called with a Page Access Token". This used to
+           * silently fall back to the user token (`pageAccessToken || token`), which
+           * turned a real permissions gap into a confusing Graph error *after* the
+           * creative had already been uploaded — the agent then had no idea what to do
+           * and stopped, correctly, with the owner's approval already spent.
+           *
+           * Failing here instead, before anything is created, says what is actually
+           * wrong and what fixes it.
+           */
+          if (!pageAccessToken) {
+            return {
+              success: false,
+              reason: 'permissions',
+              needsOwnerAction: true,
+              error:
+                'Cannot create the instant lead form: this Facebook Page has no page access token on the account, ' +
+                'and Meta refuses lead-form calls made with a user token (#190 "This method must be called with a ' +
+                'Page Access Token"). The owner needs to reconnect Facebook from Profile → Connections and grant the ' +
+                'Page permission for "' + String((profile as any).selected_page_name || pageId) + '". ' +
+                'Nothing was created and nothing was spent.',
+              tried: { pageId, hadPageToken: false },
+            };
+          }
+          const tokenForPage = pageAccessToken;
 
           // 1. Upload Creative Image to Ad Account
           const imgFetch = await fetch(creativeImageUrl);
@@ -394,8 +456,16 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
             follow_up_action_url: whatsappRedirectUrl,
             question_page_custom_headline: 'Get Pricing & Details',
             question_page_custom_text: 'Confirm your details to view pricing & receive information on WhatsApp.',
+            /**
+             * The tenant's OWN privacy policy, never another client's.
+             *
+             * This was hardcoded to `https://bioqueestatesinternational.com/privacy` — one
+             * customer's domain baked into every other customer's lead form. That is a
+             * cross-tenant leak of one business's URL into another's public ad, and Meta
+             * rejects or flags a form whose stated policy is not the advertiser's.
+             */
             privacy_policy: {
-              url: 'https://bioqueestatesinternational.com/privacy',
+              url: privacyPolicyUrl,
               link_text: 'Privacy Policy',
             },
             questions: [
@@ -418,7 +488,12 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           });
           const formDataResp = await formRes.json();
           if (formDataResp.error || !formDataResp.id) {
-            throw new Error(`Lead Form creation error: ${formDataResp.error?.message || JSON.stringify(formDataResp)}`);
+            // Full Graph detail: a custom question without a usable label is a parameter
+            // error we can describe and fix, not a mystery.
+            throw new Error(
+              describeMetaError(formDataResp, 'Lead form rejected by Meta') ||
+                `Lead form creation returned no id: ${JSON.stringify(formDataResp).slice(0, 400)}`
+            );
           }
           const leadFormId = formDataResp.id;
 
@@ -453,7 +528,10 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
           });
           const campData = await campRes.json();
           if (campData.error || !campData.id) {
-            throw new Error(`Campaign creation error: ${campData.error?.message || JSON.stringify(campData)}`);
+            throw new Error(
+              describeMetaError(campData, 'Campaign creation rejected by Meta') ||
+                `Campaign creation returned no id: ${JSON.stringify(campData).slice(0, 400)}`
+            );
           }
           const campaignId = campData.id;
 

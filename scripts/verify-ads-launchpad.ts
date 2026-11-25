@@ -34,7 +34,14 @@ import {
 // The gender decision now lives in a pure helper, because a special ad category and Advantage+
 // audience each override it. The wiring check below proves it is called; the behaviour block after
 // it proves the helper is right, which a source grep never could.
-import { ageAndGenderTargeting, OPEN_AGE_RANGE, type AdvantagePlan } from '../lib/ads/advantage-plus';
+import {
+  SPECIAL_AD_CATEGORIES,
+  ageAndGenderTargeting,
+  detectSpecialAdCategories,
+  OPEN_AGE_RANGE,
+  type AdvantagePlan,
+} from '../lib/ads/advantage-plus';
+import { classifyMetaError, describeMetaError } from '../lib/ads/graph-error';
 
 let pass = 0;
 let fail = 0;
@@ -260,6 +267,82 @@ check('its lead form uses the same standard fields', /buildStandardQuestions\(fo
 check('its campaign objective comes from the plan', /objective: plan\.objective/.test(remarketing));
 check('its conversion event is no longer hardcoded', !/const customEventType = 'LEAD';/.test(remarketing));
 check('the old Email field is gone from its form', !/\{ type: "EMAIL", key: "email" \}/.test(remarketing));
+
+// ---------------------------------------------------------------------------
+// Meta retired the CREDIT special ad category, and we kept sending it.
+//
+// Measured on a live client: "The credit special ad category is no longer available.
+// Choose financial products and services instead. (code 100/…)". Every campaign that
+// declared CREDIT was rejected, so the account could not launch anything at all — and
+// the same rejection was shown to the owner in the dashboard.
+//
+// These assertions hold the wire payload to a name Meta accepts today, and hold the
+// error text to something an agent can act on instead of a bare "Invalid parameter".
+console.log('\n▸ the special ad category Meta actually accepts');
+check('CREDIT is no longer a category we send', !SPECIAL_AD_CATEGORIES.includes('CREDIT' as any), SPECIAL_AD_CATEGORIES.join(','));
+check(
+  'FINANCIAL_PRODUCTS_SERVICES is',
+  SPECIAL_AD_CATEGORIES.includes('FINANCIAL_PRODUCTS_SERVICES'),
+  SPECIAL_AD_CATEGORIES.join(',')
+);
+check(
+  'a saved CREDIT launch is rewritten, not rejected',
+  detectSpecialAdCategories({ explicit: ['CREDIT'] }).categories.join(',') === 'FINANCIAL_PRODUCTS_SERVICES',
+  detectSpecialAdCategories({ explicit: ['CREDIT'] }).categories.join(',')
+);
+check(
+  'a loans business is detected as a financial product, not a credit category',
+  detectSpecialAdCategories({ industry: 'home loans and EMI' }).categories.join(',') === 'FINANCIAL_PRODUCTS_SERVICES',
+  detectSpecialAdCategories({ industry: 'home loans and EMI' }).categories.join(',')
+);
+check('HOUSING still detects for property', detectSpecialAdCategories({ industry: 'real estate' }).categories.includes('HOUSING'));
+check('EMPLOYMENT still detects for hiring', detectSpecialAdCategories({ industry: 'hiring' }).categories.includes('EMPLOYMENT'));
+
+console.log('\n▸ a Meta error says which field and why');
+const blame = describeMetaError({
+  error: {
+    message: 'Invalid parameter',
+    code: 100,
+    error_subcode: 2490408,
+    error_user_title: 'Campaign not created',
+    error_user_msg: 'The credit special ad category is no longer available.',
+    error_data: { blame_field_specs: [{ field: 'special_ad_categories' }] },
+    fbtrace_id: 'AbCdEf',
+  },
+});
+check('it keeps the field name', Boolean(blame && blame.includes('special_ad_categories')), String(blame));
+check('it keeps Meta’s own explanation', Boolean(blame && blame.includes('no longer available')), String(blame));
+check('it keeps the subcode and trace', Boolean(blame && blame.includes('2490408') && blame.includes('AbCdEf')), String(blame));
+check(
+  'a bare "Invalid parameter" is never all we return',
+  String(blame) !== 'Meta rejected the request: Invalid parameter',
+  String(blame)
+);
+check('no graph error means no message', describeMetaError({ id: '123' }) === null);
+check('a #190 token error is permanent and a permissions gap', (() => {
+  const verdict = classifyMetaError({ error: { code: 190, message: 'This method must be called with a Page Access Token' } });
+  return verdict.reason === 'permissions' && verdict.permanent;
+})());
+check('a rate limit is retryable', classifyMetaError({ error: { code: 4, message: 'Application request limit reached' } }).permanent === false);
+check('a parameter error is not retryable', classifyMetaError({ error: { code: 100, message: 'Invalid parameter' } }).permanent === true);
+
+console.log('\n▸ an instant form never posts a question Meta will refuse');
+check(
+  'a custom question takes its wording from label, question, text or title',
+  /q\.label \?\? q\.question \?\? q\.text \?\? q\.title/.test(processor)
+);
+check(
+  'a question with no wording is dropped, not posted blank',
+  /if \(!label\) return null/.test(processor) && /\.filter\(Boolean\)/.test(processor)
+);
+check(
+  'a choice question needs two options or is asked as free text',
+  /validOptions\.length >= 2/.test(processor)
+);
+check(
+  'its failure names the field Meta blamed',
+  /describeMetaError\(formCreateData/.test(processor)
+);
 
 // ---------------------------------------------------------------------------
 console.log('\n================================================================');

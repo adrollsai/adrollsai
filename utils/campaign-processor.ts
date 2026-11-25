@@ -26,6 +26,7 @@ import {
 } from '@/lib/ads/preflight';
 import { checkCreative, inspectRemoteImage } from '@/lib/ads/creative-checks';
 import { META_GRAPH_URL } from '@/lib/ads/graph-version';
+import { describeMetaError } from '@/lib/ads/graph-error';
 
 const FB_MARKETING_URL = META_GRAPH_URL;
 
@@ -703,11 +704,25 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     })();
 
                 if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
-                    hasCustomQuestions = true;
                     metaCustomQuestions = rawQuestions.map((q: any) => {
-                        const label = (q.label || '').trim();
+                        /**
+                         * Meta's own words, from a live client's failed launch:
+                         *   "label must be specified for custom questions"
+                         *
+                         * A question arriving with no `label` was turned into
+                         * `{ type: 'CUSTOM', label: '' }` and posted anyway, so the WHOLE form was
+                         * rejected — the campaign shell existed, the form did not, and the agent
+                         * could only report a failure. Callers legitimately send the wording as
+                         * `question`/`text` instead of `label`, and a MULTIPLE_CHOICE with one or
+                         * no usable option is also invalid to Meta.
+                         *
+                         * So: take the wording from whichever field carries it, and return null for a
+                         * question that cannot be expressed, to be dropped below rather than posted.
+                         */
+                        const label = String(q.label ?? q.question ?? q.text ?? q.title ?? '').trim();
+                        if (!label) return null;
                         const lowerLabel = label.toLowerCase();
-                        
+
                         if (q.type !== 'MULTIPLE_CHOICE') {
                             if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
                             if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
@@ -716,14 +731,24 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         }
 
                         const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
+                        // Meta needs at least two options to render a choice question; anything
+                        // less is an invalid question, so it is asked as free text instead.
                         if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
                             const validOptions = q.options
-                                .filter((o: string) => o && o.trim() !== '')
-                                .map((opt: string) => ({ value: opt.trim(), key: opt.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }));
-                            if (validOptions.length > 0) metaQ.options = validOptions;
+                                .filter((o: string) => o && String(o).trim() !== '')
+                                .map((opt: string) => ({ value: String(opt).trim(), key: String(opt).trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }))
+                                .filter((o: any, i: number, arr: any[]) => arr.findIndex((x) => x.key === o.key) === i);
+                            if (validOptions.length >= 2) metaQ.options = validOptions;
+                            else logToFile(`[Processor] Dropping unusable options on "${label}" (${validOptions.length} valid); asking it as free text.`);
                         }
                         return metaQ;
-                    });
+                    }).filter(Boolean);
+
+                    if (metaCustomQuestions.length < rawQuestions.length) {
+                        logToFile(
+                            `[Processor] Dropped ${rawQuestions.length - metaCustomQuestions.length} custom question(s) with no usable label — Meta rejects a form carrying one.`
+                        );
+                    }
 
                     // A custom question must never duplicate a standard field the form
                     // already asks for — Meta rejects the same question twice, and the
@@ -735,6 +760,8 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                         seenTypes.add(q.type);
                         return true;
                     });
+
+                    hasCustomQuestions = metaCustomQuestions.length > 0;
                 }
 
                 const finalFollowUpUrl = linkUrl || "https://adrolls.in";
@@ -807,9 +834,14 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     logToFile(`Lead Form Created: ${leadFormId} (High Intent: ${isHighIntent})`);
                 } else {
                     logToFile("Lead Form Creation Failed:", formCreateData);
+                    // Name the field Meta blamed, not just its headline. "label must be specified
+                    // for custom questions" is actionable; "Invalid parameter" is not.
+                    const formFailure =
+                        describeMetaError(formCreateData, 'Meta rejected the instant lead form') ||
+                        `Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || 'Unknown Error'}`;
                     // If user had specified custom questions, don't silently pick a random old form with wrong questions
                     if (hasCustomQuestions) {
-                        throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                        throw new Error(formFailure);
                     }
                     
                     // Fallback only if no custom questions were required
@@ -829,7 +861,7 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     }
 
                     if (!leadFormId) {
-                        throw new Error(`Meta Lead Form Error: ${formCreateData.error?.error_user_msg || formCreateData.error?.message || "Unknown Error"}`);
+                        throw new Error(formFailure);
                     }
                 }
             }
