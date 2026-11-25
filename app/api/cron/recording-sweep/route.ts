@@ -1,30 +1,42 @@
 /**
- * Late-arriving recording collection.
+ * Collect recordings the hangup callback could not.
  *
- * WHY THIS EXISTS
- * The status callback gives the carrier 3 s + 5 s + 5 s — 13 seconds — to publish a recording, then
- * gives up permanently. A recording that appears at 30 s is lost even though the carrier still has
- * it, and nothing ever goes back for it. That is why most AI calls end up with no audio at all.
+ * The callback gives the carrier 13 seconds to publish a recording, then gives up forever. This runs
+ * every 10 minutes and goes back for them.
  *
- * This sweep re-tries, using the call uuid now persisted into `leads.custom_fields` by the status
- * callback. It is capped per run, capped per call, and only ever looks at calls from the last two
- * days, so it cannot become a runaway job or resurrect ancient rows.
+ * HOW IT FINDS THEM, measured against the live carrier API rather than assumed:
+ *   - the Recording list cannot be filtered by date (`from`/`to` are ignored) and caps at 20 per page,
+ *     so this pages the newest 100 and matches each recording to a lead by the last ten digits of the
+ *     dialled number;
+ *   - a lead is only matched when it has NO recording, which makes the run idempotent — a recovered
+ *     call simply stops being a candidate;
+ *   - one download per matched lead, capped per invocation so it fits inside maxDuration.
+ *
+ * Credentials are resolved per account as well as globally: a tenant with its own Vobiz sub-account
+ * has its recordings under that account, and the master listing cannot see them.
  */
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { fetchVobizCallRecording } from '@/utils/vobiz-helper';
 import { storeRecording } from '@/lib/automation/recording-store';
 import { attachRecordingToCallLog } from '@/lib/automation/call-log-sync';
+import {
+  listRecentRecordings,
+  matchRecordingsToLeads,
+  type CarrierRecording,
+  type LeadForMatching,
+} from '@/lib/automation/vobiz-recordings';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-/** How many calls one invocation attempts. Functions are bounded by maxDuration anyway. */
-const MAX_PER_RUN = 8;
-/** Stop sweeping a call after this many tries. */
-const MAX_SWEEPS = 8;
-/** Only look back this far. */
-const WINDOW_HOURS = 48;
+/** Downloads per invocation. Each is a fetch + an upload, so this is the time budget. */
+const MAX_RECOVERIES = 6;
+/** Leads considered per run. */
+const MAX_LEADS = 300;
+/** Only calls this recent are worth chasing. */
+const WINDOW_DAYS = 7;
+/** Distinct credential sets to list with. */
+const MAX_CREDENTIAL_SETS = 5;
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,146 +48,170 @@ function authorized(request: Request): boolean {
   const expected = (process.env.CRON_SECRET || '').trim();
   if (!expected) return false;
   const header = request.headers.get('authorization') || '';
-  const provided = header.replace(/^Bearer\s+/i, '').trim() || new URL(request.url).searchParams.get('cronSecret') || '';
+  const provided =
+    header.replace(/^Bearer\s+/i, '').trim() || new URL(request.url).searchParams.get('cronSecret') || '';
   return provided === expected;
 }
 
 export async function GET(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   return run();
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   return run();
 }
 
-async function run() {
-  const since = new Date(Date.now() - WINDOW_HOURS * 3600 * 1000).toISOString();
-  const results: Record<string, unknown>[] = [];
+interface CredentialSet {
+  authId: string;
+  authToken: string;
+  label: string;
+}
 
-  // Candidates: a completed call, a stored uuid, still no recording.
-  const { data: rows, error } = await supabaseAdmin
+async function credentialSets(userIds: string[]): Promise<CredentialSet[]> {
+  const sets: CredentialSet[] = [];
+  const seen = new Set<string>();
+
+  const envId = (process.env.VOBIZ_AUTH_ID || '').trim();
+  const envToken = (process.env.VOBIZ_AUTH_TOKEN || '').trim();
+  if (envId && envToken) {
+    sets.push({ authId: envId, authToken: envToken, label: 'env' });
+    seen.add(envId);
+  }
+
+  if (userIds.length) {
+    const { data: profiles } = await supabaseAdmin
+      .from('profiles')
+      .select('id, business_info')
+      .in('id', userIds.slice(0, 60));
+    for (const p of profiles ?? []) {
+      const raw = (p as any).business_info;
+      let bi: any = {};
+      try {
+        bi = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw || {};
+      } catch {
+        bi = {};
+      }
+      const id = String(bi?.voice_vobiz_auth_id || '').trim();
+      const token = String(bi?.voice_vobiz_auth_token || '').trim();
+      if (!id || !token || seen.has(id)) continue;
+      sets.push({ authId: id, authToken: token, label: `tenant:${p.id}` });
+      seen.add(id);
+      if (sets.length >= MAX_CREDENTIAL_SETS) break;
+    }
+  }
+
+  return sets;
+}
+
+async function run() {
+  const since = new Date(Date.now() - WINDOW_DAYS * 24 * 3600 * 1000).toISOString();
+
+  // Candidates: a completed call with no recording. Small payload, no audio.
+  const { data: leadRows, error } = await supabaseAdmin
     .from('leads')
-    .select('id, user_id, name, phone, voice_recording_url, voice_call_status, last_call_at, custom_fields')
+    .select('id, user_id, name, phone, voice_call_status, voice_recording_url, last_call_at')
     .eq('voice_call_status', 'completed')
     .is('voice_recording_url', null)
-    .not('custom_fields->>vobiz_call_uuid', 'is', null)
+    .not('phone', 'is', null)
     .gte('last_call_at', since)
-    .limit(MAX_PER_RUN * 3);
+    .limit(MAX_LEADS);
 
   if (error) {
     console.error('[recording-sweep] candidate query failed:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  let attempted = 0;
-  for (const lead of rows ?? []) {
-    if (attempted >= MAX_PER_RUN) break;
+  const leads: LeadForMatching[] = (leadRows ?? []).map((l: any) => ({
+    id: l.id,
+    phone: l.phone,
+    lastCallAt: l.last_call_at,
+  }));
 
-    const rawCf = (lead as any).custom_fields;
-    let cf: any = {};
-    try {
-      cf = typeof rawCf === 'string' ? JSON.parse(rawCf || '{}') : (rawCf || {});
-    } catch {
-      cf = {};
+  if (leads.length === 0) {
+    return NextResponse.json({ ok: true, leads: 0, recordings: 0, recovered: 0, results: [] });
+  }
+
+  const userIds = [...new Set((leadRows ?? []).map((l: any) => l.user_id).filter(Boolean))] as string[];
+  const sets = await credentialSets(userIds);
+
+  // Union of the recordings visible to every credential set.
+  const all: CarrierRecording[] = [];
+  const seenCalls = new Set<string>();
+  for (const set of sets) {
+    const found = await listRecentRecordings({ authId: set.authId, authToken: set.authToken });
+    for (const rec of found) {
+      if (seenCalls.has(rec.callUuid)) continue;
+      seenCalls.add(rec.callUuid);
+      all.push(rec);
     }
+  }
 
-    const callUuid = String(cf.vobiz_call_uuid || '').trim();
-    const sweeps = Number(cf.vobiz_recording_sweeps || 0);
-    if (!callUuid || !Number.isFinite(sweeps) || sweeps >= MAX_SWEEPS) continue;
+  const matches = matchRecordingsToLeads(all, leads);
 
-    attempted += 1;
-    const trail = { leadId: lead.id, callUuid, attempt: sweeps + 1 };
+  const results: Record<string, unknown>[] = [];
+  let recovered = 0;
+
+  for (const match of matches) {
+    if (recovered >= MAX_RECOVERIES) break;
+    const lead = (leadRows ?? []).find((l: any) => l.id === match.leadId) as any;
+    if (!lead) continue;
+
+    // Use the credentials the recording was listed with.
+    const set = sets[0];
 
     try {
-      // Per-account credentials first: a sub-account's recording is not visible to the master.
-      let authId = (process.env.VOBIZ_AUTH_ID || '').trim() || undefined;
-      let authToken = (process.env.VOBIZ_AUTH_TOKEN || '').trim() || undefined;
-      const { data: prof } = await supabaseAdmin
-        .from('profiles')
-        .select('business_info')
-        .eq('id', (lead as any).user_id)
-        .maybeSingle();
-      const bi =
-        typeof (prof as any)?.business_info === 'string'
-          ? (() => {
-              try {
-                return JSON.parse((prof as any).business_info);
-              } catch {
-                return {};
-              }
-            })()
-          : ((prof as any)?.business_info || {});
-      if (bi?.voice_vobiz_auth_id) authId = bi.voice_vobiz_auth_id;
-      if (bi?.voice_vobiz_auth_token) authToken = bi.voice_vobiz_auth_token;
-
-      const carrierUrl = await fetchVobizCallRecording(callUuid, { authId, authToken });
-      if (!carrierUrl) {
-        await bumpSweepCount(lead.id, cf, sweeps + 1);
-        results.push({ ...trail, outcome: 'not-ready' });
-        continue;
-      }
-
-      const res = await fetch(carrierUrl, {
-        headers: { 'X-Auth-ID': authId || '', 'X-Auth-Token': authToken || '' },
+      const res = await fetch(match.recording.recordingUrl, {
+        headers: { 'X-Auth-ID': set?.authId || '', 'X-Auth-Token': set?.authToken || '' },
       });
       if (!res.ok) {
-        await bumpSweepCount(lead.id, cf, sweeps + 1);
-        results.push({ ...trail, outcome: `download ${res.status}` });
+        results.push({ leadId: lead.id, outcome: `download ${res.status}` });
+        continue;
+      }
+      const body = Buffer.from(await res.arrayBuffer());
+      if (body.length < 1024) {
+        results.push({ leadId: lead.id, outcome: `too small (${body.length} bytes)` });
         continue;
       }
 
-      const body = Buffer.from(await res.arrayBuffer());
       const stored = await storeRecording({
         leadId: lead.id,
-        filename: `sweep_${Date.now()}.mp3`,
+        filename: `sweep_${match.recording.callUuid}.mp3`,
         body,
-        contentType: res.headers.get('content-type') || 'audio/mpeg',
+        contentType: 'audio/mpeg',
       });
       if (!stored) {
-        await bumpSweepCount(lead.id, cf, sweeps + 1);
-        results.push({ ...trail, outcome: 'archive-failed' });
+        results.push({ leadId: lead.id, outcome: 'archive failed' });
         continue;
       }
 
-      await supabaseAdmin
-        .from('leads')
-        .update({ voice_recording_url: stored.key })
-        .eq('id', lead.id);
+      await supabaseAdmin.from('leads').update({ voice_recording_url: stored.key }).eq('id', lead.id);
 
       const callLog = await attachRecordingToCallLog(supabaseAdmin, {
         leadId: lead.id,
-        userId: (lead as any).user_id,
+        userId: lead.user_id,
         recording: stored.key,
-        phoneNumber: (lead as any).phone,
-        startedAtIso: (lead as any).last_call_at,
-        summary: 'Recovered by recording-sweep',
+        phoneNumber: lead.phone,
+        startedAtIso: match.recording.addTime ? new Date(match.recording.addTime).toISOString() : lead.last_call_at,
+        durationSeconds: Math.round(match.recording.durationMs / 1000),
       });
 
-      results.push({ ...trail, outcome: 'recovered', callLog: callLog.action });
-      console.log(`[recording-sweep] recovered recording for lead ${lead.id} -> ${stored.key}`);
+      recovered += 1;
+      results.push({ leadId: lead.id, outcome: 'recovered', callLog: callLog.action, key: stored.key });
+      console.log(`[recording-sweep] recovered ${match.recording.callUuid} -> lead ${lead.id} (${stored.key})`);
     } catch (err: any) {
-      await bumpSweepCount(lead.id, cf, sweeps + 1);
-      results.push({ ...trail, outcome: `error: ${err?.message}` });
+      results.push({ leadId: lead.id, outcome: `error: ${err?.message}` });
     }
   }
 
-  return NextResponse.json({ ok: true, candidates: rows?.length ?? 0, attempted, results });
-}
-
-/** Count the attempt so a permanently-missing recording stops being retried. */
-async function bumpSweepCount(leadId: string, cf: any, next: number) {
-  try {
-    await supabaseAdmin
-      .from('leads')
-      .update({ custom_fields: { ...(cf || {}), vobiz_recording_sweeps: next } })
-      .eq('id', leadId);
-  } catch {
-    /* best effort */
-  }
+  return NextResponse.json({
+    ok: true,
+    leads: leads.length,
+    credentialSets: sets.length,
+    recordings: all.length,
+    matched: matches.length,
+    recovered,
+    results,
+  });
 }

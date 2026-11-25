@@ -73,7 +73,28 @@ export async function GET(req: Request) {
             return NextResponse.json({ flaggedQuestions: [] })
         }
 
-        return NextResponse.json({ flaggedQuestions: data || [] })
+        // The nested lead recording is rendered in a player, so sign it. An R2 key or a legacy
+        // private-bucket path is unplayable as-is.
+        const resolved = await Promise.all(
+          (data || []).map(async (row: any) => {
+            const stored = row?.leads?.voice_recording_url
+            if (!stored) return row
+            try {
+              const { playableRecordingUrl } = await import('@/lib/automation/recording-store')
+              const { createClient } = await import('@supabase/supabase-js')
+              const admin = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+              )
+              const playable = await playableRecordingUrl(admin as any, stored)
+              return { ...row, leads: { ...row.leads, voice_recording_url: playable || stored } }
+            } catch {
+              return row
+            }
+          })
+        )
+
+        return NextResponse.json({ flaggedQuestions: resolved })
 
     } catch (e: any) {
         console.warn('[QUESTIONS LIST API] Exception:', e.message)

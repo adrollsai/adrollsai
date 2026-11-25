@@ -7,6 +7,23 @@ const supabaseAdmin = createSupabaseAdmin(
     { auth: { persistSession: false } }
 );
 
+/**
+ * Turn a stored recording value into something a browser can play.
+ *
+ * The column is an R2 object key, or — on rows written before the archive path existed — a
+ * `/object/public/...` path into the PRIVATE lead-voice-recordings bucket, which returns 400.
+ * Falls back to the stored value rather than null: a broken link beats a vanished one.
+ */
+async function resolveStoredRecording(stored: string | null | undefined): Promise<string | null> {
+    if (!stored) return null;
+    try {
+        const { playableRecordingUrl } = await import('@/lib/automation/recording-store');
+        return (await playableRecordingUrl(supabaseAdmin as any, stored)) || stored;
+    } catch {
+        return stored;
+    }
+}
+
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
@@ -42,7 +59,11 @@ export async function GET(req: Request) {
             status: lead.voice_call_status || 'calling',
             summary: lead.voice_call_summary || null,
             transcript: lead.voice_call_transcript || [],
-            recordingUrl: lead.voice_recording_url || null,
+            // Signed, not raw: the column is a key or a private-bucket path, neither of which a
+            // browser can play as-is.
+            recordingUrl: lead.voice_recording_url
+                ? (await resolveStoredRecording(lead.voice_recording_url)) || lead.voice_recording_url
+                : null,
             pipelineStage: lead.pipeline_stage || 'New Lead',
             isAppointmentBooked
         });
