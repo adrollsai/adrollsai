@@ -237,7 +237,38 @@ export function buildSiteHtml(
   const wa = digits(profile.whatsapp_phone_number || profile.contact_number)
   const email = (profile.email || '').trim()
   const address = (profile.address || '').trim()
-  const city = address.split(',').slice(-1)[0]?.trim() || ''
+  /**
+   * The locality used in the page title and social cards.
+   *
+   * Taking the LAST comma segment of `address` is wrong for Indian addresses, which end in a
+   * pincode: "Jabalpur, Madhya Pradesh, 482001" produced the title
+   * "Sashakt Bharat Gurukul · 482001". An address with no comma at all produced worse — the
+   * whole street line ended up in the <title>.
+   *
+   * So walk the segments from the end and take the first that reads like a place: not purely
+   * numeric, not a pincode, and short enough to be a locality rather than a street address.
+   * A trailing pincode inside the segment ("Jabalpur 482001") is stripped. If nothing
+   * qualifies the title is just the business name, which is always correct.
+   */
+  const city = ((): string => {
+    const segments = String(address || '').split(',').map(s => s.trim()).filter(Boolean)
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const withoutPin = segments[i]
+        .replace(/\b\d{5,6}\b/g, '')
+        // "Mysuru –" is left behind when a pincode is stripped after a dash.
+        .replace(/[\s\-–—/|,]+$/, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim()
+      if (!withoutPin) continue
+      if (/^\d+$/.test(withoutPin)) continue
+      // A street address ("Sector 9 Gulabgarh Road Derabassi", "House 12, Block C") is too long
+      // and too specific to work as a title suffix.
+      if (withoutPin.length > 32) continue
+      if (withoutPin.split(/\s+/).length > 4) continue
+      return withoutPin
+    }
+    return ''
+  })()
   const canonical = (opts.baseUrl || siteBaseUrl(profile)).replace(/\/$/, '')
   // Absolute origin for social images (crawlers need absolute URLs); falls back
   // to a relative path rather than inventing a domain we cannot verify.
