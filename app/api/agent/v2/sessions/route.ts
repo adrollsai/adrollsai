@@ -127,9 +127,52 @@ export async function GET(req: Request) {
       pendingApprovals: approvalCounts.get(s.id) ?? 0,
       lastRun: lastRunBySession.get(s.id) ?? null,
     })),
-    workspaces,
+    /**
+     * EVERY THREAD NEEDS SOMEWHERE TO APPEAR.
+     *
+     * `harness_workspaces` is empty platform-wide — not one session anywhere has a matching row —
+     * so the client falls back to its default folder list, which knows only `ws_default`. A session
+     * saved under any other workspace (`daily`, `ws_ceo`, a generated `ws_<ts>`) was then returned by
+     * the API and rendered nowhere: present, and unreachable. Measured: 10 threads across 4 accounts.
+     *
+     * So the folders are derived from the sessions themselves. Read-only — no rows are written, so
+     * this cannot invent structure a user has to tidy up later.
+     */
+    workspaces: withSessionFolders(workspaces, visible),
     ceoSessionId,
   });
+}
+
+/**
+ * Merge the real workspace rows with a folder for every workspace a returned session actually uses.
+ *
+ * The permanent CEO conversation (`ceo`) is skipped: it is pinned above the tree, not listed in it.
+ */
+function withSessionFolders(
+  workspaces: Array<{ id: string; name: string }>,
+  sessions: Array<{ workspaceId: string }>
+): Array<{ id: string; name: string }> {
+  const out = [...workspaces];
+  const seen = new Set(out.map((w) => w.id));
+  for (const session of sessions) {
+    const id = String(session.workspaceId || '').trim();
+    if (!id || id === 'ceo' || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id, name: workspaceLabel(id) });
+  }
+  return out;
+}
+
+/** A folder name for a workspace id: `ws_default` reads as "General", `daily` as "Daily". */
+function workspaceLabel(id: string): string {
+  if (id === 'ws_default' || id === 'default') return 'General';
+  if (id === 'ws_ceo') return 'CEO';
+  const stripped = id.replace(/^ws_/, '');
+  // A generated id (`ws_1794210592088`) carries no meaning worth showing.
+  if (/^\d{6,}$/.test(stripped)) return 'Workspace';
+  const words = stripped.replace(/[_-]+/g, ' ').trim();
+  if (!words) return 'Workspace';
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** POST /api/agent/v2/sessions — create a session or a workspace. */

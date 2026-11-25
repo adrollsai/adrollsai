@@ -328,7 +328,14 @@ async function main() {
         .catch(() => {});
     }
 
-    await cdp.send('Page.navigate', { url: `${BASE}/dashboard/agent` });
+    // Open the seeded conversation BY LINK.
+    //
+    // The tab no longer adopts "the most recent chat" on load — by the owner's rule a visit starts a
+    // new session — so relying on adoption left this gate staring at the welcome screen. `?session=`
+    // is the supported way to open a named thread, and it is what the sidebar and CEO tab use.
+    await cdp.send('Page.navigate', {
+      url: `${BASE}/dashboard/agent?session=${encodeURIComponent(seeded.sessionId)}`,
+    });
 
     const evaluate = async (expression) => {
       const res = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
