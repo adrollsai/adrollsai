@@ -571,12 +571,32 @@ function CRMPageContent() {
   }, [isFormFilterOpen])
   // Whether the filter panel is open survives too: coming back to a filtered list with the panel
   // collapsed makes it look as though nothing is filtered.
-  const [showFilters, setShowFilters] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('crm_show_filters') ?? sessionStorage.getItem('crm_show_filters')) === 'true'
+  /**
+   * The filters sheet always starts CLOSED.
+   *
+   * It used to restore whatever the storage said, which turned a full-screen modal into a trap: open
+   * Filters once, and from then on every visit to the CRM — including a reload — dropped you inside a
+   * modal covering the list, with no Escape handler to get out. The filter VALUES are still remembered
+   * (those are genuinely useful); only the "sheet is open" flag is not.
+   */
+  const [showFilters, setShowFilters] = useState(false)
+  // Clear the flag older sessions left behind, so nobody stays stuck inside the sheet.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('crm_show_filters')
+      sessionStorage.removeItem('crm_show_filters')
+    } catch {}
+  }, [])
+
+  // Escape closes the sheet, the way every other modal on the web behaves.
+  useEffect(() => {
+    if (!showFilters) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowFilters(false)
     }
-    return false
-  })
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showFilters])
   const [isMobileControlsCollapsed, setIsMobileControlsCollapsed] = useState(true)
 
   // --- VIEW MODE & DNP MANAGER STATE ---
@@ -855,8 +875,7 @@ function CRMPageContent() {
       sessionStorage.setItem('crm_filter_form', selectedForm)
       localStorage.setItem('crm_filter_csv', selectedCsvAudience)
       sessionStorage.setItem('crm_filter_csv', selectedCsvAudience)
-      localStorage.setItem('crm_show_filters', String(showFilters))
-      sessionStorage.setItem('crm_show_filters', String(showFilters))
+      // The sheet's open state is deliberately NOT stored: see the comment on showFilters above.
 
       if (crmCustomDate) {
         localStorage.setItem('crm_filter_custom_date', crmCustomDate)
