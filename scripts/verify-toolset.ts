@@ -13,6 +13,7 @@ dotenv.config({ path: '.env.local' });
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
 import { ALL_GROUPS } from '../lib/agent/tool-groups';
+import { PIPELINE_IDS } from '../lib/agent/pipelines/registry';
 
 const tok = (s: string) => Math.round(s.length / 4);
 
@@ -133,8 +134,15 @@ const CASES: { name: string; text: string; needs: string[] }[] = [
     const described = (ctx.systemPrompt.match(/'([a-z0-9_]{4,})'/g) || [])
       .map((s) => s.replace(/'/g, ''))
       .filter((n) => n.includes('_') && !n.startsWith('sandbox_publish') );
+    /**
+     * Pipeline ids are workflow names, not tools: the prompt says `start_pipeline` with the pipeline
+     * "ad_launch", and those ids are legitimate vocabulary the model needs. They are excluded by name
+     * from the source of truth rather than by loosening the rule, so a prompt that mentions a TOOL
+     * which does not exist is still caught.
+     */
+    const pipelineIds = new Set<string>(PIPELINE_IDS);
     const ghosts = [...new Set(described)].filter(
-      (n) => !cost.names.includes(n) && !['ads_mcp_management', 'image_to_video'].includes(n)
+      (n) => !cost.names.includes(n) && !pipelineIds.has(n) && !['ads_mcp_management', 'image_to_video'].includes(n)
     );
 
     const ok = missing.length === 0 && ghosts.length === 0;

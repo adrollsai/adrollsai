@@ -20,6 +20,7 @@ import { createRoutineTools } from './tools/routine';
 import { createRegisteredVoiceTools } from './tools/voice';
 import { createComposedAdTools } from './tools/ads';
 import { createAdLaunchpadTools } from './tools/ad-launchpad';
+import { createPipelineTools } from './tools/pipeline';
 import { createCallingCampaignTools } from './tools/calling';
 import { createCatalogueTools } from './tools/catalogue';
 import { createDataQueryTools } from './tools/data-query';
@@ -304,6 +305,9 @@ export async function createAgentContext(
     // The ads launchpad as a conversation: the same questions the Ads tab asks, rendered as tappable
     // options in the chat, ending in the same launch input the composed tool takes.
     ...(has('meta') ? createAdLaunchpadTools(supabase, userId) : {}),
+    // The boilerplates for every workflow this app does: one tool, driven by a data registry, so a
+    // fresh session does not have to reinvent the question order each time.
+    ...createPipelineTools(supabase, userId),
     // Calling campaigns: the UI's bulk dialer had no agent path at all, so "call my 400 Diwali leads" was answered
     // with one call or a pointer to the dashboard. Capped, gated, and stoppable without approval.
     ...(has('automation') || has('meta') ? createCallingCampaignTools(supabase, userId) : {}),
@@ -850,9 +854,14 @@ META ADS — you manage the user's CONNECTED ad account directly:
 - 'meta_mcp_launch_leadgen_campaign': one-shot launcher that builds form + campaign + ad set + creative + ad in a single call.
 - 'meta_official_list_tools' / 'meta_official_call_tool': Meta's OFFICIAL remote ads MCP server (mcp.facebook.com/ads). Prefer these when available. They require the "ads_mcp_management" permission; connected tokens currently lack it, so a 401 with remediation means fall back to the meta_graph_* tools rather than giving up.
 HOW TO LAUNCH - COMPOSED FIRST, PRIMITIVES ALWAYS AVAILABLE:
+- 'start_pipeline': THE HEADSTART FOR EVERY WORKFLOW THIS APP ALREADY DOES. Call it with NO pipeline to get the menu of workflows, and the owner picks with one tap; then call it again with the pipeline id and the answers so far, and again with their reply as justAnswered, until it returns ready:true with the exact composed-tool call to make. The pipelines are ad_launch, whatsapp_template, calling_campaign, custom_audience, retargeting_campaign and inventory_product — the same questions each screen asks, in the same order, as buttons instead of prose.
+  * Reach for this FIRST for anything that maps to one of those workflows, especially "create/submit a template", "call my leads", "build an audience", "retarget", "add this product". Do not re-derive the question order in a new session, and do not hand-build with primitives what a pipeline already covers.
+  * A vague request ("do the marketing thing", "set up my ads") should OPEN THE MENU — call start_pipeline with no pipeline rather than guessing which workflow was meant.
+  * Pipelines are boilerplate, not a cage: when the request needs something no pipeline has a field for, say so and do it with the primitives. The notes a pipeline returns tell you what to honour that it could not express as an argument.
+  * Never ask in prose a question a pipeline renders as buttons, and never re-ask a question the owner already answered — pass what they said as answers and continue from what is missing.
 - 'get_ads_readiness': connected account, page, pixel, currency, the URL the ads point at, and the minimum budget. Call it FIRST for any ads request; a launch without these fails inside Meta with a code nobody can act on.
 - 'launch_meta_campaign': the DEFAULT for "run a campaign / get me leads / advertise this". It resolves the objective, the ad-set optimisation, whether an instant form is needed and which questions it carries, then creates the campaign, ad set, creatives and ads - through the same plan and processor the ads screen uses, so a launch from chat and a launch from the modal cannot disagree.
-- 'ad_launchpad': THE HEADSTART for "launch a campaign / run an ad / get me leads". Start here — not with launch_meta_campaign, and never by hand-building the campaign. It walks the owner through the same launchpad the Ads tab uses, one question at a time, and each question comes back as a card with tappable options plus a free-text box: what the campaign should bring (leads / quality leads / conversions / WhatsApp chats), what the ads should show (an image from their library, an upload, or one you create), which creative and which product, the daily budget, and finally "anything you want me to follow?". Call it with no answers to begin, then again with the accumulated answers and their reply as justAnswered. When it returns ready:true, call launch_meta_campaign with the launch input it hands you.
+- 'ad_launchpad': the ad-specific shortcut for the same thing as start_pipeline('ad_launch'). Either is correct for a campaign; prefer start_pipeline when the request is not clearly an ad launch, so the owner sees every workflow they can run.
   * NEVER ask in prose a question the launchpad renders as buttons. A picker is faster than typing and cannot be misread. When a choice is the owner's to make anywhere else too, ask it through request_user_input with options rather than listing alternatives in a paragraph.
   * The free-text box is for what the launchpad has no field for (audience, offer, tone, what to avoid). Honour it, and reach for the primitives below when they do something the launchpad cannot — the launchpad is a headstart, not a cage.
   * If the owner has already answered unprompted ("500 a day, use the Dholera photos, leads"), do not re-ask: pass those as answers and continue from whatever is still missing.
