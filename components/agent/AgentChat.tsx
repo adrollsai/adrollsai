@@ -1899,11 +1899,24 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
             </div>
           )}
 
-          {/* Folder & Nested Sessions List. The CEO folder is excluded here: it has its
-              own pinned row above, and showing it twice would be two ways to the same
-              thread. */}
+          {/* Folder & Nested Sessions List.
+              The CEO folder is normally excluded here: it has its own pinned row above, and
+              showing it twice would be two ways to the same thread.
+
+              That rule hid real threads. The pinned row opens the ONE permanent CEO
+              conversation (ceoSessionId); any OTHER thread stored in the CEO folder had no
+              route to it at all — the folder was gone from the tree and the pin pointed
+              somewhere else. A live client's two campaign threads were exactly that: present,
+              returned by the API, and invisible. So the folder stays excluded only while it
+              holds nothing but the pinned conversation. */}
           <div className="space-y-2">
-            {allWorkspaces.filter((ws) => ws.id !== CEO_WORKSPACE_ID).map((ws) => {
+            {allWorkspaces
+              .filter(
+                (ws) =>
+                  ws.id !== CEO_WORKSPACE_ID ||
+                  allSessions.some((s) => s.workspaceId === CEO_WORKSPACE_ID && s.id !== ceoSessionId)
+              )
+              .map((ws) => {
               const isWsActive = ws.id === activeWorkspaceId;
               const wsSessions = allSessions.filter((s) => {
                 if (s.workspaceId !== ws.id) return false;

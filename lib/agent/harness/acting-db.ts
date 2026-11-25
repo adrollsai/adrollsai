@@ -34,16 +34,20 @@
  * Nothing changes for a normal request: when there is no impersonation this returns the caller's own
  * client and RLS keeps doing the work.
  */
-import { createClient as createServerClient } from '@/utils/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-/** A service-role client. Returns null when the environment cannot supply one. */
-export function serviceRoleClient(): SupabaseClient | null {
+/**
+ * A service-role client, created lazily.
+ *
+ * `await import` rather than `require`: this module is reachable from an ESM bundle (the ops gates and
+ * the verification scripts), where a bare `require` throws "Dynamic require of @supabase/supabase-js
+ * is not supported". Only an impersonating request ever pays for the import.
+ */
+export async function serviceRoleClient(): Promise<SupabaseClient | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return null;
-  // Required lazily: the anon/server client path must not pay for this import.
-  const { createClient } = require('@supabase/supabase-js');
+  const { createClient } = await import('@supabase/supabase-js');
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
@@ -59,7 +63,7 @@ export async function harnessDataClient(
   actingUserId: string
 ): Promise<SupabaseClient> {
   if (!actingUserId || actingUserId === callerId) return callerClient;
-  const admin = serviceRoleClient();
+  const admin = await serviceRoleClient();
   if (!admin) {
     console.warn(
       '[Harness] impersonating but no SUPABASE_SERVICE_ROLE_KEY is configured — the impersonated account will appear empty.'
@@ -67,10 +71,4 @@ export async function harnessDataClient(
     return callerClient;
   }
   return admin;
-}
-
-/** Convenience: the caller's own client plus the id they are acting for, in one call. */
-export async function harnessClientFor(callerId: string, actingUserId: string): Promise<SupabaseClient> {
-  const callerClient = await createServerClient();
-  return harnessDataClient(callerClient, callerId, actingUserId);
 }
