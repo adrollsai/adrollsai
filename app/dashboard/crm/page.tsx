@@ -66,6 +66,22 @@ function normalizeFilterLabel(value: any): string {
     .toLowerCase()
 }
 
+/**
+ * People lists are shown alphabetically.
+ *
+ * Team members arrived in whatever order the query returned — effectively the order they were invited
+ * — so picking a name from an "Assigned Agent" list meant scanning it or typing. A list of people has no
+ * meaningful intrinsic order; the only useful one is the one the reader can predict.
+ *
+ * `numeric` keeps "Agent 2" before "Agent 10", and `sensitivity: 'base'` ignores case.
+ */
+function sortByDisplayName<T extends { business_name?: any; full_name?: any; email?: any }>(people: T[]): T[] {
+  const label = (p: T) => String(p?.business_name || p?.full_name || p?.email || '')
+  return [...people].sort((a, b) =>
+    label(a).localeCompare(label(b), undefined, { sensitivity: 'base', numeric: true })
+  )
+}
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -1385,7 +1401,7 @@ function CRMPageContent() {
               const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', user.id).single()
               if (targetProfile) finalTeam.push(targetProfile)
             }
-            setTeam(finalTeam)
+            setTeam(sortByDisplayName(finalTeam))
           } else if (['super_admin', 'agency', 'admin'].includes(currentRole)) {
             // Strict Workspace Isolation: Only fetch staff/agents belonging directly to this workspace
             const { data: teamData } = await supabase.from('profiles')
@@ -1398,7 +1414,7 @@ function CRMPageContent() {
               const { data: targetProfile } = await supabase.from('profiles').select('id, business_name, full_name, role').eq('id', targetUserId).single()
               if (targetProfile) finalTeam.push(targetProfile)
             }
-            setTeam(finalTeam)
+            setTeam(sortByDisplayName(finalTeam))
           } else {
             setTeam([{ id: user.id, business_name: profile?.business_name || profile?.full_name || 'You', full_name: profile?.full_name || profile?.business_name || 'You' }])
           }
@@ -3330,7 +3346,87 @@ END:VCARD\n`
 
                         {/* Modal Body */}
                         <div className="p-5 sm:p-6 overflow-y-auto custom-scrollbar space-y-5 bg-slate-50/50">
-                            {/* Section 1: Marketing Source & Campaigns */}
+                            {/* Section 1: Date Created & Timeline */}
+                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                    <Calendar size={14} className="text-emerald-600" /> Date Created & Timeline
+                                </h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {/* Date Range Preset */}
+                                    <div className="relative flex-1">
+                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Date Created Preset</label>
+                                        <select value={selectedDateRange} onChange={(e) => setSelectedDateRange(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
+                                            <option value="ALL">All Time</option>
+                                            <option value="TODAY">Today</option>
+                                            <option value="YESTERDAY">Yesterday</option>
+                                            <option value="7D">Last 7 Days</option>
+                                            <option value="30D">Last 30 Days</option>
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
+                                    </div>
+
+                                    {/* Custom Date Pickers */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="block text-[10px] font-black text-blue-600 uppercase">Custom Specific Date / Range</label>
+                                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setCrmDateFilterMode('single'); setCrmStartDate(''); setCrmEndDate(''); }}
+                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
+                                                >
+                                                    Single
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setCrmDateFilterMode('range'); setCrmCustomDate(''); }}
+                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
+                                                >
+                                                    Range
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {crmDateFilterMode === 'single' ? (
+                                            <input
+                                                type="date"
+                                                value={crmCustomDate}
+                                                onChange={(e) => {
+                                                    setCrmCustomDate(e.target.value)
+                                                    setCrmStartDate('')
+                                                    setCrmEndDate('')
+                                                }}
+                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                            />
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input
+                                                    type="date"
+                                                    value={crmStartDate}
+                                                    placeholder="Start Date"
+                                                    onChange={(e) => {
+                                                        setCrmStartDate(e.target.value)
+                                                        setCrmCustomDate('')
+                                                    }}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                />
+                                                <input
+                                                    type="date"
+                                                    value={crmEndDate}
+                                                    placeholder="End Date"
+                                                    onChange={(e) => {
+                                                        setCrmEndDate(e.target.value)
+                                                        setCrmCustomDate('')
+                                                    }}
+                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section 2: Marketing Source & Campaigns */}
                             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
                                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                                     <Target size={14} className="text-blue-600" /> Marketing Source & Campaigns
@@ -3675,7 +3771,7 @@ END:VCARD\n`
                                 </div>
                             </div>
 
-                            {/* Section 2: Ownership & Pipeline Stage */}
+                            {/* Section 3: Ownership & Pipeline Stage */}
                             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
                                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                                     <Users size={14} className="text-indigo-600" /> Ownership & Pipeline Stage
@@ -3736,7 +3832,7 @@ END:VCARD\n`
                                 </div>
                             </div>
 
-                            {/* Section 3: Follow-Up & Call Status */}
+                            {/* Section 4: Follow-Up & Call Status */}
                             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
                                 <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                                     <Clock size={14} className="text-purple-600" /> Actions & Call Status
@@ -3788,85 +3884,6 @@ END:VCARD\n`
                                 </div>
                             </div>
 
-                            {/* Section 4: Date Created & Custom Date Range */}
-                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-                                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                                    <Calendar size={14} className="text-emerald-600" /> Date Created & Timeline
-                                </h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Date Range Preset */}
-                                    <div className="relative flex-1">
-                                        <label className="block text-[10px] font-black text-slate-500 uppercase mb-1.5">Date Created Preset</label>
-                                        <select value={selectedDateRange} onChange={(e) => setSelectedDateRange(e.target.value)} className="w-full appearance-none bg-slate-50 hover:bg-slate-100/80 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl py-3 pl-3 pr-8 outline-none focus:ring-4 focus:ring-blue-500/20 transition-all cursor-pointer truncate">
-                                            <option value="ALL">All Time</option>
-                                            <option value="TODAY">Today</option>
-                                            <option value="YESTERDAY">Yesterday</option>
-                                            <option value="7D">Last 7 Days</option>
-                                            <option value="30D">Last 30 Days</option>
-                                        </select>
-                                        <ChevronDown size={14} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none" />
-                                    </div>
-
-                                    {/* Custom Date Pickers */}
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <label className="block text-[10px] font-black text-blue-600 uppercase">Custom Specific Date / Range</label>
-                                            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setCrmDateFilterMode('single'); setCrmStartDate(''); setCrmEndDate(''); }}
-                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'single' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
-                                                >
-                                                    Single
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setCrmDateFilterMode('range'); setCrmCustomDate(''); }}
-                                                    className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${crmDateFilterMode === 'range' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500'}`}
-                                                >
-                                                    Range
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {crmDateFilterMode === 'single' ? (
-                                            <input
-                                                type="date"
-                                                value={crmCustomDate}
-                                                onChange={(e) => {
-                                                    setCrmCustomDate(e.target.value)
-                                                    setCrmStartDate('')
-                                                    setCrmEndDate('')
-                                                }}
-                                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
-                                            />
-                                        ) : (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <input
-                                                    type="date"
-                                                    value={crmStartDate}
-                                                    placeholder="Start Date"
-                                                    onChange={(e) => {
-                                                        setCrmStartDate(e.target.value)
-                                                        setCrmCustomDate('')
-                                                    }}
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
-                                                />
-                                                <input
-                                                    type="date"
-                                                    value={crmEndDate}
-                                                    placeholder="End Date"
-                                                    onChange={(e) => {
-                                                        setCrmEndDate(e.target.value)
-                                                        setCrmCustomDate('')
-                                                    }}
-                                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-500"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* Modal Footer */}

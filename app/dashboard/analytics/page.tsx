@@ -852,7 +852,16 @@ export default function AnalyticsPage() {
           setHistory(historyLeads)
 
           // Compute team metrics
-          const rawTeam = teamMembers || []
+          // Alphabetical by name: this list feeds the "rep" filter dropdown as well as the matrix, and a
+          // list of people has no meaningful order other than the one the reader can predict. Same rule
+          // as SearchableSelect and the CRM filters.
+          const rawTeam = [...(teamMembers || [])].sort((a: any, b: any) =>
+            String(a?.business_name || a?.full_name || a?.email || '').localeCompare(
+              String(b?.business_name || b?.full_name || b?.email || ''),
+              undefined,
+              { sensitivity: 'base', numeric: true }
+            )
+          )
 
           // Same accounting pass the Followup Board and Action Report use, so the matrix can
           // never quote a third number for the same rep and day.

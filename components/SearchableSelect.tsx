@@ -157,15 +157,37 @@ export default function SearchableSelect({
     return () => clearTimeout(t)
   }, [isOpen])
 
+  /**
+   * Options are shown ALPHABETICALLY, by default and always.
+   *
+   * These lists arrive in whatever order their source happened to return — team members by the order
+   * they were invited, campaigns by creation, stages by pipeline position — so finding one meant
+   * scanning the whole list or typing into the search box. A filter list has no meaningful intrinsic
+   * order; the only useful one is the one the reader can predict.
+   *
+   * Sorted here rather than at each call site so every filter dropdown in the product agrees, and
+   * `localeCompare` with `numeric` keeps "Batch 2" before "Batch 10" instead of after it.
+   *
+   * A leading "All…" row is rendered separately by the panel, so it stays pinned at the top.
+   */
+  const sortedOptions = useMemo(() => {
+    const byLabel = (a: SearchableSelectOption, b: SearchableSelectOption) =>
+      String(a.label ?? '').localeCompare(String(b.label ?? ''), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      })
+    return [...options].sort(byLabel)
+  }, [options])
+
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return options
-    return options.filter((opt) => {
+    if (!q) return sortedOptions
+    return sortedOptions.filter((opt) => {
       const label = String(opt.label || '').toLowerCase()
       const hint = String(opt.hint || '').toLowerCase()
       return label.includes(q) || hint.includes(q)
     })
-  }, [options, search])
+  }, [sortedOptions, search])
 
   const selectedOption = useMemo(
     () => options.find((opt) => opt.value === value) || null,
