@@ -43,16 +43,25 @@ import {
   type AdvantagePlan,
 } from '../lib/ads/advantage-plus';
 import { classifyMetaError, describeMetaError } from '../lib/ads/graph-error';
+import { buildMetaCustomQuestions } from '../lib/ads/lead-form';
 
 let pass = 0;
 let fail = 0;
-const check = (name: string, ok: boolean, detail = '') => {
+const check = (name: string, ok: boolean, detail: unknown = '') => {
+  // `detail` is often an array or an object (what the code actually produced); render it
+  // rather than narrowing every call site to a string.
+  const shown =
+    detail === '' || detail === undefined || detail === null
+      ? ''
+      : typeof detail === 'string'
+        ? detail
+        : JSON.stringify(detail);
   if (ok) {
     pass++;
-    console.log(`PASS  ${name}${detail ? `  — ${detail}` : ''}`);
+    console.log(`PASS  ${name}${shown ? `  — ${shown}` : ''}`);
   } else {
     fail++;
-    console.log(`FAIL  ${name}${detail ? `  — ${detail}` : ''}`);
+    console.log(`FAIL  ${name}${shown ? `  — ${shown}` : ''}`);
   }
 };
 
@@ -205,7 +214,10 @@ check(
 check('the form name describes the real fields', /describeLeadFormFields\(/.test(processor));
 check(
   'custom questions cannot duplicate a standard field',
-  /const seenTypes = new Set\(standardTypes\)/.test(processor),
+  // The de-duplication moved into lib/ads/lead-form.ts (with behavioural checks further
+  // down), so this asserts the processor actually DELEGATES to it rather than keeping a
+  // second copy of the rules that could drift.
+  /buildMetaCustomQuestions\(/.test(processor),
   'a duplicate question type is rejected by Meta after the campaign exists',
 );
 
@@ -369,22 +381,42 @@ check(
 );
 
 console.log('\n▸ an instant form never posts a question Meta will refuse');
-check(
-  'a custom question takes its wording from label, question, text or title',
-  /q\.label \?\? q\.question \?\? q\.text \?\? q\.title/.test(processor)
-);
-check(
-  'a question with no wording is dropped, not posted blank',
-  /if \(!label\) return null/.test(processor) && /\.filter\(Boolean\)/.test(processor)
-);
-check(
-  'a choice question needs two options or is asked as free text',
-  /validOptions\.length >= 2/.test(processor)
-);
-check(
-  'its failure names the field Meta blamed',
-  /describeMetaError\(formCreateData/.test(processor)
-);
+{
+  // Behavioural, not a grep: these are the exact shapes a caller sends, and each one
+  // corresponds to a Meta refusal we have actually seen or would have caused.
+  const messy = [
+    { label: 'What is your budget?', type: 'MULTIPLE_CHOICE', options: ['50L - 60L', '60L - 70L', '', '50L - 60L'] },
+    { question: 'When can you visit?' },
+    { type: 'CUSTOM' },
+    { label: 'Which city?' },
+    { label: 'Plot size', type: 'MULTIPLE_CHOICE', options: ['Only one'] },
+    { label: 'Interested in?', type: 'MULTIPLE_CHOICE', options: ['Residential', 'Commercial'] },
+  ];
+  const built = buildMetaCustomQuestions(messy, ['FULL_NAME', 'PHONE', 'CITY']);
+  const labels = built.questions.map((q) => q.label || q.type);
+
+  check('nothing posted carries an empty label', built.questions.every((q) => q.type !== 'CUSTOM' || Boolean(q.label)), labels);
+  check('a question with no wording is dropped', built.dropped.some((d) => /no label/.test(d.why)), built.dropped);
+  check('wording is taken from `question` when `label` is absent', labels.includes('When can you visit?'), labels);
+  check('a duplicate of a standard field is dropped', !built.questions.some((q) => q.type === 'CITY'), labels);
+  check('a single-option choice is asked as free text', (() => {
+    const q = built.questions.find((x) => x.label === 'Plot size');
+    return Boolean(q) && q!.options === undefined;
+  })(), built.questions.find((x) => x.label === 'Plot size'));
+  check('a real choice keeps its distinct options, duplicates removed', (() => {
+    const q = built.questions.find((x) => x.label === 'What is your budget?');
+    return Boolean(q?.options && q.options.length === 2);
+  })(), built.questions.find((x) => x.label === 'What is your budget?')?.options);
+  check('a two-option choice is kept as a choice', (() => {
+    const q = built.questions.find((x) => x.label === 'Interested in?');
+    return Boolean(q?.options && q.options.length === 2);
+  })());
+  check('a label is capped at Meta\'s 200 characters', (() => {
+    const long = buildMetaCustomQuestions([{ label: 'x'.repeat(500) }]);
+    return (long.questions[0]?.label ?? '').length === 200;
+  })());
+  check('no custom questions at all is not an error', buildMetaCustomQuestions(null).questions.length === 0);
+}
 
 // ---------------------------------------------------------------------------
 console.log('\n================================================================');

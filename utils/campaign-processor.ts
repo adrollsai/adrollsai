@@ -27,6 +27,7 @@ import {
 import { checkCreative, inspectRemoteImage } from '@/lib/ads/creative-checks';
 import { META_GRAPH_URL } from '@/lib/ads/graph-version';
 import { describeMetaError } from '@/lib/ads/graph-error';
+import { buildMetaCustomQuestions } from '@/lib/ads/lead-form';
 
 const FB_MARKETING_URL = META_GRAPH_URL;
 
@@ -718,62 +719,26 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
                     })();
 
                 if (Array.isArray(rawQuestions) && rawQuestions.length > 0) {
-                    metaCustomQuestions = rawQuestions.map((q: any) => {
-                        /**
-                         * Meta's own words, from a live client's failed launch:
-                         *   "label must be specified for custom questions"
-                         *
-                         * A question arriving with no `label` was turned into
-                         * `{ type: 'CUSTOM', label: '' }` and posted anyway, so the WHOLE form was
-                         * rejected — the campaign shell existed, the form did not, and the agent
-                         * could only report a failure. Callers legitimately send the wording as
-                         * `question`/`text` instead of `label`, and a MULTIPLE_CHOICE with one or
-                         * no usable option is also invalid to Meta.
-                         *
-                         * So: take the wording from whichever field carries it, and return null for a
-                         * question that cannot be expressed, to be dropped below rather than posted.
-                         */
-                        const label = String(q.label ?? q.question ?? q.text ?? q.title ?? '').trim();
-                        if (!label) return null;
-                        const lowerLabel = label.toLowerCase();
+                    /**
+                     * Meta's own words, from a live client's failed launch:
+                     *   "label must be specified for custom questions"
+                     *
+                     * That decision lives in lib/ads/lead-form.ts now, with tests, because a
+                     * mapping bug belongs in a mapping function — not three lines inside a
+                     * 1,500-line processor where the only way to find it is to read a failed
+                     * Graph response. The rules it applies: take the wording from whichever
+                     * field carries it, drop a question that cannot be expressed instead of
+                     * posting it blank, and only send a choice question with two real options.
+                     */
+                    const mapped = buildMetaCustomQuestions(rawQuestions, standardTypes);
+                    metaCustomQuestions = mapped.questions;
 
-                        if (q.type !== 'MULTIPLE_CHOICE') {
-                            if (lowerLabel.includes('company') || lowerLabel.includes('business name')) return { type: 'COMPANY_NAME', key: 'company_name' };
-                            if (lowerLabel.includes('job title') || lowerLabel.includes('designation')) return { type: 'JOB_TITLE', key: 'job_title' };
-                            if (lowerLabel.includes('city')) return { type: 'CITY', key: 'city' };
-                            if (lowerLabel.includes('state')) return { type: 'STATE', key: 'state' };
-                        }
-
-                        const metaQ: any = { type: 'CUSTOM', label: label.substring(0, 200) };
-                        // Meta needs at least two options to render a choice question; anything
-                        // less is an invalid question, so it is asked as free text instead.
-                        if (q.type === 'MULTIPLE_CHOICE' && Array.isArray(q.options)) {
-                            const validOptions = q.options
-                                .filter((o: string) => o && String(o).trim() !== '')
-                                .map((opt: string) => ({ value: String(opt).trim(), key: String(opt).trim().toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50) }))
-                                .filter((o: any, i: number, arr: any[]) => arr.findIndex((x) => x.key === o.key) === i);
-                            if (validOptions.length >= 2) metaQ.options = validOptions;
-                            else logToFile(`[Processor] Dropping unusable options on "${label}" (${validOptions.length} valid); asking it as free text.`);
-                        }
-                        return metaQ;
-                    }).filter(Boolean);
-
-                    if (metaCustomQuestions.length < rawQuestions.length) {
+                    if (mapped.dropped.length) {
                         logToFile(
-                            `[Processor] Dropped ${rawQuestions.length - metaCustomQuestions.length} custom question(s) with no usable label — Meta rejects a form carrying one.`
+                            `[Processor] Dropped ${mapped.dropped.length} custom question(s) Meta would refuse:`,
+                            mapped.dropped
                         );
                     }
-
-                    // A custom question must never duplicate a standard field the form
-                    // already asks for — Meta rejects the same question twice, and the
-                    // failure lands after the campaign shell exists.
-                    const seenTypes = new Set(standardTypes);
-                    metaCustomQuestions = metaCustomQuestions.filter((q: any) => {
-                        if (q.type === 'CUSTOM') return true;
-                        if (seenTypes.has(q.type)) return false;
-                        seenTypes.add(q.type);
-                        return true;
-                    });
 
                     hasCustomQuestions = metaCustomQuestions.length > 0;
                 }
