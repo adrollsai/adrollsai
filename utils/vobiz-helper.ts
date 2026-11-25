@@ -29,9 +29,31 @@ export function pickRotatedDid(pool: readonly string[], seed: string): string | 
   return usable[hash % usable.length]
 }
 
-/** The master Vobiz account, whose credentials can dial from any DID the account owns. */
-const MASTER_AUTH_ID = () => String(process.env.VOBIZ_AUTH_ID || '').replace(/"/g, '').trim()
-const MASTER_AUTH_TOKEN = () => String(process.env.VOBIZ_AUTH_TOKEN || '').replace(/"/g, '').trim()
+/**
+ * The master Vobiz account, whose credentials can dial from any DID the account owns.
+ *
+ * THE FALLBACKS ARE PART OF THE CONTRACT, not leftovers. `VOBIZ_AUTH_ID` /
+ * `VOBIZ_AUTH_TOKEN` are not set in the production Vercel environment, and the dial path has
+ * always fallen back to these same values. When only that path knew about the fallback, the
+ * two disagreed: `getOwnedVobizDids()` defaulted to `''` and returned an EMPTY pool in
+ * production, which would have made every pooled rotation pick nothing — the exact failure
+ * this pool exists to prevent. Both now read from one place so they cannot diverge again.
+ *
+ * Setting the env vars in Vercel remains the right long-term fix; these values keep the
+ * deployment working until it happens.
+ */
+const PLATFORM_VOBIZ_FALLBACK_ID = 'MA_HOSGFZ86'
+const PLATFORM_VOBIZ_FALLBACK_TOKEN =
+  'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+
+/** Exported so the dial path uses the identical resolution instead of its own copy. */
+export const platformVobizAuthId = (): string =>
+  String(process.env.VOBIZ_AUTH_ID || PLATFORM_VOBIZ_FALLBACK_ID).replace(/"/g, '').trim()
+export const platformVobizAuthToken = (): string =>
+  String(process.env.VOBIZ_AUTH_TOKEN || PLATFORM_VOBIZ_FALLBACK_TOKEN).replace(/"/g, '').trim()
+
+const MASTER_AUTH_ID = platformVobizAuthId
+const MASTER_AUTH_TOKEN = platformVobizAuthToken
 
 function basicAuthHeader(authId: string, authToken: string): string {
   return `Basic ${Buffer.from(`${authId}:${authToken}`).toString('base64')}`
@@ -326,8 +348,8 @@ export async function triggerVobizOutboundCall(
     // 5. Auth Credentials & Caller ID
     const bi = typeof profile.business_info === 'string' ? JSON.parse(profile.business_info) : (profile.business_info || {})
     // uthId below may be overridden by the picked channel further down, so both come from one decision.
-    const authId = params.customAuthId || profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    const authToken = params.customAuthToken || profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const authId = params.customAuthId || profile.voice_vobiz_auth_id || bi.voice_vobiz_auth_id || bi.kyc_data?.vobizSubAuthId || platformVobizAuthId()
+    const authToken = params.customAuthToken || profile.voice_vobiz_auth_token || bi.voice_vobiz_auth_token || platformVobizAuthToken()
     
     // Strictly require an assigned number for the account. NEVER fall back to unverified test numbers.
     const isNobogentMaster = profile.email === 'rchopra489@gmail.com' || profile.role === 'super_admin'
@@ -356,16 +378,26 @@ export async function triggerVobizOutboundCall(
     // comes from the live account inventory (getOwnedVobizDids), which is the only list that means
     // anything at dial time.
     //
+    // THE POOL IS READ WITH MASTER CREDENTIALS, NOT THE TENANT'S. This is the rule the operator set:
+    // every number on the Vobiz account is one shared pool, rotated across every business. Reading the
+    // inventory with a tenant's sub-account auth returned only that sub-account's numbers — usually
+    // none — so the pool came back empty and the dial died with NO_PHONE_NUMBER_ASSIGNED even though
+    // the account owned six active DIDs. The caller ID and the credentials that authorise it travel
+    // together (see `usingRotatedDid` below), so a rotated DID is always dialled with master auth.
+    //
     // Ownership by a sub-account does NOT exclude a number. Verified against the API: the master
     // credentials can place calls from every owned DID, including the ones attached to other
-    // sub-accounts, so all of them rotate together as one shared pool — which is the behaviour asked
-    // for. A per-tenant number is still honoured as a last resort so an account with a claimed DID
-    // and an empty pool keeps working.
+    // sub-accounts, so all of them rotate together as one shared pool.
     //
     // The seed is the lead id, so the choice is spread across the pool and stable for a given lead —
     // no shared counter, and nothing to get out of sync across instances.
-    const ownedDids = await getOwnedVobizDids(authId, authToken)
-    const sharedPool = ownedDids.length ? ownedDids : VOBIZ_NUMBER_CATALOG.map((n) => n.phoneNumber).filter(Boolean)
+    const ownedDids = await getOwnedVobizDids()
+    // Never rotate onto a number the account does not own. `VOBIZ_NUMBER_CATALOG` is the list of
+    // numbers you can BUY, so using it as a fallback pool guaranteed a "not owned by this account"
+    // rejection from Vobiz on every dial — the exact bug this pool was introduced to fix. An empty
+    // owned pool now degrades to the later fallbacks (claimed DID, master test line), and if none of
+    // those exist the NO_PHONE_NUMBER_ASSIGNED error below is at least telling the truth.
+    const sharedPool = ownedDids
     const rotatedNumber = pickRotatedDid(sharedPool, String(leadId || profileId || ''))
     const assignedNumber = channel?.number
         || fromPhone
@@ -387,7 +419,7 @@ export async function triggerVobizOutboundCall(
         : null
 
     if (!assignedNumber) {
-        console.warn(`[VOBIZ HELPER] Call aborted for lead ${leadId}: Account ${profile.email} (${profileId}) has NO assigned phone number.`);
+        console.warn(`[VOBIZ HELPER] Call aborted for lead ${leadId}: Account ${profile.email} (${profileId}) — the shared DID pool is empty and no caller ID is configured.`);
         await supabaseAdmin
             .from('leads')
             .update({ voice_call_status: 'failed' })
@@ -397,13 +429,13 @@ export async function triggerVobizOutboundCall(
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: leadId,
                 action_type: 'REMARK',
-                description: `❌ Outbound call aborted: No dedicated phone number is assigned to your account. Please assign a virtual number in settings to enable calling.`
+                description: `❌ Outbound call aborted: no caller ID available. Numbers are drawn from the shared Vobiz pool, which returned no active numbers.`
             });
         } catch (e) {}
 
         return {
             success: false,
-            error: 'NO_PHONE_NUMBER_ASSIGNED: Outbound calls cannot proceed because no dedicated phone number is assigned to this account.'
+            error: 'NO_PHONE_NUMBER_ASSIGNED: no caller ID available — the shared Vobiz DID pool is empty.'
         };
     }
 

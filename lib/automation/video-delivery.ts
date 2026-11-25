@@ -107,8 +107,40 @@ export async function deliverVideoToAdmin(
     const subjectTitle = resolvedTitle
     const phone = normalisePhone(outboundRecipient(profile.whatsapp_personal_number || profile.contact_number))
 
-    // ---- 1. WhatsApp template -------------------------------------------
+    // ---- 1. WhatsApp ------------------------------------------------------
+    //
+    // Two things a video needs that a still image does not: the reel itself, and a way
+    // to say yes or no. The old code sent `nobogent_video_ready_v2` — a body-only
+    // template with a single "Open dashboard" link button — so an owner who never opens
+    // the dashboard saw a line of text and nothing else, and had no Approve/Edit control
+    // at all. The approve-card sender already implements that whole dance for images
+    // (approved template → interactive → media-then-buttons → text), and now knows how
+    // to carry a video, so it goes first. The notice template stays as the guaranteed
+    // last resort because it is always approved and always deliverable.
     if (phone && WA_TOKEN && WA_PHONE_ID) {
+      try {
+        const { sendNobogentCreativeWithButtons } = await import('@/utils/creative-approval-handler')
+        const sentWithButtons = await sendNobogentCreativeWithButtons({
+          to: phone,
+          creativeUrl: videoUrl,
+          caption: resolvedCaption,
+          title: resolvedTitle,
+          assetId: assetId || null,
+          isVideo: true
+        })
+        if (sentWithButtons) {
+          result.whatsapp = true
+        } else {
+          console.warn('[Video Delivery] Approve/Edit card failed; falling back to the notice template')
+        }
+      } catch (e: any) {
+        console.warn('[Video Delivery] Approve/Edit card threw:', e?.message)
+      }
+    }
+
+    // Guaranteed fallback: the always-approved notice template. Reached only when the
+    // richer card above could not be delivered.
+    if (!result.whatsapp && phone && WA_TOKEN && WA_PHONE_ID) {
       try {
         const res = await fetch(`https://graph.facebook.com/v20.0/${WA_PHONE_ID}/messages`, {
           method: 'POST',

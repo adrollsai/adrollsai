@@ -93,3 +93,56 @@ export async function agentRunInFlight(
     return false;
   }
 }
+
+/**
+ * Did the agent already produce something for this tenant today?
+ *
+ * `fallbackDecision({ agentProducedToday })` was written with this answer in mind, but
+ * the call sites passed a hardcoded `false` and resolved it "below, from the assets
+ * check" — where the check that remained counted EVERY image the tenant owned. The
+ * result was a guard that could not tell the difference between three things:
+ *
+ *   the agent doing its job        -> the fallback must stay quiet
+ *   the owner making one poster    -> the fallback is still owed today's creative
+ *   yesterday's automation         -> already counted by its own dated key
+ *
+ * So "produced today" is defined relative to the day's routine run: an artefact that
+ * appeared AFTER that run started is the agent's work; anything older (or anything on a
+ * day with no routine run at all) is not, and the fallback fills the gap.
+ *
+ * This is what stops one manual generation from silently cancelling the owner's daily
+ * creative — and, equally, stops an active routine from being duplicated by the
+ * fallback pipeline on the same day.
+ */
+export async function agentProducedToday(
+  supabaseAdmin: any,
+  userId: string,
+  periodKey: string
+): Promise<boolean> {
+  try {
+    const { data: runs, error } = await supabaseAdmin
+      .from('routine_runs')
+      .select('created_at')
+      .eq('user_id', userId)
+      .eq('period_key', periodKey)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (error || !Array.isArray(runs) || runs.length === 0) return false;
+    const startedAt = runs[0]?.created_at;
+    if (!startedAt) return false;
+
+    const { data: assets, error: assetErr } = await supabaseAdmin
+      .from('assets')
+      .select('id')
+      .eq('user_id', userId)
+      .in('type', ['image', 'video'])
+      .gte('created_at', startedAt)
+      .limit(1);
+
+    if (assetErr) return false;
+    return Array.isArray(assets) && assets.length > 0;
+  } catch {
+    return false;
+  }
+}

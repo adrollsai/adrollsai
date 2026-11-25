@@ -5,9 +5,68 @@ const samplePngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 const sampleBuffer = Buffer.from(samplePngBase64, 'base64');
 
 async function uploadSampleAndGetHandle(appId: string, token: string) {
+    return uploadBytesAndGetHandle(appId, token, sampleBuffer, 'sample.png', 'image/png');
+}
+
+/**
+ * A one-second 9:16 sample video, generated with ffmpeg so the VIDEO-header template has a
+ * shape-valid example to submit. Meta validates the sample against the declared format, so
+ * the 1x1 PNG above cannot be reused here.
+ */
+async function videoSampleAndGetHandle(appId: string, token: string): Promise<string | null> {
     try {
-        console.log('[TEMPLATE SEEDER][UPLOAD] Initiating media upload session with Meta...');
-        const initUrl = `https://graph.facebook.com/v20.0/${appId}/uploads?file_name=sample.png&file_length=${sampleBuffer.length}&file_type=image/png`;
+        const os = await import('node:os');
+        const path = await import('node:path');
+        const fsMod = await import('node:fs');
+        const { execFileSync } = await import('node:child_process');
+
+        const ffmpeg = path.join(
+            process.cwd(),
+            'node_modules',
+            'ffmpeg-static',
+            os.platform() === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+        );
+        if (!fsMod.existsSync(ffmpeg)) {
+            console.error('[TEMPLATE SEEDER][VIDEO] ffmpeg-static not found at', ffmpeg);
+            return null;
+        }
+
+        const tmpDir = fsMod.mkdtempSync(path.join(os.tmpdir(), 'nobogent-tpl-'));
+        const outPath = path.join(tmpDir, 'sample.mp4');
+        execFileSync(ffmpeg, [
+            '-y', '-loglevel', 'error',
+            '-f', 'lavfi', '-i', 'color=c=0x0f172a:s=540x960:d=1:r=25',
+            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast',
+            '-movflags', '+faststart', outPath,
+        ]);
+
+        const buffer = fsMod.readFileSync(outPath);
+        try { fsMod.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+
+        return await uploadBytesAndGetHandle(appId, token, buffer, 'sample.mp4', 'video/mp4');
+    } catch (err: any) {
+        console.error('[TEMPLATE SEEDER][VIDEO ERROR]', err?.message);
+        return null;
+    }
+}
+
+/**
+ * The same resumable upload, for any media type.
+ *
+ * A VIDEO-header template cannot reuse the 1x1 sample PNG above: Meta validates the
+ * header sample against the declared format, so the video template needs an actual
+ * video handle. Same two-step flow (create session → POST bytes), different mime type.
+ */
+async function uploadBytesAndGetHandle(
+    appId: string,
+    token: string,
+    buffer: Buffer,
+    fileName: string,
+    mimeType: string
+) {
+    try {
+        console.log(`[TEMPLATE SEEDER][UPLOAD] Initiating ${mimeType} upload session with Meta...`);
+        const initUrl = `https://graph.facebook.com/v20.0/${appId}/uploads?file_name=${encodeURIComponent(fileName)}&file_length=${buffer.length}&file_type=${encodeURIComponent(mimeType)}`;
         const initRes = await fetch(initUrl, {
             method: 'POST',
             headers: {
@@ -18,23 +77,25 @@ async function uploadSampleAndGetHandle(appId: string, token: string) {
         if (initData.error) {
             throw new Error(`Init upload failed: ${initData.error.message}`);
         }
-        
+
         const uploadId = initData.id;
         console.log(`[TEMPLATE SEEDER][UPLOAD] Upload session created: ${uploadId}. Uploading binary...`);
-        
+
         const uploadRes = await fetch(`https://graph.facebook.com/v20.0/${uploadId}`, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`,
-                'Content-Type': 'image/png'
+                'Content-Type': mimeType
             },
-            body: sampleBuffer
+            // `Buffer` is `Buffer<ArrayBufferLike>` and is not assignable to `BodyInit`;
+            // a `Uint8Array` view over the same bytes is.
+            body: new Uint8Array(buffer)
         });
         const uploadData = await uploadRes.json();
         if (uploadData.error) {
             throw new Error(`Binary upload failed: ${uploadData.error.message}`);
         }
-        
+
         console.log(`[TEMPLATE SEEDER][UPLOAD] Upload complete! Handle: ${uploadData.h}`);
         return uploadData.h;
     } catch (err: any) {
@@ -401,6 +462,62 @@ export async function registerDefaultTemplates(
             }
         } else {
             results.push({ name: 'nobogent_daily_creative', success: true, cached: true });
+        }
+
+        // G2. nobogent_video_creative — the VIDEO twin of the daily creative.
+        //
+        //    A Meta template's header type is fixed at approval time, so `nobogent_daily_creative`
+        //    (HEADER:IMAGE) can never carry a video: the send is rejected outright. Without a
+        //    video-header template, the 3-day video had NO business-initiated path to the owner's
+        //    WhatsApp with buttons at all. This is that path.
+        if (!existingNames.has('nobogent_video_creative')) {
+            console.log('[TEMPLATE SEEDER] Registering nobogent_video_creative template...');
+            const videoHandle = await videoSampleAndGetHandle(appId, whatsappToken);
+            if (videoHandle) {
+                const videoPayload = {
+                    name: 'nobogent_video_creative',
+                    category: 'MARKETING',
+                    language: 'en_US',
+                    components: [
+                        {
+                            type: 'HEADER',
+                            format: 'VIDEO',
+                            example: { header_handle: [videoHandle] }
+                        },
+                        {
+                            type: 'BODY',
+                            text: "Hi! Here is the new video for *{{1}}* from Nobogent.\n\n{{2}}\n\nReply APPROVE to schedule it, or EDIT to request changes.",
+                            example: {
+                                body_text: [[
+                                    'Prestige Lakeside Villa',
+                                    'A 30-second walkthrough of the project, ready to post this weekend.'
+                                ]]
+                            }
+                        },
+                        {
+                            type: 'BUTTONS',
+                            buttons: [
+                                { type: 'QUICK_REPLY', text: 'Approve' },
+                                { type: 'QUICK_REPLY', text: 'Edit' }
+                            ]
+                        }
+                    ]
+                };
+                const vRes = await fetch(postMetaUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${whatsappToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(videoPayload)
+                });
+                const vData = await vRes.json();
+                results.push({ name: 'nobogent_video_creative', success: !vData.error, error: vData.error?.message || null });
+            } else {
+                results.push({ name: 'nobogent_video_creative', success: false, error: 'Could not upload video header handle' });
+            }
+        } else {
+            results.push({ name: 'nobogent_video_creative', success: true, cached: true });
         }
 
         // H. nobogent_weekly_checkin — the weekly re-engagement template.

@@ -59,13 +59,26 @@ async function handle(request: Request) {
   try {
     const url = new URL(request.url)
     const force = url.searchParams.get('force') === 'true'
+    // Targeting one tenant. Without this, "build this account's site now" was only
+    // possible by editing the database: `force` never reached the enqueue.
+    const targetUserId = url.searchParams.get('userId')?.trim() || null
 
     // 1. Top up the queue (idempotent; partial unique index prevents duplicates).
+    //    `p_force` + `p_user_id` are what make a targeted rebuild real.
     let enqueued = 0
     const { data: enq, error: enqErr } = await supabaseAdmin
-      .rpc('enqueue_missing_sites', { p_limit: ENQUEUE_LIMIT })
+      .rpc('enqueue_missing_sites', {
+        p_limit: ENQUEUE_LIMIT,
+        p_user_id: targetUserId,
+        p_force: force,
+      })
     if (enqErr) {
-      console.warn('[Website Builder] enqueue failed:', enqErr.message)
+      // Older databases still have the 1-argument function; fall back rather than
+      // refusing to build anything at all.
+      const { data: enqLegacy, error: legacyErr } = await supabaseAdmin
+        .rpc('enqueue_missing_sites', { p_limit: ENQUEUE_LIMIT })
+      if (legacyErr) console.warn('[Website Builder] enqueue failed:', enqErr.message)
+      else enqueued = Number(enqLegacy) || 0
     } else {
       enqueued = Number(enq) || 0
     }
@@ -97,13 +110,15 @@ async function handle(request: Request) {
             })
             .eq('id', job.id)
         } else {
-          // Nothing to do (already exists / no name yet) — close the job so it
-          // does not spin, and record why.
+          // Nothing to do (already exists / no name yet) — close the job so it does
+          // not spin, and record why. Recorded as `skipped`, NOT `completed`: a skip
+          // is a deferral, and marking it `completed` permanently disqualified the
+          // tenant from ever being enqueued again (nothing deletes these rows).
           skipped[res.skipped || 'unknown'] = (skipped[res.skipped || 'unknown'] || 0) + 1
           await supabaseAdmin
             .from('site_build_jobs')
             .update({
-              status: 'completed',
+              status: 'skipped',
               locked_until: null,
               result: { skipped: res.skipped },
               updated_at: new Date().toISOString(),

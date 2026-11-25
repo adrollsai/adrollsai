@@ -180,6 +180,15 @@ async function handleDispatcher(request: Request) {
 
       const policy = policyByTenant.get(tenantId)
       if (!policy || !policy.master_enabled || !policy.ai_calling) {
+        // Say which of the three it was. "No row" is a provisioning gap, not a choice:
+        // the RPC inner-joins `tenant_automations`, so such a tenant never even reaches
+        // this loop and nothing anywhere reports why they never get called.
+        const why = !policy
+          ? 'no tenant_automations row (provisioning gap — create one)'
+          : !policy.master_enabled
+            ? 'master_enabled=false'
+            : 'ai_calling=false'
+        console.log(`[Voice Caller] skipping tenant ${tenantId}: ${why}`)
         skippedTenants.add(tenantId)
         continue
       }
@@ -243,9 +252,33 @@ async function handleDispatcher(request: Request) {
     const byLead = new Map((candidates || []).map((c: any) => [c.id, c]))
     let dispatched = 0
     let failed = 0
+    /** Tenants whose telephony is not configured: stop after the first failure, not the 25th. */
+    const misconfiguredTenants = new Set<string>()
+    const failuresByTenant = new Map<string, number>()
+    const MAX_FAILURES_PER_TENANT = 3
+
+    /**
+     * `triggerOutboundCall` REPORTS failure, it does not throw it.
+     *
+     * The previous loop did `await triggerOutboundCall(...); dispatched++` inside a try/catch,
+     * so every refusal — SUBSCRIPTION_EXPIRED, no phone number, insufficient credits, a
+     * provider HTTP error — was counted as a successful dispatch. The 30-minute backoff below
+     * was unreachable, `voice_call_retry_count` was incremented anyway (so a misconfigured
+     * tenant burned all 18 cadence attempts in about 90 minutes and the lead then vanished
+     * from the queue for good), and the "abort on unconfigured telephony" guard could never
+     * fire because that error never arrived as an exception.
+     *
+     * The operator saw `{dispatched: 25, failed: 0}` from a run in which nothing was dialled.
+     */
+    const isPermanentDialFailure = (msg: string) =>
+      /inactive|NO_PHONE_NUMBER_ASSIGNED|no .*number|SUBSCRIPTION_EXPIRED|Insufficient calling credits|TELEPHONY_URL_INVALID|NON_INDIAN_NUMBER|not owned/i.test(msg)
 
     for (const row of claimed || []) {
+      if (misconfiguredTenants.has(row.user_id)) continue
+
       // Guardrail: daily call cap, so autonomy cannot ring 200 people in a day.
+      // `break` here used to stop the dial loop for EVERY tenant because one of them
+      // hit its own cap; the cap is per tenant, so the skip must be per tenant too.
       try {
         const { canSpend } = await import('@/lib/automation/ceo')
         const cap = await canSpend(supabaseAdmin, row.user_id, 'call', 0, 1)
@@ -254,14 +287,46 @@ async function handleDispatcher(request: Request) {
             '[Voice Caller] daily call cap reached for ' + row.user_id +
             ' (' + (cap.reason || 'cap') + ' ' + cap.used + '/' + cap.cap + ')'
           )
-          break
+          misconfiguredTenants.add(row.user_id)
+          continue
         }
       } catch (gErr: any) {
         console.warn('[Voice Caller] guardrail check failed:', gErr?.message)
       }
+
       const candidate: any = byLead.get(row.id)
       try {
-        await triggerOutboundCall(supabaseAdmin, row.id, row.user_id, true)
+        const result: any = await triggerOutboundCall(supabaseAdmin, row.id, row.user_id, true)
+        const ok = result?.success === true || result?.scheduled === true
+
+        if (!ok) {
+          failed++
+          const msg = String(result?.error || 'dial returned no success flag')
+          const n = (failuresByTenant.get(row.user_id) || 0) + 1
+          failuresByTenant.set(row.user_id, n)
+          console.warn(`[Voice Caller] dial NOT placed for ${row.id} (${row.user_id}): ${msg}`)
+
+          if (isPermanentDialFailure(msg)) {
+            // One misconfigured tenant must not consume the whole run's budget.
+            misconfiguredTenants.add(row.user_id)
+            console.warn(`[Voice Caller] telephony/config problem for tenant ${row.user_id}; skipping it for the rest of this run.`)
+            continue
+          }
+          if (n >= MAX_FAILURES_PER_TENANT) {
+            console.warn(`[Voice Caller] ${n} consecutive failures for tenant ${row.user_id}; skipping it for the rest of this run.`)
+            misconfiguredTenants.add(row.user_id)
+          }
+
+          // Transient: back off instead of hammering every 5 minutes. Do NOT burn a
+          // cadence slot on a transport failure — which is now actually reachable.
+          const retryAt = new Date(Date.now() + 30 * 60_000).toISOString()
+          await supabaseAdmin
+            .from('leads')
+            .update({ voice_call_scheduled_at: retryAt })
+            .eq('id', row.id)
+          continue
+        }
+
         dispatched++
 
         // Ledger for the call cap.
@@ -281,26 +346,22 @@ async function handleDispatcher(request: Request) {
       } catch (e: any) {
         failed++
         const msg = String(e?.message || e)
-        console.error(`[Voice Caller] dial failed for ${row.id}:`, msg)
+        console.error(`[Voice Caller] dial threw for ${row.id}:`, msg)
 
-        // Back off instead of hammering every 5 minutes. Do not burn a cadence
-        // slot on a transport failure.
         const retryAt = new Date(Date.now() + 30 * 60_000).toISOString()
         await supabaseAdmin
           .from('leads')
           .update({ voice_call_scheduled_at: retryAt })
           .eq('id', row.id)
 
-        // A tenant with no telephony configured will fail for every lead —
-        // stop early rather than looping through hundreds of failures.
-        if (/inactive|NO_PHONE_NUMBER_ASSIGNED|no .*number/i.test(msg)) {
-          console.warn('[Voice Caller] Telephony not configured for tenant, aborting run:', row.user_id)
+        if (isPermanentDialFailure(msg)) {
+          misconfiguredTenants.add(row.user_id)
           break
         }
       }
     }
 
-    console.log(`[Voice Caller] candidates=${candidates?.length || 0} due=${dueIds.length} claimed=${claimed?.length || 0} dispatched=${dispatched} failed=${failed}`)
+    console.log(`[Voice Caller] candidates=${candidates?.length || 0} due=${dueIds.length} claimed=${claimed?.length || 0} dispatched=${dispatched} failed=${failed} skippedTenants=${misconfiguredTenants.size}`)
 
     return NextResponse.json({
       success: true,

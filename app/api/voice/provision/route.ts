@@ -80,12 +80,21 @@ export async function POST(req: Request) {
             }
         }
 
-        // Verify KYC requirement before number buying/assignment
-        if (kycStatus !== 'verified' && !isWhitelisted) {
-            return NextResponse.json({
-                error: 'KYC Verification Required: Please complete your Aadhaar/PAN or Company GST verification before provisioning a phone number.',
-                requiresKyc: true
-            }, { status: 403 })
+        /**
+         * KYC IS NO LONGER A GATE.
+         *
+         * Calling draws its caller ID from the shared Vobiz pool (every number on the platform
+         * account, rotated across all businesses — see `getOwnedVobizDids` in utils/vobiz-helper),
+         * and those numbers already exist on the account and are already voice-enabled. A tenant
+         * therefore does not need a DID of its own, and requiring TRAI KYC before dialling blocked
+         * every account that was entitled to use the pool.
+         *
+         * The status is still read and reported so the settings page can show it, and the KYC flow
+         * at /api/voice/kyc still works for anyone who wants a dedicated sub-account. It is simply
+         * no longer a precondition.
+         */
+        if (kycStatus !== 'verified') {
+            console.log(`[VOICE PROVISION] proceeding without KYC (status=${kycStatus}) for ${targetProfile.email} — caller IDs come from the shared pool.`)
         }
 
         // Enforce 1-free-number limit per account

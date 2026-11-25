@@ -1164,13 +1164,18 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
                         </div>
                       </div>
 
-                      {!isKycVerified ? (
-                        <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm text-center py-6 space-y-2">
-                          <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
-                            Complete TRAI KYC verification above to unlock outbound virtual calling lines.
-                          </p>
-                        </div>
-                      ) : !isSubscriptionActive ? (
+                      {/**
+                        * KYC is no longer required to call.
+                        *
+                        * This branch used to replace the entire calling-line section with
+                        * "Complete TRAI KYC verification above to unlock outbound virtual calling
+                        * lines." — a hard block on a feature that no longer needs it. Caller IDs are
+                        * drawn from the shared Vobiz pool, which is already provisioned and rotated
+                        * across every business, so an account can dial the moment its automation is
+                        * switched on. KYC remains available above for anyone who wants a dedicated
+                        * sub-account, and its status is still shown there.
+                        */}
+                      {!isSubscriptionActive ? (
                         <div className="bg-white border border-slate-200/80 p-5 sm:p-6 rounded-2xl shadow-sm text-center py-6 space-y-2">
                           <p className="text-xs text-amber-800 font-semibold max-w-md mx-auto">
                             Your subscription is currently inactive. Please ensure an active plan to connect your calling line.

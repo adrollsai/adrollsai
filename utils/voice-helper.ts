@@ -77,10 +77,21 @@ export async function triggerOutboundCall(
 ): Promise<{ success: boolean; error?: string; callSid?: string; scheduled?: boolean; scheduledTime?: Date }> {
     try {
         // 1. Fetch credentials from user profile & lead details in parallel
+        //
+        // The column list is load-bearing: everything read later in this function must be
+        // selected here, or it reads as `undefined` and the branch that depends on it
+        // silently takes the wrong path. `role` and `voice_name` were read (line ~319 and
+        // the dial payload) while never being selected, and `calling_credits` was missing
+        // even though calls are billed against that pot and not against `credits`.
+        //
+        // NOTE: `voice_telephony_provider`, `voice_vobiz_number`, `voice_concurrency_limit`,
+        // `voice_cps_limit` and `default_calling_language` are NOT columns on `profiles` in
+        // this database — they live inside the `business_info` JSON. Adding them to this
+        // select would make PostgREST reject the whole query.
         const [profResult, leadResult] = await Promise.all([
             supabaseAdmin
                 .from('profiles')
-                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled, subscription_status, subscription_valid_until, email, business_info, voice_provider')
+                .select('elevenlabs_api_key, elevenlabs_agent_id, voice_twilio_sid, voice_twilio_token, voice_twilio_number, google_refresh_token, google_booking_enabled, subscription_status, subscription_valid_until, email, business_info, voice_provider, voice_name, role, calling_credits, credits')
                 .eq('id', profileId)
                 .single(),
             supabaseAdmin
@@ -153,7 +164,11 @@ export async function triggerOutboundCall(
         const isWhitelisted = whitelistedEmails.includes(userEmail)
 
         const isSubscriptionExpired = subscriptionValidUntil && new Date(subscriptionValidUntil) < new Date()
-        const isPaid = (subscriptionStatus === 'active' || subscriptionStatus === 'trialing' || subscriptionStatus === 'pro' || subscriptionStatus === 'enterprise') && !isSubscriptionExpired
+        // `growth` is a paid plan everywhere else in the product — utils/credits.ts accepts it and
+        // the voice settings page offers it — so omitting it here meant a paying tenant whose
+        // dashboard said "connected" had every single call refused with SUBSCRIPTION_EXPIRED.
+        const PAID_PLANS = ['active', 'trialing', 'pro', 'enterprise', 'growth']
+        const isPaid = PAID_PLANS.includes(subscriptionStatus) && !isSubscriptionExpired
 
         if (!isPaid && !isWhitelisted && !options?.forceBluesquareDid && !options?.useBluesquareDid) {
             return { success: false, error: 'SUBSCRIPTION_EXPIRED' }
@@ -292,10 +307,35 @@ export async function triggerOutboundCall(
             return { success: false, scheduled: true, scheduledTime, error: `Calling hours restricted (${windowLabel}). Call rescheduled.` }
         }
         
-        // Check credit balance (must have at least 40 credits to dial 1 minute)
-        const hasCredits = (options?.forceBluesquareDid || options?.useBluesquareDid) ? true : await hasEnoughCredits(supabaseAdmin, profileId, 40)
+        // Credit gate — against the pot the call is actually billed to.
+        //
+        // This read `hasEnoughCredits(..., 40)`, which measures `profiles.credits` (the AI /
+        // creative pot), while `deductCredits(..., 'calling', ...)` at the end of the call
+        // debits `profiles.calling_credits`. The two pots are deliberately separate, so the
+        // gate was measuring the wrong one in both directions: a tenant with plenty of
+        // calling credit but an empty AI pot had every call refused, and a tenant with AI
+        // credit but no calling credit dialled happily and was never charged.
+        //
+        // The floor is one full 5-minute call (the Twilio TimeLimit below), priced by the
+        // same function the billing path uses, rather than a magic 40.
+        let callingBalance: number | null = null
+        try {
+            const { availableCallingCredits } = await import('@/utils/credits')
+            callingBalance = await availableCallingCredits(supabaseAdmin, profileId)
+        } catch (potErr: any) {
+            console.warn('[VOICE HELPER] calling-credit read failed, falling back to AI pot:', potErr?.message)
+        }
+        if (callingBalance === null) {
+            // Unreadable: keep the old conservative behaviour rather than allowing a free dial.
+            callingBalance = (await hasEnoughCredits(supabaseAdmin, profileId, 40)) ? Number.POSITIVE_INFINITY : 0
+        }
+        const { callChargeCredits } = await import('@/lib/automation/call-billing')
+        const minimumCallingCredits = callChargeCredits(300)
+        const hasCredits = (options?.forceBluesquareDid || options?.useBluesquareDid)
+            ? true
+            : callingBalance >= minimumCallingCredits
         if (!hasCredits) {
-            console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: Insufficient credits for user ${profileId}`)
+            console.warn(`[VOICE HELPER] Outbound call aborted for lead ${leadId}: calling-credit balance ${callingBalance} is below the ${minimumCallingCredits}-credit minimum for user ${profileId}`)
             await supabaseAdmin
                 .from('leads')
                 .update({ voice_call_status: 'failed' })
@@ -305,12 +345,12 @@ export async function triggerOutboundCall(
                 await supabaseAdmin.from('lead_history').insert({
                     lead_id: leadId,
                     action_type: 'REMARK',
-                    description: `❌ Outbound call aborted: Insufficient credit balance. Please recharge your Nobo Credits to make voice calls.`
+                    description: `❌ Outbound call aborted: insufficient calling credits (needs ${minimumCallingCredits}, has ${callingBalance}). Please top up your calling credits to make voice calls.`
                 })
             } catch (hErr) {
                 console.error('[VOICE HELPER] Failed to write out-of-credits history entry:', hErr)
             }
-            return { success: false, error: 'Insufficient credits' }
+            return { success: false, error: 'Insufficient calling credits' }
         }
 
         // Primary Telephony Routing: Vobiz for Indian calls & numbers (if a valid Vobiz number is owned)
@@ -319,43 +359,44 @@ export async function triggerOutboundCall(
         const isNobogentMaster = profile?.email === 'rchopra489@gmail.com' || profile?.role === 'super_admin'
         
         // Telephony Routing:
-        // For super admin / nobogent master, prioritize Twilio line for testing unless explicitly configured with an owned Vobiz number
-        const telephonyProvider = profile?.voice_telephony_provider || bi?.voice_telephony_provider || profile?.voice_provider || (isNobogentMaster ? 'twilio' : 'vobiz')
-        const masterVobizNumber = process.env.VOBIZ_TEST_NUMBER || null
+        // The carrier is Vobiz for every tenant unless one is explicitly configured otherwise.
+        const telephonyProvider = bi?.voice_telephony_provider || profile?.voice_provider || (isNobogentMaster ? 'twilio' : 'vobiz')
         const isBluesquareVoip = !!(options?.forceBluesquareDid || options?.useBluesquareDid)
         const BLUESQUARE_DID = '+917965480905'
         const BLUESQUARE_VOBIZ_AUTH_ID = 'SA_RUY0ZNCH'
         const BLUESQUARE_VOBIZ_AUTH_TOKEN = 'kbcjLH5cXccdZkbbgkcucE2L2Jeul0vvXrhRuVQo0YxFQAfbFnQ5bzfReUSqs3oi'
 
-        // A number this tenant genuinely holds. The master's test DID is NOT one of them: passing it
-        // here used to outrank the rotation pool inside triggerVobizOutboundCall, so every tenant
-        // dialled from a number the account does not own and Vobiz refused with "not owned".
-        const tenantVobizNumber =
-            profile?.voice_vobiz_number ||
-            bi?.claimed_vobiz_number ||
-            bi?.voice_vobiz_number ||
-            (profile?.voice_twilio_number?.startsWith('+91') && profile?.voice_twilio_number !== '+911171366938'
-                ? profile.voice_twilio_number
-                : null)
+        /**
+         * CALLER ID = THE SHARED POOL, NOT A PER-TENANT NUMBER.
+         *
+         * The product rule is that every number on the Vobiz account is one pooled resource,
+         * rotated across all businesses. So this function deliberately does NOT pin a caller ID
+         * from the tenant's profile: `triggerVobizOutboundCall` picks from the live inventory
+         * under master credentials, which is the only place the full pool is visible.
+         *
+         * Pinning was actively harmful in two ways. It let a tenant's `voice_twilio_number` — a
+         * stored +91 that may well be another business's line — outrank the pool, and it forced
+         * accounts with no claimed number onto `NO_PHONE_NUMBER_ASSIGNED` even though the pool
+         * held six active DIDs they were entitled to use.
+         *
+         * The only caller ID still passed down is the explicit Bluesquare demo line, which is a
+         * deliberate, self-contained demo path.
+         */
+        const vobizNumber = isBluesquareVoip ? BLUESQUARE_DID : undefined
 
-        const vobizNumber = isBluesquareVoip ? BLUESQUARE_DID : (tenantVobizNumber || (isNobogentMaster ? masterVobizNumber : null))
-
-        // Vobiz is chosen on the provider setting alone. It used to also require a number, which
-        // dropped tenants with no dedicated DID onto Twilio — where most of them have no credentials
-        // at all, so the call simply never happened. Rotation supplies the DID instead.
-        const isVobizConfigured = telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz'
-        const useVobiz = isBluesquareVoip || (isNobogentMaster
-            ? (telephonyProvider === 'vobiz' && !!vobizNumber && vobizNumber !== '+911171366938')
-            : isVobizConfigured)
+        // Vobiz is chosen on the provider setting alone. Requiring a per-tenant number here dropped
+        // tenants with no dedicated DID onto Twilio — where most of them have no credentials at all,
+        // so the call simply never happened. The shared pool supplies the caller ID instead.
+        const isVobizConfigured = telephonyProvider === 'vobiz' || profile?.voice_provider === 'vobiz' || bi?.voice_telephony_provider === 'vobiz'
+        const useVobiz = isBluesquareVoip || isVobizConfigured
 
         if (useVobiz) {
             const vobizRes = await triggerVobizOutboundCall(supabaseAdmin, {
                 leadId: lead.id,
                 profileId: effectiveProfileId,
                 toPhone: lead.phone,
-                // Left undefined when the tenant holds no DID of its own, so the shared rotation pool
-                // decides the caller ID rather than a guessed default.
-                fromPhone: vobizNumber || undefined,
+                // Undefined for a normal tenant, so the shared pool decides the caller ID.
+                fromPhone: vobizNumber,
                 campaignId,
                 voiceName: profile?.voice_name || 'Fenrir',
                 allowAfterHours: isBluesquareVoip ? true : allowAfterHours,

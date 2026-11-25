@@ -36,6 +36,19 @@ export const NOBOGENT_WABA_TOKEN =
 export const DAILY_CREATIVE_TEMPLATE = 'nobogent_daily_creative';
 export const DAILY_CREATIVE_TEMPLATE_LANG = 'en_US';
 
+/**
+ * The video twin of the daily-creative template: a VIDEO header carrying the finished
+ * reel, plus the same Approve / Edit quick replies. Registered by
+ * `utils/whatsapp/template-seeder.ts` under exactly this name.
+ *
+ * It exists because the image template cannot carry a video: Meta templates are typed at
+ * approval time, and a `HEADER: IMAGE` template rejects a video header parameter. Until
+ * this template is approved the sender degrades (see the ordered fallbacks below) rather
+ * than silently dropping the reel — which is what used to happen to every 3-day video.
+ */
+export const VIDEO_CREATIVE_TEMPLATE = 'nobogent_video_creative';
+export const VIDEO_CREATIVE_TEMPLATE_LANG = 'en_US';
+
 export interface SendCreativeWithButtonsParams {
   to: string;
   creativeUrl: string;
@@ -45,6 +58,14 @@ export interface SendCreativeWithButtonsParams {
   summaryNotice?: string;
   isFestival?: boolean;
   festivalName?: string;
+  /** Force the media kind. Defaults to detecting it from the URL. */
+  isVideo?: boolean;
+}
+
+/** A media URL is a video when its extension or path says so. */
+export function isVideoCreativeUrl(url: string): boolean {
+  const clean = String(url || '').split('?')[0].toLowerCase();
+  return /\.(mp4|mov|m4v|webm)$/.test(clean) || /\/video|video\//.test(clean);
 }
 
 /**
@@ -60,8 +81,11 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
     assetId,
     summaryNotice,
     isFestival,
-    festivalName
+    festivalName,
+    isVideo: forceVideo
   } = params;
+
+  const isVideo = forceVideo === true || isVideoCreativeUrl(creativeUrl);
 
   let cleanPhone = (outboundRecipient(to) || to || '').replace(/\D/g, '');
   if (cleanPhone.length === 10) {
@@ -75,7 +99,9 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
 
   const headerPrefix = isFestival
     ? `🎉 *Happy ${festivalName || 'Festive Season'}!*`
-    : `🌅 *Daily Marketing Creative Ready:* *${title || 'Today\'s Highlight'}*`;
+    : isVideo
+      ? `🎬 *Video Ready for Review:* *${title || 'Today\'s Highlight'}*`
+      : `🌅 *Daily Marketing Creative Ready:* *${title || 'Today\'s Highlight'}*`;
 
   // Always use pure marketing copy only - never inject AI summaries, notes, or changelogs
   const fullText = `${headerPrefix}\n\n${caption}`.trim();
@@ -98,12 +124,16 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
       to: cleanPhone,
       type: 'template',
       template: {
-        name: DAILY_CREATIVE_TEMPLATE,
-        language: { code: DAILY_CREATIVE_TEMPLATE_LANG },
+        name: isVideo ? VIDEO_CREATIVE_TEMPLATE : DAILY_CREATIVE_TEMPLATE,
+        language: { code: isVideo ? VIDEO_CREATIVE_TEMPLATE_LANG : DAILY_CREATIVE_TEMPLATE_LANG },
         components: [
           {
             type: 'header',
-            parameters: [{ type: 'image', image: { link: creativeUrl } }]
+            parameters: [
+              isVideo
+                ? { type: 'video', video: { link: creativeUrl } }
+                : { type: 'image', image: { link: creativeUrl } }
+            ]
           },
           {
             type: 'body',
@@ -145,12 +175,9 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
       type: 'interactive',
       interactive: {
         type: 'button',
-        header: {
-          type: 'image',
-          image: {
-            link: creativeUrl
-          }
-        },
+        header: isVideo
+          ? { type: 'video', video: { link: creativeUrl } }
+          : { type: 'image', image: { link: creativeUrl } },
         body: {
           text: bodyText
         },
@@ -195,16 +222,16 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
     console.warn('[Nobogent WABA] Primary interactive send exception:', err?.message);
   }
 
-  // 2. Fallback: Send Image message first, then send interactive button message
+  // 2. Fallback: Send the media first, then send interactive button message
   try {
-    console.log(`[Nobogent WABA] Executing two-step fallback (Image + Buttons) for ${cleanPhone}...`);
-    // Step A: Send Image message with full caption
+    console.log(`[Nobogent WABA] Executing two-step fallback (${isVideo ? 'Video' : 'Image'} + Buttons) for ${cleanPhone}...`);
+    // Step A: Send the media message with full caption
     const imagePayload = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
       to: cleanPhone,
-      type: 'image',
-      image: {
+      type: isVideo ? 'video' : 'image',
+      [isVideo ? 'video' : 'image']: {
         link: creativeUrl,
         caption: bodyText.slice(0, 1024)
       }
@@ -282,7 +309,7 @@ export async function sendNobogentCreativeWithButtons(params: SendCreativeWithBu
         to: cleanPhone,
         type: 'text',
         text: {
-          body: `${headerPrefix}\n\n🖼️ View Image: ${creativeUrl}\n\n${caption}\n\n💬 *Reply "Approve" to publish live to socials, or "Edit" to revise!*`
+          body: `${headerPrefix}\n\n${isVideo ? '🎬 View Video' : '🖼️ View Image'}: ${creativeUrl}\n\n${caption}\n\n💬 *Reply "Approve" to publish live to socials, or "Edit" to revise!*`
         }
       })
     });

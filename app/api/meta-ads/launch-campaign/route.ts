@@ -449,6 +449,8 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
 
     let jobId = null;
     let fallbackWarning = "";
+    /** True when the job id could not be persisted, so it cannot be polled. */
+    let untracked = false;
 
     // --- DOUBLE-LAUNCH GUARD ---
     //
@@ -523,7 +525,8 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
         // Fallback: Generate a random job ID locally so campaign still launches
         const crypto = require('crypto');
         jobId = crypto.randomUUID();
-        fallbackWarning = "Note: Background status tracking is inactive because campaign_jobs table has not been created.";
+        untracked = true;
+        fallbackWarning = "Live progress tracking is unavailable on this deployment (campaign_jobs could not be written).";
     } else {
         jobId = job.id;
         logToFile(`Job created in DB: ${jobId}`);
@@ -544,7 +547,19 @@ Output ONLY a raw JSON object matching this structure (no markdown wrappers like
     return NextResponse.json({
         success: true,
         jobId: jobId,
+        /**
+         * The client must know whether this id is pollable.
+         *
+         * When the `campaign_jobs` insert fails we still launch, but with a locally
+         * invented uuid — which `/api/meta-ads/campaign-job-status` can only answer with
+         * `unknown`. The UI then told the user "Could not confirm the campaign launch"
+         * about a campaign that had in fact been created. `untracked` lets it say
+         * "check Ads Manager" instead of pretending the launch failed.
+         */
+        untracked: untracked || undefined,
         warning: fallbackWarning || undefined,
-        message: 'Campaign is being launched in the background. You will be notified when it\'s ready.'
+        message: untracked
+            ? 'Launch started. Live progress tracking is unavailable right now — check Meta Ads Manager in a couple of minutes to see the result.'
+            : 'Campaign is being launched in the background. You will be notified when it\'s ready.'
     });
 }

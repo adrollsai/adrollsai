@@ -454,8 +454,13 @@ export default function AdsPage() {
         try {
           const urlParams = new URLSearchParams(window.location.search)
           const impersonateId = urlParams.get('impersonate')
-          const impParam = impersonateId ? `?impersonate=${impersonateId}` : ''
-          const res = await fetch(`/api/meta-ads/custom-audiences?${impParam}`)
+          // `impParam` already carries its own "?", so interpolating it after a literal "?"
+          // produced "...?impersonate=..." as "...??impersonate=...". The route then read no
+          // impersonate id and returned the CALLER's audiences — so an agency admin saw their
+          // own audiences in a client's retargeting checklist.
+          const res = await fetch(
+            `/api/meta-ads/custom-audiences${impersonateId ? `?impersonate=${encodeURIComponent(impersonateId)}` : ''}`
+          )
           const data = await res.json()
           if (data.audiences) {
             setCustomAudiences(data.audiences)
@@ -2203,25 +2208,58 @@ export default function AdsPage() {
       try {
         data = JSON.parse(responseText);
       } catch (jsonErr) {
+        /**
+         * A gateway timeout is NOT a success.
+         *
+         * This used to toast "🚀 Campaign submitted! Processing in background…", close the
+         * modal and refresh, with no job id to poll — so a launch that never reached the
+         * server was reported as launched and could never be verified. The retargeting
+         * endpoint is synchronous with a 120s budget, so a 504 there is a real possibility.
+         */
         if (res.status === 504) {
-          toast.success('🚀 Campaign submitted! Processing in background...');
-          setIsModalOpen(false);
-          setRemarketSourceCampaign(null);
-          setSelectedProduct(null);
-          setSelectedProducts([]);
-          setAdForm(prev => ({ ...prev, metaLocations: [], ageMin: 18, ageMax: 65 }));
-          setSelectedCreatives([]);
-          setFormQuestions([]);
-          setFormFields([...DEFAULT_LEAD_FORM_FIELDS]);
-          setCampaignGoal('leads');
-          setConversionEvent('LEAD');
-          fetchAdsData(true);
+          toast.error('The server timed out before confirming the launch. Check Meta Ads Manager before trying again — a campaign may have been created.');
+          setIsSubmitting(false);
+          setCheckingSanity(false);
           return;
         }
         throw new Error(`Server returned unexpected response (Status ${res.status}). Please try again.`);
       }
       if (res.ok) {
+        /**
+         * A suppressed duplicate is not a launch.
+         *
+         * `launch-campaign` answers `{ success: true, duplicate: true, jobId: <the OLD job>,
+         * message }` when an identical campaign launched moments ago, and refunds the credit.
+         * This branch never looked at `duplicate`, so it claimed "🚀 Campaign queued!" and
+         * then polled the *previous* job — reporting that old job's outcome as if it were
+         * this launch. Say what actually happened instead.
+         */
+        if (data.duplicate) {
+          toast.warning(
+            data.message ||
+              'An identical campaign was launched in the last few minutes, so this one was not created again. Check Meta Ads Manager before retrying.'
+          );
+          setIsSubmitting(false);
+          setCheckingSanity(false);
+          setIsModalOpen(false);
+          fetchAdsData(true);
+          return;
+        }
         if (data.jobId) {
+          if (data.untracked) {
+            // The launch is running, but the job id was never persisted, so polling it
+            // could only ever answer "unknown". Say that, rather than reporting a false
+            // "Could not confirm the campaign launch" a few seconds later.
+            toast.warning(
+              data.message ||
+                'Launch started. Live progress tracking is unavailable right now — check Meta Ads Manager shortly to see the result.'
+            )
+            setIsSubmitting(false)
+            setCheckingSanity(false)
+            setIsModalOpen(false)
+            fetchAdsData(true)
+            return
+          }
           // Job-based async launch
           setLaunchJobId(data.jobId);
           setLaunchJobStatus('queued');
@@ -6602,6 +6640,148 @@ export default function AdsPage() {
 
 
 
+            {/* ------------------------------------------------------------------
+                Why the Launch button is disabled — stated INSIDE the modal.
+
+                These same conditions used to be rendered only in the page body,
+                which sits underneath this modal's z-[999] overlay. So a blocked
+                launch presented as a permanently greyed-out button with no
+                explanation anywhere on screen and no way to fix it: the "Missing
+                Payment Method" and "Page Lead Generation Terms Outstanding"
+                panels (with their buttons) were literally behind the modal.
+                ------------------------------------------------------------------ */}
+            {(() => {
+                const geoMissing =
+                    adForm.metaLocations.length === 0 &&
+                    droppedPins.length === 0 &&
+                    !((runAsRemarketing && selectedCustomAudienceIds.length > 0) || !!remarketSourceCampaign)
+
+                // Meta serves ads on these codes too. Only a genuinely dead account
+                // (2 disabled, 3 unsettled, 101 closed, …) should block a launch.
+                const LAUNCHABLE_ACCOUNT_STATUSES = [1, 7, 8, 9, 100]
+
+                const blockers: Array<{ key: string; title: string; detail: string; action?: { label: string; onClick?: () => void; href?: string } }> = []
+
+                if (!selectedAdAccountId) {
+                    blockers.push({
+                        key: 'no-account',
+                        title: 'No Meta ad account connected',
+                        detail: 'Connect a Meta ad account on this page before launching a campaign.',
+                    })
+                } else if (!accountStatus) {
+                    blockers.push({
+                        key: 'account-check-failed',
+                        title: 'Could not verify the Meta ad account',
+                        detail: checkingSanity
+                            ? 'Checking the account with Meta…'
+                            : 'The account health check did not return a result. Refresh it, or the launch will fail at Meta.',
+                        action: checkingSanity ? undefined : {
+                            label: 'Re-check account',
+                            onClick: () => checkAccountStatus(selectedAdAccountId, adForm.pageId),
+                        },
+                    })
+                } else if (accountStatus.error) {
+                    blockers.push({
+                        key: 'account-error',
+                        title: 'Meta account verification failed',
+                        detail: String(accountStatus.error),
+                        action: {
+                            label: 'Re-check account',
+                            onClick: () => checkAccountStatus(selectedAdAccountId, adForm.pageId),
+                        },
+                    })
+                } else {
+                    if (!LAUNCHABLE_ACCOUNT_STATUSES.includes(Number(accountStatus.account_status))) {
+                        blockers.push({
+                            key: 'account-inactive',
+                            title: 'Meta ad account is inactive or restricted',
+                            detail: `Meta reports account status ${accountStatus.account_status ?? 'unknown'}. Resolve billing, a policy hold or identity verification first.`,
+                            action: { label: 'Open Ads Manager', href: 'https://adsmanager.facebook.com/' },
+                        })
+                    }
+                    // Only a definite "no" blocks. An unreadable financial field is not a refusal —
+                    // Meta still answers the launch, and preflight will surface the real reason.
+                    if (accountStatus.has_payment_method === false) {
+                        blockers.push({
+                            key: 'no-payment',
+                            title: 'No payment method on the ad account',
+                            detail: 'Meta needs a funded payment method before it will serve a campaign.',
+                            action: { label: 'Add a card in Ads Manager', href: 'https://adsmanager.facebook.com/' },
+                        })
+                    }
+                    if (campaignType === 'instant_form' && accountStatus.leadgenTos?.leadgen_tos?.accepted !== true) {
+                        blockers.push({
+                            key: 'leadgen-tos',
+                            title: 'Page Lead Generation Terms not accepted',
+                            detail: 'Meta requires the Page to accept its Lead Generation Terms before lead-form campaigns can run.',
+                            action: { label: 'I have accepted them', onClick: () => { void handleConfirmLeadgenTos() } },
+                        })
+                    }
+                }
+
+                if (geoMissing) {
+                    blockers.push({
+                        key: 'no-geo',
+                        title: 'No target location',
+                        detail: 'Add at least one city or drop a pin so Meta knows where to show the ad.',
+                    })
+                }
+                if (selectedCreatives.length === 0) {
+                    blockers.push({
+                        key: 'no-creative',
+                        title: 'No creative selected',
+                        detail: 'Pick at least one image or video from the library, a campaign-ready group, or upload one.',
+                    })
+                }
+
+                if (checkingSanity || blockers.length === 0) return null
+
+                return (
+                    <div className="mx-6 mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="flex items-start gap-2 mb-2">
+                            <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-sm font-bold text-amber-900">
+                                    {blockers.length === 1 ? 'One thing is stopping this launch' : `${blockers.length} things are stopping this launch`}
+                                </p>
+                                <p className="text-xs text-amber-800/90 mt-0.5">Fix these and the button below becomes active.</p>
+                            </div>
+                        </div>
+                        <ul className="space-y-2">
+                            {blockers.map(b => (
+                                <li key={b.key} className="flex flex-wrap items-start justify-between gap-2 rounded-xl bg-white/70 border border-amber-100 px-3 py-2">
+                                    <div className="min-w-0">
+                                        <span className="block text-xs font-bold text-amber-900">{b.title}</span>
+                                        <span className="block text-[11px] text-amber-800/90 leading-relaxed">{b.detail}</span>
+                                    </div>
+                                    {b.action && (
+                                        b.action.href ? (
+                                            <a
+                                                href={b.action.href}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold whitespace-nowrap"
+                                            >
+                                                {b.action.label} <ExternalLink size={11} />
+                                            </a>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={b.action.onClick}
+                                                disabled={checkingSanity}
+                                                className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold whitespace-nowrap disabled:opacity-50"
+                                            >
+                                                {b.action.label}
+                                            </button>
+                                        )
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )
+            })()}
+
             <div className="p-6 bg-white border-t border-slate-100 flex-shrink-0">
               <button 
                 onClick={handleLaunchCampaign} 
@@ -6612,11 +6792,18 @@ export default function AdsPage() {
                     ((adForm.metaLocations.length === 0 && droppedPins.length === 0) && !((runAsRemarketing && selectedCustomAudienceIds.length > 0) || !!remarketSourceCampaign)) || 
                     selectedCreatives.length === 0 || 
                     !accountStatus ||
-                    (accountStatus && !accountStatus.error && (
-                        accountStatus.account_status !== 1 || 
-                        !accountStatus.has_payment_method || 
+                    // A failed health check is a blocker of its own; treat it as such instead of
+                    // reading the (absent) status fields as "account restricted".
+                    !!accountStatus.error ||
+                    (
+                        // Meta still serves ads on 7/8/9/100 (pending review, pending settlement,
+                        // in grace period, pending closure). Requiring === 1 disabled the Launch
+                        // button permanently for perfectly launchable accounts.
+                        ![1, 7, 8, 9, 100].includes(Number(accountStatus.account_status)) ||
+                        // Only a definite "no" blocks; an unreadable field must not.
+                        accountStatus.has_payment_method === false ||
                         (campaignType === 'instant_form' && accountStatus.leadgenTos?.leadgen_tos?.accepted !== true)
-                    ))
+                    )
                 } 
                 className="w-full bg-slate-900 text-white py-4 sm:py-5 rounded-[1.5rem] text-sm sm:text-base font-bold flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 shadow-lg shadow-slate-900/20 hover:bg-slate-800"
               >
