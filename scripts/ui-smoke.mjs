@@ -55,11 +55,24 @@ const report = [];
 
 async function login() {
   await page.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-  await page.fill('input[type="email"]', EMAIL);
-  await page.fill('input[type="password"]', PASSWORD);
+  await page.waitForSelector('input[name="email"]', { timeout: 30_000 });
+  // Type rather than fill: `fill()` sets the DOM value before React has hydrated, so the component's
+  // state stays empty and the submit button never enables. A real user's keystrokes cannot outrun it.
+  await page.locator('input[name="email"]').click();
+  await page.locator('input[name="email"]').pressSequentially(EMAIL, { delay: 12 });
+  await page.locator('input[name="password"]').click();
+  await page.locator('input[name="password"]').pressSequentially(PASSWORD, { delay: 12 });
+  // The submit button is disabled until the form is valid, and a fast fill can outrun that: wait for it
+  // to become enabled instead of clicking into a disabled control.
+  const submit = page.locator('button[type="submit"]').first();
+  await submit.waitFor({ state: 'visible', timeout: 30_000 });
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (await submit.isEnabled().catch(() => false)) break;
+    await page.waitForTimeout(250);
+  }
   await Promise.all([
     page.waitForURL(/\/dashboard/, { timeout: 60_000 }).catch(() => null),
-    page.click('button[type="submit"]'),
+    submit.click(),
   ]);
   const url = page.url();
   if (!/\/dashboard/.test(url)) {
