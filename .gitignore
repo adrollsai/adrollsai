@@ -135,3 +135,9 @@ evals/reports/
 *.bak
 *.bak-*
 
+
+# Playwright: browser test artefacts. The screenshots contain real lead names and phone numbers, so
+# they stay on the machine that ran them.
+.ui-screens/
+test-results/
+playwright-report/
