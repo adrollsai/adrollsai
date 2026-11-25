@@ -15,6 +15,8 @@
  */
 import { gatherDayMetrics, windowFor, type MetricsReader } from '../lib/agent/ceo-metrics';
 import { analyseDay, renderReport } from '../lib/agent/ceo-findings';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 let pass = 0;
 let fail = 0;
@@ -227,6 +229,62 @@ head('5. A healthy day reads as healthy');
     'the wins are present',
     findings.some((finding) => finding.severity === 'win'),
     findings.filter((finding) => finding.severity === 'win').map((finding) => finding.id).join(', '),
+  );
+}
+
+head('6. The running-ad count comes from Meta, not from an empty table');
+
+{
+  /**
+   * The bug this section exists to prevent: `campaigns.active` counted rows in our own
+   * `agent_ad_campaigns` table, which is empty on every account in production. So every business
+   * was told "0 running ad(s)" while Meta billed them — including an account spending ₹3,746 a
+   * week with a campaign ACTIVE. The count now comes from Meta, with the local table only as a
+   * fallback when Meta cannot be read at all.
+   */
+  const root = process.cwd();
+  const metricsSrc = readFileSync(path.join(root, 'lib/agent/ceo-metrics.ts'), 'utf8');
+  const perfSrc = readFileSync(path.join(root, 'lib/ads/account-performance.ts'), 'utf8');
+  const digestSrc = readFileSync(path.join(root, 'app/api/cron/ceo-digest/route.ts'), 'utf8');
+
+  check(
+    'the reader prefers Meta\u2019s live campaign count',
+    /active:\s*perf\.activeCampaigns\s*\?\?/.test(metricsSrc),
+    'prefers perf.activeCampaigns, falls back to the local table',
+  );
+  check(
+    'account-performance asks Meta for ACTIVE campaigns',
+    /entity:\s*'campaign'/.test(perfSrc) && /status:\s*'ACTIVE'/.test(perfSrc),
+    'meta_graph_list with effective status ACTIVE',
+  );
+  check(
+    'a failed campaign read is null, never a confident zero',
+    /activeCampaigns:\s*number\s*\|\s*null/.test(perfSrc) && /return\s+null/.test(perfSrc),
+    'null means "could not see the ad account"',
+  );
+  check(
+    'the evening email reports ad delivery as something that went out',
+    /slot === 'eod'/.test(digestSrc) && /dayMetrics\.campaigns\?\.spendPaise/.test(digestSrc),
+    'a live account is never told "nothing went out today"',
+  );
+
+  // Behavioural: whatever the reader reports as running must reach the owner's eyes.
+  const stalledWithAds: MetricsReader = {
+    ...healthyReader(),
+    routinesInWindow: async () => ({ ran: 0, failed: 0 }),
+    ads: async () => ({ active: 3, spendPaise: 120_000, leads: 5, previousCplPaise: null }),
+  };
+  const { metrics } = await gatherDayMetrics(stalledWithAds, windowFor(new Date('2026-02-10T02:00:00Z')));
+  check(
+    'the reader\u2019s count is what the report shows',
+    metrics.campaigns.active === 3,
+    String(metrics.campaigns.active),
+  );
+  const stalled = analyseDay(metrics).find((finding) => finding.id === 'engine-not-run');
+  check(
+    'and the stopped-engine finding quotes the real number of running ads',
+    /3 running ad\(s\)/.test(String(stalled?.evidence ?? '')),
+    String(stalled?.evidence ?? 'no finding'),
   );
 }
 

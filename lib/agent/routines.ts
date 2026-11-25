@@ -387,6 +387,7 @@ export async function queueRoutineRun(
         results: 0,
         costPerResultPaise: null,
         previousCostPerResultPaise: null,
+        activeCampaigns: null,
         rows: 0,
         learnings: null,
         error: String(e?.message || e),

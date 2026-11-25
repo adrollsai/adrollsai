@@ -58,6 +58,9 @@ export interface MetricsReader {
   /**
    * Paid advertising. `spendPaise` and `leads` are NULL when the figure cannot be sourced —
    * which is the honest answer today, because attribution lives in Meta's reports.
+   *
+   * `active` is how many campaigns Meta reports as ACTIVE right now, falling back to our own
+   * launch records only when Meta could not be read.
    */
   ads(): Promise<{ active: number; spendPaise: number | null; leads: number | null; previousCplPaise: number | null }>;
 }
@@ -241,6 +244,18 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
     },
 
     async ads() {
+      /**
+       * WHAT "RUNNING" MEANS.
+       *
+       * `agent_ad_campaigns` is our own bookkeeping of launches we made, and it is empty on every
+       * account in production, so `active` was structurally 0. The report then told a business
+       * spending ₹3,746 a week "(0 running ad(s))" — the one line an owner can check against
+       * Ads Manager in two seconds, and the reason the whole report reads as if it were written
+       * about somebody else. Meta knows which campaigns are live; ask Meta.
+       *
+       * The local table stays as the fallback for the case where Meta cannot be read at all, so
+       * an account with a recorded launch is still counted rather than dropped to zero.
+       */
       const campaigns = await countRows('agent_ad_campaigns', (query) => query);
       const active = campaigns.filter((row) => ['active', 'enabled', 'running'].includes(String(row.status ?? '').toLowerCase()));
 
@@ -272,7 +287,7 @@ export function supabaseMetricsReader(supabase: any, userId: string): MetricsRea
           return { active: active.length, spendPaise: null, leads: null, previousCplPaise: null };
         }
         return {
-          active: active.length,
+          active: perf.activeCampaigns ?? active.length,
           spendPaise: perf.spendPaise,
           leads: perf.results,
           previousCplPaise: perf.previousCostPerResultPaise,

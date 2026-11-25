@@ -47,6 +47,16 @@ export interface AccountPerformance {
   costPerResultPaise: number | null;
   /** The same figure for the week before, derived by subtracting the two windows. Null when unknown. */
   previousCostPerResultPaise: number | null;
+  /**
+   * How many campaigns are ACTIVE on the ad account right now, read from Meta.
+   *
+   * Null when the campaign list could not be read. This is a SEPARATE question from spend: a
+   * campaign can be live and deliver nothing this week (paused-by-review, ad rejected, learning
+   * limited), and spend can be non-zero with every campaign now stopped. The CEO report asked our
+   * own `agent_ad_campaigns` table, which is empty on every account, so every business was told
+   * "0 running ad(s)" while Meta was billing them — the one figure an owner can check at a glance.
+   */
+  activeCampaigns: number | null;
   /** How many ad-level rows the verdict is based on. */
   rows: number;
   /** Per-argument verdicts. Null when nothing could be read. */
@@ -62,6 +72,7 @@ const NOT_MEASURED = (error?: string): AccountPerformance => ({
   results: 0,
   costPerResultPaise: null,
   previousCostPerResultPaise: null,
+  activeCampaigns: null,
   rows: 0,
   learnings: null,
   error,
@@ -174,6 +185,39 @@ export async function loadAccountPerformance(
   return value;
 }
 
+/**
+ * How many campaigns Meta says are running, right now.
+ *
+ * Read with `status: 'ACTIVE'`, which the connector maps to `effective_status` — the status a
+ * campaign is REALLY in, including rejections, pauses by review and spend-limit holds. The
+ * plain `status` field says what the owner set, not what is delivering, and reporting "3 running
+ * ads" for three rejected campaigns is the same lie in the other direction.
+ *
+ * Never throws and never guesses: a failed read returns null, so the report says it could not
+ * see the ad account rather than inventing a zero.
+ */
+async function countActiveCampaigns(graphTools: any): Promise<number | null> {
+  try {
+    const listed: any = await withTimeout(
+      graphTools.meta_graph_list.execute({
+        entity: 'campaign',
+        status: 'ACTIVE',
+        fields: 'id,name,effective_status',
+        limit: 100,
+      }),
+      META_TIMEOUT_MS,
+      'Meta'
+    );
+    if (!listed?.success) return null;
+    // `count` is what Meta returned on this page; trust the rows when they are present so a
+    // connector that reports a stale count cannot inflate the number.
+    if (Array.isArray(listed.items)) return listed.items.length;
+    return typeof listed.count === 'number' ? listed.count : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readPerformance(
   supabase: SupabaseClient,
   userId: string,
@@ -196,6 +240,11 @@ async function readPerformance(
   } catch (e: any) {
     return NOT_MEASURED(`the Meta connector could not be loaded: ${e?.message || e}`);
   }
+
+  // Kick the campaign count off alongside the insights read: two independent Graph calls, and the
+  // report waits on both. `countActiveCampaigns` catches everything, so it can never surface as an
+  // unhandled rejection if the insights read fails first.
+  const activeCampaignsPromise = countActiveCampaigns(graphTools);
 
   let insights: any;
   try {
@@ -227,6 +276,7 @@ async function readPerformance(
       results: 0,
       costPerResultPaise: null,
       previousCostPerResultPaise: null,
+      activeCampaigns: await activeCampaignsPromise,
       rows: 0,
       learnings: summariseLearnings([], { period: datePreset, currency: insights.currency || 'INR' }),
     };
@@ -283,6 +333,7 @@ async function readPerformance(
     results: window.results,
     costPerResultPaise: costPerResultPaise(window.spend, window.results),
     previousCostPerResultPaise,
+    activeCampaigns: await activeCampaignsPromise,
     rows: rows.length,
     learnings,
   };

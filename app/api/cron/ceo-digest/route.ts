@@ -120,6 +120,9 @@ export async function GET(req: NextRequest) {
     // about it. Same engine the CEO tab renders, so the email and the tab can never disagree.
     // A failure here must not cost the owner the whole report.
     let bottlenecks: DigestItem[] = [];
+    // Kept out here so the "what went out" section can use the same read. It is gathered once
+    // per business either way; this only stops the second consumer paying for a second read.
+    let dayMetrics: any = null;
     try {
       const tz = (profile as any)?.timezone || routine.timezone || 'Asia/Kolkata';
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -127,12 +130,44 @@ export async function GET(req: NextRequest) {
         supabaseMetricsReader(supabase, routine.user_id),
         windowFor(yesterday, tz)
       );
+      dayMetrics = metrics;
       bottlenecks = analyseDay(metrics)
         .filter((f) => f.severity === 'blocked' || f.severity === 'risk')
         .slice(0, 4)
         .map((f) => ({ label: f.title, detail: f.recommendation }));
     } catch (findErr: any) {
       console.warn(`[ceo-digest] findings failed for ${routine.id}:`, findErr?.message);
+    }
+
+    /**
+     * Ads are the half of "what went out" that the routine never reports.
+     *
+     * `done` is built from `routine_runs.digest`, so it only ever describes work the daily job
+     * did. Meta spends and delivers whether or not that job is switched on — an account with a
+     * live campaign was told "nothing went out today" while ₹3,746 left its bank and 42 enquiries
+     * arrived. The owner's reasonable reading of that email is that the app is not watching the
+     * account at all. It is; it just was not saying so.
+     *
+     * Only in the evening slot: the morning email is "what I am doing today", and yesterday's
+     * delivery in it would read as a plan.
+     */
+    if (slot === 'eod' && dayMetrics) {
+      const spend = Number(dayMetrics.campaigns?.spendPaise ?? 0);
+      const adLeads = Number(dayMetrics.campaigns?.leads ?? 0);
+      const running = Number(dayMetrics.campaigns?.active ?? 0);
+      if (spend > 0 || running > 0) {
+        const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+        done.push({
+          label:
+            spend > 0
+              ? `Your ads spent ${rupees(spend)} and brought ${adLeads} enquir${adLeads === 1 ? 'y' : 'ies'}`
+              : `${running} ad campaign${running === 1 ? ' is' : 's are'} live`,
+          detail:
+            running > 0
+              ? `${running} campaign${running === 1 ? '' : 's'} running · last 7 days, from Meta`
+              : 'no campaign is running right now · last 7 days, from Meta',
+        });
+      }
     }
 
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://app.nobogent.com').replace(/\/$/, '');
