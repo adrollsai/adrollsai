@@ -46,22 +46,40 @@ export const FLOW_TRIGGERS = [
   'trigger_ig_dm',
   'trigger_fb_messenger',
   'trigger_whatsapp_template_button',
+  'trigger_booking_created',
 ] as const;
 
 export type FlowTrigger = (typeof FLOW_TRIGGERS)[number];
 
 /** The node types `flow-runner.ts` actually executes. */
-export const FLOW_NODE_TYPES = ['triggerNode', 'whatsappMessageNode', 'aiCallNode', 'delayNode'] as const;
+export const FLOW_NODE_TYPES = ['triggerNode', 'whatsappMessageNode', 'aiCallNode', 'delayNode', 'whatsappTemplateNode'] as const;
 
-/** `flow-runner.ts` caps a delay node at 10 seconds. Longer waits are not delays. */
+/** `flow-runner.ts` caps an INLINE delay node at 10 seconds. Longer waits are scheduled instead. */
 export const MAX_FLOW_DELAY_SECONDS = 10;
 
+/** The longest a scheduled wait may be. A sequence is a ledger row, so this is a sanity ceiling. */
+export const MAX_SCHEDULED_DELAY_MINUTES = 90 * 24 * 60;
+
 export interface FlowStep {
-  kind: 'message' | 'call' | 'wait' | 'handoff';
+  kind: 'message' | 'call' | 'wait' | 'handoff' | 'template';
   /** `message`: what to send. `call`: optional note for the caller. `handoff`: why a human takes over. */
   text?: string;
-  /** `wait`: seconds, at most MAX_FLOW_DELAY_SECONDS. */
+  /** `wait`: seconds, at most MAX_FLOW_DELAY_SECONDS (an inline delay). */
   seconds?: number;
+  /**
+   * Wait this many minutes BEFORE this step, on the durable schedule.
+   *
+   * This is the "then after two days" half of a sequence. It is deliberately not a `wait` step:
+   * an inline wait cannot sleep for two days, but a scheduled ledger row simply states the time.
+   */
+  delayMinutes?: number;
+  /**
+   * Time this step relative to the APPOINTMENT instead of to the trigger: 1440 = 24 hours before it,
+   * 30 = half an hour before it. Requires the booking trigger.
+   */
+  beforeEventMinutes?: number;
+  /** `template`: the approved Meta template to send. */
+  templateName?: string;
 }
 
 export interface BuildFlowInput {
@@ -69,6 +87,13 @@ export interface BuildFlowInput {
   trigger: FlowTrigger;
   /** Optional template whose button click starts the flow. */
   templateName?: string;
+  /**
+   * Only fire for leads that came from this campaign.
+   *
+   * "When a lead comes from the campaign I just launched" is a different instruction from "when a
+   * lead comes in", and an account running several campaigns needs the difference.
+   */
+  campaignId?: string;
   /**
    * Words that must appear in the inbound message for the flow to fire.
    *
@@ -85,8 +110,14 @@ export interface BuildFlowInput {
 export const MAX_FLOW_KEYWORDS = 10;
 const MAX_KEYWORD_CHARS = 40;
 
-function normaliseKeywords(raw: unknown): string[] {
-  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+/** "1440" is unreadable in a node title; "1 day" is what the owner actually said. */
+function formatDelay(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440} day${minutes === 1440 ? '' : 's'}`;
+  if (minutes % 60 === 0) return `${minutes / 60} hour${minutes === 60 ? '' : 's'}`;
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+function normaliseKeywords(raw: unknown): string[] {  const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const entry of list) {
@@ -112,7 +143,15 @@ export interface BuiltFlow {
 }
 
 export class FlowError extends Error {
-  readonly reason: 'unknown_trigger' | 'no_steps' | 'delay_too_long' | 'empty_message' | 'unknown_step' | 'keywords_not_supported';
+  readonly reason:
+    | 'unknown_trigger'
+    | 'no_steps'
+    | 'delay_too_long'
+    | 'empty_message'
+    | 'unknown_step'
+    | 'keywords_not_supported'
+    | 'needs_booking_trigger'
+    | 'no_template';
   constructor(reason: FlowError['reason'], message: string) {
     super(message);
     this.name = 'FlowError';
@@ -183,6 +222,63 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
   steps.forEach((step, index) => {
     const x = ORIGIN_X + SPACING_X * (index + 1);
     const id = `node_${index + 1}_${step.kind}`;
+
+    /**
+     * Timing in front of a step.
+     *
+     * Two different clocks, and the difference is the whole point of a sequence:
+     *   delayMinutes       — after the trigger, or after the step before it.
+     *   beforeEventMinutes — before the appointment itself (only meaningful on the booking trigger).
+     * Both are written as their own delay node because that is the shape the planner already reads,
+     * and `minutes` survives the round trip through storage without being converted to seconds.
+     */
+    const delay = Number(step.delayMinutes ?? 0);
+    if (Number.isFinite(delay) && delay > 0) {
+      if (delay > MAX_SCHEDULED_DELAY_MINUTES) {
+        throw new FlowError(
+          'delay_too_long',
+          `step ${index + 1} waits ${Math.round(delay / 1440)} days, which is longer than this system schedules ` +
+            `(${Math.round(MAX_SCHEDULED_DELAY_MINUTES / 1440)} days). Nothing that far out survives a relaunch intact.`,
+        );
+      }
+      nodes.push({
+        id: `delay_before_${index + 1}`,
+        type: 'delayNode',
+        position: { x: ORIGIN_X + SPACING_X * (index + 0.5), y: ORIGIN_Y },
+        data: { title: `Wait ${formatDelay(delay)}`, minutes: delay },
+      });
+    }
+
+    const beforeEvent = Number(step.beforeEventMinutes ?? NaN);
+    if (Number.isFinite(beforeEvent)) {
+      if (input.trigger !== 'trigger_booking_created') {
+        throw new FlowError(
+          'needs_booking_trigger',
+          `step ${index + 1} is timed against the appointment, which only the "appointment booked" trigger ` +
+            `provides. Either use that trigger, or give this step a delayMinutes instead.`,
+        );
+      }
+      nodes.push({
+        id: `before_event_${index + 1}`,
+        type: 'delayNode',
+        position: { x: ORIGIN_X + SPACING_X * (index + 0.5), y: ORIGIN_Y },
+        data: { title: `${formatDelay(Math.abs(beforeEvent))} before the appointment`, beforeEventMinutes: beforeEvent },
+      });
+    }
+
+    if (step.kind === 'template') {
+      const tpl = String(step.templateName ?? '').trim();
+      if (!tpl) {
+        throw new FlowError('no_template', `step ${index + 1} sends a template but names none`);
+      }
+      nodes.push({
+        id,
+        type: 'whatsappTemplateNode',
+        position: { x, y: ORIGIN_Y },
+        data: { title: `Template ${index + 1}`, templateName: tpl, ...(step.text ? { message: String(step.text) } : {}) },
+      });
+      return;
+    }
 
     if (step.kind === 'message') {
       const message = String(step.text ?? '').trim();
@@ -261,8 +357,8 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
   }
 
   notes.push(
-    `a wait longer than ${MAX_FLOW_DELAY_SECONDS}s is not a delay node Ã¢â‚¬â€ the runner clamps it Ã¢â‚¬â€ so this flow ` +
-      'fires its steps in order as soon as the trigger matches',
+    `a wait longer than ${MAX_FLOW_DELAY_SECONDS}s inside the flow is not an inline delay — use delayMinutes on ` +
+      'the step, which is written to the schedule and fires at the real time you asked for',
   );
 
   return {
@@ -274,6 +370,8 @@ export function buildFlow(input: BuildFlowInput): BuiltFlow {
       trigger: {
         type: input.trigger,
         ...(input.templateName ? { templateName: input.templateName } : {}),
+        // Stored on the trigger, not on the steps: "only this campaign" is a property of the event.
+        ...(input.campaignId ? { campaignId: String(input.campaignId) } : {}),
         ...(keywords.length ? { keywords } : {}),
         config: keywords.length ? { keywords } : {},
       },
@@ -292,9 +390,15 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
       description:
         'Create a WhatsApp or calling automation flow that the flow runner will actually execute. ' +
         'Give it a name, one trigger from the supported list, and an ordered list of steps ' +
-        '(message / call / wait / handoff). Use a wait of at most 10 seconds: the runner clamps longer delays, so a ' +
-        '"wait 2 hours" must be a scheduled follow-up instead, and asking for one here is refused with that ' +
-        'reason. For an inbound-message trigger, pass keywords so the flow only answers the messages it is for; ' +
+        '(message / call / wait / handoff). ' +
+        'TIMING: a step may carry delayMinutes (this step fires that long AFTER the one before — "then the brochure ' +
+        'in 2 days" is delayMinutes: 2880), or beforeEventMinutes when the trigger is trigger_booking_created ' +
+        '(1440 = 24 hours before the appointment, 30 = half an hour before). Long waits are safe: each wait becomes ' +
+        'a scheduled row with its own real time, not a held connection, and a step whose appointment-relative ' +
+        'moment has already passed is skipped rather than sent late. Prefer kind "template" with an approved ' +
+        'templateName for anything more than a day out: outside the 24-hour reply window a template is the only ' +
+        'thing Meta will deliver. Pass campaignId when the owner means "only leads from the campaign I just ' +
+        'launched". For an inbound-message trigger, pass keywords so the flow only answers the messages it is for; ' +
         'without them an active flow replies to EVERY inbound message. End with a handoff step when a person ' +
         'should take over — it records the handoff in the CRM and messages nobody. ' +
         'Check list_automation_flows first — a duplicate flow and an existing one both firing is worse ' +
@@ -315,12 +419,28 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
         steps: z
           .array(
             z.object({
-              kind: z.enum(['message', 'call', 'wait', 'handoff']).describe('message | call | wait | handoff'),
+              kind: z
+                .enum(['template', 'message', 'call', 'wait', 'handoff'])
+                .describe('template | message | call | wait | handoff'),
+              templateName: z
+                .string()
+                .optional()
+                .describe('For kind "template": the approved Meta template to send'),
               text: z
                 .string()
                 .optional()
                 .describe('message text, a note for the AI caller, or why a human takes over (handoff)'),
-              seconds: z.number().optional().describe('wait length in seconds, at most 10'),
+              seconds: z.number().optional().describe('for kind "wait": seconds, at most 10'),
+              delayMinutes: z
+                .number()
+                .optional()
+                .describe('wait this long BEFORE this step: 120 = 2 hours, 2880 = 2 days, 10080 = a week'),
+              beforeEventMinutes: z
+                .number()
+                .optional()
+                .describe(
+                  'time this step against the appointment (booking trigger only): 1440 = 24h before, 30 = 30min before'
+                ),
             }),
           )
           .min(1)
@@ -333,6 +453,7 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
             name: input.name,
             trigger: input.trigger as FlowTrigger,
             ...(input.templateName ? { templateName: input.templateName } : {}),
+            ...(input.campaignId ? { campaignId: String(input.campaignId) } : {}),
             ...(input.keywords ? { keywords: input.keywords } : {}),
             steps: (input.steps ?? []) as FlowStep[],
             // Flows start PAUSED. Writing one is authoring; making it live is a decision that reaches

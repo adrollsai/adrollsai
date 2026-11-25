@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_QUIET_HOURS, scheduleFor, type InternalAction, type PlannedAction, type QuietHours } from './scheduling';
+import { actionForStep, planTimes } from './sequence';
 import { enqueueFlowRun, quietHoursFor, type EnqueueKind } from './store';
 import { TRIGGER_CAPABILITIES, validateAgainstTrigger } from './capabilities';
 
@@ -35,7 +36,14 @@ export interface StoredFlowNode {
     prompt?: string;
     seconds?: number;
     duration?: number;
+    minutes?: number;
+    hours?: number;
+    days?: number;
+    /** Timing relative to an appointment instead of to the trigger: 1440 = 24 hours before it. */
+    beforeEventMinutes?: number;
+    beforeEvent?: number;
     templateName?: string;
+    template?: string;
     buttons?: { id?: string; title?: string; text?: string }[] | string[];
     triggerType?: string;
     agent?: string;
@@ -51,7 +59,14 @@ export interface PlannedFlowStep extends PlannedAction {
   buttons?: { id: string; title: string }[];
   /** An AI step in front of this action: the text is written at approval time, not before it. */
   compose?: { prompt: string };
+  /**
+   * This step's moment is relative to the event's own time (an appointment), not to the trigger.
+   * A negative value lands after the event.
+   */
+  beforeEventMinutes?: number;
 }
+
+const numberFrom = (value: unknown): number => (Number.isFinite(Number(value)) ? Number(value) : NaN);
 
 export interface StoredTrigger {
   type: string;
@@ -59,6 +74,8 @@ export interface StoredTrigger {
   keyword: string | null;
   templateName: string | null;
   buttonId: string | null;
+  /** When set, this flow only fires for leads that came from this campaign. */
+  campaignId: string | null;
 }
 
 /** Read the trigger out of a stored flow description, without guessing one that is absent. */
@@ -79,6 +96,7 @@ export function storedTrigger(description: string | null | undefined): StoredTri
     keyword: raw.keyword ? String(raw.keyword) : null,
     templateName: raw.templateName ? String(raw.templateName) : null,
     buttonId: raw.button_id ? String(raw.button_id) : raw.buttonId ? String(raw.buttonId) : null,
+    campaignId: raw.campaignId ? String(raw.campaignId) : raw.campaign_id ? String(raw.campaign_id) : null,
   };
 }
 
@@ -132,12 +150,23 @@ export function planFromFlowDescription(description: string | null | undefined):
   const actions: PlannedFlowStep[] = [];
   /** An AI step writes the copy for the action that follows it. */
   let pendingCompose: { prompt: string } | null = null;
+  /** A delay node that said "before the appointment" times the step that follows it. */
+  let pendingBeforeEvent: number | null = null;
+
+  const withBeforeEvent = (step: PlannedFlowStep): PlannedFlowStep => {
+    if (pendingBeforeEvent != null) {
+      step.beforeEventMinutes = pendingBeforeEvent;
+      pendingBeforeEvent = null;
+    }
+    return step;
+  };
 
   const attach = (step: PlannedFlowStep) => {
     if (pendingCompose) {
       step.compose = pendingCompose;
       pendingCompose = null;
     }
+    withBeforeEvent(step);
     actions.push(step);
   };
 
@@ -180,8 +209,39 @@ export function planFromFlowDescription(description: string | null | undefined):
     }
 
     if (type === 'delayNode' || type === 'action_delay') {
-      const seconds = Number(data.seconds ?? data.duration ?? 0);
-      if (Number.isFinite(seconds) && seconds > 0) actions.push({ kind: 'wait', seconds });
+      /**
+       * A wait can be written in seconds, minutes, hours or days — an owner saying "two days" should
+       * not have to convert it, and the old ten-second ceiling is gone: the scheduler puts every
+       * wait on the durable ledger as an absolute time, so a two-day gap is a row, not a held
+       * connection. `beforeEventMinutes` is the other kind of timing: relative to an appointment.
+       */
+      const beforeEventMinutes = Number(data.beforeEventMinutes ?? data.beforeEvent ?? NaN);
+      if (Number.isFinite(beforeEventMinutes)) {
+        pendingBeforeEvent = beforeEventMinutes;
+        continue;
+      }
+      const seconds = numberFrom(data.seconds ?? data.duration ?? NaN);
+      const minutes = numberFrom(data.minutes ?? NaN);
+      const hours = numberFrom(data.hours ?? NaN);
+      const days = numberFrom(data.days ?? NaN);
+      const totalSeconds = Number.isFinite(seconds) && seconds > 0
+        ? seconds
+        : (Number.isFinite(minutes) ? minutes : 0) * 60 +
+          (Number.isFinite(hours) ? hours : 0) * 3600 +
+          (Number.isFinite(days) ? days : 0) * 86400;
+      if (Number.isFinite(totalSeconds) && totalSeconds > 0) actions.push({ kind: 'wait', seconds: totalSeconds });
+      continue;
+    }
+
+    // An approved template, written as its own step. This is the only way to reach someone after
+    // their 24-hour reply window has closed, which is exactly the case for a two-day follow-up.
+    if (type === 'whatsappTemplateNode' || type === 'action_template' || type === 'templateNode') {
+      const tpl = String(data.templateName ?? data.template ?? '').trim();
+      if (!tpl) {
+        problems.push('a template step names no template, so there would be nothing to send');
+        continue;
+      }
+      attach(withBeforeEvent({ kind: 'message', text: String(data.message ?? data.body ?? '').trim(), templateName: tpl }));
       continue;
     }
 
@@ -200,7 +260,7 @@ export function planFromFlowDescription(description: string | null | undefined):
     if (type === 'action_ai_call_transfer') {
       const agent = String(data.agent ?? data.assignAgent ?? '').trim();
       const internal: InternalAction = agent ? { kind: 'assign', value: agent } : { kind: 'note', value: String(data.note ?? 'A human needs to take this conversation over.').trim() };
-      actions.push({ kind: 'handoff', internal });
+      attach({ kind: 'handoff', internal });
       continue;
     }
 
@@ -250,6 +310,12 @@ export async function startFlowRun(
     triggerType?: string | null;
     /** Which run this is. Defaults to 'once' — a flow that fires once per lead for ever. */
     runKey?: string;
+    /**
+     * The event's own moment, for steps timed against it — the appointment time on a booking.
+     * Steps that say "before the appointment" are meaningless without it, and are dropped with a
+     * reason rather than guessed.
+     */
+    anchorAt?: Date | string | null;
   }
 ): Promise<StartResult> {
   const now = input.now ?? new Date();
@@ -288,13 +354,32 @@ export async function startFlowRun(
   const blockers = [...plan.problems, ...identityBlockers];
   if (blockers.length) return { ok: false, queued: 0, blockers, reason: 'infeasible', triggerType, runKey };
 
-  const scheduled = scheduleFor(input.flowId, input.leadId, plan.actions, now, quiet, runKey);
+  const anchorAt = input.anchorAt ? new Date(input.anchorAt) : null;
+  const timePlan = planTimes(plan.actions, {
+    startAt: now,
+    anchorAt: anchorAt && !Number.isNaN(anchorAt.getTime()) ? anchorAt : null,
+    quiet,
+  });
+  const scheduled = timePlan.at;
   if (!scheduled.length) {
-    return { ok: false, queued: 0, blockers: ['the flow has nothing to run'], reason: 'nothing_to_do', triggerType, runKey };
+    return {
+      ok: false,
+      queued: 0,
+      blockers: [
+        ...timePlan.dropped.map((drop) => `step ${drop.position + 1}: ${drop.message}`),
+        'the flow has nothing to run',
+      ],
+      reason: 'nothing_to_do',
+      triggerType,
+      runKey,
+    };
   }
 
   const keyed = scheduled.map((row) => {
-    const action = plan.actions[row.stepIndex];
+    // `row.stepIndex` counts the runnable steps, so the RAW action list must be filtered by the same
+    // rule before it is indexed. It was not, which meant any sequence with a delay resolved the step
+    // after the delay to the delay itself and sent an empty message.
+    const action = actionForStep(plan.actions, row.stepIndex);
     return {
       stepIndex: row.stepIndex,
       kind: (row.kind === 'call' ? 'call' : row.kind === 'handoff' ? 'handoff' : 'message') as EnqueueKind,

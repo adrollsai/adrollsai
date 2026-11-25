@@ -32,6 +32,14 @@ export interface FlowTriggerEvent {
   text?: string | null;
   /** The template/quick-reply id, for a button trigger. */
   buttonId?: string | null;
+  /**
+   * Which campaign this lead came from, when the platform knows — the ad campaign id, the source
+   * id, whatever identifies it. A sequence scoped to "the campaign I just launched" needs this, and
+   * without it every campaign's leads would trigger it.
+   */
+  campaignId?: string | null;
+  /** The event's own moment (an appointment), for steps timed against it. */
+  anchorAt?: Date | string | null;
   /** Which run this is; derived from the event so a replay cannot start a second run. */
   runKey?: string | null;
   now?: Date;
@@ -59,12 +67,30 @@ function keywordList(keywords: string[], keyword: string | null): string[] {
  */
 export function matchesFlowTrigger(
   stored: { trigger: ReturnType<typeof storedTrigger> },
-  event: Pick<FlowTriggerEvent, 'trigger' | 'text' | 'buttonId'>
+  event: Pick<FlowTriggerEvent, 'trigger' | 'text' | 'buttonId' | 'campaignId'>
 ): MatchVerdict {
   const trigger = stored.trigger;
   if (!trigger) return { matches: false, why: 'the flow records no trigger, so only an event can start it' };
   if (trigger.type !== event.trigger) {
     return { matches: false, why: `this flow listens on ${trigger.type}, not ${event.trigger}` };
+  }
+
+  /**
+   * A campaign-scoped sequence listens to ONE campaign, not to every lead the account ever gets.
+   *
+   * This matters more than it looks: an owner who says "when a lead comes from the campaign I just
+   * launched" is usually running several campaigns, and a sequence that fires on all of them would
+   * message people who never saw it — with a template that mentions the wrong offer.
+   */
+  if (trigger.campaignId) {
+    const wanted = String(trigger.campaignId).trim().toLowerCase();
+    const got = String(event.campaignId ?? '').trim().toLowerCase();
+    if (!got) {
+      return { matches: false, why: `it only listens to campaign ${trigger.campaignId}, and this lead names no campaign` };
+    }
+    if (got !== wanted) {
+      return { matches: false, why: `it only listens to campaign ${trigger.campaignId}, and this lead came from ${event.campaignId}` };
+    }
   }
 
   const keywords = keywordList(trigger.keywords, trigger.keyword);
@@ -133,6 +159,25 @@ export async function fireFlowTrigger(supabase: SupabaseClient, event: FlowTrigg
   // Only active flows. A paused flow is a decision its owner made, not an error.
   const candidates = (flows ?? []).filter((f: any) => f.is_active !== false);
 
+  /**
+   * A campaign-scoped sequence needs to know which campaign this lead came from, and most webhook
+   * callers do not pass it. Rather than change every one of them (and forget the next one), the
+   * campaign is read from the lead — once, and only when some flow actually filters on it.
+   */
+  let campaignId = event.campaignId ?? null;
+  if (!campaignId) {
+    const needsCampaign = candidates.some((f: any) => storedTrigger(f.description)?.campaignId);
+    if (needsCampaign) {
+      const { data: lead } = await supabase
+        .from('leads')
+        .select('campaign_id')
+        .eq('id', event.leadId)
+        .maybeSingle();
+      campaignId = (lead as any)?.campaign_id ?? null;
+    }
+  }
+  const matchEvent = { ...event, campaignId };
+
   // One flow per trigger key: the oldest wins, the rest are reported rather than also fired.
   const claimed = new Map<string, string>();
 
@@ -141,7 +186,7 @@ export async function fireFlowTrigger(supabase: SupabaseClient, event: FlowTrigg
     const title = String(flow.title ?? id);
     const trigger = storedTrigger(flow.description);
 
-    const verdict = matchesFlowTrigger({ trigger }, event);
+    const verdict = matchesFlowTrigger({ trigger }, matchEvent);
     if (!verdict.matches) {
       // Only report flows that listen on this trigger but were filtered out; the rest are noise.
       if (trigger?.type === event.trigger) {
@@ -177,6 +222,7 @@ export async function fireFlowTrigger(supabase: SupabaseClient, event: FlowTrigg
         now: event.now,
         triggerType: event.trigger,
         runKey: event.runKey ?? `once`,
+        anchorAt: event.anchorAt ?? null,
       });
 
       if (!started.ok) {

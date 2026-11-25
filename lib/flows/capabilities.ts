@@ -98,6 +98,17 @@ export const TRIGGER_CAPABILITIES: Record<string, TriggerCapability> = {
     requiresPermission: WHATSAPP_PERMISSION,
     note: 'Fires from a template you already had approved, so the number is known.',
   },
+  trigger_booking_created: {
+    trigger: 'trigger_booking_created',
+    label: 'Appointment booked',
+    yields: ['phone', 'email'],
+    requiresPermission: null,
+    note:
+      'Fires when a booking is created in the CRM, and carries the appointment time — which is what ' +
+      'makes "24 hours before the meeting" and "30 minutes before" possible. Steps timed against the ' +
+      'appointment are skipped, never sent late, if their moment has already passed when the booking ' +
+      'is made (a meeting booked for tomorrow morning has no 24-hour reminder left to send).',
+  },
 };
 
 /** The identity each action must have to be possible at all. */

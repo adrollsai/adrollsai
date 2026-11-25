@@ -20,6 +20,7 @@ import {
   factsForTrigger,
   validateAgainstTrigger,
 } from '../lib/flows/capabilities';
+import { FLOW_TRIGGERS } from '../lib/agent/tools/flows';
 
 let passed = 0;
 let failed = 0;
@@ -29,7 +30,7 @@ const check = (label: string, ok: boolean, detail?: string) => {
     console.log(`  ok   ${label}`);
   } else {
     failed++;
-    console.log(`  FAIL ${label}${detail ? ` â€” ${detail}` : ''}`);
+    console.log(`  FAIL ${label}${detail ? ` Ã¢â‚¬â€ ${detail}` : ''}`);
   }
 };
 
@@ -46,14 +47,14 @@ check('the same trigger is the same key', triggerKey('trigger_meta_ad') === trig
 check('a different template is a different key', triggerKey('trigger_whatsapp_template_button', 'offer-a') !== triggerKey('trigger_whatsapp_template_button', 'offer-b'));
 check('template casing does not create a second key', triggerKey('trigger_whatsapp_template_button', 'Offer-A') === triggerKey('trigger_whatsapp_template_button', 'offer-a'));
 
-console.log('\nconflicts â€” no false negatives');
+console.log('\nconflicts Ã¢â‚¬â€ no false negatives');
 const metaFlow = flow({ name: 'Meta ad welcome', triggerType: 'trigger_meta_ad' });
 const same = findTriggerConflict([metaFlow], flow({ name: 'Meta ad second', triggerType: 'trigger_meta_ad' }));
 check('a second flow on the same trigger is refused', same.conflict?.name === 'Meta ad welcome');
 check('the refusal names the flow to edit', describeConflict(flow({ name: 'x', triggerType: 'trigger_meta_ad' }), metaFlow).includes('Meta ad welcome'));
 check('the refusal explains the double-message risk', /twice/.test(describeConflict(flow({ name: 'x', triggerType: 'trigger_meta_ad' }), metaFlow)));
 
-console.log('\nconflicts â€” no false positives (the old string-matching bug)');
+console.log('\nconflicts Ã¢â‚¬â€ no false positives (the old string-matching bug)');
 const talky = flow({ name: 'Ad enquiry follow-up', triggerType: 'trigger_crm_lead' });
 const other = findTriggerConflict([talky], flow({ name: 'Meta ad welcome', triggerType: 'trigger_meta_ad' }));
 check('two flows whose prose mentions the same event do not collide', other.conflict === null);
@@ -86,7 +87,7 @@ check('step indexes are distinct', new Set(plan.map((p) => p.stepIndex)).size ==
 const night = scheduleFor('f1', 'lead-2', [{ kind: 'wait', seconds: 60 }, { kind: 'call' }], at(23, 30));
 check('a call due at 23:31 waits until morning', night[0].runAt.getHours() === 9);
 
-console.log('\ndry run â€” what would happen, and what cannot');
+console.log('\ndry run Ã¢â‚¬â€ what would happen, and what cannot');
 const facts = { approvedTemplates: ['welcome_offer'], hasPhone: true, permissionGranted: true };
 const good = dryRun([{ kind: 'message', text: 'Hi', templateName: 'welcome_offer' }, { kind: 'wait', seconds: 600 }, { kind: 'call' }], facts, at(10, 0));
 check('a workable flow has no blockers', good.ok);
@@ -159,7 +160,7 @@ const step = (over: Partial<ScheduledStep>): ScheduledStep => ({
   id: 's1', flowId: 'f1', leadId: 'lead-1', stepIndex: 0, runAt: at(10, 0).toISOString(), status: 'pending', attempts: 0, ...over,
 });
 
-console.log('\nscheduler â€” once and only once');
+console.log('\nscheduler Ã¢â‚¬â€ once and only once');
 {
   const { store, steps } = memoryStore([step({})]);
   let sent = 0;
@@ -224,8 +225,10 @@ console.log('\nscheduler â€” once and only once');
 }
 
 // ---------------------------------------------------------------- capabilities
-console.log('\ncapability foundation â€” what an event can actually give you');
-const RUNNER_TRIGGERS = ['trigger_meta_ad', 'trigger_whatsapp_ctwa', 'trigger_whatsapp_inbound', 'trigger_crm_lead', 'trigger_ig_comment', 'trigger_fb_comment', 'trigger_ig_dm', 'trigger_fb_messenger', 'trigger_whatsapp_template_button'];
+console.log('\ncapability foundation Ã¢â‚¬â€ what an event can actually give you');
+// Read from the module that fires them, not copied here. A hand-maintained copy is how a new
+// booking trigger could ship fireable while this gate still believed the list had nine entries.
+const RUNNER_TRIGGERS: string[] = [...FLOW_TRIGGERS];
 check(
   'every trigger the runner fires on has a capability entry',
   RUNNER_TRIGGERS.every((t) => !!TRIGGER_CAPABILITIES[t]),

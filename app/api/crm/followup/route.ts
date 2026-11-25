@@ -409,6 +409,30 @@ export async function POST(request: Request) {
 
     if (updateErr) throw updateErr
 
+    /**
+     * The appointment appeared, moved, or was called off — tell the sequences.
+     *
+     * A reminder is only true while the meeting is at the time it names. So a reschedule cancels
+     * what was queued and re-plans against the new time, and a cancellation drops it entirely;
+     * otherwise someone who moved Tuesday's meeting to Friday still gets "your meeting is in an
+     * hour" on Tuesday. This never blocks the save: a sequence that cannot be scheduled is worth a
+     * log line, not a failed follow-up.
+     */
+    if ('booked_time' in updatePayload) {
+      try {
+        const { onBookingChanged } = await import('@/lib/flows/booking-trigger')
+        const bookingResult = await onBookingChanged(supabaseAdmin, {
+          userId: lead.user_id,
+          leadId,
+          bookedTime: updatePayload.booked_time ?? null,
+          previousBookedTime: (lead as any).booked_time ?? null,
+        })
+        console.log('[crm/followup] booking sequence:', bookingResult.action, bookingResult.notes.join(' | '))
+      } catch (bookingErr: any) {
+        console.warn('[crm/followup] booking sequence failed:', bookingErr?.message)
+      }
+    }
+
     // Log entry in lead_history
     const formattedNextActionText = nextActionDate 
       ? new Date(nextActionDate).toLocaleString('en-US', { 
