@@ -6,6 +6,7 @@ import { triggerOutboundCall } from '@/utils/voice-helper'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { ensureMetaPageSubscribed, ensureWabaSubscribed } from '@/utils/meta-subscription'
+import { decideReopenOwner } from '@/lib/crm/reopen-owner'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -605,10 +606,20 @@ async function handleSync(request: Request) {
                 if (campaignId) {
                   updateLeadData.campaign_id = campaignId;
                 }
-                // A REOPENED LEAD KEEPS ITS OWNER — same rule as the Facebook webhook and the portal
-                // handlers. The distribution candidate only fills an empty owner.
-                if (!existingLead.assigned_to && assignedAgentId) {
-                  updateLeadData.assigned_to = assignedAgentId;
+                // Same project keeps its owner; a DIFFERENT project may move — and then the previous
+                // history is hidden from the new owner. Shared decision: lib/crm/reopen-owner.ts.
+                const reopenDecision = decideReopenOwner({
+                  previousOwner: existingLead.assigned_to,
+                  candidate: assignedAgentId,
+                  previousSource: existingLead.ad_name || existingLead.form_name || null,
+                  nextSource: adCampaignString || formName || null,
+                });
+                if (reopenDecision.owner) {
+                  updateLeadData.assigned_to = reopenDecision.owner;
+                }
+                if (reopenDecision.hidePreviousHistory) {
+                  cf.history_visible_from = new Date().toISOString();
+                  updateLeadData.custom_fields = cf;
                 }
 
                 const { error: updateErr } = await supabaseAdmin

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification, sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
+import { decideReopenOwner, reopenCustomFields } from '@/lib/crm/reopen-owner'
+import { parseCustomFields } from '@/utils/lead-visibility'
 
 // Admin client — webhooks have no user session
 const supabaseAdmin = createClient(
@@ -305,7 +307,7 @@ export async function POST(
             if (phoneSuffix.length >= 7) {
                 const { data: matchingLeads } = await supabaseAdmin
                     .from('leads')
-                    .select('id, name, pipeline_stage, status, notes, assigned_to, user_id, custom_fields')
+                    .select('id, name, pipeline_stage, status, notes, assigned_to, user_id, custom_fields, ad_name')
                     .or(`user_id.eq.${profile.id},assigned_to.eq.${profile.id}`)
                     .ilike('phone', `%${phoneSuffix}`)
                     .order('created_at', { ascending: false })
@@ -327,7 +329,28 @@ export async function POST(
             // Reopen existing lead into Fresh
             savedLeadId = existingLeadToReopen.id;
             const combinedNotes = `${leadNotes}\n\n--- Previous Notes ---\n${existingLeadToReopen.notes || ''}`.trim()
-            const updatedCustomFields = { ...(existingLeadToReopen.custom_fields || {}), ...customFields }
+
+            // Same project keeps its owner; a different project may move — and then the previous
+            // history is hidden from the new owner. One decision, in lib/crm/reopen-owner.ts.
+            const previousCustomFields = parseCustomFields(existingLeadToReopen.custom_fields)
+            const previousSource = existingLeadToReopen.ad_name || previousCustomFields.last_reopened_source || null
+            const decision = decideReopenOwner({
+                previousOwner: existingLeadToReopen.assigned_to,
+                candidate: assignedAgentId,
+                previousSource,
+                nextSource: sourceDetail,
+            })
+            const reopenFields = reopenCustomFields({
+                existing: previousCustomFields,
+                nextSource: sourceDetail,
+                previousSource,
+            })
+            const updatedCustomFields: Record<string, any> = { ...reopenFields, ...customFields }
+            if (decision.hidePreviousHistory) {
+                // A cutoff, not a deletion: utils/lead-visibility.ts hides older entries from
+                // non-admin viewers and always keeps the source and the reopen itself.
+                updatedCustomFields.history_visible_from = new Date().toISOString()
+            }
 
             const updateData: any = {
                 pipeline_stage: 'New Lead',
@@ -340,21 +363,21 @@ export async function POST(
             if (!existingLeadToReopen.ad_name) {
                 updateData.ad_name = sourceDetail
             }
-            // A REOPENED LEAD KEEPS ITS OWNER: the person who already knows the requirement holds on
-            // to it. The distribution engine picks an owner for a NEW lead, not for work that was
-            // deliberately closed and has come back. An unowned lead is still assigned.
-            if (!existingLeadToReopen.assigned_to && assignedAgentId) {
-                updateData.assigned_to = assignedAgentId
+            if (decision.owner) {
+                updateData.assigned_to = decision.owner
             }
+            console.log(`[Housing Webhook] Reopen ${existingLeadToReopen.id}: ${decision.why}`)
 
             await supabaseAdmin.from('leads').update(updateData).eq('id', existingLeadToReopen.id)
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLeadToReopen.id,
-                // Whoever holds the lead after the reopen — not the candidate that would have replaced them.
-                user_id: existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
+                // Whoever holds the lead after the reopen.
+                user_id: decision.owner || profile.id,
                 action_type: 'REOPENED',
-                description: `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.`,
+                description:
+                    `Lead re-enquired via Housing.com.\nSource Details: ${sourceDetail}\nReset to New Lead.` +
+                    (decision.reassigned ? `\nReassigned from the previous owner: a different project.` : ''),
                 created_at: new Date().toISOString()
             })
 
@@ -368,7 +391,8 @@ export async function POST(
                     type: 'new_lead'
                 }).catch(() => {});
 
-                const agentId = existingLeadToReopen.assigned_to || assignedAgentId;
+                // The owner holds the lead, so the owner is the one told about it.
+                const agentId = decision.owner || existingLeadToReopen.assigned_to || assignedAgentId;
                 if (agentId && agentId !== profile.id) {
                     await sendAdminMultiChannelNotification({
                         ownerUserId: agentId,

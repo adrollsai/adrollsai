@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendPushNotification, sendAdminMultiChannelNotification } from '@/utils/notification-helper'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
+import { decideReopenOwner, reopenCustomFields } from '@/lib/crm/reopen-owner'
+import { parseCustomFields } from '@/utils/lead-visibility'
 
 // Admin client — webhooks have no user session
 const supabaseAdmin = createClient(
@@ -392,7 +394,42 @@ export async function handleMagicbricksPost(request: Request, explicitToken?: st
             // Reopen existing lead into Fresh pipeline stage
             savedLeadId = existingLeadToReopen.id;
             const combinedNotes = `${leadNotes}\n\n--- Previous Notes ---\n${existingLeadToReopen.notes || ''}`.trim();
-            const updatedCustomFields = { ...(existingLeadToReopen.custom_fields || {}), ...customFields };
+
+            /**
+             * WHO OWNS IT, AND WHAT THEY MAY SEE.
+             *
+             * Same project: the lead keeps its owner — whoever already knows the requirement keeps it,
+             * because the distribution engine exists to place NEW leads.
+             *
+             * Different project: this is new work, so it may move to the next agent — and when it
+             * does, the previous history is HIDDEN from the new owner. The decision and the reason
+             * live in lib/crm/reopen-owner.ts so the four portal handlers cannot disagree.
+             */
+            // `leads.custom_fields` is TEXT on this database, not jsonb — parsing it here keeps the
+            // reopen count from being computed against a string.
+            const previousCustomFields = parseCustomFields(existingLeadToReopen.custom_fields);
+            const previousSource =
+                existingLeadToReopen.ad_name || previousCustomFields.last_reopened_source || null;
+            const decision = decideReopenOwner({
+                previousOwner: existingLeadToReopen.assigned_to,
+                candidate: assignedAgentId,
+                previousSource,
+                nextSource: sourceDetail,
+            });
+            const reopenFields = reopenCustomFields({
+                existing: previousCustomFields,
+                nextSource: sourceDetail,
+                previousSource,
+            });
+            const updatedCustomFields: Record<string, any> = {
+                ...reopenFields,
+                ...customFields,
+            };
+            if (decision.hidePreviousHistory) {
+                // The transfer convention: a cutoff, not a deletion. utils/lead-visibility.ts hides
+                // anything older from non-admin viewers and always keeps the source and the reopen.
+                updatedCustomFields.history_visible_from = new Date().toISOString();
+            }
 
             const updateData: any = {
                 pipeline_stage: 'New Lead',
@@ -405,34 +442,21 @@ export async function handleMagicbricksPost(request: Request, explicitToken?: st
             if (!existingLeadToReopen.ad_name) {
                 updateData.ad_name = sourceDetail;
             }
-            /**
-             * A REOPENED LEAD KEEPS ITS OWNER.
-             *
-             * This used to assign the freshly distributed agent unconditionally, so a lead that had
-             * been worked and deliberately put in Lost/NI came back owned by somebody else. Reported
-             * from a live client: their lead "Gaurav" was assigned to Gunheer, marked Lost/NI on the
-             * 23rd, re-enquired on Magicbricks on the 24th, and reappeared under Shubha Baweja — with
-             * no assignment row in the history to explain it, because there was none to write.
-             *
-             * Measured across the CRM at the time: 499 reopened leads, 299 of them owned by an agent
-             * who had never touched the lead before the reopen.
-             *
-             * The distribution engine picks an owner for a NEW lead. A reopen is not new work — the
-             * person who already knows the requirement keeps it. An unowned lead still gets assigned.
-             */
-            if (!existingLeadToReopen.assigned_to && assignedAgentId) {
-                updateData.assigned_to = assignedAgentId;
+            if (decision.owner) {
+                updateData.assigned_to = decision.owner;
             }
+            console.log(`[Magicbricks Webhook] Reopen ${existingLeadToReopen.id}: ${decision.why}`);
 
             await supabaseAdmin.from('leads').update(updateData).eq('id', existingLeadToReopen.id);
 
             await supabaseAdmin.from('lead_history').insert({
                 lead_id: existingLeadToReopen.id,
-                // The owner is whoever holds the lead after the reopen — the one kept above, not the
-                // distribution candidate that would have replaced them.
-                user_id: existingLeadToReopen.assigned_to || assignedAgentId || profile.id,
+                // The owner is whoever holds the lead after the reopen.
+                user_id: decision.owner || profile.id,
                 action_type: 'REOPENED',
-                description: `Lead re-enquired via Magicbricks.\nSource Details: ${sourceDetail}\nReset to New Lead.`,
+                description:
+                    `Lead re-enquired via Magicbricks.\nSource Details: ${sourceDetail}\nReset to New Lead.` +
+                    (decision.reassigned ? `\nReassigned from the previous owner: a different project.` : ''),
                 created_at: new Date().toISOString()
             });
 

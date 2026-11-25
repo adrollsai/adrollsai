@@ -14,6 +14,7 @@ import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
+import { decideReopenOwner } from '@/lib/crm/reopen-owner'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
 // P7 lead journey: ONE classifier for "opt-out" / "wants a human", and the
@@ -4521,13 +4522,23 @@ RULES:
             if (formName) {
               updatePayloadObj.form_name = formName;
             }
-            // A REOPENED LEAD KEEPS ITS OWNER. The distribution engine picks an owner for a NEW
-            // lead; a lead that was deliberately closed and has re-enquired is already somebody's
-            // work. Assigning over it silently moved leads between agents with nothing in the
-            // history to explain it (measured: 299 of 499 reopened leads). An unowned lead is
-            // still assigned.
-            if (!existingLead.assigned_to && assignedAgentId) {
-              updatePayloadObj.assigned_to = assignedAgentId;
+            // Same project keeps its owner; a DIFFERENT project may move to the next agent, and when
+            // it does the previous history is hidden from the new owner. One decision, shared with
+            // the portal handlers: lib/crm/reopen-owner.ts.
+            const reopenDecision = decideReopenOwner({
+              previousOwner: existingLead.assigned_to,
+              candidate: assignedAgentId,
+              previousSource: existingLead.ad_name || existingLead.form_name || null,
+              nextSource: adCampaignString || formName || null,
+            });
+            if (reopenDecision.owner) {
+              updatePayloadObj.assigned_to = reopenDecision.owner;
+            }
+            if (reopenDecision.hidePreviousHistory) {
+              cf.history_visible_from = new Date().toISOString();
+              // Explicit re-assignment: the payload holds `cf` by reference, and relying on that
+              // would break the day someone decides to copy it.
+              updatePayloadObj.custom_fields = cf;
             }
 
             const { error: updateErr } = await supabaseAdmin
