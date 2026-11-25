@@ -6,18 +6,23 @@ import { periodKey, periodLabel } from '@/lib/agent/routines';
 import { gatherDayMetrics, supabaseMetricsReader, windowFor } from '@/lib/agent/ceo-metrics';
 import { analyseDay } from '@/lib/agent/ceo-findings';
 import { chargeEmailSends } from '@/lib/automation/email-billing';
+import { planDigestSends, type DigestSlot } from '@/lib/agent/digest-batch';
 
 export const maxDuration = 300;
 
 /**
  * Morning plan + evening wrap, by email, once each per business per day.
  *
- * `/api/cron/ceo-digest?slot=morning` and `?slot=eod`.
+ * `/api/cron/ceo-digest` derives each business's slot from its own clock; `?slot=morning|eod`
+ * forces one (manual sends, and the contract the old crons used). `?limit=` caps the sends per
+ * invocation, default 12.
  *
- * Idempotency lives where the facts do: `routine_runs.digest` records which slot was
- * sent for which period, so a retried cron cannot mail twice. A business with no
- * routine gets nothing at all — silence is better than an empty "nothing happened"
- * email landing forever.
+ * Idempotency lives where the facts do: `routine_runs.digest` records which slot was sent for
+ * which period, so a retried cron cannot mail twice. A business with no routine gets nothing at
+ * all — silence is better than an empty "nothing happened" email landing forever.
+ *
+ * Sliced for the whole platform: see `lib/agent/digest-batch.ts` for why one invocation can no
+ * longer walk every business.
  */
 export async function GET(req: NextRequest) {
   const secret =
@@ -26,7 +31,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const slot = (req.nextUrl.searchParams.get('slot') || 'morning') as 'morning' | 'eod';
+  const forcedSlot = (req.nextUrl.searchParams.get('slot') || null) as DigestSlot | null;
+  const limit = Math.min(Math.max(Number(req.nextUrl.searchParams.get('limit') || 12), 1), 40);
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -36,7 +42,8 @@ export async function GET(req: NextRequest) {
   const { data: routines, error } = await supabase
     .from('business_routines')
     .select('id, user_id, name, timezone, daily_credit_cap')
-    .eq('enabled', true);
+    .eq('enabled', true)
+    .order('created_at', { ascending: true });
 
   if (error) {
     if (/does not exist|schema cache/i.test(error.message)) {
@@ -49,15 +56,49 @@ export async function GET(req: NextRequest) {
   const skipped: string[] = [];
   const now = new Date();
 
-  for (const routine of routines || []) {
+  /**
+   * Two reads for the whole run instead of two per business.
+   *
+   * The per-business selects were tolerable at twelve accounts and are not at a hundred: profiles
+   * and today's runs are needed before a single send can be decided, so they are fetched in bulk
+   * and indexed. This is what buys the budget for the sends themselves.
+   */
+  const userIds = (routines || []).map((routine) => routine.user_id);
+  const since = new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString();
+  const [{ data: profileRows }, { data: runRows }] = await Promise.all([
+    userIds.length
+      ? supabase
+          .from('profiles')
+          .select('id, email, business_name, credits, timezone')
+          .in('id', userIds)
+      : Promise.resolve({ data: [] as any[] }),
+    userIds.length
+      ? supabase
+          .from('routine_runs')
+          .select('id, user_id, period_key, status, digest, credits_spent, session_id')
+          .in('user_id', userIds)
+          .gte('created_at', since)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
+
+  const profileByUser = new Map<string, any>((profileRows || []).map((row: any) => [row.id, row]));
+  const runByPeriod = new Map<string, any>(
+    (runRows || []).map((row: any) => [`${row.user_id}|${row.period_key}`, row])
+  );
+  const runFor = (routine: any) =>
+    runByPeriod.get(`${routine.user_id}|${periodKey(now, routine.timezone || 'Asia/Kolkata', 'daily')}`);
+
+  const plan = planDigestSends(routines || [], {
+    now,
+    forcedSlot,
+    isSent: (routine, slot) => Boolean((runFor(routine)?.digest as any)?.[`${slot}_sent_at`]),
+    limit,
+  });
+
+  for (const { routine, slot } of plan.due) {
     const period = periodKey(now, routine.timezone || 'Asia/Kolkata', 'daily');
     const label = periodLabel(now, routine.timezone || 'Asia/Kolkata');
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email, business_name, credits, timezone')
-      .eq('id', routine.user_id)
-      .single();
+    const profile = profileByUser.get(routine.user_id) || null;
 
     // `profiles.email` is null for accounts created through some paths — Procolor's is null while
     // its real address sits on the auth user — and the old code simply skipped them, so the
@@ -77,18 +118,7 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const { data: run } = await supabase
-      .from('routine_runs')
-      .select('id, period_key, status, digest, credits_spent, session_id')
-      .eq('routine_id', routine.id)
-      .eq('period_key', period)
-      .maybeSingle();
-
-    const already = (run?.digest as any)?.[`${slot}_sent_at`];
-    if (already) {
-      skipped.push(`${routine.id}: ${slot} already sent`);
-      continue;
-    }
+    const run = runFor(routine) || null;
 
     // What the owner must act on: anything still pending approval for this business.
     const { data: pending } = await supabase
@@ -219,6 +249,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  console.log(`[ceo-digest] ${slot}: sent ${sent.length}, skipped ${skipped.length}`);
-  return NextResponse.json({ ok: true, slot, sent, skipped });
+  console.log(
+    `[ceo-digest] sent ${sent.length}, skipped ${skipped.length}, outside window ${plan.outsideWindow}, ` +
+      `already sent ${plan.alreadySent}, deferred ${plan.deferred}`
+  );
+  return NextResponse.json({
+    ok: true,
+    slot: forcedSlot || 'per-business',
+    sent,
+    skipped,
+    outsideWindow: plan.outsideWindow,
+    alreadySent: plan.alreadySent,
+    // Non-zero means the next invocation has work left — the platform is being swept in slices.
+    deferred: plan.deferred,
+  });
 }
