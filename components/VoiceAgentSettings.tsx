@@ -409,7 +409,15 @@ export default function VoiceAgentSettings({ userId, onBack }: VoiceAgentSetting
       audioRef.current.currentTime = 0
     }
 
-    const audioUrl = `/voices/${voiceName.toLowerCase()}.wav`
+    /**
+     * Served by /api/voice/sample rather than a path under /voices.
+     *
+     * The static files only ever covered five hand-made names, so any other voice — including the
+     * ones the media registry already lists — played nothing at all with no error. The endpoint
+     * redirects to a shipped file when there is one and otherwise generates and caches a sample, so
+     * a preview exists for every voice.
+     */
+    const audioUrl = `/api/voice/sample?voice=${encodeURIComponent(voiceName)}&lang=${encodeURIComponent(settings.default_calling_language || 'english')}`
     const audio = new Audio(audioUrl)
     audioRef.current = audio
 

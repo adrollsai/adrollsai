@@ -19,6 +19,7 @@ import { createCompositionTools } from './tools/composition';
 import { createRoutineTools } from './tools/routine';
 import { createRegisteredVoiceTools } from './tools/voice';
 import { createComposedAdTools } from './tools/ads';
+import { createAdLaunchpadTools } from './tools/ad-launchpad';
 import { createCallingCampaignTools } from './tools/calling';
 import { createCatalogueTools } from './tools/catalogue';
 import { createDataQueryTools } from './tools/data-query';
@@ -300,6 +301,9 @@ export async function createAgentContext(
     // campaign plan and processor the ads screen uses, and the raw Graph tools stay reachable for everything the
     // composed paths do not cover. The agent could only improvise a launch before, on a live ad account.
     ...(has('meta') ? createComposedAdTools(supabase, userId) : {}),
+    // The ads launchpad as a conversation: the same questions the Ads tab asks, rendered as tappable
+    // options in the chat, ending in the same launch input the composed tool takes.
+    ...(has('meta') ? createAdLaunchpadTools(supabase, userId) : {}),
     // Calling campaigns: the UI's bulk dialer had no agent path at all, so "call my 400 Diwali leads" was answered
     // with one call or a pointer to the dashboard. Capped, gated, and stoppable without approval.
     ...(has('automation') || has('meta') ? createCallingCampaignTools(supabase, userId) : {}),
@@ -848,6 +852,10 @@ META ADS — you manage the user's CONNECTED ad account directly:
 HOW TO LAUNCH - COMPOSED FIRST, PRIMITIVES ALWAYS AVAILABLE:
 - 'get_ads_readiness': connected account, page, pixel, currency, the URL the ads point at, and the minimum budget. Call it FIRST for any ads request; a launch without these fails inside Meta with a code nobody can act on.
 - 'launch_meta_campaign': the DEFAULT for "run a campaign / get me leads / advertise this". It resolves the objective, the ad-set optimisation, whether an instant form is needed and which questions it carries, then creates the campaign, ad set, creatives and ads - through the same plan and processor the ads screen uses, so a launch from chat and a launch from the modal cannot disagree.
+- 'ad_launchpad': THE HEADSTART for "launch a campaign / run an ad / get me leads". Start here — not with launch_meta_campaign, and never by hand-building the campaign. It walks the owner through the same launchpad the Ads tab uses, one question at a time, and each question comes back as a card with tappable options plus a free-text box: what the campaign should bring (leads / quality leads / conversions / WhatsApp chats), what the ads should show (an image from their library, an upload, or one you create), which creative and which product, the daily budget, and finally "anything you want me to follow?". Call it with no answers to begin, then again with the accumulated answers and their reply as justAnswered. When it returns ready:true, call launch_meta_campaign with the launch input it hands you.
+  * NEVER ask in prose a question the launchpad renders as buttons. A picker is faster than typing and cannot be misread. When a choice is the owner's to make anywhere else too, ask it through request_user_input with options rather than listing alternatives in a paragraph.
+  * The free-text box is for what the launchpad has no field for (audience, offer, tone, what to avoid). Honour it, and reach for the primitives below when they do something the launchpad cannot — the launchpad is a headstart, not a cage.
+  * If the owner has already answered unprompted ("500 a day, use the Dholera photos, leads"), do not re-ask: pass those as answers and continue from whatever is still missing.
 - 'launch_meta_retargeting': audience -> campaign in one action ("retarget my qualified leads"). It creates the hashed custom audience from the CRM or a phone list, then launches a campaign targeting only that audience.
 - 'optimize_meta_campaign': reads real performance and returns which ad sets to pause, which to keep and where the budget belongs, with the exact primitive call attached. It moves nothing by itself.
 - THE PRIMITIVES STAY. 'meta_graph_create', 'meta_graph_update', 'meta_graph_set_status', 'meta_graph_query', 'meta_graph_search_targeting' and the official MCP tools are all still here, and they are the answer whenever a composed tool does not cover what the owner wants: special ad categories, bid strategies, unusual placements, catalogue/DPA structures, conversion-rule or pixel surgery, anything Meta allows and this product has not wrapped yet.

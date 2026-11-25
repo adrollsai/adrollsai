@@ -85,7 +85,7 @@ const TEMPLATES: DesignTemplate[] = ALL_REFERENCE_TEMPLATES.map(t => ({
 
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
-  { label: '3:4', value: '3:4', icon: RectangleVertical },
+  { label: '4:5', value: '4:5', icon: RectangleVertical },
   { label: '9:16', value: '9:16', icon: Smartphone }
 ]
 
@@ -311,7 +311,7 @@ export default function CreationPage() {
   ])
   
   // Configuration State
-  const [selectedRatio, setSelectedRatio] = useState('3:4')
+  const [selectedRatio, setSelectedRatio] = useState('4:5')
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
   const [isTemplateChooserOpen, setIsTemplateChooserOpen] = useState(false)
   const [templateSearchQuery, setTemplateSearchQuery] = useState('')
@@ -824,7 +824,7 @@ export default function CreationPage() {
                 userInstructions: (creativeFlow.instructions ? `${creativeFlow.instructions}\n` : '') + (angle.visual_concept ? `Visual Concept to follow: ${angle.visual_concept}` : ""),
                 propImages: filteredPropImages,
                 isOrganic: creativeFlow.isOrganic || angle.title?.toLowerCase().includes('raw') || angle.title?.toLowerCase().includes('smartphone') || creativeFlow.creativeCategory === 'High Converting',
-                aspectRatio: "3:4",
+                aspectRatio: "4:5",
                 model: MEDIA_MODELS.image.id,
                 contactNumber: profile?.contact_number,
                 logoUrl: isLogoExcluded ? null : profile?.logo_url,
@@ -2479,10 +2479,13 @@ export default function CreationPage() {
                             </span>
                           </div>
                           <audio 
-                            key={grokVoice}
+                            key={`${grokVoice}-${grokAccent}`}
                             controls 
+                            preload="none"
                             controlsList="nodownload noplaybackrate"
-                            src={`/voices/${grokVoice.toLowerCase()}.wav`} 
+                            // Served by /api/voice/sample: a shipped static file when there is one, a
+                            // cached or freshly generated sample otherwise, so this is never empty.
+                            src={`/api/voice/sample?voice=${encodeURIComponent(grokVoice)}&accent=${encodeURIComponent(grokAccent)}`} 
                             className="h-7 w-48 accent-purple-600 rounded-lg outline-none" 
                           />
                         </div>
@@ -4147,7 +4150,7 @@ function CreativeFlowModal({
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-2">Batch Rendering Pipeline</h3>
                 <p className="text-sm text-slate-500 font-medium text-center max-w-sm">
-                  Generating {creativeFlow.selectedAngles.length} variations in high-fidelity 3:4 aspect ratio. This may take up to 60 seconds...
+                  Generating {creativeFlow.selectedAngles.length} variations in high-fidelity 4:5 aspect ratio. This may take up to 60 seconds...
                 </p>
                 
                 <div className="w-full max-w-xs bg-slate-100 h-1.5 rounded-full mt-8 overflow-hidden">
@@ -4217,7 +4220,7 @@ function CreativeFlowModal({
             >
               {creativeFlow.status === 'loading' ? <Loader2 className="animate-spin" size={18} /> : (
                 <>
-                  {currentStep === 'setup' ? 'Next: Strategy Review' : currentStep === 'angles' ? `Next: Choose Template (${creativeFlow.selectedAngles.length})` : currentStep === 'templates' ? `Generate ${creativeFlow.selectedAngles.length} Creatives (3:4)` : 'Done'}
+                  {currentStep === 'setup' ? 'Next: Strategy Review' : currentStep === 'angles' ? `Next: Choose Template (${creativeFlow.selectedAngles.length})` : currentStep === 'templates' ? `Generate ${creativeFlow.selectedAngles.length} Creatives (4:5)` : 'Done'}
                   {currentStep !== 'final' && <Plus size={18} />}
                 </>
               )}

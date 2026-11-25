@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { 
   PhoneCall, Phone, PhoneForwarded, Sparkles, Plus, Play, Pause, 
   Trash2, Pencil, CheckCircle2, AlertCircle, Clock, Volume2, 
@@ -293,16 +293,39 @@ export function AiCallingAutomationsView({ flows = [] }: AiCallingViewProps) {
     toast.success('AI Calling rule deleted')
   }
 
+  /**
+   * Play the voice, for real.
+   *
+   * This used to do nothing but show a toast claiming it was playing and flip an icon for 3.5
+   * seconds — a preview that previewed nothing, which is worse than no button at all, because the
+   * owner concludes every voice sounds the same. The sample comes from /api/voice/sample, which
+   * serves a shipped file or generates and caches one, so every voice in the list actually speaks.
+   */
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null)
+
   const handlePlayVoiceSample = (voiceId: string) => {
+    if (typeof window === 'undefined') return
+
     if (isPlayingSample === voiceId) {
+      sampleAudioRef.current?.pause()
       setIsPlayingSample(null)
       return
     }
+
+    sampleAudioRef.current?.pause()
+    const audio = new Audio(`/api/voice/sample?voice=${encodeURIComponent(voiceId)}&lang=english`)
+    sampleAudioRef.current = audio
     setIsPlayingSample(voiceId)
-    toast.info(`Playing preview for voice: ${voiceId}`)
-    setTimeout(() => {
+
+    audio.onended = () => setIsPlayingSample(null)
+    audio.onerror = () => {
       setIsPlayingSample(null)
-    }, 3500)
+      toast.error(`Could not load a sample for ${voiceId}`)
+    }
+    audio.play().catch(() => {
+      setIsPlayingSample(null)
+      toast.error(`Could not play the sample for ${voiceId}`)
+    })
   }
 
   const handleTestCall = () => {

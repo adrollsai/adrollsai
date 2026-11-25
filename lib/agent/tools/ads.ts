@@ -374,6 +374,7 @@ export function createComposedAdTools(supabase: SupabaseClient, userId: string) 
           return { ok: false, error: e?.message || 'the optimisation pass failed - nothing was changed' };
         }
       },
+
     }),
   };
 }
@@ -384,4 +385,5 @@ export const COMPOSED_AD_TOOLS = [
   'launch_meta_campaign',
   'launch_meta_retargeting',
   'optimize_meta_campaign',
+  'ad_launchpad',
 ] as const;
