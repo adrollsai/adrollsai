@@ -167,10 +167,12 @@ const ToolItem = React.memo(function ToolItem({
   item,
   onOptionSelect,
   onResume,
+  onApprovalStatus,
 }: {
   item: Extract<HarnessItem, { kind: 'tool' }>;
   onOptionSelect?: (text: string) => void;
   onResume?: (prompt: string) => void;
+  onApprovalStatus?: (actionId: string, status: 'pending' | 'approved' | 'rejected') => void;
 }) {
   return (
     <ToolFeedRow
@@ -184,9 +186,17 @@ const ToolItem = React.memo(function ToolItem({
       isLoading={item.status === 'running'}
       onOptionSelect={onOptionSelect}
       onResume={onResume}
+      onApprovalStatus={onApprovalStatus}
     />
   );
 });
+
+/** The actionId of a staged approval carried by a tool item, if it has one. */
+function approvalActionId(output: unknown): string | null {
+  const artifact: any = artifactFrom(output);
+  if (!artifact || artifact.type !== 'action_confirmation') return null;
+  return typeof artifact.actionId === 'string' && artifact.actionId ? artifact.actionId : null;
+}
 
 export interface HarnessTranscriptProps {
   items: HarnessItem[];
@@ -213,6 +223,24 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
   const resumeRef = React.useRef(onResume);
   resumeRef.current = onResume;
   const stableResume = React.useCallback((prompt: string) => resumeRef.current?.(prompt), []);
+
+  /**
+   * Which staged approvals are still outstanding.
+   *
+   * The transcript is rebuilt from the harness log, which knows about the STAGING but not about
+   * the DECISION — that lives in `agent_events`. So each card reports its own state up here
+   * (ActionConfirmationCard asks the server on mount), and this map is what the pin below reads.
+   *
+   * An actionId missing from the map is treated as pending, deliberately: the card must be
+   * pinned the instant it is staged, not one round trip later.
+   */
+  const [approvalState, setApprovalState] = React.useState<Record<string, 'pending' | 'approved' | 'rejected'>>({});
+  const stableApprovalStatus = React.useCallback(
+    (actionId: string, status: 'pending' | 'approved' | 'rejected') => {
+      setApprovalState((prev) => (prev[actionId] === status ? prev : { ...prev, [actionId]: status }));
+    },
+    []
+  );
 
   if (!items.length) return null;
 
@@ -257,6 +285,26 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
     return true;
   });
 
+  /**
+   * The item to keep on screen, or -1.
+   *
+   * The LAST undecided approval, not the first: if the agent staged three things, the one it is
+   * actually blocked on is the newest. Computed after dedupe so a run of retries pins the card
+   * that survived them.
+   */
+  const pinnedIndex = (() => {
+    for (let i = deduped.length - 1; i >= 0; i--) {
+      const item = deduped[i];
+      if (item.kind !== 'tool') continue;
+      const actionId = approvalActionId((item as any).output);
+      if (!actionId) continue;
+      const state = approvalState[actionId];
+      if (state && state !== 'pending') continue;
+      return i;
+    }
+    return -1;
+  })();
+
   return (
     <>
       {deduped.map((item, idx) => {
@@ -270,15 +318,32 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
           case 'reasoning':
             return <ThinkFeedRow key={item.id} text={item.text} />;
 
-          case 'tool':
-            return (
+          case 'tool': {
+            const row = (
               <ToolItem
-                key={item.id}
                 item={item}
                 onOptionSelect={stableOptionSelect}
                 onResume={stableResume}
+                onApprovalStatus={stableApprovalStatus}
               />
             );
+            // The newest card still waiting for a decision is pinned to the bottom of the
+            // viewport, so nothing the agent says afterwards can bury it.
+            if (idx !== pinnedIndex) return <React.Fragment key={item.id}>{row}</React.Fragment>;
+            return (
+              <div
+                key={item.id}
+                data-pinned-approval="true"
+                className="sticky bottom-0 z-20 pt-3 pb-1"
+                style={{
+                  background:
+                    'linear-gradient(to top, var(--dsw-alias-bg-base) 78%, transparent)',
+                }}
+              >
+                {row}
+              </div>
+            );
+          }
 
           case 'error':
             return <ErrorItem key={item.id} item={item} />;

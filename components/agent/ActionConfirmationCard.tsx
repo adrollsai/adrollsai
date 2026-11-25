@@ -12,6 +12,16 @@ interface ActionConfirmationCardProps {
   onDecision?: (actionId: string, decision: 'approved' | 'rejected') => void;
   /** Called with the staged instruction when the user approves, so the job carries on. */
   onResume?: (prompt: string) => void;
+  /**
+   * Reports whether this decision is still outstanding.
+   *
+   * The transcript pins the newest undecided card to the bottom of the viewport so it cannot be
+   * scrolled away by whatever the agent produces after staging it — which is the reported
+   * confusion: the card appears, the agent keeps talking, and the owner can no longer see that
+   * anything is waiting for them. The transcript cannot know this on its own, because a decision
+   * lives in `agent_events` and the transcript is rebuilt from the harness log.
+   */
+  onStatusChange?: (actionId: string, status: 'pending' | 'approved' | 'rejected') => void;
 }
 
 /** "templateName" / "template_name" -> "Template name". */
@@ -59,9 +69,22 @@ function payloadRows(payload: unknown): Array<{ label: string; value: string }> 
   return rows;
 }
 
-export default function ActionConfirmationCard({ artifact, onDecision, onResume }: ActionConfirmationCardProps) {
+export default function ActionConfirmationCard({ artifact, onDecision, onResume, onStatusChange }: ActionConfirmationCardProps) {
   const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>(artifact.status || 'pending');
   const [loading, setLoading] = useState(false);
+
+  /**
+   * Tell the transcript whether this card still needs a decision, so it can keep it on screen.
+   *
+   * Kept in a ref-held callback and fired on every status change: the parent uses this to decide
+   * which card (if any) is pinned to the bottom of the scrolling transcript.
+   */
+  const statusSink = React.useRef(onStatusChange);
+  statusSink.current = onStatusChange;
+  useEffect(() => {
+    if (!artifact.actionId) return;
+    statusSink.current?.(artifact.actionId, status);
+  }, [artifact.actionId, status]);
 
   /**
    * Ask the server what was already decided, every time this card is rendered.

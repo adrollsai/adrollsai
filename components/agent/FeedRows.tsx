@@ -53,7 +53,7 @@ function ThinkFeedRowInner({ text }: { text: string }) {
 }
 
 // DeepSeek Harness Feed Row for Tool Call
-function ToolFeedRowInner({ tool, isLoading, onOptionSelect, onResume }: { tool: any; isLoading: boolean; onOptionSelect?: (text: string) => void; onResume?: (prompt: string) => void }) {
+function ToolFeedRowInner({ tool, isLoading, onOptionSelect, onResume, onApprovalStatus }: { tool: any; isLoading: boolean; onOptionSelect?: (text: string) => void; onResume?: (prompt: string) => void; onApprovalStatus?: (actionId: string, status: 'pending' | 'approved' | 'rejected') => void }) {
   const [expanded, setExpanded] = useState(false);
 
   if (!tool || typeof tool !== 'object') return null;
@@ -275,7 +275,7 @@ function ToolFeedRowInner({ tool, isLoading, onOptionSelect, onResume }: { tool:
       )}
 
       {artifact && artifact.type === 'action_confirmation' && (
-        <ActionConfirmationCard artifact={artifact as any} onResume={onResume} />
+        <ActionConfirmationCard artifact={artifact as any} onResume={onResume} onStatusChange={onApprovalStatus} />
       )}
 
       {artifact && artifact.type === 'user_input_prompt' && (

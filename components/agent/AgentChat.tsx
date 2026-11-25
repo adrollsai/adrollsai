@@ -977,16 +977,51 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     setShowScrollBottomBtn((prev) => (prev !== !atBottom ? !atBottom : prev));
   }, []);
 
+  /**
+   * A cheap signature of "how much conversation is there", so the follow effect fires while the
+   * agent is still writing.
+   *
+   * It used to depend on `messages.length` alone, which does not change when an assistant message
+   * grows token by token — so a long answer scrolled out of view as it was written and the view
+   * sat still. The last message's length is what changes during a stream; the item count covers
+   * the log-backed path, where new rows arrive as separate items.
+   */
+  const followSignal = useMemo(() => {
+    const last: any = messages[messages.length - 1];
+    let lastLen = 0;
+    try {
+      if (typeof last?.content === 'string') lastLen = last.content.length;
+      else if (Array.isArray(last?.parts)) {
+        lastLen = last.parts.reduce(
+          (n: number, part: any) => n + (typeof part?.text === 'string' ? part.text.length : 0),
+          0
+        );
+      } else if (Array.isArray(last?.content)) {
+        lastLen = last.content.reduce(
+          (n: number, part: any) => n + (typeof part?.text === 'string' ? part.text.length : 0),
+          0
+        );
+      }
+    } catch {
+      lastLen = 0;
+    }
+    return `${messages.length}:${lastLen}:${projected?.items?.length ?? 0}`;
+  }, [messages, projected?.items]);
+
   useEffect(() => {
     // Only follow the conversation when there IS one. This ran on mount for an empty session too,
     // scrolling the welcome screen to its own bottom — which on a laptop-sized window clipped the top
     // of the mascot off the screen and pushed the "Get started" button up into the heading. A landing
     // page must not be scrolled by code the moment it appears.
+    //
+    // `isAutoScrollEnabled` is the whole of the "do not hijack me" rule: `handleScroll` clears it the
+    // moment the reader scrolls up, and sets it again when they come back to the bottom. Nothing here
+    // overrides that, so scrolling up to read is never fought.
     const empty = messages.length === 0 && !isLoading;
     if (!empty && isAutoScrollEnabled.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages.length, isLoading]);
+  }, [followSignal, isLoading, messages.length]);
 
   const scrollToBottom = () => {
     if (scrollRef.current) {
