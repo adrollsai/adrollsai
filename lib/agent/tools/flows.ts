@@ -398,7 +398,10 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
         'moment has already passed is skipped rather than sent late. Prefer kind "template" with an approved ' +
         'templateName for anything more than a day out: outside the 24-hour reply window a template is the only ' +
         'thing Meta will deliver. Pass campaignId when the owner means "only leads from the campaign I just ' +
-        'launched". For an inbound-message trigger, pass keywords so the flow only answers the messages it is for; ' +
+        'launched". Name only templates that really exist and are approved: check them first with ' +
+        'nobogent_whatsapp_list_templates (or whatsapp_template_status). A template that is not approved on the ' +
+        'account is refused by Meta at send time — a day later, and in front of a real customer. ' +
+        'For an inbound-message trigger, pass keywords so the flow only answers the messages it is for; ' +
         'without them an active flow replies to EVERY inbound message. End with a handoff step when a person ' +
         'should take over — it records the handoff in the CRM and messages nobody. ' +
         'Check list_automation_flows first — a duplicate flow and an existing one both firing is worse ' +
