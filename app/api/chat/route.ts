@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask, callDeepSeekWithUsage } from '@/utils/external-apis';
@@ -8,6 +8,7 @@ import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
 import { getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data';
 import { MEDIA_MODELS, imageModelFor, modelAlias } from '@/lib/agent/media-models';
+import { DEFAULT_IMAGE_RATIO, providerImageRequest } from '@/lib/agent/media-ratios';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
         logoUrl,
         propImages, 
         templateUrl, 
-        aspectRatio = "3:4",
+        aspectRatio = DEFAULT_IMAGE_RATIO,
         model,
         isDirect = false,
         isOrganic = false,
@@ -531,7 +532,7 @@ Make the edits clean, professional, and blend seamlessly with the original conte
       const tmplName = templateMeta?.name || 'Curated Reference Luxury Design';
       const tmplCat = templateMeta?.category || 'Ultra Luxury';
       const tmplBadge = templateMeta?.badge || 'EXCLUSIVE OFFER';
-      const effectiveAspect = aspectRatio || "3:4";
+      const effectiveAspect = aspectRatio || DEFAULT_IMAGE_RATIO;
 
       if (validPropImages.length > 0) {
         finalImagePrompt = `Create an ultra-premium, agency-level ad creative design in ${effectiveAspect} portrait ratio for Instagram/Meta ad campaigns using the Graphic Design Blueprint below.
@@ -636,18 +637,17 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
         imageField = 'image_input';
     }
 
-    // Normalize aspect ratio: the Flare image models accept 1:1, 3:4, 9:16, 16:9, auto (4:5 maps to 3:4 portrait)
-    const flareImageModels: readonly string[] = [MEDIA_MODELS.image.id, MEDIA_MODELS.imageEdit.id];
-    let effectiveAspectRatio = aspectRatio || "3:4";
-    if (flareImageModels.includes(kieModel) && effectiveAspectRatio === "4:5") {
-        effectiveAspectRatio = "3:4";
-    }
+    // Every offered ratio goes to the provider as `auto`, with the ratio stated in words in the
+    // prompt. The Flare image models carry no 4:5 enum, and the old "ask for 3:4 instead" was
+    // never followed by a crop — so a 4:5 creative silently shipped at 3:4.
+    // lib/agent/media-ratios.ts is the single owner of that rule.
+    const framed = providerImageRequest(finalImagePrompt, aspectRatio);
 
     let payload: any = {
       "model": kieModel,
       "input": {
-        "prompt": finalImagePrompt,
-        "aspect_ratio": effectiveAspectRatio,
+        "prompt": framed.prompt,
+        "aspect_ratio": framed.aspectRatio,
         "resolution": "1K"
       }
     };

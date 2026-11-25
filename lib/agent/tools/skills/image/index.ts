@@ -52,7 +52,7 @@ export const IMAGE_EDIT_MODEL = assertKnownModel(MEDIA_MODELS.imageEdit.id);
 export type ImageRoute = 'image' | 'imageEdit';
 
 /** The ratio a caller gets when it does not ask for one (the feed poster). */
-export const DEFAULT_ASPECT: ImageAspectRatio = '3:4';
+export const DEFAULT_ASPECT: ImageAspectRatio = '4:5';
 
 /** How many times one plan may hit the provider: the first go, plus one retry. */
 export const MAX_SUBMISSIONS = 2;
@@ -220,8 +220,8 @@ export function planImageSkill(input: ImageSkillInput): ImageSkillPlan {
   if (claims.length > 0) {
     notes.push(`REFUSED BY THE CLAIM SCAN: ${claims.join(', ')} — see the error from buildImagePrompt`);
   }
-  if (aspectRatio === '3:4') {
-    notes.push('3:4 is the poster ratio; 4:5 is not a provider enum, so a 4:5 placement uses 3:4 and crops');
+  if (aspectRatio === '4:5') {
+    notes.push('4:5 is the feed unit; it is sent to the provider as "auto" with the ratio stated in the prompt');
   }
 
   return {

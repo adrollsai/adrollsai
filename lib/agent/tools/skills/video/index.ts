@@ -56,6 +56,7 @@ import { RENDER_CREDITS } from '../../../sandbox/pipeline';
 import type { VideoStepName } from '../../../sandbox/pipeline';
 import { detailOf, isExecutableSandbox, shellQuote, type AgentSandbox } from '../../../sandbox/e2b';
 import { consoleLogger, type AgentLogger } from '../../../sandbox/log';
+import { verifySpokenLine } from '../../../video-plan';
 import type { SandboxLike, StepContext } from '../../../sandbox/runner';
 
 /** The registry ids this skill is allowed to spend money on. */
@@ -619,6 +620,9 @@ export function dialogueCoverage(requested: string, heard: string): number {
 }
 
 /** A line under this share of its words is treated as "the model improvised". */
+// SUPERSEDED by verifySpokenLine (lib/agent/video-plan.ts): a 0.4 coverage floor is satisfied
+// by a clip that dropped its opening words entirely. Kept exported for older callers and
+// gates; do not add new uses.
 export const DIALOGUE_MIN_COVERAGE = 0.4;
 
 /**
@@ -808,14 +812,29 @@ async function runVoiceStep(
     if (deps.transcribe && plate.line) {
       try {
         const heard = await deps.transcribe({ sandbox, path: raw, plate: plate.id });
-        const coverage = dialogueCoverage(plate.line, heard);
+        // The ORDERED check, not the bag-of-words one. dialogueCoverage() compares unordered
+        // word sets against a 0.4 floor, so a clip that dropped its OPENING still passes:
+        // "The AI that runs your entire real estate business" scores 0.82 against
+        // "Meet Nobo. The AI that runs your entire real estate business." — and the words it
+        // lost were the product name. verifySpokenLine checks the first and last word as
+        // ordered facts and says what to do next.
+        const lineCheck = verifySpokenLine(plate.line, heard);
+        const coverage = lineCheck.coverage;
         spoken[plate.id] = coverage;
-        log('video.dialogue.verify', { plate: plate.id, coverage, heard: heard.slice(0, 400) });
-        if (coverage < DIALOGUE_MIN_COVERAGE) {
+        log('video.dialogue.verify', {
+          plate: plate.id,
+          coverage,
+          firstWordPresent: lineCheck.firstWordPresent,
+          lastWordPresent: lineCheck.lastWordPresent,
+          missingWords: lineCheck.missingWords.slice(0, 12),
+          heard: heard.slice(0, 400),
+        });
+        if (!lineCheck.ok) {
           log('video.dialogue.mismatch', {
             plate: plate.id,
             coverage,
             line: plate.line,
+            reason: lineCheck.reason,
             heard: heard.slice(0, 400),
             next: 'regenerate this plate with --only, or rewrite the line shorter',
           });

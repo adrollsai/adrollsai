@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import { MEDIA_MODELS } from '../lib/agent/media-models';
+import { DEFAULT_IMAGE_RATIO, providerImageRequest } from '../lib/agent/media-ratios';
 
 /**
  * Read the Kie key lazily, per call.
@@ -1274,21 +1275,22 @@ export async function createTranscribeTask({
 export async function createKieImageTask(
     prompt: string, 
     model: string = MEDIA_MODELS.image.id, 
-    aspectRatio: string = "1:1",
+    aspectRatio: string = DEFAULT_IMAGE_RATIO,
     inputUrls?: string[]
 ): Promise<string> {
     if (!kieApiKey()) throw new Error("KIE_API_KEY is not configured.");
 
-    let effectiveRatio = aspectRatio;
-    // Only the Flare image models lack a 4:5 enum; everything else is left alone.
-    const flareModels: readonly string[] = [MEDIA_MODELS.image.id, MEDIA_MODELS.imageEdit.id];
-    if (flareModels.includes(model) && effectiveRatio === "4:5") {
-        effectiveRatio = "3:4";
-    }
+    // Every offered ratio goes out as `auto`, with the ratio stated in words inside the prompt.
+    //
+    // Why: the Flare image models have no 4:5 enum, and the previous fix here asked for 3:4 and
+    // expected a later crop. Nothing cropped, so a 4:5 creative shipped narrower than the
+    // placement it was bought for. lib/agent/media-ratios.ts owns that rule now, so this call
+    // site and the `chat` route cannot implement it differently.
+    const framed = providerImageRequest(prompt, aspectRatio);
 
     const inputPayload: any = {
-        prompt: prompt,
-        aspect_ratio: effectiveRatio,
+        prompt: framed.prompt,
+        aspect_ratio: framed.aspectRatio,
         resolution: "1K"
     };
 

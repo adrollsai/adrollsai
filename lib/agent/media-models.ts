@@ -55,7 +55,9 @@ export const MEDIA_MODELS = {
     timeoutMs: 180_000,
     credits: 8,
     notes:
-      'GPT 2.5 Flare t2i. Does not expose 4:5 as an explicit ratio — request 3:4 and crop in ffmpeg.',
+      'GPT 2.5 Flare t2i. Does not expose 4:5 as an explicit ratio. Every ratio is therefore sent ' +
+      'as "auto" with the ratio stated in words inside the prompt — see lib/agent/media-ratios.ts. ' +
+      'Do not reintroduce "ask for 3:4 and crop": nothing ever cropped.',
   },
 
   /** Any supplied reference (product, property, logo, screenshot) -> edited image. */

@@ -23,6 +23,13 @@
  * Pure and synchronous: no vendor, no sandbox, no charge, and testable without a model.
  */
 
+import {
+  DEFAULT_VIDEO_RESOLUTION,
+  resolutionChoices,
+  resolutionQuestion,
+  type VideoResolution,
+} from '../../../video-plan';
+
 export type SpeechMode =
   /** People on camera speak; the line goes into the video prompt so lips match the words. */
   | 'dialogue-clips'
@@ -46,6 +53,11 @@ export interface IntakeEvidence {
   /** Second, on-screen language if it differs from the spoken one. */
   onScreenLanguage?: string;
   aspect?: string;
+  /**
+   * The resolution the owner chose. Absent means NOT YET ASKED — which is why the intake asks
+   * rather than defaulting silently: 1080p costs 3.33x the same seconds at 480p.
+   */
+  resolution?: VideoResolution;
   targetSeconds?: number;
   brand?: { name?: string; phone?: string; logo?: string; tagline?: string };
   /** Assets the owner already pointed at (photos of the founder, a CRM export, a logo). */
@@ -65,6 +77,8 @@ export interface IntakeQuestion {
 }
 
 export interface IntakeResult {
+  /** What the film will render at if the owner says "you decide". 480p unless they chose. */
+  resolution: VideoResolution;
   speechMode: SpeechMode;
   /** One line the agent can show the owner to prove it understood. */
   understanding: string;
@@ -172,6 +186,27 @@ export function intakeQuestions(evidence: IntakeEvidence, mode: SpeechMode): Int
     });
   }
 
+  // Resolution is asked every time and priced inline. It is the single biggest cost lever in
+  // a video job (1080p is 3.33x 480p for the same seconds), so it cannot be defaulted in
+  // silence — but it also must not become an interrogation, hence one question with numbers.
+  if (!evidence.resolution) {
+    const estimateSeconds = evidence.targetSeconds ?? 60;
+    const options = resolutionChoices(estimateSeconds);
+    questions.push({
+      id: 'resolution',
+      question: resolutionQuestion(estimateSeconds),
+      why:
+        `A draft usually gets revised. ${DEFAULT_VIDEO_RESOLUTION} costs ` +
+        `${options[0]?.credits ?? 0} credits for ~${estimateSeconds}s of footage, 1080p costs ` +
+        `${options[options.length - 1]?.credits ?? 0}. Drafting at ${DEFAULT_VIDEO_RESOLUTION} and ` +
+        're-generating only the shots you keep is cheaper than generating every shot final and ' +
+        're-doing most of them.',
+      options: options.map((o) => `${o.label} — ${o.credits} credits (${o.useWhen})`),
+      fallback: `${DEFAULT_VIDEO_RESOLUTION} for a draft, 1080p for a film that ships as-is`,
+      mattersForCost: true,
+    });
+  }
+
   if (mode === 'dialogue-clips') {
     questions.push({
       id: 'speakers',
@@ -271,6 +306,7 @@ export function intakeQuestions(evidence: IntakeEvidence, mode: SpeechMode): Int
 /** The whole intake in one pure call. */
 export function planVideoIntake(evidence: IntakeEvidence): IntakeResult {
   const { mode, reasoning } = decideSpeechMode(evidence);
+  const resolution = evidence.resolution ?? DEFAULT_VIDEO_RESOLUTION;
   const questions = intakeQuestions(evidence, mode);
 
   const understanding = [
@@ -287,6 +323,7 @@ export function planVideoIntake(evidence: IntakeEvidence): IntakeResult {
 
   const skeleton: Record<string, unknown> = {
     version: 1,
+    resolution,
     jobId: '<seeded-lowercase-id>',
     aspect: evidence.aspect ?? '16:9',
     fps: 30,
@@ -343,5 +380,5 @@ export function planVideoIntake(evidence: IntakeEvidence): IntakeResult {
       : `Ask the owner these ${questions.length} question(s) in ONE message (they are the ones the ` +
         'evidence cannot answer), then call plan_video. Do not generate anything before the plan is approved.';
 
-  return { speechMode: mode, understanding, reasoning, questions, skeleton, nextStep };
+  return { speechMode: mode, resolution, understanding, reasoning, questions, skeleton, nextStep };
 }

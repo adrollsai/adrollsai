@@ -16,6 +16,7 @@
  * rules and not as advice.
  */
 import { renderPipelineKnowledge } from './creative/video-pipelines';
+import { renderVideoGateGuidance } from './video-plan';
 
 export interface HouseSkill {
   /** Stable name. The agent calls get_skill with this exact string. */
@@ -27,6 +28,14 @@ export interface HouseSkill {
 }
 
 export const HOUSE_SKILLS: readonly HouseSkill[] = [
+  {
+    name: 'nobogent-video-gates',
+    description:
+      'The order of operations for ANY video: ask the resolution and quote its price (480p default), take the ' +
+      'cheap approval before spending, measure a reference instead of describing it, verify every generated ' +
+      'line, and stop a batch when the vendor is down. Load it BEFORE quoting credits or generating a clip.',
+    content: renderVideoGateGuidance(),
+  },
   {
     name: 'nobogent-video-pipelines',
     description:

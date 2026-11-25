@@ -36,7 +36,7 @@ const KINDS: Array<{ id: Kind; label: string; hint: string; icon: any }> = [
 ];
 
 const RATIOS: Record<Kind, string[]> = {
-  image: ['9:16', '1:1', '16:9', '3:4'],
+  image: ['4:5', '9:16', '1:1', '16:9'],
   video: ['9:16', '16:9', '1:1'],
   voiceover: [],
 };

@@ -415,7 +415,7 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
         'Generates a photorealistic marketing image (or edits/restyles supplied images) using the app\'s image model. Use for ad creatives, banners, product shots, festive graphics, and for producing the still frames that generate_grok_video can then animate.',
       inputSchema: z.object({
         prompt: z.string().describe('High-fidelity image prompt: subject, lighting, composition, lens, style'),
-        aspectRatio: z.enum(['9:16', '16:9', '1:1', '3:4']).default('9:16').describe('Output aspect ratio'),
+        aspectRatio: z.enum(['4:5', '9:16', '16:9', '1:1']).default('9:16').describe('Output aspect ratio'),
         referenceImageUrls: z
           .array(z.string())
           .optional()

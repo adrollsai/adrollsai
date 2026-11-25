@@ -19,17 +19,30 @@
  * customer. Over-cautious is the correct failure mode here.
  */
 
-/** The aspect ratios this app actually offers for an image (see `components/agent/CreatePanel.tsx`). */
-export const IMAGE_ASPECT_RATIOS = ['3:4', '1:1', '9:16', '16:9'] as const;
+import {
+  FRAME_BY_RATIO as FRAME_SPECS,
+  OFFERED_IMAGE_RATIOS,
+  normaliseImageRatio,
+  type OfferedImageRatio,
+} from '../../../media-ratios';
 
-export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIOS)[number];
+/**
+ * The aspect ratios this app offers for an image.
+ *
+ * Sourced from lib/agent/media-ratios.ts, which is the single owner. The ratio an operator
+ * picks is a SOCIAL requirement (4:5 is the feed unit) and the ratio the provider accepts is a
+ * different thing, so the two must not be described in two files.
+ */
+export const IMAGE_ASPECT_RATIOS = OFFERED_IMAGE_RATIOS;
 
-/** How each offered ratio is described to the model. Pixels are what the provider returns. */
+export type ImageAspectRatio = OfferedImageRatio;
+
+/** How each offered ratio is described to the model. The sentence names the ratio in words. */
 export const FRAME_BY_RATIO: Readonly<Record<ImageAspectRatio, string>> = {
-  '3:4': 'a 3:4 portrait frame, 1024x1365 — the feed poster',
-  '1:1': 'a 1:1 square frame, 1024x1024 — the grid tile',
-  '9:16': 'a 9:16 vertical frame, 1024x1820 — the story and reel cover',
-  '16:9': 'a 16:9 landscape frame, 1456x816 — the link-ad banner',
+  '4:5': FRAME_SPECS['4:5'].sentence,
+  '1:1': FRAME_SPECS['1:1'].sentence,
+  '9:16': FRAME_SPECS['9:16'].sentence,
+  '16:9': FRAME_SPECS['16:9'].sentence,
 };
 
 export class ImagePromptError extends Error {
@@ -46,7 +59,8 @@ export class ImageAspectError extends ImagePromptError {
     const offered = IMAGE_ASPECT_RATIOS.join(', ');
     super(
       `Aspect ratio ${JSON.stringify(value)} is not one this app offers. ` +
-        `Use one of: ${offered}. (4:5 is not a provider enum — ask for 3:4 and crop.)`,
+        `Use one of: ${offered}. (Every ratio is sent to the provider as "auto" with the ratio ` +
+        `stated in the prompt — see lib/agent/media-ratios.ts.)`,
     );
     this.name = 'ImageAspectError';
     this.offered = IMAGE_ASPECT_RATIOS;
@@ -77,9 +91,15 @@ export function assertImageAspectRatio(value: unknown): ImageAspectRatio {
   throw new ImageAspectError(value);
 }
 
-/** The frame sentence for one ratio. Throws for anything the app does not offer. */
+/**
+ * The frame sentence for one ratio.
+ *
+ * Coerces rather than throws: a saved row carrying the old `3:4` is a feed portrait and must
+ * keep rendering, so it resolves to 4:5. Validation of NEW input still happens in
+ * `assertImageAspectRatio`.
+ */
 export function frameFor(ratio: string): string {
-  return FRAME_BY_RATIO[assertImageAspectRatio(ratio)];
+  return FRAME_BY_RATIO[normaliseImageRatio(ratio)];
 }
 
 /**

@@ -257,7 +257,7 @@ console.log('\n=== a reference in means image-to-image, never text-to-image ==='
     planImageSkill({
       brief: 'Poster',
       referenceUrls: REFERENCE_SETS[2],
-      aspectRatio: '3:4',
+      aspectRatio: '4:5',
     }).referenceUrls.join(',') === REFERENCE_SETS[2].join(','),
   );
   check(
@@ -265,7 +265,7 @@ console.log('\n=== a reference in means image-to-image, never text-to-image ==='
     planImageSkill({
       brief: 'Poster',
       referenceUrls: ['file:///etc/passwd', 'not-a-url', 'https://ok.example/x.png'],
-      aspectRatio: '3:4',
+      aspectRatio: '4:5',
     }).referenceUrls.length === 1,
   );
   check(
@@ -274,7 +274,7 @@ console.log('\n=== a reference in means image-to-image, never text-to-image ==='
       buildImagePrompt({
         brief: 'Poster',
         referenceUrls: ['https://x/y.png'],
-        aspectRatio: '3:4',
+        aspectRatio: '4:5',
       }),
     ),
   );
@@ -287,13 +287,13 @@ console.log('\n=== a reference in means image-to-image, never text-to-image ==='
 console.log('\n=== aspect ratios are the ones the app actually offers ===');
 {
   check(
-    'the offered set is exactly 3:4, 1:1, 9:16, 16:9',
-    JSON.stringify([...IMAGE_ASPECT_RATIOS]) === JSON.stringify(['3:4', '1:1', '9:16', '16:9']),
+    'the offered set is exactly 4:5, 1:1, 9:16, 16:9',
+    JSON.stringify([...IMAGE_ASPECT_RATIOS]) === JSON.stringify(['4:5', '1:1', '9:16', '16:9']),
     IMAGE_ASPECT_RATIOS.join(', '),
   );
   check('the default ratio is one of them', isImageAspectRatio(DEFAULT_ASPECT), DEFAULT_ASPECT);
 
-  for (const bogus of ['4:5', '2:3', '3:2', '9:21', '', 'A4', 'auto', '3/4', 4, 16]) {
+  for (const bogus of ['3:4', '2:3', '3:2', '9:21', '', 'A4', 'auto', '3/4', 4, 16]) {
     const attempt = throws(() => planImageSkill({ brief: 'Poster', aspectRatio: bogus as any }));
     check(
       `aspect ratio ${JSON.stringify(bogus)} is rejected`,
@@ -313,10 +313,11 @@ console.log('\n=== aspect ratios are the ones the app actually offers ===');
     planImageSkill({ brief: 'Poster', aspectRatio: null as any }).aspectRatio === DEFAULT_ASPECT,
   );
 
-  const error = throws(() => planImageSkill({ brief: 'Poster', aspectRatio: '4:5' })).error as ImageAspectError;
+  const error = throws(() => planImageSkill({ brief: 'Poster', aspectRatio: '2:3' })).error as ImageAspectError;
   check(
-    'the rejection names the ratios that are on offer (and explains 4:5)',
-    /\b3:4, 1:1, 9:16, 16:9\b/.test(String(error?.message)) && /4:5 is not a provider enum/.test(String(error?.message)),
+    'the rejection names the ratios that are on offer (and explains how a ratio is sent)',
+    /\b4:5, 1:1, 9:16, 16:9\b/.test(String(error?.message)) &&
+      /sent to the provider as "auto"/.test(String(error?.message)),
     String(error?.message).slice(0, 110),
   );
 
@@ -333,11 +334,11 @@ console.log('\n=== aspect ratios are the ones the app actually offers ===');
 
 console.log('\n=== credits come from MEDIA_MODELS ===');
 {
-  const textPlan = planImageSkill({ brief: 'Poster for the villa launch', aspectRatio: '3:4' });
+  const textPlan = planImageSkill({ brief: 'Poster for the villa launch', aspectRatio: '4:5' });
   const refPlan = planImageSkill({
     brief: 'Poster for the villa launch',
     referenceUrls: ['https://x/y.png'],
-    aspectRatio: '3:4',
+    aspectRatio: '4:5',
   });
 
   check(
@@ -443,7 +444,7 @@ console.log('\n=== the skill refuses to invent facts ===');
   );
 
   const refusal = throws(() =>
-    buildImagePrompt({ brief: 'Launch price ₹1.2 Cr at Meridian', aspectRatio: '3:4' }),
+    buildImagePrompt({ brief: 'Launch price ₹1.2 Cr at Meridian', aspectRatio: '4:5' }),
   );
   check(
     'buildImagePrompt throws rather than render an invented price',
@@ -457,10 +458,10 @@ console.log('\n=== the skill refuses to invent facts ===');
   );
   check(
     'the plan REFUSES too (the claim scan runs before any plan is shown)',
-    throws(() => planImageSkill({ brief: 'Now only ₹9,999 at Meridian', aspectRatio: '3:4' })).threw,
+    throws(() => planImageSkill({ brief: 'Now only ₹9,999 at Meridian', aspectRatio: '4:5' })).threw,
   );
 
-  const noFacts = buildImagePrompt({ brief: 'Announce the weekend portrait sessions', aspectRatio: '3:4' });
+  const noFacts = buildImagePrompt({ brief: 'Announce the weekend portrait sessions', aspectRatio: '4:5' });
   check(
     'with no facts the prompt forbids every numeric claim',
     /NO FACTS WERE SUPPLIED/.test(noFacts) && /no numeric, price, date, discount or contact claim/i.test(noFacts),
@@ -522,7 +523,7 @@ const quiet = () => {};
       input: {
         brief: 'Diwali offer on the 3BHK apartments at Green Meadows',
         facts: { price: 'Starting ₹1.45 Cr', location: 'Sector 82, Mohali' },
-        aspectRatio: '3:4',
+        aspectRatio: '4:5',
       },
       deps: h.deps,
       log: quiet,
@@ -532,7 +533,7 @@ const quiet = () => {};
     check(
       'the submission carries the planned model, ratio and prompt',
       h.submit[0].model === result.plan.model &&
-        h.submit[0].aspectRatio === '3:4' &&
+        h.submit[0].aspectRatio === '4:5' &&
         h.submit[0].prompt === result.plan.prompt,
     );
     check('a text-only run sends no reference URLs', h.submit[0].referenceUrls.length === 0);
@@ -543,7 +544,7 @@ const quiet = () => {};
     );
     check(
       'the key is under the image/ prefix and names the ratio',
-      /^image\/[a-z0-9-]+\/3x4-[0-9a-f]{8}\.png$/.test(result.artefact.key),
+      /^image\/[a-z0-9-]+\/4x5-[0-9a-f]{8}\.png$/.test(result.artefact.key),
       result.artefact.key,
     );
     check(
@@ -558,7 +559,7 @@ const quiet = () => {};
       'the recorded artefact states the model, the route and the ratio',
       h.record[0].artefact.model === result.plan.model &&
         h.record[0].artefact.route === 'image' &&
-        h.record[0].artefact.aspectRatio === '3:4',
+        h.record[0].artefact.aspectRatio === '4:5',
     );
     check('the recorded artefact keeps the exact prompt for a later audit', h.record[0].artefact.prompt === result.plan.prompt);
     check('the published URL is the plan key on the bucket', result.artefact.url.endsWith(result.artefact.key), result.artefact.url);
@@ -569,7 +570,7 @@ const quiet = () => {};
     const again = await createImage({
       runId: 'run-1',
       userId: 'user-1',
-      input: { brief: 'Diwali offer on the 3BHK apartments at Green Meadows', facts: { price: 'Starting ₹1.45 Cr', location: 'Sector 82, Mohali' }, aspectRatio: '3:4' },
+      input: { brief: 'Diwali offer on the 3BHK apartments at Green Meadows', facts: { price: 'Starting ₹1.45 Cr', location: 'Sector 82, Mohali' }, aspectRatio: '4:5' },
       deps: harness().deps,
       log: quiet,
     });
@@ -667,10 +668,10 @@ const quiet = () => {};
   console.log('\n=== the recorded row: a missing migration is reported, not thrown ===');
   {
     const artefact: ImageArtefact = {
-      key: 'image/poster/3x4-abcdef12.png',
-      url: 'https://r2.example/image/poster/3x4-abcdef12.png',
+      key: 'image/poster/4x5-abcdef12.png',
+      url: 'https://r2.example/image/poster/4x5-abcdef12.png',
       bytes: 1234,
-      aspectRatio: '3:4',
+      aspectRatio: '4:5',
       model: IMAGE_MODEL,
       route: 'image',
       prompt: 'prompt text',
@@ -700,7 +701,7 @@ const quiet = () => {};
     const meta = written[0]?.artefact_meta as Record<string, unknown>;
     check(
       'artefact_meta names the skill, ratio and model',
-      meta?.skill === 'image' && meta?.aspect_ratio === '3:4' && meta?.model === IMAGE_MODEL,
+      meta?.skill === 'image' && meta?.aspect_ratio === '4:5' && meta?.model === IMAGE_MODEL,
       JSON.stringify(meta),
     );
 
@@ -742,13 +743,13 @@ const quiet = () => {};
 
     check(
       'the same prompt publishes to the same stem',
-      artefactKeyStemFor({ slug: 'a', ratio: '3:4', prompt: 'p', model: 'm' }) ===
-        artefactKeyStemFor({ slug: 'a', ratio: '3:4', prompt: 'p', model: 'm' }),
+      artefactKeyStemFor({ slug: 'a', ratio: '4:5', prompt: 'p', model: 'm' }) ===
+        artefactKeyStemFor({ slug: 'a', ratio: '4:5', prompt: 'p', model: 'm' }),
     );
     check(
       'a different prompt publishes to a different stem',
-      artefactKeyStemFor({ slug: 'a', ratio: '3:4', prompt: 'p', model: 'm' }) !==
-        artefactKeyStemFor({ slug: 'a', ratio: '3:4', prompt: 'q', model: 'm' }),
+      artefactKeyStemFor({ slug: 'a', ratio: '4:5', prompt: 'p', model: 'm' }) !==
+        artefactKeyStemFor({ slug: 'a', ratio: '4:5', prompt: 'q', model: 'm' }),
     );
     check('a slug is lowercase, safe and non-empty', /^[a-z0-9-]+$/.test(slugFor('Diwali Offer: 3BHK @ Green Meadows!')), slugFor('Diwali Offer: 3BHK @ Green Meadows!'));
     check('an empty brief still yields a usable slug', slugFor('') === 'image');
