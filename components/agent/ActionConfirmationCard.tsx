@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { ShieldAlert, Check, X, Loader2, Coins, Mic, ImageIcon } from 'lucide-react';
+import { ShieldAlert, Check, X, Loader2, Coins, Mic, ImageIcon, ChevronDown } from 'lucide-react';
 import { ActionConfirmationArtifact } from '@/lib/agent/types';
 import { buildResumePrompt } from '@/lib/agent/resume-prompt';
 import { toast } from 'sonner';
@@ -172,61 +172,111 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume,
       ? { edge: 'var(--dsw-alias-state-error-primary)', soft: 'var(--dsw-alias-state-error-tertiary)', text: 'var(--dsw-alias-state-error-primary)' }
       : { edge: 'var(--dsw-alias-state-warn-primary)', soft: 'var(--dsw-alias-state-warn-tertiary)', text: 'var(--dsw-alias-state-warn-secondary)' };
 
+  /**
+   * Laid out like the harness's own question card, because that is the interaction the owner has
+   * already learned: a quiet label and a chevron in a header row, the actual question as the
+   * heaviest thing in the card, the detail as a numbered scrollable block, and the two decisions
+   * anchored at the bottom right with the secondary one first.
+   *
+   * The reference card also carries a ✕ that dismisses the question. This one deliberately does
+   * not: an approval cannot be dismissed, because dismissing it would leave the gate closed with
+   * nothing on screen to say why the agent had stopped. The chevron collapses it instead, and the
+   * header keeps saying what is waiting.
+   */
+  const [collapsed, setCollapsed] = React.useState(false);
+  const waiting = status === 'pending';
+
   return (
     <div
-      className="my-3 p-4"
+      className="my-3"
+      data-approval-card={status}
       style={{
         borderRadius: 'var(--dsh-radius-md)',
         border: '1px solid var(--dsw-alias-border-l2)',
-        borderLeft: `2px solid ${tone.edge}`,
         background: 'var(--dsw-alias-bg-layer-2)',
-        opacity: status === 'rejected' ? 0.7 : 1,
-        boxShadow: status === 'pending' ? 'var(--dsw-shadow-lv1)' : 'none',
+        opacity: status === 'rejected' ? 0.75 : 1,
+        overflow: 'hidden',
+        boxShadow: waiting ? 'var(--dsw-shadow-lv2)' : 'none',
       }}
     >
-      <div className="flex items-start gap-3">
-        <div
-          className="p-2 shrink-0"
-          style={{ borderRadius: 'var(--dsh-radius-sm)', background: tone.soft, color: tone.text }}
-        >
-          <ShieldAlert size={18} />
+      {/* Header: what this is, on the left; the collapse control on the right. */}
+      <div
+        className="flex items-center justify-between gap-2 px-4 py-2.5"
+        style={{ borderBottom: collapsed ? 'none' : '1px solid var(--dsw-alias-border-l1)' }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="inline-flex items-center justify-center shrink-0"
+            style={{ width: 18, height: 18, borderRadius: '50%', background: tone.soft, color: tone.text }}
+          >
+            <ShieldAlert size={11} />
+          </span>
+          <span className="dsh-t-xxs dsh-label-tertiary truncate">
+            {waiting ? 'Needs your approval' : status === 'approved' ? 'Approved' : 'Cancelled'}
+          </span>
+          {waiting && artifact.estimatedCost && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full dsh-t-xxxs dsh-strong shrink-0"
+              style={{ background: 'var(--dsw-alias-state-warn-tertiary)', color: 'var(--dsw-alias-state-warn-secondary)' }}
+            >
+              <Coins size={9} /> {artifact.estimatedCost}
+            </span>
+          )}
         </div>
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          aria-label={collapsed ? 'Show the details of this approval' : 'Hide the details of this approval'}
+          aria-expanded={!collapsed}
+          className="shrink-0 flex items-center justify-center dsh-label-tertiary dsh-interactive"
+          style={{ width: 24, height: 24, borderRadius: 'var(--dsh-radius-xs)' }}
+        >
+          <ChevronDown size={14} style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 120ms' }} />
+        </button>
+      </div>
 
-        <div className="flex-1">
-          <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-            <h4 className="dsh-t-s dsh-strong dsh-label-primary">{artifact.title}</h4>
-            {artifact.estimatedCost && (
-              <span
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full dsh-t-xxxs dsh-strong"
-                style={{ background: 'var(--dsw-alias-state-warn-tertiary)', color: 'var(--dsw-alias-state-warn-secondary)' }}
-              >
-                <Coins size={10} /> Est: {artifact.estimatedCost}
-              </span>
-            )}
-          </div>
-
-          <p className="dsh-t-s dsh-label-secondary mb-3" style={{ lineHeight: '22px' }}>
+      {!collapsed && (
+        <div className="px-4 pt-3 pb-3">
+          {/* The question itself — the heaviest thing in the card, as in the reference. */}
+          <h4 className="dsh-t-s dsh-strong dsh-label-primary mb-1.5">{artifact.title}</h4>
+          <p className="dsh-t-xs dsh-label-tertiary mb-3" style={{ lineHeight: '19px' }}>
             {artifact.description}
           </p>
 
+          {/* The staged arguments: numbered, in a bounded scroller, so a long payload cannot push
+              the decisions off the card. */}
           {detailRows.length > 0 && (
             <div
-              className="mb-3 overflow-hidden"
-              style={{ border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 'var(--dsh-radius-sm)' }}
+              className="mb-3 overflow-y-auto"
+              style={{
+                border: '1px solid var(--dsw-alias-border-l1)',
+                borderRadius: 'var(--dsh-radius-sm)',
+                maxHeight: 208,
+              }}
             >
               {detailRows.map((row, i) => (
                 <div
                   key={i}
-                  className="flex items-start gap-3 px-3 py-1.5 dsh-t-xs"
-                  style={{
-                    background: i % 2 ? 'var(--dsw-alias-bg-layer-1)' : 'transparent',
-                    borderTop: i ? '1px solid var(--dsw-alias-border-l1)' : 'none',
-                  }}
+                  className="flex items-start gap-2.5 px-2.5 py-2"
+                  style={{ borderTop: i ? '1px solid var(--dsw-alias-border-l1)' : 'none' }}
                 >
-                  <span className="dsh-label-caption uppercase dsh-t-xxxs dsh-strong shrink-0 w-24 pt-0.5">
-                    {row.label}
+                  <span
+                    className="shrink-0 flex items-center justify-center dsh-t-xxxs dsh-strong dsh-label-tertiary"
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 'var(--dsh-radius-xs)',
+                      background: 'var(--dsw-alias-bg-layer-3)',
+                      marginTop: 1,
+                    }}
+                  >
+                    {i + 1}
                   </span>
-                  <span className="dsh-label-primary dsh-mono whitespace-pre-wrap flex-1 break-words">{row.value}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="dsh-t-xxs dsh-strong dsh-label-secondary">{row.label}</div>
+                    <div className="dsh-t-xxs dsh-label-primary dsh-mono whitespace-pre-wrap break-words">
+                      {row.value}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -266,41 +316,43 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume,
             </div>
           )}
 
-          {status === 'pending' ? (
-            <div className="flex items-center gap-2 pt-3 dsh-border-t">
-              <button
-                disabled={loading}
-                onClick={() => handleDecision('approved')}
-                className="flex items-center gap-1.5 px-3 py-1.5 dsh-btn-primary dsh-t-s dsh-strong"
-                style={{ borderRadius: 'var(--dsh-radius-sm)' }}
-              >
-                {loading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                Approve &amp; execute
-              </button>
+          {waiting ? (
+            /* Decisions anchored bottom-right, secondary first — the reference card's
+               "Skip this question" / "Next" pair, carrying the real meanings here. */
+            <div className="flex items-center justify-end gap-2 pt-3" style={{ borderTop: '1px solid var(--dsw-alias-border-l1)' }}>
               <button
                 disabled={loading}
                 onClick={() => handleDecision('rejected')}
-                className="flex items-center gap-1.5 px-3 py-1.5 dsh-btn dsh-t-s dsh-strong"
+                className="flex items-center gap-1.5 px-3 py-1.5 dsh-t-xs dsh-strong dsh-label-secondary dsh-interactive"
                 style={{ borderRadius: 'var(--dsh-radius-sm)' }}
               >
-                <X size={13} /> Cancel
+                <X size={12} /> Cancel
+              </button>
+              <button
+                disabled={loading}
+                onClick={() => handleDecision('approved')}
+                className="flex items-center gap-1.5 px-3 py-1.5 dsh-btn-primary dsh-t-xs dsh-strong"
+                style={{ borderRadius: 'var(--dsh-radius-sm)' }}
+              >
+                {loading ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                Approve &amp; execute
               </button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 dsh-t-s dsh-strong">
+            <div className="flex items-center gap-1.5 dsh-t-xs dsh-strong">
               {status === 'approved' ? (
                 <span className="dsh-success flex items-center gap-1">
-                  <Check size={14} /> Approved &amp; in progress
+                  <Check size={13} /> Approved &amp; in progress
                 </span>
               ) : (
                 <span className="dsh-danger flex items-center gap-1">
-                  <X size={14} /> Action cancelled
+                  <X size={13} /> Action cancelled
                 </span>
               )}
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

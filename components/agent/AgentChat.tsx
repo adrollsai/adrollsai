@@ -375,8 +375,23 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
    * deep link). The mount effect below restores "the last session" on every load; without
    * this flag it also overwrites a choice the user just made by hand, which is what made
    * clicking CEO look like a dead button.
+   *
+   * A deep link counts as a choice FROM THE FIRST RENDER, not once its fetch resolves. Tapping
+   * "Talk to CEO" navigates to ?ceo=1, and the CEO effect has to await a session list before it
+   * can open the thread. In that gap the adopt-last-chat effect used to win the race and open a
+   * previous conversation — the owner landed in the wrong chat, and the CEO thread replaced it
+   * only when the fetch finally returned (reported as "after 10–15 seconds it opened the CEO
+   * tile"). Reading the URL synchronously is what closes that gap.
    */
-  const userChoseThreadRef = React.useRef(false);
+  const deepLink = React.useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return { ceo: params.get('ceo') === '1', session: params.get('session') || null };
+    } catch {
+      return { ceo: false, session: null };
+    }
+  }, []);
+  const userChoseThreadRef = React.useRef(deepLink.ceo || Boolean(deepLink.session));
   // The permanent CEO thread. Created server-side on first load and refusal-protected
   // there too, so this is a view of something the user cannot accidentally destroy.
   const [ceoSessionId, setCeoSessionId] = useState<string | null>(null);
@@ -799,15 +814,23 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   // message left another empty "New session" tile behind. Reopening the most
   // recent chat instead makes the sidebar behave like a history, not a log of
   // visits.
+  /**
+   * Open the thread the URL asked for, and ONLY that one.
+   *
+   * This used to adopt "the most recent chat" on every visit, on the theory that the sidebar
+   * should behave like a history. In practice it meant opening the agent tab dropped the owner
+   * into whatever they were last doing — mid-conversation, with someone else's context, unsure
+   * whether they were starting fresh — and it raced the CEO deep link (see `deepLink` above).
+   *
+   * The owner's rule now: opening the tab starts a NEW session. A thread is reopened only when a
+   * link asks for it explicitly (?session=…), which is what the sidebar and the CEO tab use.
+   * Nothing is created here either — a session row is written on the first message, so a visit
+   * that sends nothing leaves no empty tile behind.
+   */
   const adoptedSession = useRef(false);
   useEffect(() => {
     if (adoptedSession.current) return;
     if (harness.available !== true) return;
-    // The user has already picked a thread (a session, CEO, or a deep link), or
-    // has just created one. Adopting "the most recent chat" on top of that threw
-    // the choice away — clicking New session right after load created a real
-    // session, and then this effect opened a different one, so the pane went
-    // blank and the reply landed in a conversation nobody was looking at.
     if (userChoseThreadRef.current) {
       adoptedSession.current = true;
       return;
@@ -816,27 +839,24 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       adoptedSession.current = true;
       return;
     }
-    const list = harness.sessions;
-    if (!Array.isArray(list)) return;
 
     adoptedSession.current = true;
-    if (list.length === 0) return; // nothing to adopt; a session is made on first send
+    const requestedId = deepLink.session;
+    if (!requestedId) return; // no deep link: a fresh thread, by design
 
-    let lastId: string | null = null;
-    try {
-      lastId = localStorage.getItem(lastSessionStorageKey);
-    } catch {
-      /* storage blocked — fall through to the newest */
-    }
-    const target = list.find((s) => s.id === lastId) || list[0];
-    if (!target) return;
+    // Only open it if it is one of this account's threads — a stale or foreign id must not
+    // leave the pane spinning on a conversation that cannot load.
+    const exists = harness.sessions.some((s) => s.id === requestedId);
+    if (!exists) return;
 
-    setActiveSessionId(target.id);
-    setLogSessionId(target.id);
-    if (target.workspaceId) setActiveWorkspaceId(target.workspaceId);
-    void harness.openSession(target.id);
+    userChoseThreadRef.current = true;
+    setActiveSessionId(requestedId);
+    setLogSessionId(requestedId);
+    const workspaceId = harness.sessions.find((s) => s.id === requestedId)?.workspaceId;
+    if (workspaceId) setActiveWorkspaceId(workspaceId);
+    void harness.openSession(requestedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [harness.available, harness.sessions, logSessionId, lastSessionStorageKey]);
+  }, [harness.available, harness.sessions, logSessionId, deepLink.session]);
 
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
@@ -864,30 +884,23 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
       localStorage.setItem(workspaceStorageKey, JSON.stringify(initialWs));
 
       const savedSess = localStorage.getItem(sessionStorageKey);
-      const lastSessionId = localStorage.getItem(lastSessionStorageKey);
-      let targetSessionId = activeSessionId;
-
       if (savedSess) {
         const parsedSess = JSON.parse(savedSess);
-        if (Array.isArray(parsedSess) && parsedSess.length > 0) {
-          setSessions(parsedSess);
-          const matched = lastSessionId && parsedSess.find((s: any) => s.id === lastSessionId);
-          targetSessionId = matched ? matched.id : parsedSess[0].id;
-        }
+        // The mirrored list is only a head start for the tile rail — the server's list replaces
+        // it a moment later. It is NOT a decision about which thread to open.
+        if (Array.isArray(parsedSess) && parsedSess.length > 0) setSessions(parsedSess);
       }
 
-      setActiveSessionId(userChoseThreadRef.current ? activeSessionId : targetSessionId);
-
-      // ALWAYS restore messages on initial mount so refreshing/backgrounding never wipes the screen
-      const savedMsgs = localStorage.getItem(`nobo_msg_${targetSessionId}`);
-      if (savedMsgs) {
-        try {
-          const parsed = JSON.parse(savedMsgs);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessagesRef.current(parsed);
-          }
-        } catch (e) {}
-      }
+      /**
+       * Opening the agent tab starts a NEW thread.
+       *
+       * This used to call `setActiveSessionId(<last session in the mirror>)` and then load that
+       * session's messages out of `nobo_msg_*`, so every visit resumed whatever the owner was
+       * last doing — with its context on screen, looking like a brand-new chat. The owner's rule
+       * is explicit: a fresh session per visit. A thread is reopened only by the sidebar or by a
+       * link that names it, both of which go through the adopt effect above. Nothing is written
+       * here, so a visit that sends no message leaves no empty tile behind.
+       */
     } catch (e) {}
 
     // Request browser notification permission so push alerts pop up smoothly
@@ -2344,15 +2357,22 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
           </div>
         </div>
 
-        {/* Floating Jump to Bottom Button */}
+        {/* Floating Jump to Bottom Button.
+            Centred above the composer, an arrow only — the same affordance the major chat UIs use.
+            It was pinned to the right with a "Latest" label, which read as a button for something
+            other than "scroll down". */}
         {showScrollBottomBtn && (
-          <button
-            onClick={scrollToBottom}
-            className="absolute bottom-24 right-8 z-30 p-2 rounded-full dsh-btn-primary flex items-center gap-1 text-xs font-mono"
-          >
-            <ArrowDown size={14} />
-            <span>Latest</span>
-          </button>
+          <div className="absolute bottom-24 left-0 right-0 z-30 flex justify-center pointer-events-none">
+            <button
+              onClick={scrollToBottom}
+              aria-label="Scroll to latest message"
+              title="Scroll to latest message"
+              className="pointer-events-auto h-8 w-8 rounded-full dsh-surface-2 dsh-border dsh-label-primary flex items-center justify-center dsh-interactive transition-colors"
+              style={{ boxShadow: 'var(--dsw-shadow-lv2)' }}
+            >
+              <ArrowDown size={16} />
+            </button>
+          </div>
         )}
 
         {/* 3. DeepSeek Signature Input Dock */}
@@ -2748,7 +2768,7 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   {queuedCount} message{queuedCount > 1 ? 's' : ''} queued — sends when this turn finishes
                 </span>
               ) : (
-                <span className="hidden sm:inline">Nobo AI Autonomous Operator • Standard mode • Full Access</span>
+                <span className="hidden sm:inline">Nobo AI can make mistakes.</span>
               )}
             </div>
           </div>
