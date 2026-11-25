@@ -291,6 +291,20 @@ export async function runCampaignJob(jobId: string, incomingPayload?: any): Prom
             hasAgeOrGender: Boolean((payload as any).gender) || (Number(ageMin) || 18) > 18 || (Number(ageMax) || 65) < 65,
             wantsAdvantageAudience: (payload as any).advantageAudience,
             wantsAdvantagePlacements: (payload as any).advantagePlacements,
+            // Where the ads actually serve. India declares no special ad category.
+            market: {
+                currency: currency,
+                timezone: (() => {
+                    try {
+                        const bi = typeof (payload as any).businessInfo === 'string'
+                            ? JSON.parse((payload as any).businessInfo)
+                            : (payload as any).businessInfo;
+                        return bi?.timezone || null;
+                    } catch { return null; }
+                })(),
+                phone: (payload as any).contactNumber || null,
+                domain: (payload as any).linkUrl || null,
+            },
         });
         logToFile("Advantage+ plan resolved:", {
             summary: describeAdvantagePlan(advantage),

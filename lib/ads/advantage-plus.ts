@@ -261,6 +261,46 @@ const normaliseCategories = (input: unknown): SpecialAdCategory[] => {
 };
 
 /**
+ * The market an ad will actually run in.
+ *
+ * Every signal here is about WHERE THE ADS SERVE, not where the company is registered:
+ * an Indian business advertising to the UAE is a UAE campaign, and the reverse.
+ */
+export interface MarketInput {
+  /** The ad account's own currency, or the tenant's. INR means India. */
+  currency?: string | null;
+  /** ISO country code, when a caller knows one. */
+  countryCode?: string | null;
+  /** IANA zone from business_info, e.g. Asia/Kolkata. */
+  timezone?: string | null;
+  /** Any company phone number, e.g. +91 98102 14675. */
+  phone?: string | null;
+  /** Fallback: a `.in` site. */
+  domain?: string | null;
+}
+
+/**
+ * Is this an India campaign?
+ *
+ * INR settles it on its own — it is the ad account's billing currency, so it is the
+ * currency the spend is denominated in. The other signals are only consulted when the
+ * currency is absent or ambiguous.
+ */
+export function isIndiaMarket(input: MarketInput = {}): boolean {
+  const currency = String(input.currency || '').trim().toUpperCase();
+  if (currency) return currency === 'INR';
+  const country = String(input.countryCode || '').trim().toUpperCase();
+  if (country) return country === 'IN' || country === 'IND';
+  const zone = String(input.timezone || '').trim().toLowerCase();
+  if (zone) return zone.startsWith('asia/calcutta') || zone.startsWith('asia/kolkata');
+  const phone = String(input.phone || '').replace(/[^0-9+]/g, '');
+  if (phone) return phone.startsWith('+91') || phone.startsWith('91');
+  const domain = String(input.domain || '').trim().toLowerCase();
+  if (domain) return /\.in(\/|$)/.test(domain);
+  return false;
+}
+
+/**
  * Work out the legally required special ad category from what we know about the
  * business. An explicit choice always wins; detection is only a fallback, because
  * a wrong category narrows the audience and a missing one is a policy violation.
@@ -270,11 +310,42 @@ export function detectSpecialAdCategories(input: {
   businessInfo?: string | null;
   missionStatement?: string | null;
   explicit?: unknown;
+  market?: MarketInput;
 }): { categories: SpecialAdCategory[]; detectedFrom: string[] } {
+  /**
+   * INDIA CAMPAIGNS DECLARE NO SPECIAL AD CATEGORY. Owner's instruction.
+   *
+   * This is checked before anything else — including an explicit category — because the
+   * instruction is about where the ads run, and a stale value saved on an old launch
+   * must not resurrect it. On a property account the category is not neutral, either:
+   * HOUSING strips age, gender and detailed targeting, so declaring it where it is not
+   * required costs reach for nothing.
+   *
+   * If Meta ever does insist on one for an India campaign, it will say so in a refusal —
+   * and since lib/ads/graph-error.ts now carries its exact words, that refusal will name
+   * the requirement instead of arriving as "Invalid parameter".
+   */
+  if (isIndiaMarket(input.market || {})) {
+    return {
+      categories: [],
+      detectedFrom: [
+        'no special ad category: this campaign runs in India, where none is declared',
+      ],
+    };
+  }
+
   const explicit = normaliseCategories(input.explicit);
   if (explicit.length) return { categories: explicit, detectedFrom: ['set explicitly when the campaign was launched'] };
 
-  const haystack = [input.industry, input.businessInfo, input.missionStatement]
+  /**
+   * The industry is stored as `real_estate`, `financial_services` — underscored slugs —
+   * while the patterns are written for prose ("real estate"). Matching the raw value
+   * meant the canonical `real_estate` industry never triggered HOUSING at all; only a
+   * business whose blurb happened to say "property" was caught. Normalise the slug, and
+   * fold in the business-info `industry` too, which sometimes disagrees with the column.
+   */
+  const industryText = [input.industry].filter(Boolean).join(' ').replace(/[_-]+/g, ' ');
+  const haystack = [industryText, input.businessInfo, input.missionStatement]
     .filter(Boolean)
     .join(' \n ')
     .slice(0, 4000);
@@ -314,6 +385,11 @@ export interface AdvantagePlanInput {
   /** Explicit overrides, for callers that really do need manual targeting. */
   wantsAdvantageAudience?: boolean | null;
   wantsAdvantagePlacements?: boolean | null;
+  /**
+   * Where these ads will run. India campaigns declare no special ad category at all —
+   * see detectSpecialAdCategories.
+   */
+  market?: MarketInput;
 }
 
 export interface AdvantagePlan {
@@ -359,6 +435,7 @@ export function resolveAdvantagePlan(input: AdvantagePlanInput): AdvantagePlan {
     businessInfo: input.businessInfo,
     missionStatement: input.missionStatement,
     explicit: input.specialAdCategories,
+    market: input.market,
   });
 
   if (categories.length) {

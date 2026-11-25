@@ -510,6 +510,9 @@ export function createMetaAdsMcpTools(supabase: SupabaseClient, userId: string) 
             missionStatement: profile.mission_statement || null,
             hasAgeOrGender: Number(ageMin) > 18 || Number(ageMax) < 65,
             wantsAdvantageAudience: specialAdCategory === 'NONE' ? true : false,
+            // Where the ads actually serve, taken from the AD ACCOUNT's own currency.
+            // India declares no special ad category at all.
+            market: { currency, phone: (profile as any).contact_number || null, domain: (profile as any).custom_domain || null },
           });
 
           // 3. Create Campaign (Advantage+ budget: one daily budget at campaign level)

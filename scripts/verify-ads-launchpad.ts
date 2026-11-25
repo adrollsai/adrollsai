@@ -38,6 +38,7 @@ import {
   SPECIAL_AD_CATEGORIES,
   ageAndGenderTargeting,
   detectSpecialAdCategories,
+  isIndiaMarket,
   OPEN_AGE_RANGE,
   type AdvantagePlan,
 } from '../lib/ads/advantage-plus';
@@ -325,6 +326,47 @@ check('a #190 token error is permanent and a permissions gap', (() => {
 })());
 check('a rate limit is retryable', classifyMetaError({ error: { code: 4, message: 'Application request limit reached' } }).permanent === false);
 check('a parameter error is not retryable', classifyMetaError({ error: { code: 100, message: 'Invalid parameter' } }).permanent === true);
+
+// ---------------------------------------------------------------------------
+// Owner's instruction: no special ad category on campaigns running in India.
+//
+// This is not cosmetic. On a property account HOUSING strips age, gender and detailed
+// targeting, so declaring it where Meta does not require it costs reach for nothing —
+// and a stale CREDIT saved on an old launch was being sent verbatim and rejected.
+console.log('\n▸ India campaigns declare no special ad category');
+check('INR is an India market', isIndiaMarket({ currency: 'INR' }));
+check('a +91 number is an India market', isIndiaMarket({ phone: '+91 98102 14675' }));
+check('an Asia/Kolkata zone is an India market', isIndiaMarket({ timezone: 'Asia/Kolkata' }));
+check('a .in domain is an India market', isIndiaMarket({ domain: 'https://umanginfratech.com.in' }));
+check('USD is not an India market', isIndiaMarket({ currency: 'USD' }) === false);
+check(
+  'a property account in India gets NO category',
+  detectSpecialAdCategories({
+    industry: 'real_estate',
+    businessInfo: 'property investment, plots and land',
+    market: { currency: 'INR' },
+  }).categories.length === 0,
+  detectSpecialAdCategories({ industry: 'real_estate', market: { currency: 'INR' } }).categories.join(',')
+);
+check(
+  'and an explicit saved category cannot resurrect it in India',
+  detectSpecialAdCategories({ explicit: ['HOUSING'], market: { currency: 'INR' } }).categories.length === 0,
+  detectSpecialAdCategories({ explicit: ['HOUSING'], market: { currency: 'INR' } }).categories.join(',')
+);
+check(
+  'nor can a stale CREDIT',
+  detectSpecialAdCategories({ explicit: ['CREDIT'], market: { currency: 'INR' } }).categories.length === 0
+);
+check(
+  'the same property account outside India still declares HOUSING',
+  detectSpecialAdCategories({ industry: 'real_estate', market: { currency: 'AED' } }).categories.includes('HOUSING'),
+  detectSpecialAdCategories({ industry: 'real_estate', market: { currency: 'AED' } }).categories.join(',')
+);
+check(
+  'and says why it declared nothing in India',
+  detectSpecialAdCategories({ market: { currency: 'INR' } }).detectedFrom.join(' ').includes('India'),
+  detectSpecialAdCategories({ market: { currency: 'INR' } }).detectedFrom.join(' ')
+);
 
 console.log('\n▸ an instant form never posts a question Meta will refuse');
 check(

@@ -195,6 +195,12 @@ export async function POST(request: Request) {
         hasAgeOrGender: Boolean((data as any).gender) || (Number(ageMin) || 18) > 18 || (Number(ageMax) || 65) < 65,
         wantsAdvantageAudience: false,
         wantsAdvantagePlacements: false,
+        // Where the ads actually serve. India declares no special ad category.
+        market: {
+            currency: (targetProfile as any)?.currency || null,
+            phone: (targetProfile as any)?.contact_number || null,
+            domain: (targetProfile as any)?.custom_domain || null,
+        },
     });
     logToFile("Remarketing advantage+ plan:", {
         summary: describeAdvantagePlan(advantage),

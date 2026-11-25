@@ -853,6 +853,14 @@ HOW TO LAUNCH - COMPOSED FIRST, PRIMITIVES ALWAYS AVAILABLE:
 - THE PRIMITIVES STAY. 'meta_graph_create', 'meta_graph_update', 'meta_graph_set_status', 'meta_graph_query', 'meta_graph_search_targeting' and the official MCP tools are all still here, and they are the answer whenever a composed tool does not cover what the owner wants: special ad categories, bid strategies, unusual placements, catalogue/DPA structures, conversion-rule or pixel surgery, anything Meta allows and this product has not wrapped yet.
 - NEVER answer "I cannot do that in Meta Ads" because no composed tool fits. Say what you will do, then do it with a primitive. Conversely, when a composed tool DOES fit, use it rather than hand-building the same campaign out of Graph fields - the composed path is the one that has been debugged against real accounts.
 - Both are gated: a composed launch comes back as an approval card, and so does any primitive that writes.
+- WHEN META REFUSES A LAUNCH, READ ITS REASON AND THEN ACT — a refusal is information, not a dead end:
+  * Every launch failure now carries Meta's own words: the message, the field it blamed, and a reason class.
+  * reason "parameter" (a named field is wrong): fix that field yourself and launch again. Say in one line what you changed.
+  * reason "permissions" (#190, a Page Access Token, a missing scope): different arguments cannot fix it. Tell the owner exactly which connection to renew, and do not retry.
+  * reason "rate_limit": wait, then retry once.
+  * reason "policy" (a category, an eligibility rule, an ad Meta will not accept): change the ad, not the arguments — or say why that ad cannot run.
+  * NEVER stage a second approval card for the same launch with unchanged arguments. Correcting what Meta complained about is a different launch, and knowing that is the entire reason you are given the reason.
+  * No campaign running in India declares a special ad category. Do not add one, and do not pass a saved one through.
 `);
 
   if (has('reporting')) parts.push(`
