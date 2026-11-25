@@ -14,6 +14,8 @@
  *   npm run verify:ceo-digest
  */
 import { digestSlotFor, localHour, planDigestSends, type DigestSlot } from '../lib/agent/digest-batch';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 let pass = 0;
 let fail = 0;
@@ -117,6 +119,38 @@ head('4. The whole platform is reached, and never mailed twice');
   check('every one of the 79 businesses was reached', sentOnce.size === 79, `${sentOnce.size}/79 after ${invocations} invocations`);
   check('and not one of them was mailed twice', duplicates === 0, String(duplicates));
   check('it converges well inside the morning window', invocations <= 12, `${invocations} invocations of 12`);
+}
+
+head('5. A business is never mailed twice for the same slot');
+
+{
+  /**
+   * The stamp that makes a send "done" lives on `routine_runs.digest`, so a business with no run
+   * row for the period has nowhere to record the send. With the old twice-daily cron that was one
+   * duplicate; the cron now runs every fifteen minutes, so it would be two dozen. Two structural
+   * rules keep that impossible, and both are cheap to break silently — hence the check.
+   */
+  const routeSrc = readFileSync(path.join(process.cwd(), 'app/api/cron/ceo-digest/route.ts'), 'utf8');
+
+  check(
+    'the route refuses to send without a run row to stamp',
+    /if \(!run\?\.id\)/.test(routeSrc) && /skipped\.push\([^)]*no run for/.test(routeSrc),
+    'no run → no email',
+  );
+  check(
+    'the period key honours the routine\u2019s own cadence',
+    /periodKey\(now,[^)]*routine\.cadence \|\| 'daily'\)/.test(routeSrc),
+    'a weekly routine is not looked up under a daily key',
+  );
+  check(
+    'the cron sweeps more than twice a day',
+    (() => {
+      const crons = JSON.parse(readFileSync(path.join(process.cwd(), 'vercel.json'), 'utf8')).crons || [];
+      const digest = crons.filter((cron: any) => String(cron.path).startsWith('/api/cron/ceo-digest'));
+      return digest.length === 1 && digest[0].schedule === '*/15 * * * *';
+    })(),
+    'one every-fifteen-minutes entry, not two fixed times',
+  );
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

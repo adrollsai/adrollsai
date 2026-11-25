@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   const { data: routines, error } = await supabase
     .from('business_routines')
-    .select('id, user_id, name, timezone, daily_credit_cap')
+    .select('id, user_id, name, timezone, cadence, daily_credit_cap')
     .eq('enabled', true)
     .order('created_at', { ascending: true });
 
@@ -86,7 +86,9 @@ export async function GET(req: NextRequest) {
     (runRows || []).map((row: any) => [`${row.user_id}|${row.period_key}`, row])
   );
   const runFor = (routine: any) =>
-    runByPeriod.get(`${routine.user_id}|${periodKey(now, routine.timezone || 'Asia/Kolkata', 'daily')}`);
+    runByPeriod.get(
+      `${routine.user_id}|${periodKey(now, routine.timezone || 'Asia/Kolkata', routine.cadence || 'daily')}`
+    );
 
   const plan = planDigestSends(routines || [], {
     now,
@@ -96,9 +98,25 @@ export async function GET(req: NextRequest) {
   });
 
   for (const { routine, slot } of plan.due) {
-    const period = periodKey(now, routine.timezone || 'Asia/Kolkata', 'daily');
+    const period = periodKey(now, routine.timezone || 'Asia/Kolkata', routine.cadence || 'daily');
     const label = periodLabel(now, routine.timezone || 'Asia/Kolkata');
     const profile = profileByUser.get(routine.user_id) || null;
+
+    /**
+     * NO RUN ROW, NO EMAIL.
+     *
+     * The only record that "this slot went out" is `routine_runs.digest`, stamped on the run for
+     * the period. Without a run row there is nothing to stamp, so the same business would be mailed
+     * again on every invocation — twice a day that was a duplicate, but the cron now runs every
+     * fifteen minutes to sweep the platform, so it would be two dozen. Waiting for the run is also
+     * the truthful order: the email describes a day's work, and the work is not queued yet.
+     * `materialiseDueRoutines` runs every ten minutes, so the wait is short.
+     */
+    const run = runFor(routine) || null;
+    if (!run?.id) {
+      skipped.push(`${routine.id}: no run for ${period} yet`);
+      continue;
+    }
 
     // `profiles.email` is null for accounts created through some paths — Procolor's is null while
     // its real address sits on the auth user — and the old code simply skipped them, so the
@@ -117,8 +135,6 @@ export async function GET(req: NextRequest) {
       skipped.push(`${routine.id}: no email`);
       continue;
     }
-
-    const run = runFor(routine) || null;
 
     // What the owner must act on: anything still pending approval for this business.
     const { data: pending } = await supabase
