@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { FlowStore, ScheduledStep } from './scheduling';
+import type { BranchGate } from './branching';
 
 /**
  * The Supabase side of scheduling: the ledger, and the two facts that stop double sends.
@@ -14,6 +15,8 @@ export const RUNS = 'flow_runs';
 export const SETTINGS = 'flow_settings';
 
 function mapStep(row: any): ScheduledStep {
+  const payload = (row.payload ?? {}) as Record<string, any>;
+  const gates = Array.isArray(payload.gates) ? (payload.gates as BranchGate[]) : undefined;
   return {
     id: String(row.id),
     flowId: String(row.flow_id),
@@ -24,6 +27,7 @@ function mapStep(row: any): ScheduledStep {
     status: row.status,
     attempts: Number(row.attempts ?? 0),
     runKey: row.run_key ? String(row.run_key) : 'once',
+    ...(gates?.length ? { gates } : {}),
   };
 }
 
@@ -32,7 +36,9 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
     async dueSteps(now, limit) {
       const { data, error } = await supabase
         .from(SCHEDULES)
-        .select('id, flow_id, lead_id, step_index, run_at, status, attempts, kind, run_key')
+        // `payload` is read here because a step's branch gates live in it: without the payload a
+        // gated step would look ungated and BOTH sides of a condition would run.
+        .select('id, flow_id, lead_id, step_index, run_at, status, attempts, kind, run_key, payload')
         .eq('user_id', userId)
         .eq('status', 'pending')
         .lte('run_at', now.toISOString())
@@ -40,6 +46,19 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
         .limit(limit);
       if (error) return []; // migration not applied yet, or a transient read failure
       return (data ?? []).map(mapStep);
+    },
+
+    /**
+     * The row a branch predicate is evaluated against.
+     *
+     * The whole row, deliberately: a condition may compare a plain column (`pipeline_stage`), a
+     * JSON field (`custom_fields.budget`) or a number (`value`), and narrowing the select here would
+     * silently make some of those compare against undefined.
+     */
+    async leadFor(leadId) {
+      const { data, error } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+      if (error) return null;
+      return (data as Record<string, any> | null) ?? null;
     },
 
     async claim(stepId, now) {

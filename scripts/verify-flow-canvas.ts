@@ -100,6 +100,9 @@ head('3. What cannot run is refused by name, not silently saved');
     trigger: { type: 'meta_ad' },
     nodes: [
       { id: 'x', type: 'action_whatsapp_msg', config: { message: 'hi' } },
+      // A branch with nothing to compare is still un-runnable. Conditions themselves ARE supported
+      // now (lib/flows/branching.ts, proven in verify:flow-branching) — but only when they say what
+      // they compare, because a branch that cannot be evaluated would send everybody down one side.
       { id: 'y', type: 'action_condition', title: 'If interested' },
       { id: 'z', type: 'action_ig_send_dm', title: 'DM on Instagram' },
     ],
@@ -107,6 +110,22 @@ head('3. What cannot run is refused by name, not silently saved');
   check('two problems are reported', unsupported.problems.length === 2, unsupported.problems.map((p) => p.nodeId).join(','));
   check('each names the node and why', unsupported.problems.every((p) => p.message.includes('"') && p.message.length > 30), unsupported.problems[0]?.message);
   check('the runnable node is still kept', unsupported.nodes.length === 1);
+  check(
+    'the condition is refused for having no field, not for being a condition',
+    /no field to compare/.test(unsupported.problems.find((p) => p.nodeId === 'y')?.message ?? ''),
+    unsupported.problems.find((p) => p.nodeId === 'y')?.message.slice(0, 90)
+  );
+
+  const branching = translateCanvasFlow({
+    trigger: { type: 'meta_ad' },
+    nodes: [
+      { id: 'c', type: 'action_condition', title: 'New lead?', config: { field: 'pipeline_stage', operator: '==', value: 'New Lead' } },
+      { id: 't', type: 'action_whatsapp_msg', branch: 'true', config: { message: 'Welcome' } },
+      { id: 'f', type: 'action_whatsapp_msg', branch: 'false', config: { message: 'Still interested?' } },
+    ],
+  });
+  check('a condition that says WHAT it compares is no longer refused', branching.problems.length === 0, JSON.stringify(branching.problems));
+  check('and it reaches the runner as a condition node', branching.nodes.some((n) => n.type === 'conditionNode'));
 
   const empty = translateCanvasFlow({ trigger: { type: 'meta_ad' }, nodes: [] });
   check('an empty flow is a problem, not an empty save', empty.problems.length === 1, empty.problems[0]?.message);

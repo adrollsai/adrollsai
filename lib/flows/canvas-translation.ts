@@ -16,6 +16,8 @@
  * runner trigger and every runnable node survives the trip.
  */
 
+import { readCondition } from './branching';
+
 /** Canvas trigger type → the trigger the runner actually fires on. */
 const TRIGGER_MAP: Record<string, string> = {
   meta_ad: 'trigger_meta_ad',
@@ -76,9 +78,15 @@ const NODE_MAP: Record<string, string> = {
   action_notify_team: 'action_ai_call_transfer',
 };
 
-/** Node types the canvas offers that the runner genuinely cannot execute yet. Named, never silent. */
+/**
+ * Node types the canvas offers that the runner genuinely cannot execute yet. Named, never silent.
+ *
+ * `action_condition` USED TO BE HERE. It is not any more: branching is implemented as a predicate
+ * recorded on each step it guards and evaluated when that step is due (lib/flows/branching.ts), so a
+ * flow with a condition now runs on the side the lead actually belongs to. The activation refusal
+ * was kept until that worked end to end — see scripts/accept-flow-branching.ts.
+ */
 const UNSUPPORTED_NODES: Record<string, string> = {
-  action_condition: 'branching ("if this, then that") is not executed by the scheduler yet — the flow runs as a straight line',
   action_qualify: 'AI qualification is not a scheduler step yet — use an AI call step and record the answer in the CRM',
   action_ig_comment_reply: 'replying on Instagram is not a delivery channel yet — only WhatsApp and calls are',
   action_ig_send_dm: 'sending an Instagram DM is not a delivery channel yet — only WhatsApp and calls are',
@@ -195,6 +203,37 @@ export function translateCanvasFlow(input: { trigger?: CanvasTrigger; nodes?: Ca
       continue;
     }
 
+    /**
+     * A BRANCH IS A PREDICATE, NOT A STEP.
+     *
+     * The condition is translated into a `conditionNode` the planner reads (lib/flows/start.ts):
+     * every following node the canvas marked `branch: 'true' | 'false'` carries that condition as a
+     * gate, and the scheduler evaluates it against the lead when the step is due. A condition with
+     * no usable field is a PROBLEM — a branch that cannot be evaluated would silently send everybody
+     * down one side, which looks exactly like a working flow.
+     */
+    if (type === 'action_condition' || type === 'conditionNode' || type === 'action_if_else') {
+      const condition = readCondition(node);
+      if (condition.problem) {
+        problems.push({ nodeId: String(node.id ?? '?'), nodeType: type, message: `"${node.title ?? type}": ${condition.problem}` });
+        continue;
+      }
+      nodes.push({
+        id: node.id,
+        type: 'conditionNode',
+        data: {
+          ...(node.data ?? {}),
+          conditionId: condition.conditionId,
+          field: condition.field,
+          operator: condition.operator,
+          value: condition.value,
+          evaluationType: condition.evaluationType,
+          label: condition.label,
+        },
+      });
+      continue;
+    }
+
     if (type === 'action_whatsapp_questions') {
       nodes.push(questionsToMessage(node));
       continue;
@@ -273,6 +312,26 @@ export function translateCanvasFlow(input: { trigger?: CanvasTrigger; nodes?: Ca
       nodes.push({ id: node.id, type: 'whatsappTemplateNode', data: { ...(node.data ?? {}), templateName } });
       continue;
     }
+  }
+
+  /**
+   * CARRY THE SIDE OF THE BRANCH ACROSS.
+   *
+   * The canvas marks each node with `branch: 'true' | 'false' | 'main'`, naming the side of the
+   * condition above it. The stored flow keeps only `{ id, type, data }`, so without this the
+   * side was lost and every step after a condition would have been ungated — the branch would exist
+   * in the editor and nowhere in the runner. Done as a pass over the finished list so every push
+   * site above does not have to remember it.
+   */
+  const sideById = new Map<string, string>();
+  for (const node of input.nodes ?? []) {
+    const id = String(node.id ?? '');
+    const branch = String(node.branch ?? '').trim();
+    if (id && branch && branch !== 'main') sideById.set(id, branch);
+  }
+  for (const node of nodes) {
+    const side = sideById.get(String(node.id ?? ''));
+    if (side && !(node as any).branch) (node as any).branch = side;
   }
 
   if (!nodes.length && !problems.length) {

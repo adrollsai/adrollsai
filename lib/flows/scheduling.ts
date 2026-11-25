@@ -6,13 +6,17 @@
  * is due. That is the difference between a flow that can follow up tomorrow and a flow that robocalls
  * someone at 9:15pm because its 10-second cap clamped the wait.
  *
- * Every send passes five gates in order, and each one exists because of a real failure mode:
- *   1. kill switch        â€” the owner can stop every flow at once
- *   2. opt-out            â€” someone who said stop never gets another message
- *   3. quiet hours        â€” a due step at 23:40 waits until morning instead of calling
- *   4. cross-flow freshness â€” another flow messaging this lead minutes ago means this one holds
- *   5. idempotency        â€” a retried tick cannot send the same step twice
+ * Every send passes these gates in order, and each one exists because of a real failure mode:
+ *   1. kill switch        - the owner can stop every flow at once
+ *   2. flow paused        - one flow can be stopped on its own
+ *   3. opt-out            - someone who said stop never gets another message
+ *   4. BRANCH             - the step is on a side of a condition this lead is not on
+ *   5. quiet hours        - a due step at 23:40 waits until morning instead of calling
+ *   6. cross-flow freshness - another flow messaging this lead minutes ago means this one holds
+ *   7. idempotency        - a retried tick cannot send the same step twice
  */
+
+import { evaluateGates, type BranchGate } from './branching';
 
 export type StepStatus = 'pending' | 'claimed' | 'done' | 'skipped';
 
@@ -28,6 +32,16 @@ export interface ScheduledStep {
   runAt: string;
   status: StepStatus;
   attempts: number;
+  /**
+   * Branch predicates this step has to satisfy before it may run.
+   *
+   * A step on the TRUE side of "pipeline_stage == New Lead" carries that condition with
+   * `want: true`; the step on the FALSE side carries it with `want: false`. Both rows exist in the
+   * ledger from the start (that is what a ledger is), and when one is due it is either run or
+   * skipped with a reason that names the condition. Exactly one side can run, because a lead cannot
+   * be on both sides of the same comparison.
+   */
+  gates?: BranchGate[];
   /**
    * Which run of the flow this step belongs to.
    *
@@ -63,6 +77,14 @@ export interface FlowStore {
   recordRun(flowId: string, leadId: string, stepIndex: number, at: Date, runKey?: string): Promise<void>;
   lastMessageAtForLead(leadId: string): Promise<Date | null>;
   /**
+   * The lead a branch predicate is evaluated against, or null when it cannot be read.
+   *
+   * Optional so an existing store (and every gate's fake store) keeps working. A store that cannot
+   * supply the row does not get to run the step: see the branch gate in runDueSteps, which refuses a
+   * gated step it cannot evaluate rather than assuming a side.
+   */
+  leadFor?(leadId: string): Promise<Record<string, any> | null>;
+  /**
    * `'unreadable'` is distinct from `true` on purpose: "this person opted out" and "we could not
    * read this person" both stop the send, but only one of them is their decision, and a report that
    * confuses them sends somebody hunting for a consent they never withdrew.
@@ -95,6 +117,10 @@ export type SkipReason =
   | 'lead_unreadable'
   | 'already_ran'
   | 'recently_messaged_by_other_flow'
+  /** The step is on the side of a condition this lead is not on, so it never runs for them. */
+  | 'branch_not_taken'
+  /** The branch could not be evaluated (unreadable lead, or no store support) — the step is held. */
+  | 'branch_unreadable'
   | 'claim_lost'
   | 'execute_failed';
 
@@ -161,6 +187,39 @@ export async function runDueSteps(store: FlowStore, now: Date, opts: TickOptions
       report.skipped.push({ stepId: step.id, reason: 'opted_out' });
       continue;
     }
+
+    /**
+     * BRANCH — evaluated per step, against the lead as it is NOW.
+     *
+     * A step two days after a condition must ask the question two days later: the lead may have
+     * replied, changed stage, or been updated by another flow since. Both sides' rows sit in the
+     * ledger; this is where the one this lead is not on is retired, by name.
+     *
+     * Three outcomes, and the middle one matters: if the lead cannot be read the step is NOT taken
+     * (silence would be a guess) and NOT skipped permanently (a transient failure would silently
+     * retire somebody's follow-up) — it is reported and left pending for the next tick.
+     */
+    if (step.gates?.length) {
+      if (!store.leadFor) {
+        // A store that cannot supply the lead cannot decide the branch, and an unevaluated branch
+        // must never be treated as "both sides run".
+        report.skipped.push({ stepId: step.id, reason: 'branch_unreadable' });
+        continue;
+      }
+      const lead = await store.leadFor(step.leadId);
+      if (!lead) {
+        report.skipped.push({ stepId: step.id, reason: 'branch_unreadable' });
+        continue;
+      }
+      const verdict = evaluateGates(step.gates, lead);
+      if (!verdict.ok) {
+        await store.skip(step.id, 'branch_not_taken');
+        report.skipped.push({ stepId: step.id, reason: 'branch_not_taken' });
+        console.log(`[flows] step ${step.id} skipped (branch not taken): ${verdict.detail}`);
+        continue;
+      }
+    }
+
     if (isQuiet(now, quiet)) {
       const until = nextAllowedTime(now, quiet);
       report.deferred.push({ stepId: step.id, until: until.toISOString() });

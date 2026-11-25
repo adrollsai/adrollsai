@@ -3,6 +3,7 @@ import { DEFAULT_QUIET_HOURS, scheduleFor, type InternalAction, type PlannedActi
 import { actionForStep, planTimes } from './sequence';
 import { enqueueFlowRun, quietHoursFor, type EnqueueKind } from './store';
 import { TRIGGER_CAPABILITIES, validateAgainstTrigger } from './capabilities';
+import { branchSideOf, gateFor, readCondition, type BranchGate, type BuiltCondition } from './branching';
 
 /**
  * Starting a flow.
@@ -64,6 +65,12 @@ export interface PlannedFlowStep extends PlannedAction {
    * A negative value lands after the event.
    */
   beforeEventMinutes?: number;
+  /**
+   * The branch predicates this step has to satisfy before it may run, evaluated when it is due.
+   * A step on the FALSE side of "stage == New" carries the same condition with `want: false`, so
+   * exactly one side of every branch runs and the other is skipped, visibly.
+   */
+  gates?: BranchGate[];
 }
 
 const numberFrom = (value: unknown): number => (Number.isFinite(Number(value)) ? Number(value) : NaN);
@@ -152,6 +159,9 @@ export function planFromFlowDescription(description: string | null | undefined):
   let pendingCompose: { prompt: string } | null = null;
   /** A delay node that said "before the appointment" times the step that follows it. */
   let pendingBeforeEvent: number | null = null;
+  /** The most recent branch, and the side the node being read belongs to. */
+  let currentCondition: BuiltCondition | null = null;
+  let nodeSide: boolean | null = null;
 
   const withBeforeEvent = (step: PlannedFlowStep): PlannedFlowStep => {
     if (pendingBeforeEvent != null) {
@@ -166,6 +176,9 @@ export function planFromFlowDescription(description: string | null | undefined):
       step.compose = pendingCompose;
       pendingCompose = null;
     }
+    // The gate travels with the step, into the ledger row, so the decision is made at the step's own
+    // due time against the lead as it is then — not guessed when the flow fired.
+    if (nodeSide !== null && currentCondition) step.gates = [gateFor(currentCondition, nodeSide)];
     withBeforeEvent(step);
     actions.push(step);
   };
@@ -173,8 +186,21 @@ export function planFromFlowDescription(description: string | null | undefined):
   for (const node of nodes) {
     const type = String(node?.type ?? '');
     const data = node?.data ?? {};
+    nodeSide = branchSideOf({ branch: (node as any)?.branch });
 
     if (type === 'triggerNode') continue;
+
+    // A branch is not a step: it is the predicate the following steps of BOTH sides are gated on.
+    if (type === 'conditionNode' || type === 'action_condition' || type === 'action_if_else') {
+      const condition = readCondition({ id: String((node as any)?.id ?? ''), config: data as Record<string, any>, data: data as Record<string, any> });
+      if (condition.problem) {
+        problems.push(condition.problem);
+        currentCondition = null;
+        continue;
+      }
+      currentCondition = condition;
+      continue;
+    }
 
     if (type === 'whatsappMessageNode' || type === 'action_whatsapp_msg' || type === 'action_send_whatsapp' || type === 'inventoryDeliveryNode') {
       const text = String(data.message ?? data.body ?? '').trim();
@@ -392,6 +418,9 @@ export async function startFlowRun(
         compose: action?.compose ?? null,
         internal: action?.internal ?? null,
         trigger: triggerType,
+        // What has to be true of the lead for THIS step to run. Recorded on the row, so the
+        // decision is made when the step is due rather than when the flow fired.
+        gates: action?.gates ?? null,
       },
     };
   });

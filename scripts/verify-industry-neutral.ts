@@ -90,5 +90,67 @@ head('3. The rules are still useful patterns');
   check('there are four starter rules', (defaults.match(/id: 'rule_/g) ?? []).length === 4, String((defaults.match(/id: 'rule_/g) ?? []).length));
 }
 
+/**
+ * THE FLOWS PAGE SHIPPED A WHOLE CUSTOMER'S BUSINESS TO EVERY OTHER ACCOUNT.
+ *
+ * `/dashboard/flows` carried a demo of one property developer: ten invented prospects with
+ * real-looking mobile numbers ("Rohit Verma, +91 98765 43210, 2.5 Cr, Mohali"), "3 & 4 BHK
+ * Luxury Apartments, Starting 1.8 Cr", fake uploaded lists ("Weekend Site Visit Target Pool
+ * (1120)"), a fake "Mohali-Luxury-HNIs-Calling-List.csv", seeded run history with invented
+ * counts and durations, and that business's staff, email and phone number in the node defaults.
+ * A film academy opening the editor read all of it as its own data.
+ *
+ * The content is now placeholders. This section keeps it that way: it scans the CODE (comments
+ * stripped, because a comment explaining what was removed is not shown to anyone) for the
+ * vocabulary and the shapes that came back before.
+ */
+head('4. The flow editor ships placeholders, not somebody else\'s business');
+
+{
+  const pageSource = readFileSync(path.join(process.cwd(), 'app/dashboard/flows/page.tsx'), 'utf8');
+  const code = pageSource
+    .replace(/\/\*[\s\S]*?\*\//g, '') // block comments
+    .replace(/^\s*\/\/.*$/gm, '') // whole-line comments
+    .replace(/\/\/[^\n'"`]*$/gm, ''); // trailing comments
+  check('the flows page was read and comments were stripped', code.length > 100_000, `${code.length} chars of code`);
+
+  const banned: Array<[string, RegExp]> = [
+    ['property configuration (BHK)', /\bBHK\b/i],
+    ['rupee-crore prices', /\bCr\b|\bcrore\b/i],
+    ['lakh prices', /\blakh\b/i],
+    ['square feet', /\bsq\.?\s?ft\b/i],
+    ['HNI segments', /\bHNIs?\b/i],
+    ['the old demo localities', /\b(Mohali|Chandigarh|Zirakpur|Kharar|Panchkula|Aerocity)\b/i],
+    ['the old demo brand', /\b(Joy Grand|Bluesquare)\b/i],
+    ['the old demo salesperson', /\bHarman Bajwa\b/i],
+    ['hardcoded mobile numbers', /\+91[\s-]?9\d{4}/],
+    ['the fake uploaded lists', /(Calling-List|Retry-List)\.csv/i],
+    ['a fixed admin email', /@bluesquareinfra\.com/i],
+  ];
+  const hits = banned.filter(([, pattern]) => pattern.test(code)).map(([name]) => name);
+  check('no invented business, price, place or phone number in the rendered content', hits.length === 0, hits.join(', ') || 'clean');
+
+  // "site visit" as PROSE is property-flavoured; "Site Visit" as a value is a saved CRM stage in
+  // real accounts' flows, so renaming it would silently remap their data. Prose only.
+  const siteVisit = code.match(/\bsite visits?\b/gi) ?? [];
+  const proseSiteVisit = siteVisit.filter((hit) => hit !== 'Site Visit' && hit !== 'Site Visits');
+  check('no property-flavoured "site visit" prose', proseSiteVisit.length === 0, proseSiteVisit.join(', ') || 'clean');
+
+  const pool = code.slice(code.indexOf('const PROSPECT_POOL'), code.indexOf('const PROSPECT_POOL') + 600);
+  check('the simulator lead is a placeholder, not a person', /\{\{lead\.name\}\}/.test(pool), pool.includes('{{lead.name}}') ? 'yes' : 'missing');
+  check('and its phone number is a placeholder too', /\{\{lead\.phone\}\}/.test(pool) && !/9\d{4}\s?\d{5}/.test(pool));
+
+  const history = code.slice(code.indexOf('const [flowRunHistory'), code.indexOf('const [flowRunHistory') + 900);
+  check('no seeded batch-run history with invented counts', /\[\s*(?:\/\/[^\n]*\s*)?\]\s*\)/.test(history), history.slice(0, 60).replace(/\s+/g, ' '));
+  check('the empty history is explained in place', /No invented history/.test(pageSource));
+
+  check('the audience lists come from the account, not from the file', /const SAMPLE_CSV_AUDIENCES[^=]*=\s*\[\]/.test(code) && /const SAMPLE_AUDIENCE_GROUPS[^=]*=\s*\[\]/.test(code));
+  check(
+    'launching with an empty audience list says so instead of throwing',
+    /if \(!csv\)/.test(code) && /if \(!grp\)/.test(code),
+    'indexing [0] on an empty array was a TypeError in production'
+  );
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail > 0) process.exitCode = 1;

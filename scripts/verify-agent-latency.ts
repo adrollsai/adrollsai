@@ -63,9 +63,16 @@ check(
   'a date filter needs both facts and the model cannot know either'
 );
 check(
-  'the prompt forbids hunting for the read primitive',
-  /never\s+need 'find_tools' to reach it|never need 'find_tools' to reach it/i.test(orchestrator),
+  'the prompt tells the model not to go hunting for the read primitive',
+  /do not go looking for a\s+different tool|do not go looking for a different tool/i.test(orchestrator),
   'the first step used to be a find_tools call'
+);
+/** verify:toolset enforces that the prompt never names a tool this turn was not given, so this
+ *  guidance has to stay tool-agnostic: it may name the read primitive, which is always available. */
+check(
+  'the fast-path guidance names no tool the group selection may not have',
+  !/ANSWER THE SMALL QUESTION SMALL[\s\S]{0,1600}?(find_tools|call_tool|org_lead_report)/.test(orchestrator),
+  'naming an unregistered tool in the prompt breaks verify:toolset'
 );
 check(
   'the prompt says a lead page is not a lead count',

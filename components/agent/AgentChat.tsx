@@ -1131,6 +1131,39 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     }
   };
 
+  /**
+   * START THE SESSION WHILE THE OWNER IS STILL TYPING.
+   *
+   * Measured on the deployed app: Enter on an idle composer spent 6.4 seconds before the turn
+   * request was even sent — POST /sessions took 2.9s, the new session's projection 2.0s, and the
+   * runs refresh 1.2s, all sequential and all on the Enter path, because a turn cannot belong to a
+   * session that does not exist yet. None of that depends on the message, so it now starts on the
+   * first keystroke and Enter inherits a session that is already there.
+   *
+   * It publishes the same in-flight promise the "New session" button does, so a message sent while
+   * creation is still running joins THAT session instead of creating a second one beside it.
+   */
+  const prewarmSession = () => {
+    if (logSessionIdRef.current || sessionCreationRef.current) return;
+    if (harness.available === false) return;
+    const creation = harness.createSession({ workspaceId: activeWorkspaceId });
+    sessionCreationRef.current = creation;
+    void creation
+      .then((serverId: string | null) => {
+        if (sessionCreationRef.current === creation) sessionCreationRef.current = null;
+        if (!serverId) return;
+        // A different thread may have been opened while this was in flight; do not steal the pane.
+        if (logSessionIdRef.current) return;
+        setActiveSessionId(serverId);
+        logSessionIdRef.current = serverId;
+        setLogSessionId(serverId);
+        void harness.refresh();
+      })
+      .catch(() => {
+        if (sessionCreationRef.current === creation) sessionCreationRef.current = null;
+      });
+  };
+
   const handleSend = async (customPrompt?: string) => {
     /** The picked catalogue items, sent as context with the message. Shown as a chip, never typed into the box. */
   const withCatalogue = (text: string) =>
@@ -1190,6 +1223,20 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
     ensureSessionRegistered(textToSend);
     setSecondsElapsed(0);
     isAutoScrollEnabled.current = true;
+
+    /**
+     * CLEAR THE BOX THE MOMENT THE OWNER SENDS, NOT WHEN THE SERVER ANSWERS.
+     *
+     * Measured in a real browser on an idle composer: pressing Enter left the typed text sitting in
+     * the box for about five seconds, with no bubble, no spinner and no message — the clearing
+     * happened after `createSession` and the run handshake had both returned. To anyone watching,
+     * Enter had done nothing, and pressing it again queued the message twice. The send is now
+     * acknowledged in the same frame; the text is put back if the turn is refused or fails, so
+     * nothing is silently lost.
+     */
+    const sentText = fullPrompt;
+    setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
     // ── durable log ──────────────────────────────────────────────────────
     // Ensure a real session exists BEFORE the request so the turn has somewhere
@@ -1299,6 +1346,9 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
         // behind would look like the agent silently ignored the message.
         dropOptimisticUser(sid, userMessageId);
         toast.error(result.error || 'The agent could not start that turn.');
+        // The box was cleared optimistically when Enter was pressed. Nothing was
+        // accepted, so the text goes back rather than making the owner retype it.
+        setInput((current) => (current.trim() ? current : sentText));
         // Re-read the log so the pane shows what actually exists.
         void harness.refreshProjection();
         return;
@@ -2586,6 +2636,8 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   setInput(e.target.value);
                   e.target.style.height = 'auto';
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
+                  // Have a session ready before Enter is pressed — see prewarmSession.
+                  prewarmSession();
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -2594,7 +2646,19 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
                   }
                 }}
                 placeholder={
-                  isLoading
+                  /**
+                   * SAY WHICH ONE ENTER WILL DO.
+                   *
+                   * While a turn is running, Enter does not queue the message behind it — it STEERS
+                   * the running task, because a correction that only lands after the work finishes
+                   * has already cost the credits. That is by design and stays. The old placeholder
+                   * said "Queued — sends when this run finishes" for both cases, so a message that
+                   * had in fact been delivered to the running agent looked like it was waiting its
+                   * turn, and an owner reading the box had no way to know which had happened.
+                   */
+                  isLoading && harness.runInProgress && logSessionId
+                    ? 'Steering this run — Enter sends it at the next step'
+                    : isLoading
                     ? 'Queued — sends when this run finishes'
                     : 'Ask Nobo anything…'
                 }

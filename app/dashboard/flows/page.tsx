@@ -141,7 +141,7 @@ const GEMINI_LIVE_VOICES = [
   { id: 'Puck', name: 'Puck', tone: 'Clear, upbeat & engaging', tag: 'Recommended for Sales & Luxury', badge: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   { id: 'Fenrir', name: 'Fenrir', tone: 'Crisp, focused & persuasive', tag: 'High Clarity & Telecalling', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   { id: 'Kore', name: 'Kore', tone: 'Warm, calming & consultative', tag: 'Support & Qualification', badge: 'bg-purple-50 text-purple-700 border-purple-200' },
-  { id: 'Charon', name: 'Charon', tone: 'Deep, resonant & authoritative', tag: 'Executive & HNIs', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'Charon', name: 'Charon', tone: 'Deep, resonant & authoritative', tag: 'Executive & High-Value', badge: 'bg-blue-50 text-blue-700 border-blue-200' },
   { id: 'Aoede', name: 'Aoede', tone: 'Melodic, friendly & natural conversationalist', tag: 'Conversational Outreach', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
 ]
 
@@ -158,18 +158,16 @@ const SAMPLE_CSV_AUDIENCES: Array<{ id: string; name: string; count: number; dat
 /** Same rule as the CSV lists above: a saved audience is one the account actually saved. */
 const SAMPLE_AUDIENCE_GROUPS: Array<{ id: string; name: string; count: number; tag: string; desc: string }> = []
 
-// Realistic Prospect Pool for Live Batch Flow Simulation
+/**
+ * No invented prospects.
+ *
+ * This used to be ten fabricated people (full names, real-looking mobile numbers, invented budgets
+ * and localities) that the live batch simulator printed into the run log, so every
+ * account saw them as if they were its own leads. The simulator still needs a lead-shaped object,
+ * so it now gets one entry made of template placeholders.
+ */
 const PROSPECT_POOL = [
-  { name: 'Rohit Verma', phone: '+91 98765 43210', budget: '2.5 Cr', intent: 'High', location: 'Mohali Sector 82' },
-  { name: 'Priya Sharma', phone: '+91 98112 34567', budget: '1.8 Cr', intent: 'Medium', location: 'Aerocity' },
-  { name: 'Vikramjeet Singh', phone: '+91 97800 12345', budget: '3.2 Cr', intent: 'High', location: 'Chandigarh Sec 9' },
-  { name: 'Ananya Gupta', phone: '+91 98223 98765', budget: '1.2 Cr', intent: 'Low', location: 'Zirakpur' },
-  { name: 'Jaspreet Kaur', phone: '+91 99144 55667', budget: '2.8 Cr', intent: 'High', location: 'Mohali Eco City' },
-  { name: 'Sunil Mehta', phone: '+91 98711 22334', budget: '4.5 Cr', intent: 'High', location: 'Panchkula Sec 6' },
-  { name: 'Harpreet Sandhu', phone: '+91 98888 77665', budget: '90 Lakh', intent: 'Low', location: 'Kharar' },
-  { name: 'Deepak Singhal', phone: '+91 98140 33221', budget: '2.2 Cr', intent: 'High', location: 'Chandigarh Sec 35' },
-  { name: 'Neha Kapoor', phone: '+91 98720 11998', budget: '1.5 Cr', intent: 'Medium', location: 'Mohali Sec 68' },
-  { name: 'Rajesh Bansal', phone: '+91 98155 44332', budget: '3.0 Cr', intent: 'High', location: 'Sector 70 Mohali' }
+  { name: '{{lead.name}}', phone: '{{lead.phone}}', budget: '{{budget}}', intent: 'High', location: '{{city}}' }
 ]
 
 // Pre-built Starter Templates (Enterprise Grade Omnichannel Suite)
@@ -208,7 +206,7 @@ const FLOW_TEMPLATES: {
         {
           id: 'step_1',
           type: 'action_whatsapp_msg',
-          title: 'Deliver Live Property Inventory Link',
+          title: 'Deliver Live Catalogue Link',
           description: 'Sends your live catalogue link with an interactive CTA button',
           branch: 'main',
           config: {
@@ -267,7 +265,7 @@ const FLOW_TEMPLATES: {
           config: {
             publicReplyText: 'Sent you the verified brochure & price list in DM! 📩 Check your requests.',
             sendPrivateDm: true,
-            dmMessage: 'Hey {{lead.name}}! Thanks for commenting on our reel. Here is the verified project brochure and floor plan deck: https://nobogent.com/brochure'
+            dmMessage: 'Hey {{lead.name}}! Thanks for commenting on our reel. Here is the verified brochure and catalogue deck: https://nobogent.com/brochure'
           }
         },
         {
@@ -279,7 +277,7 @@ const FLOW_TEMPLATES: {
             message: 'Would you like to book a time with us this weekend, or see the options we have available?',
             buttons: [
               { id: 'btn_1', title: '📅 Book Appointment', actionType: 'crm_stage', actionValue: 'Appointment Planned' },
-              { id: 'btn_2', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: 'Harman Bajwa' }
+              { id: 'btn_2', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: '{{agent.name}}' }
             ]
           }
         },
@@ -325,10 +323,10 @@ const FLOW_TEMPLATES: {
         {
           id: 'step_1',
           type: 'action_whatsapp_msg',
-          title: 'Send Instant Project Brochure on WhatsApp',
-          description: 'Delivers project brochure immediately upon lead submission',
+          title: 'Send Instant Brochure on WhatsApp',
+          description: 'Delivers your brochure immediately upon lead submission',
           config: {
-            message: 'Hi {{lead.name}}! Thank you for requesting information on Facebook. Here is the verified brochure and floor plans:',
+            message: 'Hi {{lead.name}}! Thank you for requesting information on Facebook. Here is the verified brochure and price list:',
             includeBrochure: true,
             buttons: ['📅 Schedule Visit', '💬 Talk to Agent']
           }
@@ -352,7 +350,7 @@ const FLOW_TEMPLATES: {
           config: {
             voiceAgent: 'Fenrir (Crisp & Focused)',
             objective: 'Appointment Confirmation',
-            firstLine: 'Hi {{lead.name}}, I am calling from Bluesquare Infra following up on the brochure we just sent to your WhatsApp.'
+            firstLine: 'Hi {{lead.name}}, I am calling from {{business_name}} following up on the brochure we just sent to your WhatsApp.'
           }
         },
         {
@@ -361,8 +359,8 @@ const FLOW_TEMPLATES: {
           title: 'Transfer to Senior Closer if High Intent',
           description: 'Warm transfer to sales closer when prospect wants to book a slot',
           config: {
-            closerName: 'Harman Bajwa',
-            transferNumber: '+91 98765 43210',
+            closerName: '{{agent.name}}',
+            transferNumber: '{{agent.phone}}',
             whisperMessage: 'Connecting high intent buyer from Facebook Lead Ad'
           }
         }
@@ -384,7 +382,7 @@ const FLOW_TEMPLATES: {
       trigger: {
         type: 'trigger_campaign_audience',
         label: 'Existing Campaign Audience (Calling Target)',
-        campaignName: 'Joy Grand Luxury Residences'
+        campaignName: '{{campaign.name}}'
       },
       nodes: [
         {
@@ -396,24 +394,24 @@ const FLOW_TEMPLATES: {
           config: {
             voiceAgent: 'Fenrir (Crisp & Focused)',
             objective: 'Appointment Confirmation & Requirement Qualification',
-            firstLine: 'Hi {{lead.name}}, I am calling from Bluesquare Infra regarding your interest in Joy Grand.',
+            firstLine: 'Hi {{lead.name}}, I am calling from {{business_name}} about your interest in {{product}}.',
             questions: [
               {
                 id: 'q_1',
-                question: 'Are you interested in scheduling a site visit to Joy Grand this weekend?',
+                question: 'Would you like to schedule an appointment this week?',
                 fieldKey: 'site_visit_interest',
                 saveToLeadProfile: true,
                 expectedAnswer: 'Yes / Saturday / Sunday'
               },
               {
                 id: 'q_2',
-                question: 'What is your preferred investment budget range (e.g. 1.5 Cr to 2.5 Cr)?',
+                question: 'What is your budget range for {{product}}?',
                 fieldKey: 'budget_range',
                 saveToLeadProfile: true,
-                expectedAnswer: '1.5 Cr - 2.5 Cr'
+                expectedAnswer: '{{budget}}'
               }
             ],
-            qualificationQuestion: 'Are you interested in scheduling a site visit this weekend?'
+            qualificationQuestion: 'Would you like to schedule an appointment this week?'
           }
         },
         {
@@ -429,7 +427,7 @@ const FLOW_TEMPLATES: {
               {
                 id: '1',
                 field: 'site_visit_interest',
-                label: 'Prospect Agreed / Answered Yes to Site Visit',
+                label: 'Prospect Agreed / Answered Yes to Appointment',
                 operator: 'contains_any',
                 value: 'yes, yeah, sure, interested, visit, confirm, weekend, definitely, please share',
                 points: 100,
@@ -461,32 +459,32 @@ const FLOW_TEMPLATES: {
           branch: 'true',
           config: {
             channels: ['email', 'whatsapp'],
-            adminEmail: 'admin@bluesquareinfra.com',
-            adminWhatsapp: '+91 98765 43210',
+            adminEmail: '{{admin_email}}',
+            adminWhatsapp: '{{admin_phone}}',
             includeLeadInfo: true,
             includeCallDetails: true,
-            alertMessage: '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed site visit on call! Call recording & qualification attached.'
+            alertMessage: '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed the appointment on the call! Call recording & qualification attached.'
           }
         },
         {
           id: 'step_5',
           type: 'action_whatsapp_msg',
-          title: 'Deliver Project Brochure on WhatsApp',
-          description: 'Sends official Joy Grand PDF brochure and interactive response buttons',
+          title: 'Deliver Brochure on WhatsApp',
+          description: 'Sends your official PDF brochure and interactive response buttons',
           branch: 'true',
           config: {
-            message: 'Hello {{lead.name}}! Thank you for confirming your interest on the call. Here is the official Joy Grand project brochure, floor plans, and pricing sheet:',
+            message: 'Hello {{lead.name}}! Thank you for confirming your interest on the call. Here is the official {{business_name}} brochure and pricing sheet:',
             includeBrochure: true,
             brochureUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
             buttonType: 'quick_reply',
             quickReplyButtons: [
               { id: 'btn_1', title: '📅 Confirm Saturday Slot', actionType: 'crm_stage', actionValue: 'Visit Planned' },
-              { id: 'btn_2', title: '💬 Chat With Sales', actionType: 'assign_agent', actionValue: 'Harman Bajwa' },
-              { id: 'btn_3', title: '📍 Location Pin', actionType: 'send_reply', actionValue: 'Here is our sales gallery location on Google Maps: https://maps.google.com/?q=Joy+Grand+Mohali' }
+              { id: 'btn_2', title: '💬 Chat With Sales', actionType: 'assign_agent', actionValue: '{{agent.name}}' },
+              { id: 'btn_3', title: '📍 Location Pin', actionType: 'send_reply', actionValue: 'Here is our location on Google Maps: https://maps.google.com/?q={{business_name}}' }
             ],
             ctaButtons: [
-              { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q=Joy+Grand+Mohali' },
-              { id: 'cta_2', title: '🌐 View Project Website', type: 'url', url: 'https://bluesquareinfra.com/joygrand' }
+              { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q={{business_name}}' },
+              { id: 'cta_2', title: '🌐 Website', type: 'url', url: '{{inventory_url}}' }
             ],
             buttons: ['📅 Confirm Saturday Slot', '💬 Chat With Sales', '📍 Location Pin']
           }
@@ -541,7 +539,7 @@ const FLOW_TEMPLATES: {
           config: {
             questions: [
               'How many years of relevant telecalling / sales experience do you have?',
-              'Are you comfortable working on-site in Mohali / Chandigarh?',
+              'Are you comfortable working on-site in {{city}}?',
               'What is your expected monthly salary and notice period?'
             ],
             quickReplies: ['2+ Years Exp', '1 Year Exp', 'Fresher', 'Immediate Joiner'],
@@ -558,7 +556,7 @@ const FLOW_TEMPLATES: {
             passScore: 70,
             rules: [
               { id: '1', field: 'experience', label: 'Sales Experience >= 2 Years', operator: 'contains_any', value: '2+ Years, 2 Years', points: 40, required: true },
-              { id: '2', field: 'location', label: 'On-site in Mohali / Chandigarh', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
+              { id: '2', field: 'location', label: 'On-site in {{city}}', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
               { id: '3', field: 'salary', label: 'Expected Salary <= 35k', operator: 'contains_any', value: 'Under 30k, 30k, 35k, Under 35000', points: 30, required: false }
             ]
           }
@@ -592,7 +590,7 @@ const FLOW_TEMPLATES: {
           description: 'Route qualified applicant to recruitment manager',
           config: {
             assignMode: 'individual',
-            agentName: 'Harman Bajwa'
+            agentName: '{{agent.name}}'
           },
           branch: 'true'
         },
@@ -612,7 +610,7 @@ const FLOW_TEMPLATES: {
   },
   {
     id: 'real_estate_speed_to_lead',
-    title: 'Real Estate Instant Lead Qualifier',
+    title: 'Instant Lead Qualifier',
     category: 'Sales Acceleration',
     tag: 'Speed to Lead',
     badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -620,7 +618,7 @@ const FLOW_TEMPLATES: {
     icon: PhoneCall,
     flow: {
       name: 'Instant AI Voice Call & Brochure Flow',
-      description: 'Calls leads within 2 minutes of ad submission and shares property brochure on WhatsApp.',
+      description: 'Calls leads within 2 minutes of ad submission and shares your catalogue on WhatsApp.',
       isActive: false,
       trigger: {
         type: 'meta_ad',
@@ -642,23 +640,23 @@ const FLOW_TEMPLATES: {
           id: 'step_2',
           type: 'action_ai_call',
           title: 'Automated AI Voice Call',
-          description: 'Greet prospect, confirm unit interest & check site visit date',
+          description: 'Greet prospect, confirm product interest & check appointment date',
           config: {
             voiceAgent: 'Puck (Clear & Engaging)',
-            objective: 'Schedule Site Visit & Confirm Budget',
-            firstLine: 'Hi {{lead.name}}, thank you for your inquiry on our luxury residences! Am I speaking with the buyer?'
+            objective: 'Appointment Confirmation & Budget Qualification',
+            firstLine: 'Hi {{lead.name}}, thank you for your inquiry about {{product}}! Am I speaking with the right person?'
           }
         },
         {
           id: 'step_3',
           type: 'action_whatsapp_msg',
           title: 'Send WhatsApp Brochure & Location',
-          description: 'Deliver project PDF brochure and Google Maps pin',
+          description: 'Deliver your PDF brochure and Google Maps pin',
           config: {
-            message: 'Hello {{lead.name}}! Thank you for speaking with us. Here is the official project brochure, floor plans, and pricing sheet for your review:',
+            message: 'Hello {{lead.name}}! Thank you for speaking with us. Here is the official brochure and pricing sheet for your review:',
             includeBrochure: true,
             brochureUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-            buttons: ['📅 Book Site Visit', '📍 Location Map', '📞 Call Sales Agent']
+            buttons: ['📅 Book Appointment', '📍 Location Map', '📞 Call Sales Agent']
           }
         },
         {
@@ -668,7 +666,7 @@ const FLOW_TEMPLATES: {
           description: 'Distribute lead across sales team using weighted round robin',
           config: {
             assignMode: 'group',
-            groupName: 'Mohali Sales Team (Group Distribution)'
+            groupName: '{{team_group}}'
           }
         }
       ]
@@ -689,7 +687,7 @@ const FLOW_TEMPLATES: {
       trigger: {
         type: 'whatsapp_inbound',
         label: 'New Inbound WhatsApp Message',
-        keywords: 'price, brochure, visit, 2bhk, 3bhk'
+        keywords: 'price, brochure, visit, catalogue'
       },
       nodes: [
         {
@@ -698,21 +696,21 @@ const FLOW_TEMPLATES: {
           title: 'Instant Welcome & Menu',
           description: 'Send warm greeting with interactive quick options',
           config: {
-            message: '👋 Welcome to Bluesquare Infra! How can our team assist you today?',
-            buttons: ['🏢 Explore Properties', '💰 Pricing & Offers', '📅 Schedule Visit']
+            message: '👋 Welcome to {{business_name}}! How can our team assist you today?',
+            buttons: ['🏢 Explore Catalogue', '💰 Pricing & Offers', '📅 Schedule Visit']
           }
         },
         {
           id: 'step_2',
           type: 'action_whatsapp_questions',
           title: 'Capture Requirement & Budget',
-          description: 'Ask unit configuration & budget range',
+          description: 'Ask product preference & budget range',
           config: {
             questions: [
-              'Which configuration are you interested in (2 BHK, 3 BHK, or Penthouse)?',
+              'Which {{product}} are you interested in?',
               'What is your preferred budget range?'
             ],
-            quickReplies: ['2 BHK (80L-1Cr)', '3 BHK (1.2Cr-1.6Cr)', 'Penthouse (2.5Cr+)'],
+            quickReplies: ['Basic', 'Standard', 'Premium'],
             saveField: 'buyer_preference'
           }
         },
@@ -750,12 +748,12 @@ const FLOW_TEMPLATES: {
         {
           id: 'step_1',
           type: 'action_whatsapp_msg',
-          title: 'Send Instant Project Brochure',
+          title: 'Send Instant Brochure',
           description: 'Acknowledge portal inquiry and send PDF on WhatsApp',
           config: {
             message: 'Hi {{lead.name}}! Thank you for inquiring on Housing.com for our project. Here is the verified brochure & price breakdown:',
             includeBrochure: true,
-            buttons: ['📅 Schedule Site Visit', '💬 Chat With Us']
+            buttons: ['📅 Schedule Appointment', '💬 Chat With Us']
           }
         },
         {
@@ -830,7 +828,7 @@ const NODE_DEFINITIONS: {
     category: 'Instagram',
     channel: 'instagram',
     title: 'Send Instagram Direct Message',
-    description: 'Sends personalized DM with rich media links, project brochure, and interactive quick reply buttons',
+    description: 'Sends personalized DM with rich media links, your brochure, and interactive quick reply buttons',
     icon: Send,
     color: 'border-pink-300 bg-pink-50 text-pink-700',
     badgeColor: 'bg-pink-50 text-pink-700 border-pink-200'
@@ -850,7 +848,7 @@ const NODE_DEFINITIONS: {
     category: 'Instagram',
     channel: 'instagram',
     title: 'Send Instagram Brochure Card',
-    description: 'Sends a visual property brochure card with hero image, pricing details, and direct CTA buttons',
+    description: 'Sends a visual brochure card with hero image, pricing details, and direct CTA buttons',
     icon: ImageIcon,
     color: 'border-rose-300 bg-rose-50 text-rose-700',
     badgeColor: 'bg-rose-50 text-rose-700 border-rose-200'
@@ -892,7 +890,7 @@ const NODE_DEFINITIONS: {
     category: 'WhatsApp',
     channel: 'whatsapp',
     title: 'Ask Questions / Screening Form',
-    description: 'Screening questions (budget, BHK, timeline) with custom field auto-saving and quick reply chips',
+    description: 'Screening questions (budget, product, timeline) with custom field auto-saving and quick reply chips',
     icon: MessageCircle,
     color: 'border-teal-300 bg-teal-50 text-teal-700',
     badgeColor: 'bg-teal-50 text-teal-700 border-teal-200'
@@ -902,7 +900,7 @@ const NODE_DEFINITIONS: {
     category: 'WhatsApp',
     channel: 'whatsapp',
     title: 'WhatsApp Interactive List Menu',
-    description: 'Interactive list picker for unit selection, floor plan choices, or scheduling appointment slots',
+    description: 'Interactive list picker for option selection, variant choices, or scheduling appointment slots',
     icon: Layers,
     color: 'border-emerald-300 bg-emerald-50 text-emerald-700',
     badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -998,7 +996,7 @@ const NODE_DEFINITIONS: {
     category: 'Email',
     channel: 'email',
     title: 'Send Rich Email',
-    description: 'Delivers HTML email with verified project brochure PDF, pricing breakdown, and site visit booking link',
+    description: 'Delivers HTML email with your brochure PDF, pricing breakdown, and appointment booking link',
     icon: Mail,
     color: 'border-sky-300 bg-sky-50 text-sky-700',
     badgeColor: 'bg-sky-50 text-sky-700 border-sky-200'
@@ -1276,10 +1274,10 @@ export default function FlowsPage() {
     assignedAgent: string
     answers: Record<string, string>
   }>({
-    name: 'Rohit Verma',
-    phone: '+91 98765 43210',
+    name: '{{lead.name}}',
+    phone: '{{lead.phone}}',
     source: 'Meta Ad',
-    project: 'Joy Grand',
+    project: '{{product}}',
     score: 0,
     status: 'NEW',
     assignedAgent: 'Unassigned',
@@ -1304,13 +1302,13 @@ export default function FlowsPage() {
   const [isLiveRunActive, setIsLiveRunActive] = useState(false)
   const [isLiveRunPaused, setIsLiveRunPaused] = useState(false)
   const [liveRunAudience, setLiveRunAudience] = useState<{ name: string; total: number; source: string }>({
-    name: 'Mohali-Luxury-HNIs-Calling-List.csv',
-    total: 450,
+    name: '',
+    total: 0,
     source: 'CSV Upload'
   })
   const [liveRunProgress, setLiveRunProgress] = useState<{ current: number; total: number; percent: number }>({
     current: 0,
-    total: 450,
+    total: 0,
     percent: 0
   })
   const [nodeExecutionStats, setNodeExecutionStats] = useState<Record<string, { enroute: number; completed: number; passed: number; failed: number }>>({})
@@ -1339,42 +1337,7 @@ export default function FlowsPage() {
     status: 'Completed' | 'In Progress' | 'Stopped'
     conversionRate: string
   }>>([
-    {
-      id: 'run_hni_0906',
-      runAt: 'Today at 11:30 AM',
-      audienceName: 'Mohali-Luxury-HNIs-Calling-List.csv',
-      audienceType: 'CSV Audience List',
-      totalLeads: 450,
-      completedLeads: 450,
-      qualifiedLeads: 146,
-      duration: '4m 12s',
-      status: 'Completed',
-      conversionRate: '32.4%'
-    },
-    {
-      id: 'run_zirakpur_0904',
-      runAt: 'Sep 4, 2026, 04:15 PM',
-      audienceName: 'Zirakpur-Investors-Calling-Pool.csv',
-      audienceType: 'CSV Audience List',
-      totalLeads: 1280,
-      completedLeads: 1280,
-      qualifiedLeads: 384,
-      duration: '11m 45s',
-      status: 'Completed',
-      conversionRate: '30.0%'
-    },
-    {
-      id: 'run_grp_hni_0902',
-      runAt: 'Sep 2, 2026, 02:00 PM',
-      audienceName: 'Mohali Luxury Segment (HNIs > 2 Cr)',
-      audienceType: 'Custom Group',
-      totalLeads: 640,
-      completedLeads: 640,
-      qualifiedLeads: 242,
-      duration: '6m 20s',
-      status: 'Completed',
-      conversionRate: '37.8%'
-    }
+    // No invented history: rows are appended by real batch executions (handleLaunchLiveExecution).
   ])
 
   // 1. Initial Data Fetching
@@ -1506,7 +1469,7 @@ export default function FlowsPage() {
   const handleResetZoom = () => setZoomLevel(100)
 
   // Helper: Seed node execution stats for any flow so counters are never blank
-  const getInitialNodeStats = useCallback((flow: AutomationFlow, totalCount: number = 450) => {
+  const getInitialNodeStats = useCallback((flow: AutomationFlow, totalCount: number = 0) => {
     const stats: Record<string, { enroute: number; completed: number; passed: number; failed: number }> = {}
     
     // Trigger node stats
@@ -1556,7 +1519,7 @@ export default function FlowsPage() {
         if (Object.keys(prev).length > 0 && currentFlow.nodes.some(n => prev[n.id])) {
           return prev
         }
-        return getInitialNodeStats(currentFlow, 450)
+        return getInitialNodeStats(currentFlow, 0)
       })
     }
   }, [currentFlow, isLiveRunActive, getInitialNodeStats])
@@ -1565,24 +1528,36 @@ export default function FlowsPage() {
   const handleLaunchLiveExecution = () => {
     if (!currentFlow) return
     
-    let audName = 'Mohali-Luxury-HNIs-Calling-List.csv'
-    let audTotal = 450
+    let audName = ''
+    let audTotal = 0
     let audSource = 'CSV Upload'
 
     if (selectedAudienceType === 'csv') {
+      // These lists are what the account has actually uploaded. The two former placeholder
+      // arrays are empty, so indexing [0] here threw "Cannot read properties of undefined
+      // (reading 'name')" and the Launch button did nothing at all. Say what is missing
+      // instead of crashing.
       const csv = SAMPLE_CSV_AUDIENCES.find(c => c.id === selectedCsvId) || SAMPLE_CSV_AUDIENCES[0]
+      if (!csv) {
+        toast.error('No uploaded CSV audience on this account yet — upload a list first, or choose another audience.')
+        return
+      }
       audName = csv.name
       audTotal = csv.count
       audSource = 'CSV Audience List'
     } else if (selectedAudienceType === 'custom_group') {
       const grp = SAMPLE_AUDIENCE_GROUPS.find(g => g.id === selectedGroupId) || SAMPLE_AUDIENCE_GROUPS[0]
+      if (!grp) {
+        toast.error('No saved audience group on this account yet — create one first, or choose another audience.')
+        return
+      }
       audName = grp.name
       audTotal = grp.count
       audSource = 'Custom Group'
     } else {
       const camp = campaigns.find(c => c.id === selectedCampaignId) || campaigns[0]
       audName = camp ? `Campaign: ${camp.name}` : 'Meta Ad Campaign Audience'
-      audTotal = 380
+      audTotal = 0
       audSource = 'Live Meta Campaign'
     }
 
@@ -1702,7 +1677,7 @@ export default function FlowsPage() {
             conversionRate: `${Math.round((qualifiedCount / prev.total) * 100)}%`
           }
           setFlowRunHistory(h => [newRun, ...h])
-          toast.success(`🎉 Live execution complete! Processed ${prev.total} contacts (${qualifiedCount} Qualified HNIs).`)
+          toast.success(`🎉 Live execution complete! Processed ${prev.total} contacts (${qualifiedCount} Qualified Leads).`)
           return prev
         }
 
@@ -1761,17 +1736,17 @@ export default function FlowsPage() {
         let detail = ''
         if (activeNode.type === 'action_ai_call') {
           detail = isQualified 
-            ? `Gemini 3.1 Live Voice (${activeNode.config.voiceAgent || 'Fenrir'}) connected (1m 34s). Lead answered: "Yes, looking for a 3BHK luxury flat in Mohali". Saved answer to lead profile.`
+            ? `Gemini Live Voice (${activeNode.config.voiceAgent || 'Fenrir'}) connected. Lead answered: "{{lead.answer}}". Saved answer to lead profile.`
             : `Voice call unanswered (DNP - Did Not Pick). Scheduled automated WhatsApp retry sequence.`
         } else if (activeNode.type === 'action_qualify' || activeNode.type === 'action_ai_qualify') {
           detail = isQualified
-            ? `Deterministic scoring: 100/100 pts. Passed criteria (Budget: ${lead.budget} >= 2 Cr, Location: Mohali). Routed to Branch A.`
-            : `Deterministic scoring: 30/100 pts. Low intent / budget threshold not met. Routed to Branch B (Follow-up Later).`
+            ? `Deterministic scoring: passed the configured rules (budget: {{budget}}, city: {{city}}). Routed to Branch A.`
+            : `Deterministic scoring: failed one or more rules. Low intent / threshold not met. Routed to Branch B (Follow-up Later).`
         } else if (activeNode.type === 'action_whatsapp_msg') {
           detail = `Delivered high-res brochure PDF + 3 Quick Reply buttons ("📅 Schedule Visit", "📞 Senior Advisor Callback", "💬 WhatsApp Chat").`
         } else if (activeNode.type === 'action_crm_stage') {
           detail = isQualified 
-            ? `CRM pipeline updated: Moved stage to "Site Visit Scheduled" & tagged "Calling Campaign, High Intent".`
+            ? `CRM pipeline updated: Moved stage to "Appointment Scheduled" & tagged "Calling Campaign, High Intent".`
             : `CRM pipeline updated: Moved stage to "Follow-up Later".`
         } else if (activeNode.type === 'action_notify_team') {
           detail = `High-priority WhatsApp & Email alert dispatched to Admin for ${lead.name} (${lead.phone}).`
@@ -1843,7 +1818,7 @@ export default function FlowsPage() {
           data: {
             title: 'Instant WhatsApp Welcome & Options',
             message:
-              'Hi {{lead_name}}! 🌟 Thank you for reaching out to {{business_name}}.\n\nHere is our verified project catalog, floor plans, and pricing sheet:\n\n👉 {{inventory_url}}',
+              'Hi {{lead_name}}! 🌟 Thank you for reaching out to {{business_name}}.\n\nHere is our verified catalogue, pricing sheet, and options:\n\n👉 {{inventory_url}}',
             buttons: [
               { id: 'btn_view_inv', title: 'View Catalog 🏢', url: '{{inventory_url}}' },
               { id: 'btn_expert', title: 'Talk to Expert 📞' }
@@ -1857,7 +1832,7 @@ export default function FlowsPage() {
           data: {
             title: 'Move Lead CRM Stage',
             stage: 'Interested',
-            assignAgent: 'Harman Bajwa',
+            assignAgent: '{{agent.name}}',
             note: 'Prospect confirmed interest via WhatsApp automation flow'
           }
         },
@@ -1868,7 +1843,7 @@ export default function FlowsPage() {
           data: {
             title: 'Instant Admin Notification',
             channel: 'whatsapp_push',
-            recipient: '+919914488337',
+            recipient: '{{admin_phone}}',
             template: '🚨 New High-Intent Lead: {{lead_name}} ({{lead_phone}}) from {{campaign_name}}!'
           }
         }
@@ -2184,7 +2159,7 @@ export default function FlowsPage() {
                 rows={4}
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
-                placeholder="e.g. Call my custom CSV audience using Fenrir voice, ask about their site visit preference and budget, save responses to lead info, evaluate qualification deterministically, and if they say Yes alert admin on email and whatsapp..."
+                placeholder="e.g. Call my custom CSV audience using Fenrir voice, ask about their appointment preference and budget, save responses to lead info, evaluate qualification deterministically, and if they say Yes alert admin on email and whatsapp..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:border-violet-500 outline-none leading-relaxed custom-scrollbar"
               />
             </div>
@@ -2197,7 +2172,7 @@ export default function FlowsPage() {
               <div className="space-y-2">
                 <button
                   type="button"
-                  onClick={() => setAiPrompt('Call custom CSV audience with official Gemini Live voice (Fenrir), ask 2 structured qualification questions on site visit interest and budget, save answers to lead info, verify qualification deterministically, alert admin on Email & WhatsApp if they say Yes, and dispatch WhatsApp brochure.')}
+                  onClick={() => setAiPrompt('Call custom CSV audience with official Gemini Live voice (Fenrir), ask 2 structured qualification questions on appointment interest and budget, save answers to lead info, verify qualification deterministically, alert admin on Email & WhatsApp if they say Yes, and dispatch WhatsApp brochure.')}
                   className="w-full text-left p-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-indigo-400 text-xs text-slate-700 hover:text-slate-900 transition-all flex items-start gap-2.5 group cursor-pointer"
                 >
                   <PhoneCall size={16} className="text-indigo-600 shrink-0 mt-0.5" />
@@ -2385,44 +2360,44 @@ export default function FlowsPage() {
           autoDmReply: true,
           publicReplyTemplates: [
             'Sent you the complete brochure & price details in DM! 📩 Check your requests.',
-            'Check your DM! Just sent over the verified brochure & floor plans ✨',
+            'Check your DM! Just sent over the verified brochure & pricing ✨',
             'Sent details to your inbox! Check your DMs 🏢'
           ]
         }
       case 'trigger_ig_story_mention':
         return {
           replyOnMention: true,
-          storyReplyText: 'Thank you for mentioning us! Here is our project brochure & VIP pricing link 🌟'
+          storyReplyText: 'Thank you for mentioning us! Here is our brochure & pricing link 🌟'
         }
       case 'action_ig_send_dm':
         return {
-          message: 'Hi {{lead.name}}! 👋 Thank you for reaching out to Bluesquare Infra. Here is the verified project brochure and pricing sheet you requested:',
+          message: 'Hi {{lead.name}}! 👋 Thank you for reaching out to {{business_name}}. Here is the verified brochure and pricing sheet you requested:',
           includeBrochure: true,
           buttons: [
             { id: 'btn_1', title: '📄 View Brochure PDF', actionType: 'send_reply', actionValue: 'Brochure Link' },
-            { id: 'btn_2', title: '📅 Book Site Visit', actionType: 'crm_stage', actionValue: 'Visit Planned' },
-            { id: 'btn_3', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: 'Harman Bajwa' }
+            { id: 'btn_2', title: '📅 Book Appointment', actionType: 'crm_stage', actionValue: 'Visit Planned' },
+            { id: 'btn_3', title: '💬 Chat with Closer', actionType: 'assign_agent', actionValue: '{{agent.name}}' }
           ]
         }
       case 'action_ig_comment_reply':
         return {
-          publicReplyText: 'Sent you the full brochure & floor plans in DM! 📩 Please check your inbox.',
+          publicReplyText: 'Sent you the full brochure & pricing in DM! 📩 Please check your inbox.',
           sendPrivateDm: true,
-          dmMessage: 'Hi {{lead.name}}! Thanks for your comment. Here is the official project brochure and price breakdown: https://nobogent.com/brochure'
+          dmMessage: 'Hi {{lead.name}}! Thanks for your comment. Here is the official brochure and price breakdown: https://nobogent.com/brochure'
         }
       case 'action_ig_card':
         return {
-          cardTitle: 'Joy Grand Luxury Residences',
-          cardSubtitle: '3 & 4 BHK Luxury Apartments in Sector 82 Mohali. Starting ₹1.8 Cr.',
+          cardTitle: '{{product}}',
+          cardSubtitle: '{{product}} • {{city}} • Starting {{amount}}',
           imageUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-          buttonTitle: 'Download Project Deck',
-          buttonUrl: 'https://bluesquareinfra.com/joygrand'
+          buttonTitle: 'Download Brochure',
+          buttonUrl: '{{inventory_url}}'
         }
 
       // 🔵 Facebook Nodes
       case 'trigger_fb_lead_ad':
         return {
-          formName: 'Joy Grand Luxury Leads 2026',
+          formName: '{{campaign.name}} Leads',
           instantSync: true
         }
       case 'trigger_fb_comment':
@@ -2433,19 +2408,19 @@ export default function FlowsPage() {
         }
       case 'trigger_fb_messenger':
         return {
-          welcomeGreeting: 'Welcome to Bluesquare Infra! How can our property advisors assist you today?'
+          welcomeGreeting: 'Welcome to {{business_name}}! How can our advisors assist you today?'
         }
       case 'action_fb_send_messenger':
         return {
           message: 'Hello {{lead.name}}! Thank you for contacting us on Facebook. How would you like us to assist you?',
           ctaButtons: [
-            { id: 'cta_1', title: '📄 Project Brochure', type: 'url', url: 'https://bluesquareinfra.com' },
-            { id: 'cta_2', title: '📞 Speak with Sales', type: 'call', phoneNumber: '+91 98765 43210' }
+            { id: 'cta_1', title: '📄 Brochure', type: 'url', url: '{{inventory_url}}' },
+            { id: 'cta_2', title: '📞 Speak with Sales', type: 'call', phoneNumber: '{{admin_phone}}' }
           ]
         }
       case 'action_fb_comment_reply':
         return {
-          publicReplyText: 'Thanks for reaching out! We sent you the project details in Messenger.',
+          publicReplyText: 'Thanks for reaching out! We sent you the details in Messenger.',
           privateMessageText: 'Hi {{lead.name}}! Here are the details and brochure link you requested.'
         }
 
@@ -2466,12 +2441,12 @@ export default function FlowsPage() {
           buttonType: 'quick_reply',
           quickReplyButtons: [
             { id: 'btn_1', title: '📅 Schedule Visit', actionType: 'crm_stage', actionValue: 'Visit Planned' },
-            { id: 'btn_2', title: '💬 Talk to Agent', actionType: 'assign_agent', actionValue: 'Harman Bajwa' },
-            { id: 'btn_3', title: '📍 Location Pin', actionType: 'send_reply', actionValue: 'Here is our project location on Google Maps: https://maps.google.com' }
+            { id: 'btn_2', title: '💬 Talk to Agent', actionType: 'assign_agent', actionValue: '{{agent.name}}' },
+            { id: 'btn_3', title: '📍 Location Pin', actionType: 'send_reply', actionValue: 'Here is our location on Google Maps: https://maps.google.com' }
           ],
           ctaButtons: [
-            { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q=Joy+Grand+Mohali' },
-            { id: 'cta_2', title: '🌐 View Project Website', type: 'url', url: 'https://bluesquareinfra.com' }
+            { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q={{business_name}}' },
+            { id: 'cta_2', title: '🌐 Website', type: 'url', url: '{{inventory_url}}' }
           ],
           includeBrochure: false,
           buttons: ['📅 Schedule Visit', '💬 Talk to Agent', '📍 Location Pin']
@@ -2479,17 +2454,17 @@ export default function FlowsPage() {
       case 'action_whatsapp_questions':
         return {
           questions: ['What is your preferred configuration and budget?'],
-          quickReplies: ['2 BHK', '3 BHK', 'Penthouse'],
+          quickReplies: ['Basic', 'Standard', 'Premium'],
           saveField: 'buyer_preference'
         }
       case 'action_whatsapp_interactive':
         return {
-          headerText: 'Available Inventory & Configurations',
-          bodyText: 'Select your preferred apartment configuration to see pricing and floor plans:',
-          listButtonTitle: 'View Configurations',
+          headerText: 'Available Options & Pricing',
+          bodyText: 'Select your preferred option to see pricing and details:',
+          listButtonTitle: 'View Options',
           sections: [
-            { title: 'Luxury Apartments', rows: [{ id: '2bhk', title: '2 BHK Luxury', description: '1,350 sq.ft • Starting ₹1.25 Cr' }, { id: '3bhk', title: '3 BHK Premium', description: '1,950 sq.ft • Starting ₹1.85 Cr' }] },
-            { title: 'Penthouses', rows: [{ id: 'penthouse', title: '4 BHK Duplex Penthouse', description: '3,400 sq.ft • Starting ₹3.50 Cr' }] }
+            { title: 'Options', rows: [{ id: 'option_1', title: '{{product}} — Option 1', description: '{{amount}}' }, { id: 'option_2', title: '{{product}} — Option 2', description: '{{amount}}' }] },
+            { title: 'More Options', rows: [{ id: 'option_3', title: '{{product}} — Option 3', description: '{{amount}}' }] }
           ]
         }
 
@@ -2502,40 +2477,40 @@ export default function FlowsPage() {
       case 'action_ai_call':
         return {
           voiceAgent: 'Fenrir (Crisp & Focused)',
-          objective: 'Site Visit Confirmation & Requirement Check',
-          firstLine: 'Hi {{lead.name}}, calling from Bluesquare Infra regarding Joy Grand.',
+          objective: 'Appointment Confirmation & Requirement Check',
+          firstLine: 'Hi {{lead.name}}, calling from {{business_name}} about {{product}}.',
           questions: [
             {
               id: 'q_1',
-              question: 'Are you interested in scheduling a site visit to Joy Grand this weekend?',
+              question: 'Would you like to schedule an appointment this week?',
               fieldKey: 'site_visit_interest',
               saveToLeadProfile: true,
               expectedAnswer: 'Yes / Saturday / Sunday'
             },
             {
               id: 'q_2',
-              question: 'What is your preferred investment budget range (e.g. 1.5 Cr to 2.5 Cr)?',
+              question: 'What is your budget range for {{product}}?',
               fieldKey: 'budget_range',
               saveToLeadProfile: true,
-              expectedAnswer: '1.5 Cr - 2.5 Cr'
+              expectedAnswer: '{{budget}}'
             }
           ],
-          qualificationQuestion: 'Are you interested in scheduling a site visit this weekend?'
+          qualificationQuestion: 'Would you like to schedule an appointment this week?'
         }
       case 'action_ai_call_transfer':
         return {
-          transferNumber: '+91 98765 43210',
-          closerName: 'Harman Bajwa (Senior Sales Closer)',
-          whisperMessage: 'Connecting high-intent qualified buyer for Joy Grand',
+          transferNumber: '{{agent.phone}}',
+          closerName: '{{agent.name}} (Senior Sales Closer)',
+          whisperMessage: 'Connecting high-intent qualified buyer for {{product}}',
           fallbackAction: 'send_whatsapp_brochure'
         }
 
       // 📧 Email Nodes
       case 'action_send_email':
         return {
-          senderName: 'Bluesquare Infra VIP Advisory',
-          subject: 'Official Joy Grand Brochure, Floor Plans & Pricing Sheet',
-          body: 'Dear {{lead.name}},\n\nThank you for speaking with our team regarding Joy Grand Luxury Residences.\n\nWe have attached the official project deck and floor plans for your review.\n\nPlease let us know if you would like to reserve a site visit slot for this weekend.\n\nBest regards,\nBluesquare Infra Advisory Team',
+          senderName: '{{business_name}} Sales Team',
+          subject: 'Official {{business_name}} Brochure & Pricing Sheet',
+          body: 'Dear {{lead.name}},\n\nThank you for speaking with our team about {{product}}.\n\nWe have attached the official brochure and pricing details for your review.\n\nPlease let us know if you would like to book an appointment this week.\n\nBest regards,\n{{business_name}} Team',
           includeAttachment: true,
           attachmentUrl: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80'
         }
@@ -2575,7 +2550,7 @@ export default function FlowsPage() {
           passScore: 70,
           rules: [
             { id: '1', field: 'experience', label: 'Sales Experience >= 2 Yrs', operator: 'contains_any', value: '2+ Years, 2 Years', points: 40, required: true },
-            { id: '2', field: 'location', label: 'On-site in Mohali / Chandigarh', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
+            { id: '2', field: 'location', label: 'On-site in {{city}}', operator: 'contains_any', value: 'Yes, Comfortable', points: 30, required: true },
             { id: '3', field: 'salary', label: 'Expected Salary <= 35k', operator: 'contains_any', value: 'Under 30k, 30k, 35k, Under 35000', points: 30, required: false }
           ]
         }
@@ -2591,12 +2566,12 @@ export default function FlowsPage() {
         }
       case 'action_add_note':
         return {
-          note: 'Lead engaged via omnichannel automation. Requested project brochure and site visit slot.'
+          note: 'Lead engaged via omnichannel automation. Requested brochure and appointment slot.'
         }
       case 'action_update_field':
         return {
           fieldKey: 'buyer_budget',
-          fieldValue: '2.5 Cr'
+          fieldValue: '{{budget}}'
         }
       case 'action_crm_stage':
         return {
@@ -2606,7 +2581,7 @@ export default function FlowsPage() {
       case 'action_assign_agent':
         return {
           assignMode: 'individual',
-          agentName: 'Harman Bajwa'
+          agentName: '{{agent.name}}'
         }
       case 'action_webhook':
         return {
@@ -2616,8 +2591,8 @@ export default function FlowsPage() {
       case 'action_notify_team':
         return {
           channels: ['email', 'whatsapp'],
-          adminEmail: 'admin@bluesquareinfra.com',
-          adminWhatsapp: '+91 98765 43210',
+          adminEmail: '{{admin_email}}',
+          adminWhatsapp: '{{admin_phone}}',
           includeLeadInfo: true,
           includeCallDetails: true,
           alertMessage: '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed interest on call!'
@@ -2626,13 +2601,13 @@ export default function FlowsPage() {
       // 🎯 Inbound Triggers
       case 'trigger_csv_audience':
         return {
-          csvFileName: 'Mohali-Luxury-HNIs-Calling-List.csv',
-          csvLeadCount: 450,
+          csvFileName: '',
+          csvLeadCount: 0,
           columnMapping: { nameCol: 'Full Name', phoneCol: 'Phone Number', emailCol: 'Email Address' }
         }
       case 'trigger_custom_audience_group':
         return {
-          groupName: 'Mohali Luxury Segment (HNIs > 2 Cr)',
+          groupName: '{{audience.name}}',
           groupId: 'grp_1',
           audienceSegment: 'High Intent'
         }
@@ -2682,10 +2657,10 @@ export default function FlowsPage() {
     setSimulatorTab('chat')
 
     const initialLead = {
-      name: 'Rohit Verma',
-      phone: '+91 98765 43210',
-      source: currentFlow.trigger.portalName || 'Meta Ad: Luxury Residences',
-      project: 'Joy Grand',
+      name: '{{lead.name}}',
+      phone: '{{lead.phone}}',
+      source: currentFlow.trigger.portalName || 'Meta Ad',
+      project: '{{product}}',
       score: 0,
       status: 'NEW',
       assignedAgent: 'Unassigned',
@@ -2704,7 +2679,7 @@ export default function FlowsPage() {
     setSimMessages(initialMessages)
 
     const initialLogs = [
-      `[Trigger Fired]: Lead "Rohit Verma" (+91 98765 43210) entered from "${currentFlow.trigger.label}"`,
+      `[Trigger Fired]: Lead "{{lead.name}}" ({{lead.phone}}) entered from "${currentFlow.trigger.label}"`,
       `[Pipeline Start]: Executing ${currentFlow.nodes.length} automation steps`
     ]
     setSimLogs(initialLogs)
@@ -2787,7 +2762,7 @@ export default function FlowsPage() {
           sender: 'bot',
           text: `❓ ${qText}`,
           time: nowTime,
-          buttons: node.config.quickReplies || ['2 BHK', '3 BHK', 'Schedule Call']
+          buttons: node.config.quickReplies || ['Basic', 'Standard', 'Schedule Call']
         })
       } else if (node.type === 'action_qualify' || node.type === 'action_ai_qualify') {
         // Robust Deterministic Evaluation: strictly check user's actual answers against deterministic rules!
@@ -2831,12 +2806,12 @@ export default function FlowsPage() {
         })
       } else if (node.type === 'action_ai_call') {
         const agentName = node.config.voiceAgent || 'Fenrir (Crisp & Focused)'
-        const greeting = (node.config.firstLine || 'Hi {{lead.name}}, calling from Bluesquare Infra regarding Joy Grand.')
+        const greeting = (node.config.firstLine || 'Hi {{lead.name}}, calling from {{business_name}} about {{product}}.')
           .replace(/{{lead\.name}}/g, nextLead.name)
         const qList = node.config.questions || [
-          { question: node.config.qualificationQuestion || 'Are you interested in scheduling a site visit this weekend?', fieldKey: 'site_visit_interest' }
+          { question: node.config.qualificationQuestion || 'Would you like to schedule an appointment this week?', fieldKey: 'site_visit_interest' }
         ]
-        const firstQ = qList[0] || { question: 'Are you interested in scheduling a site visit this weekend?', fieldKey: 'site_visit_interest' }
+        const firstQ = qList[0] || { question: 'Would you like to schedule an appointment this week?', fieldKey: 'site_visit_interest' }
         const questionText = firstQ.question
 
         updatedMsgs.push({
@@ -2844,7 +2819,7 @@ export default function FlowsPage() {
           sender: 'bot',
           text: `📞 [Official Gemini 3.1 Live Call — Voice: ${agentName}]\n"${greeting}\n\nQ1: ${questionText}"`,
           time: nowTime,
-          buttons: ['Yes, definitely! Visit this Saturday', 'No, not interested right now', 'Please call back later']
+          buttons: ['Yes, book my appointment', 'No, not interested right now', 'Please call back later']
         })
         updatedLogs.push(`📞 [Gemini Live Connected]: ${agentName} asked: "${questionText}" (Target Lead Field: ${firstQ.fieldKey})`)
         setSimLeadData(nextLead)
@@ -2852,8 +2827,8 @@ export default function FlowsPage() {
         setSimLogs(updatedLogs)
         return
       } else if (node.type === 'action_notify_team') {
-        const emailTo = node.config.adminEmail || 'admin@bluesquareinfra.com'
-        const phoneTo = node.config.adminWhatsapp || '+91 98765 43210'
+        const emailTo = node.config.adminEmail || '{{admin_email}}'
+        const phoneTo = node.config.adminWhatsapp || '{{admin_phone}}'
         const alertMsg = (node.config.alertMessage || '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed interest on call!')
           .replace(/{{lead\.name}}/g, nextLead.name)
           .replace(/{{lead\.phone}}/g, nextLead.phone)
@@ -2867,8 +2842,8 @@ export default function FlowsPage() {
         })
       } else if (node.type === 'action_assign_agent') {
         const assignedTarget = node.config.assignMode === 'group' 
-          ? (node.config.groupName || 'Mohali Sales Team (Group Distribution)')
-          : (node.config.agentName || 'Harman Bajwa')
+          ? (node.config.groupName || '{{team_group}}')
+          : (node.config.agentName || '{{agent.name}}')
         nextLead.assignedAgent = assignedTarget
         updatedLogs.push(`👤 [Lead Assignment]: Routed lead to "${assignedTarget}"`)
         updatedMsgs.push({
@@ -2957,7 +2932,7 @@ export default function FlowsPage() {
             time: nowTime
           })
         } else if (matchedBtn.actionType === 'assign_agent') {
-          nextAgent = matchedBtn.actionValue || 'Harman Bajwa'
+          nextAgent = matchedBtn.actionValue || '{{agent.name}}'
           branchLogs.push(`👤 [WhatsApp Button Branch]: Tapped "${matchedBtn.title}" ➔ Lead routed to "${nextAgent}"`)
         } else if (matchedBtn.actionType === 'send_reply') {
           const autoReply = matchedBtn.actionValue || 'Thank you for your response!'
@@ -3671,9 +3646,9 @@ export default function FlowsPage() {
                         onChange={(e) => {
                           const val = e.target.value
                           const label = val === 'trigger_csv_audience'
-                            ? 'Uploaded CSV Audience: Mohali-Luxury-HNIs-Calling-List.csv'
+                            ? 'Uploaded CSV Audience'
                             : val === 'trigger_custom_audience_group'
-                            ? 'Custom Audience Group: Mohali Luxury Segment'
+                            ? 'Custom Audience Group'
                             : val === 'trigger_campaign_audience'
                             ? 'Campaign Audience (Calling Target)'
                             : val === 'portal_lead' 
@@ -3687,17 +3662,17 @@ export default function FlowsPage() {
                               ...currentFlow.trigger, 
                               type: val, 
                               label,
-                              csvFileName: val === 'trigger_csv_audience' ? 'Mohali-Luxury-HNIs-Calling-List.csv' : currentFlow.trigger.csvFileName,
-                              csvLeadCount: val === 'trigger_csv_audience' ? 450 : currentFlow.trigger.csvLeadCount,
-                              customGroupName: val === 'trigger_custom_audience_group' ? 'Mohali Luxury Segment (HNIs > 2 Cr)' : currentFlow.trigger.customGroupName
+                              csvFileName: val === 'trigger_csv_audience' ? '' : currentFlow.trigger.csvFileName,
+                              csvLeadCount: val === 'trigger_csv_audience' ? 0 : currentFlow.trigger.csvLeadCount,
+                              customGroupName: val === 'trigger_custom_audience_group' ? '' : currentFlow.trigger.customGroupName
                             }
                           })
                         }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none cursor-pointer"
                       >
                         <option value="trigger_campaign_audience">Campaign Audience (Outbound Calling Target)</option>
-                        <option value="trigger_csv_audience">Custom Uploaded CSV Audience (e.g. HNIs / Investors List)</option>
-                        <option value="trigger_custom_audience_group">Custom Audience Group / Segment (e.g. Weekend Site Visit Pool)</option>
+                        <option value="trigger_csv_audience">Custom Uploaded CSV Audience (e.g. your uploaded contact list)</option>
+                        <option value="trigger_custom_audience_group">Custom Audience Group / Segment (e.g. a saved segment)</option>
                         <option value="meta_ad">Meta Ad Campaign (Facebook / Instagram Lead)</option>
                         <option value="portal_lead">Housing.com / 99Acres / Magicbricks Inbound</option>
                         <option value="whatsapp_inbound">WhatsApp Inbound Message</option>
@@ -3765,13 +3740,13 @@ export default function FlowsPage() {
                               onChange={(e) => {
                                 const file = e.target.files?.[0]
                                 if (file) {
-                                  toast.success(`Loaded "${file.name}" with 500 leads`)
+                                  toast.success(`Loaded "${file.name}"`)
                                   setCurrentFlow({
                                     ...currentFlow,
                                     trigger: {
                                       ...currentFlow.trigger,
                                       csvFileName: file.name,
-                                      csvLeadCount: 500,
+                                      csvLeadCount: 0,
                                       label: `Uploaded CSV: ${file.name}`
                                     }
                                   })
@@ -3875,7 +3850,7 @@ export default function FlowsPage() {
                             onChange={(e) => {
                               const cid = e.target.value
                               const c = campaigns.find(x => x.id === cid)
-                              const cName = c ? c.name : 'Joy Grand Luxury Residences'
+                              const cName = c ? c.name : 'All Existing Campaign Leads'
                               setCurrentFlow({
                                 ...currentFlow,
                                 trigger: { ...currentFlow.trigger, campaignId: cid, campaignName: cName }
@@ -4017,7 +3992,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.objective || 'Site Visit Confirmation & Budget Qualification'}
+                        value={selectedNode.config.objective || 'Appointment Confirmation & Budget Qualification'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, objective: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -4040,7 +4015,7 @@ export default function FlowsPage() {
                       </div>
                       <textarea
                         rows={2}
-                        value={selectedNode.config.firstLine || 'Hi {{lead.name}}, calling from Bluesquare Infra regarding Joy Grand Luxury Residences.'}
+                        value={selectedNode.config.firstLine || 'Hi {{lead.name}}, calling from {{business_name}} about {{product}}.'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, firstLine: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -4066,14 +4041,14 @@ export default function FlowsPage() {
                           type="button"
                           onClick={() => {
                             const curQuestions = selectedNode.config.questions || [
-                              { id: 'q_1', question: selectedNode.config.qualificationQuestion || 'Are you interested in scheduling a site visit this weekend?', fieldKey: 'site_visit_interest', saveToLeadProfile: true }
+                              { id: 'q_1', question: selectedNode.config.qualificationQuestion || 'Would you like to schedule an appointment this week?', fieldKey: 'site_visit_interest', saveToLeadProfile: true }
                             ]
                             const newQ = {
                               id: `q_${Date.now()}`,
-                              question: 'What is your preferred configuration (e.g. 2 BHK, 3 BHK, or Penthouse)?',
+                              question: 'Which {{product}} are you interested in?',
                               fieldKey: `custom_question_${curQuestions.length + 1}`,
                               saveToLeadProfile: true,
-                              expectedAnswer: '2 BHK / 3 BHK'
+                              expectedAnswer: '{{product}}'
                             }
                             const updated = { ...selectedNode.config, questions: [...curQuestions, newQ] }
                             setSelectedNode({ ...selectedNode, config: updated })
@@ -4090,8 +4065,8 @@ export default function FlowsPage() {
 
                       <div className="space-y-3">
                         {(selectedNode.config.questions || [
-                          { id: 'q_1', question: 'Are you interested in scheduling a site visit to Joy Grand this weekend?', fieldKey: 'site_visit_interest', saveToLeadProfile: true, expectedAnswer: 'Yes / Saturday / Sunday' },
-                          { id: 'q_2', question: 'What is your preferred investment budget range (e.g. 1.5 Cr to 2.5 Cr)?', fieldKey: 'budget_range', saveToLeadProfile: true, expectedAnswer: '1.5 Cr - 2.5 Cr' }
+                          { id: 'q_1', question: 'Would you like to schedule an appointment this week?', fieldKey: 'site_visit_interest', saveToLeadProfile: true, expectedAnswer: 'Yes / Saturday / Sunday' },
+                          { id: 'q_2', question: 'What is your budget range for {{product}}?', fieldKey: 'budget_range', saveToLeadProfile: true, expectedAnswer: '{{budget}}' }
                         ]).map((q: any, qi: number) => (
                           <div key={q.id || qi} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
                             <div className="flex items-center justify-between gap-2">
@@ -4270,7 +4245,7 @@ export default function FlowsPage() {
 
                       <div className="space-y-2.5">
                         {(selectedNode.config.rules || [
-                          { id: '1', field: 'site_visit_interest', label: 'Prospect Confirmed Site Visit on Call', operator: 'contains_any', value: 'yes, yeah, sure, interested, visit, confirm, weekend', points: 100, required: true }
+                          { id: '1', field: 'site_visit_interest', label: 'Prospect Confirmed Appointment on Call', operator: 'contains_any', value: 'yes, yeah, sure, interested, visit, confirm, weekend', points: 100, required: true }
                         ]).map((rule: any, ri: number) => (
                           <div key={rule.id || ri} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-xs">
                             <div className="flex items-center justify-between gap-2">
@@ -4287,7 +4262,7 @@ export default function FlowsPage() {
                                     nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                                   })
                                 }}
-                                placeholder="Rule title (e.g. Confirmed Site Visit)"
+                                placeholder="Rule title (e.g. Confirmed Appointment)"
                                 className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 outline-none"
                               />
                               <div className="flex items-center gap-1 shrink-0">
@@ -4409,7 +4384,7 @@ export default function FlowsPage() {
                       >
                         <option value="qualification_score">Deterministic Qualification Score (Pass/Fail)</option>
                         <option value="question_response">Question Answer Keyword Matching</option>
-                        <option value="crm_attribute">CRM Lead Property (e.g. Budget &gt;= 1.5 Cr)</option>
+                        <option value="crm_attribute">CRM Lead Property (e.g. Budget &gt;= threshold)</option>
                       </select>
                     </div>
 
@@ -4481,7 +4456,7 @@ export default function FlowsPage() {
                         className="w-full bg-white border border-emerald-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-medium"
                       />
                       <p className="text-[10px] text-slate-600">
-                        Subsequent steps marked with green True badge (e.g. Notify Admin on WhatsApp + Deliver Project Brochure) execute when this condition passes.
+                        Subsequent steps marked with green True badge (e.g. Notify Admin on WhatsApp + Deliver Brochure) execute when this condition passes.
                       </p>
                     </div>
 
@@ -4576,7 +4551,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="email"
-                        value={selectedNode.config.adminEmail || 'admin@bluesquareinfra.com'}
+                        value={selectedNode.config.adminEmail || '{{admin_email}}'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, adminEmail: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -4585,7 +4560,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="admin@bluesquareinfra.com"
+                        placeholder="{{admin_email}}"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium"
                       />
                     </div>
@@ -4596,7 +4571,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.adminWhatsapp || '+91 98765 43210'}
+                        value={selectedNode.config.adminWhatsapp || '{{admin_phone}}'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, adminWhatsapp: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -4605,7 +4580,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="+91 98765 43210"
+                        placeholder="{{admin_phone}}"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium"
                       />
                     </div>
@@ -4652,7 +4627,7 @@ export default function FlowsPage() {
                       </label>
                       <textarea
                         rows={2}
-                        value={selectedNode.config.alertMessage || '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed site visit on call! Call recording & qualification attached.'}
+                        value={selectedNode.config.alertMessage || '🔥 HOT LEAD ALERT: {{lead.name}} ({{lead.phone}}) confirmed the appointment on the call! Call recording & qualification attached.'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, alertMessage: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -4753,8 +4728,8 @@ export default function FlowsPage() {
                               ...selectedNode.config, 
                               buttonType: 'cta_url',
                               ctaButtons: selectedNode.config.ctaButtons || [
-                                { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q=Joy+Grand+Mohali' },
-                                { id: 'cta_2', title: '🌐 Project Website', type: 'url', url: 'https://bluesquareinfra.com/joygrand' }
+                                { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q={{business_name}}' },
+                                { id: 'cta_2', title: '🌐 Website', type: 'url', url: '{{inventory_url}}' }
                               ]
                             }
                             setSelectedNode({ ...selectedNode, config: updated })
@@ -4831,7 +4806,7 @@ export default function FlowsPage() {
                                 id: `btn_${i + 1}`,
                                 title: b,
                                 actionType: i === 0 ? 'crm_stage' : i === 1 ? 'assign_agent' : 'send_reply',
-                                actionValue: i === 0 ? 'Visit Planned' : i === 1 ? 'Harman Bajwa' : 'Here is our project location on Google Maps: https://maps.google.com'
+                                actionValue: i === 0 ? 'Visit Planned' : i === 1 ? '{{agent.name}}' : 'Here is our location on Google Maps: https://maps.google.com'
                               }))
                           ).map((btn: any, bi: number, allBtns: any[]) => (
                             <div key={bi} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
@@ -4901,7 +4876,7 @@ export default function FlowsPage() {
                                       const newType = e.target.value
                                       let defaultValue = btn.actionValue
                                       if (newType === 'crm_stage') defaultValue = 'Visit Planned'
-                                      if (newType === 'assign_agent') defaultValue = 'Harman Bajwa'
+                                      if (newType === 'assign_agent') defaultValue = '{{agent.name}}'
                                       if (newType === 'notify_admin') defaultValue = 'Prospect requested callback via button'
                                       if (newType === 'send_reply') defaultValue = 'Thank you! We will connect shortly.'
                                       next[bi] = { ...next[bi], actionType: newType, actionValue: defaultValue }
@@ -5034,7 +5009,7 @@ export default function FlowsPage() {
 
                         <div className="space-y-3">
                           {(selectedNode.config.ctaButtons || [
-                            { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q=Joy+Grand+Mohali' }
+                            { id: 'cta_1', title: '📍 Open Google Maps', type: 'url', url: 'https://maps.google.com/?q={{business_name}}' }
                           ]).map((cta: any, ci: number, allCtas: any[]) => (
                             <div key={ci} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                               <div className="flex items-center justify-between gap-2">
@@ -5127,7 +5102,7 @@ export default function FlowsPage() {
                                       nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                                     })
                                   }}
-                                  placeholder={cta.type === 'call' ? '+91 98765 43210' : 'https://maps.google.com/?q=...'}
+                                  placeholder={cta.type === 'call' ? '{{admin_phone}}' : 'https://maps.google.com/?q=...'}
                                   className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono"
                                 />
                               </div>
@@ -5141,7 +5116,7 @@ export default function FlowsPage() {
                                 const current = selectedNode.config.ctaButtons || []
                                 const next = [
                                   ...current,
-                                  { id: `cta_${current.length + 1}`, title: '🌐 View Project Website', type: 'url', url: 'https://bluesquareinfra.com' }
+                                  { id: `cta_${current.length + 1}`, title: '🌐 Website', type: 'url', url: '{{inventory_url}}' }
                                 ]
                                 const updated = { ...selectedNode.config, ctaButtons: next }
                                 setSelectedNode({ ...selectedNode, config: updated })
@@ -5176,7 +5151,7 @@ export default function FlowsPage() {
                           }}
                           className="rounded text-indigo-600 bg-white border-slate-300"
                         />
-                        <span className="text-xs font-bold text-slate-800">Attach Verified PDF Brochure / Floor Plan</span>
+                        <span className="text-xs font-bold text-slate-800">Attach Verified PDF Brochure / Catalogue</span>
                       </label>
                     </div>
                   </div>
@@ -5241,7 +5216,7 @@ export default function FlowsPage() {
                           onChange={(e) => {
                             const gid = e.target.value
                             const grp = distributionGroups.find(g => g.id === gid)
-                            const gname = grp ? grp.name : 'Mohali Sales Team (Group Distribution)'
+                            const gname = grp ? grp.name : '{{team_group}}'
                             const updated = { ...selectedNode.config, groupId: gid, groupName: gname }
                             setSelectedNode({ ...selectedNode, config: updated })
                             setCurrentFlow({
@@ -5271,7 +5246,7 @@ export default function FlowsPage() {
                           onChange={(e) => {
                             const aid = e.target.value
                             const m = team.find(t => t.id === aid)
-                            const aname = m ? (m.business_name || m.full_name || m.email) : 'Harman Bajwa'
+                            const aname = m ? (m.business_name || m.full_name || m.email) : '{{agent.name}}'
                             const updated = { ...selectedNode.config, agentId: aid, agentName: aname }
                             setSelectedNode({ ...selectedNode, config: updated })
                             setCurrentFlow({
@@ -5425,7 +5400,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="Hi {{lead.name}}! 👋 Thank you for messaging us. Here is the verified project brochure..."
+                        placeholder="Hi {{lead.name}}! 👋 Thank you for messaging us. Here is the verified brochure..."
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
                       />
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -5548,7 +5523,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="Joy Grand Luxury Residences"
+                        placeholder="{{product}}"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold"
                       />
                     </div>
@@ -5568,7 +5543,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="3 & 4 BHK Luxury Apartments • Starting ₹1.8 Cr"
+                        placeholder="{{product}} • {{city}} • Starting {{amount}}"
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900"
                       />
                     </div>
@@ -5607,7 +5582,7 @@ export default function FlowsPage() {
                               nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                             })
                           }}
-                          placeholder="https://bluesquareinfra.com"
+                          placeholder="{{inventory_url}}"
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-900 font-mono"
                         />
                       </div>
@@ -5660,7 +5635,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.closerName || 'Harman Bajwa'}
+                        value={selectedNode.config.closerName || '{{agent.name}}'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, closerName: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -5679,7 +5654,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.transferNumber || '+91 98765 43210'}
+                        value={selectedNode.config.transferNumber || '{{agent.phone}}'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, transferNumber: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -5698,7 +5673,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.whisperMessage || 'Connecting verified high-intent buyer for Joy Grand'}
+                        value={selectedNode.config.whisperMessage || 'Connecting verified high-intent buyer for {{product}}'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, whisperMessage: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -5743,7 +5718,7 @@ export default function FlowsPage() {
                       </label>
                       <input
                         type="text"
-                        value={selectedNode.config.subject || 'Official Joy Grand Brochure & Pricing Sheet'}
+                        value={selectedNode.config.subject || 'Official {{business_name}} Brochure & Pricing Sheet'}
                         onChange={(e) => {
                           const updated = { ...selectedNode.config, subject: e.target.value }
                           setSelectedNode({ ...selectedNode, config: updated })
@@ -5898,7 +5873,7 @@ export default function FlowsPage() {
                             nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                           })
                         }}
-                        placeholder="Lead engaged with Instagram reel comment automation. Requested project brochure."
+                        placeholder="Lead engaged with Instagram reel comment automation. Requested brochure."
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium leading-relaxed outline-none"
                       />
                     </div>
@@ -5923,7 +5898,7 @@ export default function FlowsPage() {
                               nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                             })
                           }}
-                          placeholder="buyer_budget / preferred_bhk"
+                          placeholder="buyer_budget / preferred_option"
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-mono"
                         />
                       </div>
@@ -5942,7 +5917,7 @@ export default function FlowsPage() {
                               nodes: currentFlow.nodes.map(n => n.id === selectedNode.id ? { ...n, config: updated } : n)
                             })
                           }}
-                          placeholder="2.5 Cr"
+                          placeholder="{{budget}}"
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 font-bold"
                         />
                       </div>
@@ -6586,8 +6561,6 @@ export default function FlowsPage() {
                       {campaigns.map((c: any) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
-                      <option value="joy_grand">Joy Grand Mohali Campaign</option>
-                      <option value="aerocity">Aerocity Plots Campaign</option>
                     </select>
                   </div>
                 )}
