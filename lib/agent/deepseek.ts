@@ -61,14 +61,22 @@ const deepseekStreamFetch = async (url: RequestInfo | URL, options?: RequestInit
               if (!hasContent && !hasToolCalls) {
                 return { ...m, content: 'Continuing workflow...' };
               }
-              // Thinking mode: an assistant turn that carries tool calls must
-              // echo its reasoning back. The AI SDK drops `reasoning` parts when
-              // serialising, so any REPLAYED tool-calling history is rejected
-              // with "The `reasoning_content` in the thinking mode must be
-              // passed back to the API" — which broke every durable resume.
-              // Verified against the live API: an empty string is accepted, so
-              // preserving the exact text is optional (we keep it when present).
-              if (hasToolCalls && m.reasoning_content === undefined) {
+              // Thinking mode: an assistant turn must echo its reasoning back, or DeepSeek
+              // refuses the request with "The `reasoning_content` in the thinking mode must be
+              // passed back to the API".
+              //
+              // HONEST STATUS: this backfills for EVERY assistant turn now, not only turns that
+              // carry tool calls. That is a defensive widening, not a proven fix — the exact
+              // shape that failed in production could not be reproduced against the live API
+              // (plain prose, tool-call turns, content-part arrays and a null field are all
+              // accepted), so this may or may not be the trigger. It is safe either way:
+              // verified that the empty string is accepted with and without tool calls, and the
+              // real text is kept when the SDK preserved it.
+              //
+              // What was NOT safe was the retry policy around it: see settleFailure in
+              // lib/agent/harness/runner.ts, which now stops after one attempt instead of
+              // spending five model calls on identical history.
+              if (m.reasoning_content === undefined) {
                 return { ...m, reasoning_content: '' };
               }
             }

@@ -30,6 +30,8 @@
  */
 
 import type { DetectorContext, Incident, Repair, RepairOutcome } from './types';
+import { queryKieTask } from '@/utils/external-apis';
+import { extensionFor, kindFromUrl, mirrorToR2 } from '@/lib/media/mirror';
 
 /**
  * Tables no repair may ever touch, whatever the incident says.
@@ -286,11 +288,119 @@ const releaseLeakedCreditHold: Repair = {
   },
 };
 
+/**
+ * Finish an asset whose render actually SUCCEEDED at the provider.
+ *
+ * WHY THIS IS SAFE, AND WHY IT HAD TO EXIST
+ * A live client paid 6 credits for an image that Kie finished in 72 seconds. The provider
+ * said `state: success` and returned a URL; our row sat in `Rendering` for ten hours and he
+ * never saw the result. `generate_ai_image` hands back a task id when the render outlives its
+ * own polling window, and collecting it afterwards depended entirely on the agent remembering
+ * to call `check_media_task` later in the same turn. If the turn ended — or stopped at an
+ * approval card — nothing ever collected it.
+ *
+ * The watchdog can now do the collecting, on the one condition that makes it provable: the
+ * PROVIDER says the work is done. Then writing the URL is not a guess about what the tenant
+ * wanted, it is delivering what they already paid for.
+ *
+ * Deliberately narrow:
+ *   - the provider is asked first, and only `success` produces a write;
+ *   - a provider failure marks the asset Failed, so the library stops showing a spinner;
+ *   - a render still in progress is left alone and reported, not guessed at;
+ *   - the status re-asserts `Rendering` in the UPDATE, so if the tool collected it in the
+ *     meantime this matches zero rows instead of overwriting a fresher URL.
+ */
+const collectFinishedAsset: Repair = {
+  class: 'asset-stuck-rendering',
+  blastRadius: 'safe',
+  describe: 'Ask the provider whether a stuck render finished; if it did, store the media permanently and mark the asset ready.',
+  table: 'assets',
+  columns: ['url', 'status'],
+  async apply(incident: Incident, ctx: DetectorContext): Promise<RepairOutcome> {
+    if (!incident.subject_id) return { ok: false, detail: 'Incident has no asset id.' };
+
+    const { data: assetRows, error: readError } = await ctx.supabase
+      .from('assets')
+      .select('id, user_id, type, status, kie_task_id, url')
+      .eq('id', incident.subject_id)
+      .limit(1);
+    if (readError) return { ok: false, detail: `Could not read the asset: ${String(readError.message || readError)}` };
+
+    const asset = (assetRows ?? [])[0] as Record<string, any> | undefined;
+    if (!asset) return { ok: false, detail: 'Asset no longer exists.' };
+
+    const taskId = String(asset.kie_task_id || '').trim();
+    if (!taskId) {
+      return {
+        ok: false,
+        detail: 'This asset has no provider task id, so there is nothing to collect — a human has to look at it.',
+      };
+    }
+
+    let status: any;
+    try {
+      status = await queryKieTask(taskId);
+    } catch (err: any) {
+      return { ok: false, detail: `Could not ask the provider about ${taskId}: ${err?.message || err}` };
+    }
+
+    if (status.state === 'fail') {
+      const { data: failed } = await ctx.supabase
+        .from('assets')
+        .update({ status: 'Failed' })
+        .eq('id', asset.id)
+        .eq('status', 'Rendering')
+        .select('id');
+      const touched = Array.isArray(failed) && failed.length > 0;
+      return {
+        ok: true,
+        detail: touched
+          ? `Provider reports the render failed; asset marked Failed so the library stops showing it as unfinished.`
+          : 'Provider reports a failure, but the asset had already moved on — left alone.',
+        touched: touched ? this.columns : [],
+      };
+    }
+
+    if (status.state !== 'success' || !status.resultUrl) {
+      return {
+        ok: false,
+        detail: `Provider still working (state: ${status.state}); nothing collected yet.`,
+      };
+    }
+
+    const kind = kindFromUrl(status.resultUrl);
+    const permanentUrl = await mirrorToR2(
+      status.resultUrl,
+      `media_${taskId}.${extensionFor(kind)}`,
+      String(asset.user_id)
+    );
+
+    const { data: updated } = await ctx.supabase
+      .from('assets')
+      .update({ url: permanentUrl, status: 'ready' })
+      .eq('id', asset.id)
+      // Only if it is still stuck: never overwrite a fresher collection.
+      .eq('status', 'Rendering')
+      .select('id');
+
+    const touched = Array.isArray(updated) && updated.length > 0;
+    if (!touched) {
+      return { ok: true, detail: 'Provider had finished, but the asset was already collected — left alone.', touched: [] };
+    }
+    return {
+      ok: true,
+      detail: `Collected the finished ${kind} the provider produced and marked the asset ready.`,
+      touched: this.columns,
+    };
+  },
+};
+
 /** The complete allowlist. This object is the whole of what the watchdog may change. */
 export const REPAIRS: Readonly<Record<string, Repair>> = Object.freeze({
   [requeueAbandonedRun.class]: requeueAbandonedRun,
   [nudgeStarvedQueue.class]: nudgeStarvedQueue,
   [failAbandonedVideoTask.class]: failAbandonedVideoTask,
+  [collectFinishedAsset.class]: collectFinishedAsset,
   [clearLeakedSiteBuildLock.class]: clearLeakedSiteBuildLock,
   [releaseLeakedCreditHold.class]: releaseLeakedCreditHold,
 });

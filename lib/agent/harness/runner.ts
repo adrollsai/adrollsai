@@ -463,6 +463,38 @@ export async function openRunTurn(
      * customer should not be told to top up credits they already have, and an operator should see the truth
      * in one line.
      */
+    /**
+     * A REJECTED HISTORY IS NOT RETRIED. Five identical attempts cannot help.
+     *
+     * DeepSeek refuses a replayed conversation whose assistant turns lost their reasoning:
+     * "The `reasoning_content` in the thinking mode must be passed back to the API". The
+     * request that failed is rebuilt from the same log on every retry, so attempt 2 sends
+     * byte-identical history to attempt 1 — measured: two runs, five attempts each, ten
+     * model calls, the same error every time, and the tenant saw a spinner throughout.
+     *
+     * Retrying cannot fix it and the cause is OURS (a history we rebuilt), so it stops after
+     * one attempt and says so. The run stays resumable: once the rebuild is fixed the run can
+     * be re-queued and will make progress, because its log has not changed.
+     */
+    if (/reasoning_content.*must be passed back/i.test(message)) {
+      console.error(
+        `[Harness runner] run ${run.id.slice(0, 8)} stopped: the replayed history lost its reasoning — ${message}`
+      );
+      await appendRunStatus(
+        supabase,
+        run.session_id,
+        'failed',
+        'This task could not be resumed: the conversation history we rebuilt was rejected by the model provider, ' +
+          'and retrying it would send the identical history again. This is ours to fix, not yours — nothing was ' +
+          'lost, and the task can be resumed once it is fixed.',
+        sliceNumber
+      );
+      // Dead, not queued: the next attempt would be the same request. One attempt is counted
+      // so the dead-letter is visible rather than looking like a fresh run.
+      await settleOnce({ status: 'dead', steps, error: message, incrementAttempt: true });
+      return;
+    }
+
     const outOfProviderCredit = /insufficient balance|insufficient_quota|exceeded your current quota|payment required|\b402\b/i.test(
       message
     );

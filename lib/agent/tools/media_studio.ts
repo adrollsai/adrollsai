@@ -116,34 +116,15 @@ const LANGUAGE_PROFILES: Record<string, { scene: string; context: string }> = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Kie hands back short-lived URLs, so copy the bytes into our own bucket. */
-async function mirrorToR2(url: string, fileName: string, userId: string): Promise<string> {
-  try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-    if (!res.ok) {
-      console.warn(`[Media Studio] Mirror skipped (${res.status}) for ${url.slice(0, 80)}`);
-      return url;
-    }
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (!buffer.length) return url;
-    return await uploadBufferToR2(buffer, fileName, userId);
-  } catch (err: any) {
-    console.warn(`[Media Studio] Mirror failed: ${err?.message || err}`);
-    return url;
-  }
-}
+// Shared with the ops watchdog's collector, so a background repair and this tool make the
+// same promise about where an artefact lives.
+import { mirrorToR2, kindFromUrl } from '@/lib/media/mirror';
 
 function cleanUrls(urls?: string[]): string[] {
   return (urls || [])
     .filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim()))
     .map((u) => u.trim())
     .slice(0, 7);
-}
-
-function kindFromUrl(url: string): 'video' | 'audio' | 'image' {
-  const path = url.split('?')[0].toLowerCase();
-  if (/\.(mp4|mov|webm|m4v)$/.test(path)) return 'video';
-  if (/\.(mp3|wav|m4a|aac|ogg)$/.test(path)) return 'audio';
-  return 'image';
 }
 
 export function createMediaStudioTools(supabase: SupabaseClient, userId: string) {

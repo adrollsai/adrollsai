@@ -422,9 +422,19 @@ export const videoTaskStuckDetector: Detector = {
 /**
  * An asset stuck mid-render.
  *
- * Report only. `assets.status` is the tenant's own content and their library shows it;
- * rewriting it from a watchdog would be this system making a judgement call about a
- * customer's file. It says what it sees and lets a person decide.
+ * This used to be report-only, for a good reason: `assets.status` is the tenant's own content
+ * and rewriting it from a watchdog is making a judgement call about a customer's file.
+ *
+ * That reason does not survive contact with what actually happens. A live client paid 6 credits
+ * for an image; Kie finished it in 72 seconds and returned a URL; our row sat in `Rendering` for
+ * ten hours and he never saw it. Collection depended on the agent remembering to call
+ * `check_media_task` later in the same turn, and when the turn ends at an approval card nothing
+ * collects it at all.
+ *
+ * So it is repairable now — but only on the provider's word. The repair asks Kie first and
+ * writes nothing unless the provider says `success` (store the file, mark it ready) or `fail`
+ * (mark it failed so the library stops showing a spinner). A render still in progress is left
+ * alone. That is not a judgement about the customer's file; it is delivering what they paid for.
  */
 export const assetRenderingStuckDetector: Detector = {
   id: 'asset-stuck-rendering',
@@ -448,9 +458,10 @@ export const assetRenderingStuckDetector: Detector = {
       evidence:
         `Asset ${row.id} (${row.type ?? 'unknown type'}) has been in Rendering since ` +
         `${ago(row.created_at as string, ctx.now)}${row.kie_task_id ? `, provider task ${row.kie_task_id}` : ''}.`,
-      suggestedFix:
-        'Check the provider task, then either finish the asset or mark it failed so the library stops showing an unfinished item.',
-      blastRadius: 'needs_approval',
+      suggestedFix: row.kie_task_id
+        ? 'The provider is asked automatically: a finished render is collected and stored, a failed one is marked failed. A render still running is left alone.'
+        : 'This asset has no provider task id, so it cannot be collected automatically — check it by hand.',
+      blastRadius: 'safe',
       subjectTable: 'assets',
       subjectId: String(row.id),
       userId: (row.user_id as string | null) ?? null,

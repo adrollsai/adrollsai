@@ -99,7 +99,7 @@
     "verify:voice-scenarios": "esbuild scripts/verify-voice-scenarios.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-voice-scen.mjs --log-level=warning && node .tmp-voice-scen.mjs",
     "scorecard:engine": "esbuild scripts/engine-scorecard.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-scorecard.mjs --log-level=warning && node .tmp-scorecard.mjs",
     "preview:brief": "esbuild scripts/dry-run-brief.ts --bundle --platform=node --format=esm --alias:@=./ --packages=external --outfile=.tmp-drybrief.mjs --log-level=warning && node .tmp-drybrief.mjs",
-    "verify:ops-watchdog": "esbuild scripts/verify-ops-watchdog.ts --bundle --platform=node --format=esm --outfile=.tmp-ops.mjs --log-level=warning --external:@supabase/supabase-js && node .tmp-ops.mjs",
+    "verify:ops-watchdog": "esbuild scripts/verify-ops-watchdog.ts --bundle --platform=node --format=esm --outfile=.tmp-ops.mjs --log-level=warning --packages=external && node .tmp-ops.mjs",
     "build:ops-repo-index": "node scripts/build-ops-repo-index.mjs",
     "verify:runner-goal-seed": "esbuild scripts/verify-runner-goal-seed.ts --bundle --platform=node --format=esm --outfile=.tmp-goalseed.mjs --log-level=warning --packages=external && node .tmp-goalseed.mjs",
     "verify:routine-once-per-day": "esbuild scripts/verify-routine-once-per-day.ts --bundle --platform=node --format=esm --outfile=.tmp-routineonce.mjs --log-level=warning --packages=external && node .tmp-routineonce.mjs",
