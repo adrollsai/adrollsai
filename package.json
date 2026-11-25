@@ -89,6 +89,7 @@
     "verify:crm-lead-loading": "esbuild scripts/verify-crm-lead-loading.ts --bundle --platform=node --format=cjs --outfile=.tmp-crm-load.cjs --log-level=warning && node .tmp-crm-load.cjs",
     "verify:weekly-broadcast": "esbuild scripts/verify-weekly-broadcast.ts --bundle --platform=node --format=cjs --outfile=.tmp-weekly.cjs --log-level=warning && node .tmp-weekly.cjs",
     "verify:industry-neutral": "esbuild scripts/verify-industry-neutral.ts --bundle --platform=node --format=cjs --outfile=.tmp-neutral.cjs --log-level=warning && node .tmp-neutral.cjs",
+    "verify:flow-canvas": "esbuild scripts/verify-flow-canvas.ts --bundle --platform=node --format=cjs --packages=external --outfile=.tmp-flowcanvas.cjs --log-level=warning && node .tmp-flowcanvas.cjs",
     "ui:smoke": "node scripts/ui-smoke.mjs",
     "ui:features": "node scripts/ui-features.mjs",
     "ui:inventory": "node scripts/ui-inventory.mjs",

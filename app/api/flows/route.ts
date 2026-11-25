@@ -1,6 +1,7 @@
 import { validateFlow } from '@/lib/flows/schema';
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { translateCanvasFlow } from '@/lib/flows/canvas-translation'
 
 // Helper to resolve effective user ID (supporting impersonation)
 async function getEffectiveUserId(supabase: any, user: any, req: Request) {
@@ -95,8 +96,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Flow name is required' }, { status: 400 })
     }
 
-    const finalNodes = (xyNodes && xyNodes.length > 0) ? xyNodes : nodes
+    const canvasNodes = (xyNodes && xyNodes.length > 0) ? xyNodes : nodes
     const finalEdges = (xyEdges && xyEdges.length > 0) ? xyEdges : edges
+
+    /**
+     * Translate the canvas into the runner's own vocabulary BEFORE anything is stored.
+     *
+     * The canvas says `trigger: { type: 'meta_ad' }` and draws nodes like `action_whatsapp_questions`;
+     * the scheduler only starts on `trigger_meta_ad` and only executes a handful of node types. Nothing
+     * translated between them, so a flow built here saved, listed, and could never fire — which is what
+     * "the editor is a dummy" means. Everything below stores the translated flow, so a flow saved from
+     * the editor is a flow the runner can actually run.
+     */
+    const translated = translateCanvasFlow({ trigger, nodes: canvasNodes })
+    const finalNodes = translated.nodes
+    const translatedTrigger = translated.trigger
+
+    if (isActive && translated.problems.length > 0) {
+      return NextResponse.json(
+        {
+          error:
+            'This flow cannot be activated yet — these steps are not things the runner can execute. ' +
+            'Fix them, or save it as a draft.',
+          issues: translated.problems.map((problem) => ({
+            severity: 'error',
+            nodeId: problem.nodeId,
+            message: problem.message,
+          })),
+        },
+        { status: 422 }
+      )
+    }
 
     // Validate against the engine before saving.
     //
@@ -120,7 +150,7 @@ export async function POST(req: Request) {
       name: name.trim(),
       description: description || '',
       icon: icon || 'Workflow',
-      trigger: trigger || { type: 'whatsapp_broadcast', label: 'WhatsApp Broadcast' },
+      trigger: translatedTrigger,
       nodes: finalNodes,
       edges: finalEdges,
       xyNodes: finalNodes,
@@ -185,6 +215,15 @@ export async function PUT(req: Request) {
     const effectiveUserId = await getEffectiveUserId(supabase, user, req)
     const body = await req.json()
     const { id, name, description, icon, isActive, trigger, nodes, edges, xyNodes, xyEdges, settings, stats } = body
+
+    // Same translation as POST: an edit must not put the canvas vocabulary back into a stored flow.
+    const translated = translateCanvasFlow({ trigger, nodes: (xyNodes && xyNodes.length > 0) ? xyNodes : nodes })
+    if (isActive && translated.problems.length > 0) {
+      return NextResponse.json(
+        { error: 'This flow cannot be activated yet — some steps are not things the runner can execute.', issues: translated.problems },
+        { status: 422 }
+      )
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'Flow ID is required' }, { status: 400 })
