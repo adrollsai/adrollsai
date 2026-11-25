@@ -108,6 +108,10 @@
     {
       "path": "/api/cron/agent-evals?tier=behaviour&judge=1",
       "schedule": "0 21 * * 0"
+    },
+    {
+      "path": "/api/cron/recording-sweep",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

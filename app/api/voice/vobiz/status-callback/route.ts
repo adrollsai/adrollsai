@@ -6,6 +6,7 @@ import { callChargeCredits } from '@/lib/automation/call-billing'
 import { fetchVobizCallRecording } from '@/utils/vobiz-helper'
 import { ensureStandardMp3 } from '@/utils/audio-transcode'
 import { storeRecording } from '@/lib/automation/recording-store'
+import { attachRecordingToCallLog } from '@/lib/automation/call-log-sync'
 
 const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -221,6 +222,33 @@ async function handleStatusCallback(req: Request) {
                     console.warn('[VOBIZ STATUS] Error archiving recording to R2:', sErr)
                 }
                 updatePayload.voice_recording_url = publicRecordingUrl
+
+                // The CRM call history reads call_logs, and nothing ever created a row there for a
+                // Vobiz AI call — which is why the list is empty even when the audio was archived.
+                // attachRecordingToCallLog updates the row for this call, or creates it.
+                const callLogSync = await attachRecordingToCallLog(supabaseAdmin, {
+                    leadId,
+                    userId: (lead as any)?.user_id,
+                    recording: publicRecordingUrl,
+                    phoneNumber: (lead as any)?.phone,
+                    startedAtIso: new Date(Date.now() - (callDuration || 0) * 1000).toISOString(),
+                    durationSeconds: callDuration,
+                })
+                console.log(`[VOBIZ STATUS] call_logs recording ${callLogSync.action}${callLogSync.callLogId ? ' ' + callLogSync.callLogId : ''}${callLogSync.reason ? ' — ' + callLogSync.reason : ''}`)
+            }
+
+            // Persist the carrier's call uuid. Recordings frequently appear well after this callback
+            // gives up (13 s), and without the uuid nothing can go back for them later.
+            if (callUuid) {
+                try {
+                    const rawCf = (lead as any)?.custom_fields
+                    let cf: any = {}
+                    if (typeof rawCf === 'string') { try { cf = JSON.parse(rawCf || '{}') } catch { cf = {} } }
+                    else if (rawCf && typeof rawCf === 'object') cf = rawCf
+                    updatePayload.custom_fields = { ...cf, vobiz_call_uuid: callUuid, vobiz_recording_sweeps: 0 }
+                } catch {
+                    /* custom_fields is best-effort bookkeeping */
+                }
             }
 
             updatePayload.last_call_at = new Date().toISOString()

@@ -625,8 +625,12 @@ export async function fetchVobizCallRecording(
     rawAuthToken?: string
 ): Promise<string | null> {
     if (!callUuid) return null
-    let authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    let authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    // Credentials come from the environment only. A literal token in source is a secret sitting in
+    // git history, and it hides a misconfiguration: an account with no sub-account credentials fell
+    // back to whichever account the hardcoded pair belonged to and asked it for a recording it
+    // could not see.
+    let authId = (process.env.VOBIZ_AUTH_ID || '').trim()
+    let authToken = (process.env.VOBIZ_AUTH_TOKEN || '').trim()
 
     if (typeof credentialsOrAuthId === 'string') {
         authId = credentialsOrAuthId || authId
@@ -634,6 +638,11 @@ export async function fetchVobizCallRecording(
     } else if (credentialsOrAuthId && typeof credentialsOrAuthId === 'object') {
         authId = credentialsOrAuthId.authId || authId
         authToken = credentialsOrAuthId.authToken || authToken
+    }
+
+    if (!authId || !authToken) {
+        console.warn('[VOBIZ HELPER] VOBIZ_AUTH_ID / VOBIZ_AUTH_TOKEN are not set; cannot look up a recording')
+        return null
     }
 
     try {
@@ -660,8 +669,12 @@ export async function fetchVobizCallRecording(
  * Endpoint: DELETE https://api.vobiz.ai/api/v1/Account/{auth_id}/Call/{call_uuid}/
  */
 export async function terminateVobizCall(callUuid: string): Promise<boolean> {
-    const authId = process.env.VOBIZ_AUTH_ID || 'MA_HOSGFZ86'
-    const authToken = process.env.VOBIZ_AUTH_TOKEN || 'RGoIxkVVdY9uRBngaoUSP9Jy0ylLfptistrm2ijpvtM9Yusx6sOjACyOj15FUlzU'
+    const authId = (process.env.VOBIZ_AUTH_ID || '').trim()
+    const authToken = (process.env.VOBIZ_AUTH_TOKEN || '').trim()
+    if (!authId || !authToken) {
+        console.warn('[VOBIZ HELPER] VOBIZ_AUTH_ID / VOBIZ_AUTH_TOKEN are not set; cannot terminate a call')
+        return false
+    }
 
     try {
         const url = `https://api.vobiz.ai/api/v1/Account/${authId}/Call/${callUuid}/`

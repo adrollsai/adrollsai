@@ -326,7 +326,30 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const logs = callLogs || []
+    // Sign every stored recording before it reaches the client.
+    //
+    // The column holds an R2 object KEY, or — on rows written before the archive path existed — a
+    // `/object/public/...` path into the PRIVATE lead-voice-recordings bucket, which answers 400 to a
+    // browser. Returning either raw is why saved recordings "do not play".
+    let logs: any[] = callLogs || []
+    if (logs.some((r: any) => r?.recording_url)) {
+      const adminForSigning = createAdminClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      )
+      const { playableRecordingUrl } = await import('@/lib/automation/recording-store')
+      logs = await Promise.all(
+        logs.map(async (row: any) => {
+          if (!row?.recording_url) return row
+          try {
+            const playable = await playableRecordingUrl(adminForSigning as any, row.recording_url)
+            return { ...row, recording_url_raw: row.recording_url, recording_url: playable || row.recording_url }
+          } catch {
+            return row
+          }
+        })
+      )
+    }
 
     const totalCalls = logs.length
     const connectedCalls = logs.filter(l => l.status === 'CONNECTED' || (l.duration && l.duration > 0)).length
