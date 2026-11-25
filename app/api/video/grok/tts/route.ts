@@ -3,11 +3,33 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createGeminiTTS, queryKieTask } from '@/utils/external-apis';
 import { withMediaFallback } from '@/lib/agent/media-models';
+import { languageCodeFor, spokenScript, synthesizeSpeech } from '@/lib/media/gemini-tts-direct';
 
 const supabaseAdmin = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+/**
+ * Store a finished voiceover where Remotion Lambda can reach it.
+ *
+ * Both engines land here, so the R2 key scheme and the MP3 normalisation cannot drift apart
+ * between the direct path and the fallback.
+ */
+async function persistVoiceover(rawBuffer: Buffer, hint: string): Promise<string> {
+    const { ensureMp3AudioBuffer } = await import('@/utils/audio-converter');
+    const audioBuffer = await ensureMp3AudioBuffer(rawBuffer);
+    const { r2, R2_BUCKET, R2_PUBLIC_URL } = await import('@/utils/r2');
+    const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+    const r2Key = `voiceover/${Date.now()}_${hint}.mp3`;
+    await r2.send(new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: r2Key,
+        Body: audioBuffer,
+        ContentType: 'audio/mpeg'
+    }));
+    return `${R2_PUBLIC_URL}/${r2Key}`;
+}
 
 export async function POST(request: Request) {
     try {
@@ -62,6 +84,55 @@ export async function POST(request: Request) {
             : "High converting commercial marketing video");
 
         console.log(`[Grok TTS API] Creating voiceover task (Speaker: ${speakerName}, Accent: ${isIndianAccent ? 'Indian' : 'American'}, Text length: ${dialogueText.length})...`);
+
+        /**
+         * GOOGLE FIRST, KIE ONLY IF GOOGLE IS UNAVAILABLE.
+         *
+         * The same model (gemini-3.8-flash-tts) through Google's own endpoint is one request that
+         * returns the audio. Kie's wrapper is a queued task we poll for 45 seconds, and when it is
+         * slow it fails with "generate task timeout" — after the owner pressed the button and long
+         * before they see a video. Direct is faster and has nothing to time out, so it goes first;
+         * Kie stays as the fallback for a Google quota or permission problem.
+         */
+        const directStarted = Date.now();
+        const direct = await synthesizeSpeech({
+            text: spokenScript({
+                dialogueText,
+                style: [style, effectiveScene].filter(Boolean).join('. '),
+                scene: effectiveContext
+            }),
+            voiceName: speakerName,
+            languageCode: languageCodeFor({ accent, language })
+        });
+
+        if (direct.ok) {
+            try {
+                const audioUrl = await persistVoiceover(direct.wav, `gemini_direct_${direct.model}`);
+                console.log(
+                    `[Grok TTS API] Direct ${direct.model} voiceover ready in ${Date.now() - directStarted}ms (${direct.wav.length} bytes) — ${audioUrl}`
+                );
+                return NextResponse.json({
+                    success: true,
+                    status: 'completed',
+                    engine: 'gemini-direct',
+                    model: direct.model,
+                    audioUrl
+                });
+            } catch (persistError: any) {
+                // The audio exists but could not be stored. Falling through to Kie would generate (and
+                // bill) a second voiceover for the same request, so report it instead.
+                console.error('[Grok TTS API] Direct TTS produced audio but storage failed:', persistError);
+                return NextResponse.json(
+                    { error: `The voiceover was generated but could not be saved: ${persistError?.message || persistError}` },
+                    { status: 500 }
+                );
+            }
+        }
+
+        console.warn(
+            `[Grok TTS API] Direct Gemini TTS unavailable (${direct.status ?? 'no status'}, retryable=${direct.retryable}): ` +
+                `${direct.error} — falling back to Kie.`
+        );
 
         // Primary model, one retry on a 524 / 'generate task timeout', then the
         // registry's fallback — all decided in lib/agent/media-models.ts.

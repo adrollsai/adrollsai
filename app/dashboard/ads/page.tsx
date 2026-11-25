@@ -275,6 +275,8 @@ export default function AdsPage() {
     selectedVariations: number[],
     winningImageUrls: string[],
     insight: string,
+    /** The measured half of the analysis: what each creative actually did, judged. */
+    analysis?: any,
     leadFormId: string | null,
     batchId: string | null,
     generationCount: number,
@@ -1288,13 +1290,14 @@ export default function AdsPage() {
           isOpen: true,
           mode: 'optimize',
           campaign,
-          status: 'picking',
+          status: 'analyzing',
           step: 2,
-          logs: [{ id: Date.now(), text: `Select creatives and map to inventory products for ${campaign.name}`, type: 'system' }],
+          logs: [{ id: Date.now(), text: `Reading what the creatives in ${campaign.name} actually did...`, type: 'system' }],
           variations: [],
           selectedVariations: [],
           winningImageUrls: [],
           insight: '',
+          analysis: null,
           leadFormId: null,
           batchId: null,
           generationCount: 5,
@@ -1302,15 +1305,26 @@ export default function AdsPage() {
           customInstructions: '',
           isManual: true
       });
+      /**
+       * Analyze on the click, not after a form.
+       *
+       * This used to open a screen asking the owner to pick creatives and map inventory products
+       * before anything was measured. That is the reason the button never actually analysed
+       * performance: the numbers were only ever fetched after the owner had already guessed which
+       * ads were worth looking at. The measurement now comes first and the picking happens after,
+       * informed by it.
+       */
+      void handleStartOptimization(campaign);
   }
 
-  const handleStartOptimization = async () => {
-      if (!orchestrator.campaign) return;
+  const handleStartOptimization = async (targetCampaign?: Campaign) => {
+      const campaign = targetCampaign ?? orchestrator.campaign;
+      if (!campaign) return;
       
       setOrchestrator(prev => ({ 
         ...prev, 
         status: 'analyzing',
-        logs: [...prev.logs, { id: Date.now(), text: `Running Andromeda analysis...`, type: 'user' }]
+        logs: [...prev.logs, { id: Date.now(), text: `Reading the creative performance of ${campaign.name}...`, type: 'user' }]
       }));
 
       const urlParams = new URLSearchParams(window.location.search)
@@ -1322,7 +1336,7 @@ export default function AdsPage() {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' }, 
             body: JSON.stringify({ 
-                campaignId: orchestrator.campaign.id, 
+                campaignId: campaign.id, 
                 step: 'analyze',
                 style: orchestrator.style,
                 userInstructions: orchestrator.customInstructions
@@ -1334,6 +1348,7 @@ export default function AdsPage() {
                   ...prev,
                    status: 'presenting',
                    insight: data.insight,
+                   analysis: data.analysis ?? null,
                    variations: data.variations || [],
                    selectedVariations: (data.variations || []).map((_: any, i: number) => i),
                    winningImageUrls: data.winningImageUrls || [],
@@ -3432,6 +3447,46 @@ export default function AdsPage() {
                                     </div>
                                 ) : orchestrator.status === 'presenting' ? (
                                     <div className="space-y-6">
+                                        {orchestrator.analysis && (
+                                            <div className="bg-white border border-slate-200 rounded-[2rem] p-5 space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                                                        What the creatives actually did
+                                                    </p>
+                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                        {orchestrator.analysis.window}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-slate-800 font-medium leading-relaxed">
+                                                    {orchestrator.analysis.summary}
+                                                </p>
+                                                <div className="space-y-2">
+                                                    {(orchestrator.analysis.creatives || []).slice(0, 6).map((c: any) => {
+                                                        const tone = c.verdict === 'winner' ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                                            : c.verdict === 'loser' ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                                            : c.verdict === 'too_early' ? 'bg-slate-50 border-slate-200 text-slate-500'
+                                                            : 'bg-amber-50 border-amber-200 text-amber-700';
+                                                        const label = c.verdict === 'winner' ? 'Scale this'
+                                                            : c.verdict === 'loser' ? 'Stop this'
+                                                            : c.verdict === 'too_early' ? 'Too early'
+                                                            : 'Holding';
+                                                        return (
+                                                            <div key={c.adId} className={`flex items-start gap-3 p-3 rounded-2xl border ${tone}`}>
+                                                                <span className="text-[9px] font-bold uppercase tracking-widest whitespace-nowrap mt-0.5">{label}</span>
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-xs font-bold text-slate-900 truncate">{c.adName}</p>
+                                                                    <p className="text-[11px] text-slate-600 leading-snug">{c.why}</p>
+                                                                </div>
+                                                                <div className="text-right whitespace-nowrap">
+                                                                    <p className="text-[11px] font-bold text-slate-900">₹{(c.spendPaise / 100).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</p>
+                                                                    <p className="text-[10px] text-slate-500">{c.results} enq · {c.ctrPct !== null ? `${c.ctrPct.toFixed(2)}% ctr` : 'no ctr'}</p>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                         <div className="bg-purple-50 border border-purple-100 p-6 rounded-[2rem] relative overflow-hidden">
                                             <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={48} /></div>
                                             <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-3 flex items-center gap-2"><Sparkles size={12} /> AI Strategy Insight</p>
@@ -3442,7 +3497,7 @@ export default function AdsPage() {
                                             <div className="flex justify-between items-center px-1">
                                                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select Angles to Generate:</p>
                                                 <button 
-                                                    onClick={handleStartOptimization} 
+                                                    onClick={() => handleStartOptimization()} 
                                                     className="text-[10px] font-bold text-purple-600 uppercase tracking-widest hover:text-purple-800 transition-colors flex items-center gap-1"
                                                 >
                                                     <RefreshCw size={10} /> Generate More
@@ -3510,7 +3565,7 @@ export default function AdsPage() {
                                 ) : (
                                     <div className="grid grid-cols-1 gap-4">
                                         <button 
-                                            onClick={handleStartOptimization}
+                                            onClick={() => handleStartOptimization()}
                                             className="group relative bg-white border-2 border-slate-100 hover:border-purple-500 p-6 rounded-[2rem] text-left transition-all hover:shadow-xl overflow-hidden"
                                         >
                                             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity" />

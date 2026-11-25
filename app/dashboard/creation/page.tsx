@@ -1261,7 +1261,7 @@ export default function CreationPage() {
   const handleGenerateGrokTTS = async (messageId: number, dialogueText: string, script: any, refImages: string[]) => {
     if (isThinking) return;
     setIsThinking(true);
-    setCurrentStep('Generating voiceover using Gemini 3.1 Flash TTS...');
+    setCurrentStep('Generating voiceover using Gemini 3.8 Flash TTS...');
 
     try {
         const res = await authFetch('/api/video/grok/tts', {

@@ -3,8 +3,13 @@ node_modules
 .next
 scratch
 *.mp4
-*.wav
-*.pcm
+# `*.wav` and `*.pcm` used to be ignored here, and it quietly broke a shipped feature: the
+# voice samples in public/voices are TRACKED files that the creator workspace plays, they work
+# locally, and every deploy stripped them — so /voices/aoede.wav returned 404 in production and
+# the "Preview Voice Sample" player sat at 0:00 with nothing to play. The only tracked audio in
+# this repo is ~1.1 MB of intentional samples plus the voice-bridge assets, so nothing is being
+# saved by the blanket rule and a whole class of "works on my machine" is being created by it.
+# Large local media lives in scratch/ and the video outputs, which are ignored above.
 *.pdf
 *.log
 scripts/

@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server';
 import { generateKieChat, createKieImageTask, callGemini } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
 import { MEDIA_MODELS } from '@/lib/agent/media-models';
+import { analyseCreatives } from '@/lib/ads/creative-performance';
 
 const FB_GRAPH = META_GRAPH_URL;
 
@@ -148,10 +149,30 @@ export async function POST(request: Request) {
         }
 
         if (step === 'analyze') {
-            // 1. Fetch Ad-Level Insights
-            const insightsRes = await fetch(`${FB_GRAPH}/${campaignId}/insights?fields=ad_id,ad_name,spend,impressions,cpc,actions&level=ad&date_preset=maximum&access_token=${profile.facebook_token}`);
+            /**
+             * Read what the creatives DID, on one window, and judge them before asking a model
+             * anything. Two things in the old version made the analysis meaningless:
+             *   - `date_preset=maximum` compared lifetime totals, so the creative that has been
+             *     running for six months beat the one working this week;
+             *   - it borrowed `spend, impressions, cpc` only, so cost per enquiry — the number the
+             *     owner actually acts on — could not be computed at all, and ranking fell back to
+             *     spend, which puts the expensive loser at the top.
+             * The judgement itself now lives in lib/ads/creative-performance.ts, with the same
+             * 1,000-impression / ₹500 thresholds the rest of the product uses.
+             */
+            const windowPreset = String((body as any)?.datePreset || 'last_30d');
+            const windowLabel = windowPreset === 'last_7d' ? 'the last 7 days'
+                : windowPreset === 'last_14d' ? 'the last 14 days'
+                : windowPreset === 'last_90d' ? 'the last 90 days'
+                : windowPreset === 'maximum' ? 'all time'
+                : 'the last 30 days';
+
+            const insightFields = 'ad_id,ad_name,spend,impressions,clicks,ctr,cpc,reach,frequency,actions,cost_per_action_type';
+            const insightsRes = await fetch(
+                `${FB_GRAPH}/${campaignId}/insights?fields=${insightFields}&level=ad&date_preset=${windowPreset}&access_token=${profile.facebook_token}`
+            );
             const insightsData = await insightsRes.json();
-            
+
             if (!insightsData.data || insightsData.data.length === 0) {
                 return NextResponse.json({ 
                     status: 'insufficient_data', 
@@ -159,98 +180,105 @@ export async function POST(request: Request) {
                 });
             }
 
-            // 1b. Sort by performance (Leads > Spend) and pick top 5
-            const getLeadsCount = (actions: any[]) => {
-                if (!actions) return 0;
-                let total = 0;
-                actions.forEach((act: any) => {
-                    if (act.action_type === 'lead' || act.action_type === 'offsite_conversion.fb_pixel_lead') {
-                        total += parseInt(act.value || "0");
-                    }
-                });
-                return total;
-            };
-
-            const topAdInsights = [...insightsData.data]
-                .sort((a: any, b: any) => {
-                    const leadsA = getLeadsCount(a.actions);
-                    const leadsB = getLeadsCount(b.actions);
-                    if (leadsB !== leadsA) return leadsB - leadsA;
-                    return parseFloat(b.spend || "0") - parseFloat(a.spend || "0");
-                })
-                .slice(0, 5);
-            
-            const topAdIds = topAdInsights.map((ad: any) => ad.ad_id);
-
-            // 2. Fetch Creative Details for ONLY Top Performing Ads
-            const adsRes = await fetch(`${FB_GRAPH}/?ids=${topAdIds.join(',')}&fields=id,name,creative{id,image_url,thumbnail_url,object_story_spec,video_id}&access_token=${profile.facebook_token}`);
-            const adsDataRaw = await adsRes.json();
-            const adsData = { data: Object.values(adsDataRaw) as any[] };
-            
+            // Creatives for every ad that delivered — not just five — so the ranking can name what
+            // the numbers belong to instead of showing spend against an id.
+            const allAdIds = insightsData.data.map((ad: any) => ad.ad_id).filter(Boolean);
             const adsMap: Record<string, any> = {};
-            if (adsData.data) {
-                adsData.data.forEach((ad: any) => {
-                    // Skip if it's a video ad
-                    if (ad.creative?.video_id) return;
-
+            try {
+                const adsRes = await fetch(
+                    `${FB_GRAPH}/?ids=${allAdIds.slice(0, 50).join(',')}&fields=id,name,creative{id,image_url,thumbnail_url,video_id,object_story_spec}&access_token=${profile.facebook_token}`
+                );
+                const adsDataRaw = await adsRes.json();
+                Object.values(adsDataRaw || {}).forEach((ad: any) => {
+                    if (!ad?.id) return;
+                    const link = ad.creative?.object_story_spec?.link_data;
                     adsMap[ad.id] = {
                         name: ad.name,
                         imageUrl: ad.creative?.image_url || ad.creative?.thumbnail_url,
-                        headline: ad.creative?.object_story_spec?.link_data?.name,
-                        primaryText: ad.creative?.object_story_spec?.link_data?.message,
-                        leadFormId: ad.creative?.object_story_spec?.link_data?.call_to_action?.value?.lead_gen_form_id
+                        headline: link?.name,
+                        primaryText: link?.message,
+                        leadFormId: link?.call_to_action?.value?.lead_gen_form_id,
+                        isVideo: Boolean(ad.creative?.video_id)
                     };
                 });
+            } catch (creativeErr: any) {
+                // Missing thumbnails degrade the report; they must not fail the analysis.
+                console.warn('[Optimize] creative details unavailable:', creativeErr?.message);
             }
 
-            const performanceSummary = insightsData.data.map((ad: any) => {
+            const enrichedRows = insightsData.data.map((ad: any) => {
                 const creative = adsMap[ad.ad_id] || {};
-                const spend = parseFloat(ad.spend || "0");
-                const leads = getLeadsCount(ad.actions);
                 return {
-                    ad_id: ad.ad_id,
-                    ad_name: ad.ad_name,
-                    spend,
-                    leads,
-                    imageUrl: creative.imageUrl,
-                    headline: creative.headline,
-                    primaryText: creative.primaryText
+                    ...ad,
+                    imageUrl: creative.imageUrl ?? null,
+                    headline: creative.headline ?? null,
+                    primaryText: creative.primaryText ?? null,
+                    isVideo: creative.isVideo ?? false
                 };
             });
 
-            // Identify a lead form to reuse
+            const analysis = analyseCreatives(enrichedRows, { window: windowLabel });
+
+            // Only creatives worth evolving become reference images. Feeding losers back in as
+            // "visual DNA" is how an account ends up with six expensive variations of the ad that
+            // was already losing.
+            const winningImageUrls = Array.from(
+                new Set(
+                    [...analysis.winners, ...analysis.creatives.filter((c) => c.verdict === 'average')]
+                        .map((c) => c.imageUrl)
+                        .filter(Boolean)
+                )
+            ) as string[];
+
             const leadFormId = Object.values(adsMap).find((a: any) => a.leadFormId)?.leadFormId;
 
-            // 3. Multimodal Analysis
-            const imageUrls = Array.from(new Set(performanceSummary.map((p: any) => p.imageUrl).filter(Boolean))) as string[];
-            
             const llmPrompt = `
             PERSONA: World-class AI Creative Director & Media Buying Strategist (20+ years exp).
-            OBJECTIVE: Analyze the performance of these ${performanceSummary.length} ads and architect 6 "High-Value" professional Meta Ad variations that evolve the winning "Visual DNA" into industry-standard excellence.
-            
+            OBJECTIVE: The measured performance of this campaign's creatives is below. Architect 6 "High-Value" Meta Ad variations that evolve the WINNERS and deliberately do not repeat the losers.
+
             USER STRATEGY NOTES: ${userInstructions || 'None'}
             USER PREFERRED STYLE: ${style}
 
-            AD PERFORMANCE DATA:
-            ${JSON.stringify(performanceSummary, null, 2)}
-            
+            WHAT THE DATA SAYS (${analysis.window}):
+            ${analysis.summary}
+
+            TOTALS: spend ${analysis.totals.spendPaise / 100}, enquiries ${analysis.totals.results}, cost per enquiry ${analysis.totals.costPerResultPaise !== null ? analysis.totals.costPerResultPaise / 100 : 'unknown'}, judged creatives ${analysis.totals.judged}, too early to judge ${analysis.totals.unjudged}.
+
+            VERDICT PER CREATIVE:
+            ${JSON.stringify(
+                analysis.creatives.map((c) => ({
+                    name: c.adName,
+                    verdict: c.verdict,
+                    spend: c.spendPaise / 100,
+                    impressions: c.impressions,
+                    clicks: c.clicks,
+                    ctr_pct: c.ctrPct,
+                    enquiries: c.results,
+                    cost_per_enquiry: c.costPerResultPaise !== null ? c.costPerResultPaise / 100 : null,
+                    headline: c.headline,
+                    primary_text: c.primaryText,
+                    why: c.why
+                })),
+                null,
+                2
+            )}
+
             TASK:
-            1. Identify winning visuals and copy angles.
-            2. Identify failing elements.
-            3. Provide a sharp 2-sentence summary of WHAT works and WHY.
-            4. Suggest 6 brand new "Professional High-End Variations" to test next.
-            
+            1. Say what the winning creatives have in common that the losers do not — cite the numbers.
+            2. Name the one change most likely to lower cost per enquiry next.
+            3. Suggest 6 brand new variations that evolve the winners.
+            Do not claim a creative won if its verdict is "loser" or "too_early".
+
             IMAGE PROMPT GUIDELINES (FOR VARIATIONS):
-            - HYPER-REALISM: The images must look like professional photographs taken with a high-end camera. No "AI sheen".
-            - BRIGHT NATURAL LIGHTING: The visual concepts MUST default to a bright, airy, clean light theme with high-exposure natural morning sunlight and clear bright blue skies. You MUST NOT suggest golden hour, twilight, sunset, evening, or dark interior glow themes unless the user strategy notes explicitly ask for it.
-            - PEOPLE: ALWAYS suggest close-up portrait shots (chest up or head-and-shoulders framing) of fully visible, beautiful, highly attractive, photorealistic people in the foreground showing happy, smiling expressions. To achieve both people close-ups and building consistency, compose the scene as a foreground portrait of the human subjects, with the property/building structure clearly and recognizably visible in the background behind them (slightly out of focus or soft bokeh to look premium). Emphasize that their skin must look highly realistic with clear skin pores and natural details, completely avoiding any plastic, airbrushed, or synthetic AI look. Prohibit tiny, blurry, or distant human figures.
-            - ETHNICITY: Match the ethnicity to the business context (${profile.business_name || 'Global'}).
-            - TYPOGRAPHY & TEXT DENSITY: Make the ad creative highly informative and descriptive. Instruct the model to include clear, clean text overlays: a bold, benefit-driven primary headline, a sub-headline detailing key property specs, prices or features (e.g. BHK size), and display the business logo/branding and contact information clearly. You MUST prominently include and highlight the name of the city or location (e.g., "Zirakpur", "Mohali", "Chandigarh", or "Near Chandigarh" based on the product description) in the text overlays so viewers immediately know where the property is located. If the city or location is NOT mentioned in the product description/details, you MUST NOT hallucinate or invent one; instead, keep it generic or omit the location name entirely (e.g., use "In a Prime Location" or focus solely on property benefits).
-            - HOOK & HIERARCHY: Use a clear visual hook that immediately draws the eye.
-            - VISUAL CONSISTENCY: The generated visuals must keep the structure, design, and architecture extremely close and visually consistent with the actual property photos fed as input, placing the building/structure in the background behind the close-up foreground human subjects. Avoid creating random, unrelated fantasy buildings.
-            - DESIGN: Describe the composition, lighting, and brand encapsulation for the generator.
-            
-            IMPORTANT: Use the winning visuals (${imageUrls.length} provided) as your "Visual DNA". Your image_prompt should describe how to evolve these winners into premium, attention-grabbing agency-grade creatives.
+            - HYPER-REALISM: professional photographs from a high-end camera. No "AI sheen".
+            - BRIGHT NATURAL LIGHTING: bright, airy, clean; high-exposure natural morning sunlight and clear skies. Do not suggest golden hour, twilight, sunset, evening or dark interior glow unless the strategy notes ask for it.
+            - PEOPLE: close-up portrait shots (chest up or head-and-shoulders) of photorealistic, happy, smiling people in the foreground, with the property/building clearly recognizable behind them (soft bokeh). Skin must look real — pores, natural detail; no plastic or airbrushed look. No tiny or distant figures.
+            - ETHNICITY: match the business context (${profile.business_name || 'Global'}).
+            - TYPOGRAPHY: clear, clean overlays — a benefit-led headline, a sub-headline with specs/price, the business logo and contact. Include the city/location when the product details give it; never invent one.
+            - HOOK & HIERARCHY: a visual hook that stops the scroll.
+            - VISUAL CONSISTENCY: keep architecture close to the supplied property photos; no fantasy buildings.
+
+            IMPORTANT: Use the winning visuals (${winningImageUrls.length} provided) as your "Visual DNA".
             
             OUTPUT VALID JSON:
             {
@@ -262,7 +290,7 @@ export async function POST(request: Request) {
             }
             `;
 
-            const aiRaw = await callGemini(llmPrompt, imageUrls); // Using the official Gemini SDK with all images
+            const aiRaw = await callGemini(llmPrompt, winningImageUrls); // Using the official Gemini SDK with all images
             
             let parsed;
             try {
@@ -279,8 +307,10 @@ export async function POST(request: Request) {
                 status: 'success',
                 insight: parsed.insight,
                 variations: parsed.suggested_variations,
-                winningImageUrls: imageUrls,
-                leadFormId
+                winningImageUrls,
+                leadFormId,
+                // The measured half, so the UI can show the numbers rather than only the model's prose.
+                analysis
             });
         }
 

@@ -79,6 +79,7 @@
     "verify:ceo": "esbuild scripts/verify-ceo.ts --bundle --platform=node --format=cjs --outfile=.tmp-ceo.cjs --log-level=warning --external:@supabase/supabase-js --external:@e2b/code-interpreter --external:@aws-sdk/client-s3 && node .tmp-ceo.cjs",
     "verify:ceo-digest": "esbuild scripts/verify-ceo-digest.ts --bundle --platform=node --format=cjs --outfile=.tmp-ceo-digest.cjs --log-level=warning && node .tmp-ceo-digest.cjs",
     "verify:sequences": "esbuild scripts/verify-sequences.ts --bundle --platform=node --format=cjs --packages=external --outfile=.tmp-sequences.cjs --log-level=warning && node .tmp-sequences.cjs",
+    "verify:creative-performance": "esbuild scripts/verify-creative-performance.ts --bundle --platform=node --format=cjs --outfile=.tmp-creative-perf.cjs --log-level=warning && node .tmp-creative-perf.cjs",
     "verify:stt": "esbuild scripts/verify-stt.ts --bundle --platform=node --format=cjs --outfile=.tmp-stt.cjs --log-level=warning && node .tmp-stt.cjs",
     "verify:scraping": "esbuild scripts/verify-scraping.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape.cjs",
     "accept:scraping": "esbuild scripts/scrape-live-acceptance.ts --bundle --platform=node --format=cjs --outfile=.tmp-scrape-live.cjs --log-level=warning --external:@supabase/supabase-js --external:@aws-sdk/client-s3 && node .tmp-scrape-live.cjs",
