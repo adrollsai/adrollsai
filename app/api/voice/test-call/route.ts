@@ -115,14 +115,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: result.error || 'The call could not be placed.' }, { status: 502 });
     }
 
+    /**
+     * Say which voice the call will use.
+     *
+     * The dispatcher has no per-call voice argument — the voice comes from the account's own calling
+     * settings — so the screen's highlighted voice is NOT necessarily the one that dials. Reporting it
+     * stops the next message being "it didn't sound like the voice I picked", which would be a fair
+     * complaint if the UI had implied otherwise.
+     */
+    let voiceName: string | null = null;
+    try {
+      const { data: profile } = await supabaseAdmin.from('profiles').select('voice_name').eq('id', user.id).maybeSingle();
+      voiceName = (profile as any)?.voice_name ?? null;
+    } catch {
+      voiceName = null;
+    }
+
     return NextResponse.json({
       ok: true,
       callId: result.callId ?? result.callSid ?? null,
       to: result.to ?? null,
       scheduled: Boolean(result.scheduled),
-      message: result.scheduled
-        ? `Test call scheduled to ${result.to ?? digits}.`
-        : `Test call placed to ${result.to ?? digits}. Answer it to hear the agent.`,
+      voice: voiceName,
+      message:
+        (result.scheduled
+          ? `Test call scheduled to ${result.to ?? digits}.`
+          : `Test call placed to ${result.to ?? digits}. Answer it to hear the agent.`) +
+        (voiceName ? ` It will use your account's calling voice, ${voiceName}.` : ''),
     });
   } catch (error: any) {
     console.error('[voice/test-call] failed:', error);
