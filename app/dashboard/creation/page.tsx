@@ -2504,10 +2504,10 @@ export default function CreationPage() {
                       <div className="bg-purple-50/70 border border-purple-200/60 rounded-2xl p-3.5 flex flex-col gap-2 animate-in fade-in mt-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest flex items-center gap-1.5">
-                            <Mic size={14} className="text-purple-600 animate-pulse" /> Gemini 3.1 Flash Voiceover Audio ({grokVoice})
+                            <Mic size={14} className="text-purple-600 animate-pulse" /> Gemini 3.8 Flash Voiceover Audio ({grokVoice})
                           </span>
                           <span className="text-[9px] font-bold bg-purple-200/80 text-purple-800 px-2 py-0.5 rounded-full">
-                            Kie.ai TTS
+                            Gemini 3.8 Flash TTS
                           </span>
                         </div>
                         <audio controls src={msg.audioUrl} className="w-full h-10 accent-purple-600 rounded-xl outline-none" />

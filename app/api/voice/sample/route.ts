@@ -66,10 +66,16 @@ export async function GET(request: NextRequest) {
   const accent = params.get('accent');
   const slug = languageSlug(language, accent);
 
-  // 1. A static sample already covers the shipped English voices. It is a public file and costs
+  // 1. A static sample already covers the shipped voices in English. It is a public file and costs
   //    nothing, so it needs no session — and answering before any auth lookup means the player starts
   //    without waiting on one.
-  if (STATIC_SAMPLES.has(voice.toLowerCase()) && slug === 'english') {
+  //
+  //    The check is on the LANGUAGE, not the accent: the shipped clips are English speech, and an
+  //    accent on its own (the creation workspace sends `accent=indian` and no language) is a hint for
+  //    generation, not a reason to sit through one before playing anything.
+  const explicitLanguage = String(language || '').toLowerCase().trim();
+  const englishish = !explicitLanguage || /^(english|english_in|indian_english)$/.test(explicitLanguage);
+  if (STATIC_SAMPLES.has(voice.toLowerCase()) && englishish) {
     return NextResponse.redirect(new URL(`/voices/${voice.toLowerCase()}.wav`, request.nextUrl.origin), 307);
   }
 
