@@ -54,7 +54,16 @@ export async function POST(request: Request) {
             user = userData?.user || null;
         }
 
-        if (!user && !impersonateId) {
+        /**
+         * A signed-in caller, always.
+         *
+         * This used to read `if (!user && !impersonateId)`, and the impersonate parameter has no
+         * other effect anywhere in this file — so appending `?impersonate=<any uuid>` skipped the
+         * auth check entirely and let anyone generate voiceovers on our Gemini key and our R2
+         * bucket. Impersonation is a convenience for an agency looking at a sub-account, and that
+         * person is signed in; a request with no session is not, whoever it claims to be.
+         */
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -96,11 +105,8 @@ export async function POST(request: Request) {
          */
         const directStarted = Date.now();
         const direct = await synthesizeSpeech({
-            text: spokenScript({
-                dialogueText,
-                style: [style, effectiveScene].filter(Boolean).join('. '),
-                scene: effectiveContext
-            }),
+            // The line and nothing else: measured, Gemini reads any style direction out loud.
+            text: spokenScript({ dialogueText }),
             voiceName: speakerName,
             languageCode: languageCodeFor({ accent, language })
         });

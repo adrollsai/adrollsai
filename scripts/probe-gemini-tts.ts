@@ -12,10 +12,9 @@ import {
   console.log('key present:', Boolean(geminiTtsApiKey()));
   const started = Date.now();
   const result = await synthesizeSpeech({
+    // Only the line: Gemini reads any style direction out loud (see lib/media/gemini-tts-direct.ts).
     text: spokenScript({
       dialogueText: 'Nobogent brings you the finest homes in Dholera. Book your site visit today.',
-      style: 'Warm, confident Indian English commercial voiceover',
-      scene: 'Professional recording studio, high-converting ad read',
     }),
     voiceName: 'Aoede',
     languageCode: languageCodeFor({ accent: 'indian', language: 'hinglish' }),

@@ -111,18 +111,37 @@ export function sampleRateFromWav(wav: Buffer): number {
 }
 
 /**
- * The text we actually send.
+ * The text we send. ONLY the words to be spoken.
  *
- * Gemini TTS reads style direction as ordinary prose in front of the line, so a commercial read is
- * asked for in words rather than configured with parameters. Kept here so the direct path and the
- * Kie path ask for the same performance.
+ * This function used to prepend the style and scene description — the usual way of asking Gemini TTS
+ * for a tone ("Say warmly: …"). It was measured, and the model reads that direction OUT LOUD. The
+ * same line took:
+ *
+ *   line alone                                      4.8 s
+ *   "Say warmly and confidently:" + line            7.3 s   (the cue is spoken)
+ *   the studio/style description the route sent    26.9 s   (all of it is spoken)
+ *
+ * and transcription confirmed the words: "Warm, confident Indian English commercial voiceover. A
+ * confident, polished Indian voiceover artist speaking fluent Indian English… Say, Nobogent brings
+ * you the finest homes…". Every voiceover would have opened with twenty seconds of its own art
+ * direction.
+ *
+ * So style is carried by the VOICE CHOICE and the language code, and the prompt carries the script.
+ * A leaked cue is not a nuance: it is the wrong audio, and it is silent — the file exists, it is
+ * speech, and nobody notices until they listen.
  */
-export function spokenScript(input: { dialogueText: string; style?: string; scene?: string }): string {
-  const style = String(input.style || '').trim();
-  const scene = String(input.scene || '').trim();
-  const direction = [style, scene].filter(Boolean).join('. ');
-  const line = String(input.dialogueText || '').trim();
-  return direction ? `${direction}.\n\nSay: ${line}` : line;
+export function spokenScript(input: { dialogueText: string }): string {
+  return String(input.dialogueText || '').trim();
+}
+
+/**
+ * The visual/tone brief, for engines that take direction as a FIELD rather than as prompt text.
+ *
+ * Kie's API has `scene` and `sampleContext`, which are not spoken. Google's endpoint has no such
+ * channel we can trust, so this is deliberately not part of the script above.
+ */
+export function styleDirection(input: { style?: string; scene?: string; context?: string }): string {
+  return [input.style, input.scene, input.context].map((part) => String(part || '').trim()).filter(Boolean).join('. ');
 }
 
 /** Whether a failed call is worth another attempt somewhere else. */
