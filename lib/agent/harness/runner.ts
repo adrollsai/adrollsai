@@ -47,6 +47,36 @@ import { AGENT_MODEL } from '../models';
 /** Generous output budget: reasoning is billed inside it, so a small default starves the answer. */
 const HARNESS_MAX_OUTPUT_TOKENS = 16000;
 
+/**
+ * PER-STEP TIMING — where a turn's seconds actually go.
+ *
+ * The owner's measurement was "43.5s to answer a one-line question", and the fixture said
+ * that was model latency. It was not: reading the session log back step by step showed the
+ * gaps split between the model call, our own awaited database writes (one round trip per
+ * event, one per checkpoint, one per step for the cancel check) and the steering query.
+ *
+ * Those numbers cannot be inferred from the outside — the event log only records WHEN a step
+ * finished, and the two halves have opposite fixes (fewer steps vs a nearer region). So each
+ * step now reports its own breakdown in one line. Cheap (a few arithmetic ops), and it is the
+ * line to read first when a turn feels slow.
+ */
+interface StepTimings {
+  /** Milliseconds spent inside the model call + tool execution for the step. */
+  model: number;
+  /** Milliseconds spent writing this step's events to the log. */
+  persist: number;
+  /** Milliseconds spent on the steering read + checkpoint write at the step boundary. */
+  boundary: number;
+  /** Milliseconds spent on the per-step cancel check. */
+  cancel: number;
+}
+
+/** `process.env.VERCEL_REGION` is the function's region; null locally. Logged so a
+ *  cross-region round trip is visible in the timing line rather than guessed at. */
+function runtimeRegion(): string {
+  return process.env.VERCEL_REGION || process.env.AWS_REGION || 'local';
+}
+
 /** The opening turn a goal-only run needs. See `goalSeedFor`. */
 export interface GoalSeed {
   /** The log entry to append, validated against the `user.message` schema by createEvent. */
@@ -381,6 +411,12 @@ export async function openRunTurn(
   let steps = 0;
   let cancelled = false;
   let firstDeltaAt: number | null = null;
+  // Where the step's milliseconds went. See StepTimings.
+  const timing: StepTimings = { model: 0, persist: 0, boundary: 0, cancel: 0 };
+  let stepStartedAt = Date.now();
+  /** Time the model + tools were actually busy, i.e. wall clock minus our own awaits. */
+  const modelMsForStep = () =>
+    Math.max(0, Date.now() - stepStartedAt - timing.persist - timing.boundary - timing.cancel);
   // Meter this slice's model tokens, sandbox seconds and media calls.
   const usageMeter = startUsageMeter();
 
@@ -630,7 +666,9 @@ export async function openRunTurn(
         Date.now() - startedAt > opts.budgetMs || taken.length >= opts.maxSteps,
       async () => {
         if (cancelled) return true;
+        const cancelStartedAt = Date.now();
         const asked = await isCancelRequested(supabase, run.id);
+        timing.cancel += Date.now() - cancelStartedAt;
         if (asked) cancelled = true;
         return asked;
       },
@@ -644,6 +682,10 @@ export async function openRunTurn(
     },
     onStepFinish: async (step: any) => {
       steps++;
+      // Everything since the last step boundary that our own awaits did not spend is
+      // the model plus its tools — the two halves have opposite fixes, so they are
+      // measured apart rather than reported as one number.
+      const modelMs = modelMsForStep();
       try {
         usageMeter?.addModelUsage(AGENT_MODEL, step?.usage);
       } catch {}
@@ -655,14 +697,29 @@ export async function openRunTurn(
       // numbers restart at 0 in every slice and every turn, so an unscoped id
       // let a later reply overwrite an earlier one in the projection.
       try {
+        const persistStartedAt = Date.now();
         await persistStep(supabase, run.session_id, step, `${run.id.slice(0, 8)}_s${sliceNumber}_`);
+        timing.persist += Date.now() - persistStartedAt;
       } catch (err: any) {
         console.warn('[Harness runner] persistStep failed:', err?.message);
       }
+      // One line per step. This is the line to read first when a turn feels slow: it
+      // separates "the model is thinking" from "we are waiting on our own database".
+      console.log(
+        `[Harness runner] STEP ${steps} +${Date.now() - startedAt}ms ` +
+          `model=${modelMs}ms persist=${timing.persist}ms boundary=${timing.boundary}ms cancel=${timing.cancel}ms ` +
+          `tools=[${(step?.toolCalls || []).map((t: any) => t.toolName).join(', ')}] ` +
+          `tok=${step?.usage?.inputTokens ?? '?'}/${step?.usage?.outputTokens ?? '?'} region=${runtimeRegion()}`
+      );
+      timing.persist = 0;
+      timing.boundary = 0;
+      timing.cancel = 0;
+      stepStartedAt = Date.now();
     },
     // Checkpoint at every step boundary, so a crash can lose at most the one
     // step that was in flight — not the whole slice.
     prepareStep: async ({ messages: stepMessages }: { messages: any[] }) => {
+      const boundaryStartedAt = Date.now();
       // Steering happens here: new user messages become an extra user turn before
       // the next model call, so the agent reacts to them without restarting.
       const steered = await pullSteering();
@@ -670,6 +727,7 @@ export async function openRunTurn(
         ? [...stepMessages, ...steered.map((text) => ({ role: 'user' as const, content: text }))]
         : stepMessages;
       await saveCheckpoint(supabase, run.id, withSteering, sliceNumber);
+      timing.boundary += Date.now() - boundaryStartedAt;
       return steered.length ? { messages: withSteering } : {};
     },
     onFinish: async (event: any) => {

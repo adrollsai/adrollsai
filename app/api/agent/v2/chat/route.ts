@@ -26,6 +26,16 @@ import {
 // CHAT_MAX_DURATION in lib/agent/turn-limits.ts.
 export const maxDuration = 1800;
 
+/**
+ * Same-region-as-the-data. See the long note in ../runs/stream/route.ts: the agent loop is
+ * chatty with Supabase (which lives in ap-southeast-1) and each cross-Pacific round trip was
+ * measured at ~300ms. This is the fallback path for a turn when the session log is
+ * unavailable, so it gets the same treatment.
+ *
+ * Must stay a literal: Next reads route segment config by static analysis.
+ */
+export const preferredRegion = 'sin1';
+
 export async function POST(req: Request) {
   try {
     const supabase = await createClient();

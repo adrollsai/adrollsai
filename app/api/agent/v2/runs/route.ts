@@ -7,6 +7,9 @@ import { enqueueRun, runsAvailableCheck, getRun, toSummary, hasLiveRun, runInstr
 
 export const maxDuration = 30;
 
+/** Same region as the database — see ../runs/stream/route.ts for the measurement. */
+export const preferredRegion = 'sin1';
+
 /**
  * The account a harness run belongs to.
  *

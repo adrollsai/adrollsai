@@ -57,53 +57,94 @@ export function createNobogentAppMcpTools(supabase: SupabaseClient, userId: stri
       }),
       execute: async ({ stage, source, timeframe, search, limit }) => {
         try {
-          let query = supabase
-            .from('leads')
-            .select('id, name, phone, email, pipeline_stage, status, source, ad_name, notes, created_at, budget, summary')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(Math.min(limit || 50, 100));
+          /**
+           * A PAGE IS NOT A TOTAL, AND IT WAS REPORTED AS ONE.
+           *
+           * This returned `count: data.length` from a query capped at 50 rows, so an account with
+           * 1,584 leads was told `count: 50`. The model did not believe it (correctly), distrusted
+           * the tool, and went looking elsewhere — `find_tools`, `org_lead_report`, then the exact
+           * primitive — which is most of why "how many leads do I have?" took 43.5s.
+           *
+           * So the filters are built once and used twice: a `head` count for the exact total, and a
+           * page of rows for reading. The keys say which is which.
+           */
+          const applyFilters = (q: any) => {
+            let query = q.eq('user_id', userId);
 
-          if (stage) {
-            query = query.or(`pipeline_stage.ilike.%${stage}%,status.ilike.%${stage}%`);
-          }
-
-          if (source) {
-            const sLower = source.toLowerCase();
-            if (sLower === 'ads' || sLower === 'ad' || sLower === 'meta' || sLower === 'facebook') {
-              query = query.or('source.ilike.%ad%,source.ilike.%facebook%,source.ilike.%meta%,ad_name.not.is.null');
-            } else {
-              query = query.ilike('source', `%${source}%`);
+            if (stage) {
+              query = query.or(`pipeline_stage.ilike.%${stage}%,status.ilike.%${stage}%`);
             }
-          }
 
-          if (timeframe === 'today') {
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
-            query = query.gte('created_at', startOfToday.toISOString());
-          } else if (timeframe === 'yesterday') {
-            const startOfYesterday = new Date();
-            startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-            startOfYesterday.setHours(0, 0, 0, 0);
-            const endOfYesterday = new Date();
-            endOfYesterday.setHours(0, 0, 0, 0);
-            query = query.gte('created_at', startOfYesterday.toISOString()).lt('created_at', endOfYesterday.toISOString());
-          } else if (timeframe === 'this_week') {
-            const weekAgo = new Date();
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            query = query.gte('created_at', weekAgo.toISOString());
-          }
+            if (source) {
+              const sLower = source.toLowerCase();
+              if (sLower === 'ads' || sLower === 'ad' || sLower === 'meta' || sLower === 'facebook') {
+                query = query.or('source.ilike.%ad%,source.ilike.%facebook%,source.ilike.%meta%,ad_name.not.is.null');
+              } else {
+                query = query.ilike('source', `%${source}%`);
+              }
+            }
 
-          if (search) {
-            query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%,notes.ilike.%${search}%,ad_name.ilike.%${search}%`);
-          }
+            if (timeframe === 'today') {
+              const startOfToday = new Date();
+              startOfToday.setHours(0, 0, 0, 0);
+              query = query.gte('created_at', startOfToday.toISOString());
+            } else if (timeframe === 'yesterday') {
+              const startOfYesterday = new Date();
+              startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+              startOfYesterday.setHours(0, 0, 0, 0);
+              const endOfYesterday = new Date();
+              endOfYesterday.setHours(0, 0, 0, 0);
+              query = query.gte('created_at', startOfYesterday.toISOString()).lt('created_at', endOfYesterday.toISOString());
+            } else if (timeframe === 'this_week') {
+              const weekAgo = new Date();
+              weekAgo.setDate(weekAgo.getDate() - 7);
+              query = query.gte('created_at', weekAgo.toISOString());
+            }
 
-          const { data, error } = await query;
+            if (search) {
+              query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%,notes.ilike.%${search}%,ad_name.ilike.%${search}%`);
+            }
+
+            return query;
+          };
+
+          const pageSize = Math.min(limit || 50, 100);
+
+          // The exact total for these filters, independent of the page size.
+          const { count: totalMatching, error: countError } = await applyFilters(
+            supabase.from('leads').select('id', { count: 'exact', head: true })
+          );
+          if (countError) throw countError;
+
+          const { data, error } = await applyFilters(
+            supabase
+              .from('leads')
+              .select('id, name, phone, email, pipeline_stage, status, source, ad_name, notes, created_at, budget, summary')
+          )
+            .order('created_at', { ascending: false })
+            .limit(pageSize);
           if (error) throw error;
 
+          const returned = data?.length || 0;
+          const total = totalMatching ?? returned;
           return {
             success: true,
-            count: data?.length || 0,
+            /** How many rows this answer carries. NOT the number of leads that match. */
+            returned,
+            /** The exact number of leads matching these filters — quote THIS as a count. */
+            totalMatching: total,
+            /**
+             * Kept for readers that were written against the old shape. It used to be the size of the
+             * page (50 of 1,584); it is now the exact total, which is what every caller meant.
+             */
+            count: total,
+            pageSize,
+            morePages: total > returned,
+            filters: { stage: stage || null, source: source || null, timeframe, search: search || null },
+            note:
+              total > returned
+                ? `Showing ${returned} of ${total} matching leads. ${total} is the exact total for these filters.`
+                : `All ${returned} matching leads are included, and ${returned} is the exact total for these filters.`,
             leads: data || [],
           };
         } catch (err: any) {

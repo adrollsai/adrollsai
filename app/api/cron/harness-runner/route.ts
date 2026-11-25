@@ -18,6 +18,16 @@ import { cronAuthGuard } from '@/lib/agent/harness/cron-auth';
  */
 export const maxDuration = 1800;
 
+/**
+ * The durable worker runs the SAME agent loop as the streaming route, so it needs the same
+ * placement: Supabase production lives in ap-southeast-1 and the default Vercel region is
+ * Washington DC, which put ~300ms on every event write, checkpoint and cancel check.
+ * See app/api/agent/v2/runs/stream/route.ts for the measurement.
+ *
+ * Must stay a literal: Next reads route segment config by static analysis.
+ */
+export const preferredRegion = 'sin1';
+
 /** Leave headroom under maxDuration so we always finish and release leases. */
 const WORKER_BUDGET_MS = 1_740_000;
 /** One slice stops well before the worker does, so its checkpoint is safe. */

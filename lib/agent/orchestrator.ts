@@ -110,7 +110,7 @@ export async function loadTenantContext(
     supabase
       .from('profiles')
       .select(`
-        business_name, mission_statement, custom_prompt, currency, business_info, industry,
+        business_name, mission_statement, custom_prompt, currency, business_info, industry, timezone,
         role, email, ad_account_id, logo_url, brand_color, contact_number, address,
         business_landing_hero_title, business_landing_hero_subtitle
       `)
@@ -133,6 +133,45 @@ export async function loadTenantContext(
   ]);
 
   return { profile: profileResult.data ?? null, skillCatalogue };
+}
+
+/**
+ * Tell the model what time it is, in the business's own timezone.
+ *
+ * The prompt named the timezone three times but never gave a date, so "how many leads did I get
+ * TODAY?" could not be answered directly: measured, the agent spent eight steps and thirteen tool
+ * calls fetching rows to infer the current date from the newest lead, then still answered "today"
+ * loosely. A date filter needs two facts the model cannot know on its own — now, and in which zone —
+ * and both are one string. Pure, so a gate can pin it.
+ */
+export function renderNowBlock(timezone?: string | null): string {
+  const tz = String(timezone || '').trim();
+  const zone = tz || 'UTC';
+  const options: Intl.DateTimeFormatOptions = {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: zone,
+  };
+  let stamp: string;
+  let label = `${zone}${tz ? '' : ' — this account has no timezone set, so UTC is used; say so if a time matters'}`;
+  try {
+    stamp = new Intl.DateTimeFormat('en-GB', options).format(new Date());
+  } catch {
+    label = 'UTC — this account has no valid timezone set, so UTC is used';
+    stamp = new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).format(new Date());
+  }
+  return (
+    `RIGHT NOW: ${stamp} (${label}).\n` +
+    `"Today" means since 00:00 in that timezone, "this week" since Monday 00:00, "this month" since the 1st. ` +
+    `You already know the date: never ask the owner for it, and never read rows to infer it. ` +
+    `A time-bounded question is one filter — created_at gte <the local start of that period, as an ISO timestamp> ` +
+    `— not a list of rows to inspect.`
+  );
 }
 
 export async function createAgentContext(
@@ -340,6 +379,8 @@ You are Nobogent Harness, an autonomous AI operator.
 You operate with complete autonomy, executing tasks end-to-end by chaining modular tool plugins.
 You are multimodal: images the user attaches arrive as real image content, so you can see them directly.
 
+${renderNowBlock(profile?.timezone)}
+
 ALWAYS AVAILABLE — the business's own data:
 - 'nobogent_brand_get_profile': business name, logo URL, brand colour, tagline and contact info.
 - 'nobogent_crm_query_leads' / 'nobogent_crm_create_lead': filter and inspect CRM leads, add leads.
@@ -373,6 +414,20 @@ ALWAYS AVAILABLE — the business's own data:
   Its scope is set by role, not by you: "me" (this account), "org" (this account plus the accounts under it -
   agency/admin), "all" (platform - super_admin only). A user_id filter is refused, because the scope is not
   something a prompt can widen. State the scope it returns whenever you quote a number.
+
+ANSWER THE SMALL QUESTION SMALL. A count, a lookup, a "do I have / how many / which one" question
+is answerable in ONE call, and every extra step costs the owner about two seconds of staring at a
+spinner (measured). So:
+- 'query_account_data' is offered to you directly as a tool as well as through 'call_tool'. You never
+  need 'find_tools' to reach it, and you never need a second tool to confirm what it returned.
+- Counts: operation "count" (exact at any size). A breakdown: operation "aggregate" with groupBy.
+  A count plus a breakdown is TWO calls, so only ask for the breakdown when the owner asked for it.
+- 'nobogent_crm_query_leads' returns a PAGE of leads (it says how many it returned and how many match),
+  never a total. Do not quote its page size as a lead count.
+- Do not cross-check one number with 'org_lead_report' as well: if two tools disagree, say so and stop;
+  do not spend three steps reconciling them unless the owner asked.
+- If a call comes back with an error naming the wrong column, fix the column in ONE retry using the
+  column list the error gives you. Do not explore the table to work it out.
 - 'update_account_data': the WRITE primitive over the same tables and scope. update / insert / delete, dry-run by
   default (it reports the matching rows first and writes nothing until apply:true), capped per call, filters
   required for update and delete, and deleting needs the owner's approval. Use the narrow tool for a single lead

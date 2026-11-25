@@ -41,6 +41,16 @@ export const HOT_TOOLS: readonly string[] = [
   'request_user_input',
   'request_human_approval',
   'deliverArtefact',
+  /**
+   * THE READ PRIMITIVE, INLINE.
+   *
+   * It is the answer to every "how many / which / how often" question, and it was behind
+   * `find_tools` → `call_tool`. Measured on the owner's own account: asked "how many leads do I
+   * have right now?", the agent's first step was `find_tools` — a whole extra model round trip
+   * (~2s here, ~6s in the region we were running in) spent discovering a tool the system prompt
+   * already named. One schema (~2k chars) in every request is a much better trade than a step.
+   */
+  'query_account_data',
 ];
 
 /** How much of each description find_tools returns — enough to choose, not enough to bloat. */

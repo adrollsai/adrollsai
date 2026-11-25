@@ -7,6 +7,9 @@ import { createEvent } from '@/lib/agent/harness/events';
 
 export const maxDuration = 30;
 
+/** Same region as the database — see ../stream/route.ts for the measurement. */
+export const preferredRegion = 'sin1';
+
 /**
  * Whose run this is.
  *

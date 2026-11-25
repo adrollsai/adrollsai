@@ -183,13 +183,27 @@ export function validateQuery(input: {
 
   const has = (column: string) => spec.columns.includes(column);
 
+  /**
+   * What the error says when a column does not exist.
+   *
+   * It used to say only "not a column on leads" — true, and useless: the model then spent three
+   * separate calls (`list`, then two more guesses) working out what the columns actually were,
+   * and every one of those calls is a ~2s model round trip the owner waits through. A live turn
+   * asking "how many leads do I have" cost 43.5s that way. The column list costs nothing to
+   * include and turns the retry into one call.
+   */
+  const columnHint = () =>
+    `Use one of: ${spec.columns.join(', ')}`;
+
   for (const column of input.columns || []) {
     if (!has(column)) {
-      return { ok: false, error: `"${column}" is not a column on ${input.table}. Ask for one of: ${spec.columns.slice(0, 40).join(', ')}${spec.columns.length > 40 ? '…' : ''}` };
+      return { ok: false, error: `"${column}" is not a column on ${input.table}. ${columnHint()}` };
     }
   }
   for (const column of input.groupBy || []) {
-    if (!has(column)) return { ok: false, error: `cannot group by "${column}": not a column on ${input.table}` };
+    if (!has(column)) {
+      return { ok: false, error: `cannot group by "${column}": not a column on ${input.table}. ${columnHint()}` };
+    }
   }
   for (const metric of input.metrics || []) {
     if (!['count', 'sum', 'avg', 'min', 'max'].includes(metric.fn)) {
@@ -199,11 +213,11 @@ export function validateQuery(input: {
       return { ok: false, error: `${metric.fn} needs a column` };
     }
     if (metric.column && !has(metric.column)) {
-      return { ok: false, error: `${metric.fn} column "${metric.column}" is not on ${input.table}` };
+      return { ok: false, error: `${metric.fn} column "${metric.column}" is not on ${input.table}. ${columnHint()}` };
     }
   }
   if (input.orderBy && !has(input.orderBy)) {
-    return { ok: false, error: `cannot order by "${input.orderBy}": not a column on ${input.table}` };
+    return { ok: false, error: `cannot order by "${input.orderBy}": not a column on ${input.table}. ${columnHint()}` };
   }
 
   const filters: FilterSpec[] = [];
@@ -220,7 +234,7 @@ export function validateQuery(input: {
       };
     }
     if (!has(column)) {
-      return { ok: false, error: `cannot filter on "${column}": not a column on ${input.table}` };
+      return { ok: false, error: `cannot filter on "${column}": not a column on ${input.table}. ${columnHint()}` };
     }
     if (op === 'in') {
       if (!Array.isArray(filter.value) || filter.value.length === 0) {

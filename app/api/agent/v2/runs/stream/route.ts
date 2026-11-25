@@ -46,6 +46,25 @@ import { loadTenantContext } from '@/lib/agent/orchestrator';
  */
 export const maxDuration = 300;
 
+/**
+ * RUN THE TURN NEXT TO THE DATA, NOT NEXT TO THE DEVELOPER.
+ *
+ * Measured cause of a 43.5s one-line answer: this function ran in Vercel's default region
+ * (`x-vercel-id: bom1::iad1::…` — compute in Washington DC) while the production Supabase
+ * project is in `ap-southeast-1` (Singapore). Every round trip in the agent loop therefore
+ * crossed the Pacific: reading the session log back from the real logs, each
+ * `harness_append_event` call took ~290-330ms, and a step makes several of them (one per
+ * event, plus the checkpoint write, the steering read and the cancel check). That is well
+ * over a second per step of pure distance, spent before the model is even asked again.
+ *
+ * `sin1` is Singapore: the same region as the database, and far nearer the model provider
+ * than DC. This is a route-level setting on purpose — it moves the agent's own functions
+ * (which are chatty with the DB) without moving image processing or webhooks, which are not.
+ *
+ * Must stay a literal: Next reads route segment config by static analysis.
+ */
+export const preferredRegion = 'sin1';
+
 /** Leave headroom under maxDuration so the slice can still checkpoint and finish. */
 const TURN_BUDGET_MS = 270_000;
 const TURN_MAX_STEPS = 30;
