@@ -831,32 +831,34 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
   useEffect(() => {
     if (adoptedSession.current) return;
     if (harness.available !== true) return;
-    if (userChoseThreadRef.current) {
+
+    /**
+     * A link that names a thread opens THAT thread — and it is the only thing this effect does.
+     *
+     * Ordered before the `userChoseThreadRef` check on purpose. A deep link marks the thread as
+     * chosen from the first render (so the old adopt-last-chat behaviour could not win the race), and
+     * that same flag would otherwise make this effect return before it ever opened anything: the
+     * conversation was in the sidebar, the pane showed the welcome screen.
+     */
+    if (deepLink.session && !deepLink.ceo) {
+      const requestedId = deepLink.session;
+      // Wait for the list before deciding: a second pass runs when the sessions arrive.
+      if (!harness.sessions.some((s) => s.id === requestedId)) return;
       adoptedSession.current = true;
-      return;
-    }
-    if (logSessionId) {
-      adoptedSession.current = true;
+      userChoseThreadRef.current = true;
+      setActiveSessionId(requestedId);
+      setLogSessionId(requestedId);
+      const workspaceId = harness.sessions.find((s) => s.id === requestedId)?.workspaceId;
+      if (workspaceId) setActiveWorkspaceId(workspaceId);
+      void harness.openSession(requestedId);
       return;
     }
 
     adoptedSession.current = true;
-    const requestedId = deepLink.session;
-    if (!requestedId) return; // no deep link: a fresh thread, by design
-
-    // Only open it if it is one of this account's threads — a stale or foreign id must not
-    // leave the pane spinning on a conversation that cannot load.
-    const exists = harness.sessions.some((s) => s.id === requestedId);
-    if (!exists) return;
-
-    userChoseThreadRef.current = true;
-    setActiveSessionId(requestedId);
-    setLogSessionId(requestedId);
-    const workspaceId = harness.sessions.find((s) => s.id === requestedId)?.workspaceId;
-    if (workspaceId) setActiveWorkspaceId(workspaceId);
-    void harness.openSession(requestedId);
+    // No deep link: a fresh thread, by design. Nothing to adopt and nothing to create — a session
+    // row is written on the first message, so a visit that sends nothing leaves no empty tile.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [harness.available, harness.sessions, logSessionId, deepLink.session]);
+  }, [harness.available, harness.sessions, logSessionId, deepLink.session, deepLink.ceo]);
 
   const setMessagesRef = useRef(setMessages);
   setMessagesRef.current = setMessages;
