@@ -42,155 +42,152 @@ export interface AiCallingRule {
   lastCallAt: string
 }
 
+/**
+ * The starter rules every account sees.
+ *
+ * These used to be one property developer's campaigns — "Joy Grand Luxury Residences", "Wave City",
+ * "3 BHK / 4 BHK", "1.8 Cr to 3.5 Cr" — shipped to every account, a film academy included. They also
+ * carried invented statistics (540 calls placed, 198 qualified, "8 mins ago"), which is worse than
+ * useless: an owner reads those numbers as their own results.
+ *
+ * So: industry-neutral copy that speaks in placeholders ({{lead.name}}, {{business}}, {{product}}), and
+ * zeroed stats that say "nothing has happened yet" because nothing has. The wording an account actually
+ * needs comes from its playbook and its own rule edits; these are the four patterns worth starting from.
+ */
 const DEFAULT_AI_CALLING_RULES: AiCallingRule[] = [
   {
     id: 'rule_meta_lead_instant_call',
-    name: 'Meta Lead Ad 60-Second Instant Speed-to-Lead Callback',
+    name: 'New lead: instant speed-to-lead callback',
     triggerSource: 'meta_ad',
-    triggerLabel: 'Meta Instant Form Submission (Wave City & Joy Grand)',
+    triggerLabel: 'New lead form submission',
     voiceAgent: 'Fenrir',
-    voiceTone: 'Crisp, focused & persuasive outbound telecaller',
+    voiceTone: 'Crisp, focused and helpful',
     delaySeconds: 60,
-    objective: 'Qualify buyer intent within 60s and confirm Saturday site visit',
-    firstLine: 'Hi {{lead.name}}, this is the sales desk at Joy Grand Luxury Residences following up on your inquiry. Am I speaking with {{lead.name}}?',
+    objective: 'Reach the new enquiry within a minute, confirm what they want and agree the next step',
+    firstLine:
+      'Hi {{lead.name}}, this is {{business}} calling about the enquiry you just sent us. Is now a good time for a quick question?',
     questions: [
       {
         id: 'q1',
-        question: 'Are you looking to invest or purchase a home for self-use?',
-        fieldKey: 'purchase_purpose',
-        passCriteria: 'Self-use or Investment'
+        question: 'What are you looking for right now, so I can point you to the right thing?',
+        fieldKey: 'interest',
+        passCriteria: 'Any clear answer'
       },
       {
         id: 'q2',
-        question: 'Can I reserve an exclusive site visit slot for you this Saturday at 11 AM?',
-        fieldKey: 'site_visit_confirmed',
-        passCriteria: 'Yes / Saturday / Sunday'
+        question: 'Would it help if we set up a time to go through it properly?',
+        fieldKey: 'next_step_agreed',
+        passCriteria: 'Yes'
       }
     ],
-    transferNumber: '+91 98765 43210',
+    transferNumber: '',
     onPassActions: {
-      crmStage: 'Site Visit Planned',
-      sendWhatsAppBrochure: true,
-      alertAdmin: true
-    },
-    isActive: false, // Default PAUSED as instructed
-    stats: {
-      callsPlaced: 540,
-      connected: 462,
-      qualified: 198,
-      avgDuration: '2m 15s'
-    },
-    lastCallAt: '8 mins ago'
-  },
-  {
-    id: 'rule_housing_portal_callback',
-    name: 'Housing.com & 99Acres Inbound Portal Qualification',
-    triggerSource: 'portal_webhook',
-    triggerLabel: 'Housing.com / 99Acres Inbound Webhook Lead',
-    voiceAgent: 'Puck',
-    voiceTone: 'Clear, upbeat & engaging advisor',
-    delaySeconds: 120,
-    objective: 'Filter out casual inquiries & capture verified budget range',
-    firstLine: 'Hello {{lead.name}}! Thank you for inquiring about our luxury residences on Housing.com. Do you have 2 minutes for a quick project overview?',
-    questions: [
-      {
-        id: 'q1',
-        question: 'What unit configuration are you seeking (3 BHK, 4 BHK, or Sky Villa)?',
-        fieldKey: 'configuration',
-        passCriteria: '3 BHK / 4 BHK / Villa'
-      },
-      {
-        id: 'q2',
-        question: 'Is your budget aligned between 1.8 Cr to 3.5 Cr?',
-        fieldKey: 'budget_fit',
-        passCriteria: 'Yes / Within Range'
-      }
-    ],
-    transferNumber: '+91 98765 43210',
-    onPassActions: {
-      crmStage: 'Pre-Qualified',
+      crmStage: 'Qualified',
       sendWhatsAppBrochure: true,
       alertAdmin: true
     },
     isActive: false, // Default PAUSED
-    stats: {
-      callsPlaced: 380,
-      connected: 312,
-      qualified: 145,
-      avgDuration: '1m 50s'
-    },
-    lastCallAt: '24 mins ago'
+    stats: { callsPlaced: 0, connected: 0, qualified: 0, avgDuration: '0s' },
+    lastCallAt: 'Never'
   },
   {
-    id: 'rule_csv_cold_calling_blast',
-    name: 'High-Net-Worth Investor Calling Campaign (CSV Blast)',
-    triggerSource: 'csv_list',
-    triggerLabel: 'Mohali-Luxury-HNIs-Calling-List.csv (450 Prospects)',
-    voiceAgent: 'Charon',
-    voiceTone: 'Deep, resonant & authoritative wealth advisor',
-    delaySeconds: 0,
-    objective: 'Pitch pre-launch private reservation token with guaranteed rental yield',
-    firstLine: 'Good day {{lead.name}}, I am calling from the executive developer advisory for Wave City. We are extending a pre-launch investor invitation.',
+    id: 'rule_housing_portal_callback',
+    name: 'Portal enquiry: qualify before the callback',
+    triggerSource: 'portal_webhook',
+    triggerLabel: 'Enquiry from a listing portal',
+    voiceAgent: 'Puck',
+    voiceTone: 'Clear, upbeat and engaging',
+    delaySeconds: 120,
+    objective: 'Sort a real enquiry from a casual one, and learn what they actually need',
+    firstLine:
+      'Hello {{lead.name}}, thank you for your enquiry about {{product}} on the portal. Do you have two minutes?',
     questions: [
       {
         id: 'q1',
-        question: 'Are you currently allocating capital towards commercial or luxury real estate assets?',
-        fieldKey: 'investor_readiness',
+        question: 'What exactly are you looking for at the moment?',
+        fieldKey: 'requirement',
+        passCriteria: 'Any clear answer'
+      },
+      {
+        id: 'q2',
+        question: 'Is there a budget range you have in mind, so I only show you what fits?',
+        fieldKey: 'budget_fit',
+        passCriteria: 'A range, or "not decided yet"'
+      }
+    ],
+    transferNumber: '',
+    onPassActions: {
+      crmStage: 'Qualified',
+      sendWhatsAppBrochure: true,
+      alertAdmin: true
+    },
+    isActive: false, // Default PAUSED
+    stats: { callsPlaced: 0, connected: 0, qualified: 0, avgDuration: '0s' },
+    lastCallAt: 'Never'
+  },
+  {
+    id: 'rule_csv_cold_calling_blast',
+    name: 'Cold list: introduce the offer',
+    triggerSource: 'csv_list',
+    triggerLabel: 'Imported calling list',
+    voiceAgent: 'Charon',
+    voiceTone: 'Warm, measured and unhurried',
+    delaySeconds: 0,
+    objective: 'Introduce what we do to a cold list, and find the few who want to hear more',
+    firstLine:
+      'Good day {{lead.name}}, I am calling from {{business}}. We help with {{product}} — may I take thirty seconds to explain?',
+    questions: [
+      {
+        id: 'q1',
+        question: 'Is this something you are dealing with at the moment?',
+        fieldKey: 'interest',
         passCriteria: 'Yes / Interested'
       },
       {
         id: 'q2',
-        question: 'May we share our 12% guaranteed yield prospectus on your WhatsApp?',
+        question: 'May we send the details on WhatsApp so you have them?',
         fieldKey: 'whatsapp_consent',
         passCriteria: 'Yes / Send'
       }
     ],
+    transferNumber: '',
     onPassActions: {
-      crmStage: 'Investor Qualified',
+      crmStage: 'Qualified',
       sendWhatsAppBrochure: true,
       alertAdmin: true
     },
     isActive: false, // Default PAUSED
-    stats: {
-      callsPlaced: 450,
-      connected: 384,
-      qualified: 132,
-      avgDuration: '3m 10s'
-    },
-    lastCallAt: '2 hours ago'
+    stats: { callsPlaced: 0, connected: 0, qualified: 0, avgDuration: '0s' },
+    lastCallAt: 'Never'
   },
   {
     id: 'rule_landing_page_request_call',
-    name: 'Landing Page Instant "Call Me Now" Trigger',
+    name: 'Landing page: "call me now"',
     triggerSource: 'landing_page',
-    triggerLabel: 'High-Converting Landing Page Click-to-Call',
+    triggerLabel: 'Click-to-call on the landing page',
     voiceAgent: 'Aoede',
-    voiceTone: 'Melodic, friendly & natural conversationalist',
+    voiceTone: 'Friendly and natural',
     delaySeconds: 15,
-    objective: 'Instant connection while prospect is still active on webpage',
-    firstLine: 'Hi {{lead.name}}, you just requested a call on our property showcase page. I am here to help you with pricing and availability!',
+    objective: 'Answer while they are still on the page, and answer their first question',
+    firstLine:
+      'Hi {{lead.name}}, you just asked us to call on the {{business}} page. What would you like to know first?',
     questions: [
       {
         id: 'q1',
-        question: 'Which tower or floor plan caught your attention on our website?',
-        fieldKey: 'interested_floorplan',
-        passCriteria: 'Any floor plan'
+        question: 'What caught your attention on the page?',
+        fieldKey: 'interest',
+        passCriteria: 'Any clear answer'
       }
     ],
-    transferNumber: '+91 98765 43210',
+    transferNumber: '',
     onPassActions: {
-      crmStage: 'Hot Inbound Lead',
+      crmStage: 'Qualified',
       sendWhatsAppBrochure: true,
       alertAdmin: true
     },
     isActive: false, // Default PAUSED
-    stats: {
-      callsPlaced: 195,
-      connected: 182,
-      qualified: 94,
-      avgDuration: '2m 45s'
-    },
-    lastCallAt: '1 hour ago'
+    stats: { callsPlaced: 0, connected: 0, qualified: 0, avgDuration: '0s' },
+    lastCallAt: 'Never'
   }
 ]
 

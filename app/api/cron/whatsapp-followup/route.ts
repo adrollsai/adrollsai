@@ -3,6 +3,49 @@ import { createClient } from '@supabase/supabase-js'
 import { outboundRecipient } from '@/lib/automation/test-mode';
 import { calculateLeadScore, parseCustomFields } from '@/utils/lead-scoring'
 import type { ProcessResult } from '@/lib/automation/journey'
+import { chooseWeeklyTemplate, weeklyCheckinPreview, type WeeklyTemplateChoice } from '@/lib/automation/weekly-broadcast'
+
+/**
+ * Which check-in template this account should send.
+ *
+ * Memoised per account for the run: a 16,000-lead book must not make 16,000 calls to Meta to ask the
+ * same question. An account whose templates cannot be listed falls back to the generic template only if
+ * we cannot establish approval at all — never to a guess.
+ */
+const weeklyTemplateCache = new Map<string, WeeklyTemplateChoice>()
+
+async function weeklyTemplateFor(profile: any): Promise<WeeklyTemplateChoice> {
+    const accountId = String(profile?.id ?? 'unknown')
+    const cached = weeklyTemplateCache.get(accountId)
+    if (cached) return cached
+
+    let approved: string[] = []
+    let listed = false
+    try {
+        const { listWhatsAppTemplates } = await import('@/lib/whatsapp/templates')
+        const templates = await listWhatsAppTemplates(supabaseAdmin, accountId)
+        listed = true
+        approved = (templates || [])
+            .filter((template: any) => String(template?.status || '').toUpperCase() === 'APPROVED')
+            .map((template: any) => String(template?.name || ''))
+    } catch (error: any) {
+        console.warn(`[Weekly Followup] ${accountId}: could not list templates — ${error?.message || error}`)
+    }
+
+    const choice = listed
+        ? chooseWeeklyTemplate({ industry: profile?.industry ?? null, approved })
+        : {
+              template: null,
+              source: 'none' as const,
+              reason:
+                  'the approved templates could not be read, so no check-in is sent — sending a template ' +
+                  'we cannot confirm is approved is how a broadcast fails silently for every lead',
+          }
+
+    weeklyTemplateCache.set(accountId, choice)
+    console.log(`[Weekly Followup] ${accountId}: ${choice.source} — ${choice.reason}`)
+    return choice
+}
 
 // Force dynamic execution to bypass Next.js static build cache
 export const dynamic = 'force-dynamic'
@@ -158,7 +201,7 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 if (!profile) {
                     const { data: fetchedProfile } = await supabaseAdmin
                         .from('profiles')
-                        .select('id, business_name, email, custom_domain, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
+                        .select('id, business_name, email, industry, custom_domain, whatsapp_access_token, whatsapp_phone_number_id, facebook_token')
                         .eq('id', lead.user_id)
                         .maybeSingle()
                     if (fetchedProfile) {
@@ -215,12 +258,23 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                 // a lead who had already replied within the last day — i.e.
                 // essentially nobody.
                 //
-                // `nobogent_weekly_checkin_v2` is the VARIABLE-FREE, industry-agnostic template: a
-                // static body plus the three mandatory quick replies (View Offerings / Talk to
-                // Expert / Book an Appointment). v1 interpolated {{1}} = lead name and {{2}} =
-                // business name and said "our latest options", which reads as a property business.
-                // Because v2 has no variables, the send passes NO components at all — a template
-                // with no variables rejects an empty parameters array, so the key is omitted.
+                /**
+                 * WHICH TEMPLATE, FOR WHICH INDUSTRY.
+                 *
+                 * Buttons live inside an approved template — Meta approves the words — so tailoring the
+                 * check-in per industry means choosing a different APPROVED template, not rewording one.
+                 * A real-estate account with a property check-in approved gets "View Properties";
+                 * everyone else gets the variable-free generic one; and if neither is approved we do not
+                 * send at all, because Meta rejects an unknown name and the owner would be left thinking
+                 * the broadcast ran.
+                 */
+                const weekly = await weeklyTemplateFor(profile)
+                if (!weekly.template) {
+                    console.warn(`[Weekly Followup] ${lead.user_id}: ${weekly.reason}`)
+                    skippedCount++
+                    continue
+                }
+
                 const metaUrl = `https://graph.facebook.com/v20.0/${waPhoneId}/messages`
                 const payload = {
                     messaging_product: 'whatsapp',
@@ -228,17 +282,13 @@ async function handleWhatsappWeeklyFollowups(request: Request) {
                     to: cleanPhone,
                     type: 'template',
                     template: {
-                        name: 'nobogent_weekly_checkin_v2',
+                        name: weekly.template,
                         language: { code: 'en_US' }
                     }
                 }
 
-                // Rendered copy for our own chat/inbox log. The delivered message is the approved
-                // template, whose body is now fixed text, so this mirrors it exactly rather than
-                // interpolating names the template no longer carries.
-                const promptText =
-                    'A quick weekly check-in from our team. We have been working on new things this week ' +
-                    'and would love to show you. Tap one of the buttons below and we will take it from there.'
+                // Rendered copy for our own chat/inbox log — what the customer actually receives.
+                const promptText = weeklyCheckinPreview(weekly.template)
 
                 const sendRes = await fetch(metaUrl, {
                     method: 'POST',
