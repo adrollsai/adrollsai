@@ -11,6 +11,7 @@ import { ensureMp3AudioBuffer } from '@/utils/audio-converter';
 import { uploadBufferToR2 } from '../sandbox';
 import { canAfford, estimateMediaCredits } from '../usage';
 import { imageModelFor } from '../media-models';
+import { brandKitFor, withBrandRules } from '../media/brand-kit';
 
 /**
  * Media generation tools: the same models the Nobogent app itself uses, exposed
@@ -433,9 +434,21 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
           // A supplied reference means edit/restyle: the registry decides which
           // image model that is (imageModelFor), so references are never
           // silently dropped by a hard-coded text-to-image id.
-          const referenceUrls = cleanUrls(referenceImageUrls);
+          /**
+           * BRAND LOCK, APPLIED TO EVERY GENERATED IMAGE.
+           *
+           * This tool never read the account's brand at all — no `creative_directives`, no brand colour, no reference to
+           * artwork they had already uploaded — so a plain "make an image" produced whatever the model felt like. A
+           * customer's report: "It isn't following the brand guidelines. I see random colours and fonts and design system
+           * so far." The kit below supplies their colour, logo rules, standing directives and their own catalogue images
+           * as image-to-image references, which is what actually pins a palette down.
+           */
+          const brandKit = await brandKitFor(supabase, userId);
+          const brandedText = withBrandRules(text, brandKit);
+          const supplied = cleanUrls(referenceImageUrls);
+          const referenceUrls = supplied.length ? supplied : brandKit.referenceUrls;
           const taskId = await createKieImageTask(
-            text,
+            brandedText,
             imageModelFor(referenceUrls),
             aspectRatio,
             referenceUrls
