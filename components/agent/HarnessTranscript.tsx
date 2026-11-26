@@ -14,6 +14,7 @@ import AgentMarkdown from './AgentMarkdown';
 import { NoboOrb } from './NoboMascot';
 import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
 import type { HarnessItem } from '@/lib/agent/harness/projection';
+import { visibleTranscriptItems } from '@/lib/agent/harness/transcript-filter';
 import { artifactFrom } from '@/lib/agent/tool-output';
 
 function CopyButton({ text }: { text: string }) {
@@ -244,25 +245,18 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
 
   if (!items.length) return null;
 
-  // The projection can legitimately contain the same turn twice: the live stream
-  // records it, and so does the queued run created from it. Rendering both is what
-  // made the sender's own message — and, with a continuation run, the agent's reply
-  // — appear twice in a row, which reads as a bug in the app rather than a
-  // duplicate event. Collapse consecutive identical text for both roles.
-  //
-  // Whitespace is normalised before comparing: the two writers do not always agree
-  // on trailing newlines, and a difference of one "\n" is not a different message.
-  const norm = (t?: string) => (t || '').replace(/\s+/g, ' ').trim();
-  const visible = items.filter((item, i) => {
-    if (item.kind !== 'user' && item.kind !== 'assistant') return true;
-    const prev = items[i - 1];
-    if (!prev || prev.kind !== item.kind) return true;
-    const prevText = norm((prev as { text?: string }).text);
-    const ownText = norm((item as { text?: string }).text);
-    // An empty repeat is never meaningful; a different text always is.
-    if (!ownText) return false;
-    return prevText !== ownText;
-  });
+  /**
+   * The projection can legitimately contain the same ASSISTANT turn twice: the live stream records it,
+   * and so does the queued run created from it. Rendering both made the agent's reply appear twice in a
+   * row, which reads as a bug in the app rather than a duplicate event.
+   *
+   * A user message is different, and the difference is the fix for "my message disappeared": two
+   * identical user messages are two separate acts, not one row written twice. This used to collapse
+   * them, so an owner who asked "what is the update?", saw nothing, and asked again watched the second
+   * attempt vanish. `visibleTranscriptItems` owns the rule (and `verify:chat-steering` proves it)
+   * because it is a behaviour, not a detail of this component.
+   */
+  const visible = visibleTranscriptItems(items);
 
   /**
    * One card per distinct staged action, not one per retry.

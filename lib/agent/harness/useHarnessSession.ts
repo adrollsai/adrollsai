@@ -14,6 +14,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HarnessState } from './projection';
+import { keepUncommittedUserItems } from './projection';
 import type { HarnessEvent } from './events';
 import type { RunSummary } from './runs';
 import { createClient as createBrowserClient } from '@/utils/supabase/client';
@@ -57,7 +58,13 @@ export interface UseHarnessSession {
   removeSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   createWorkspace: (name: string) => Promise<void>;
-  /** Optimistically append a human message, then persist it. */
+  /**
+   * Optimistically append a human message, then persist it.
+   *
+   * Returns the message id on success and NULL when it could not be written to the log — in which case
+   * the optimistic row is removed again and the caller must tell the owner the truth (see the catch
+   * block below; this is the "my message disappeared" repair).
+   */
   appendUserMessage: (
     text: string,
     attachments?: Array<{ name: string; url?: string; type: string; size?: number }>,
@@ -201,7 +208,8 @@ export function useHarnessSession(impersonateId?: string | null): UseHarnessSess
       const body = await jsonFetch(withImp(`/api/agent/v2/sessions/${id}`));
       const nextState = body.state as HarnessState;
       setActiveId(id);
-      setState(nextState);
+      // Same rule as refreshProjection: opening a session must not delete an unsaved message.
+      setState((prev) => keepUncommittedUserItems(prev, nextState));
       const events: HarnessEvent[] = Array.isArray(body.events) ? body.events : [];
       lastSeqRef.current = events.reduce((max, e) => Math.max(max, e.seq || 0), 0);
       setError(null);
@@ -344,7 +352,28 @@ export function useHarnessSession(impersonateId?: string | null): UseHarnessSess
           }),
         });
       } catch (err: any) {
+        /**
+         * The message did NOT reach the log, so it must not stay on screen as if it had.
+         *
+         * This used to keep the optimistic row and return the id anyway, so the caller told the owner
+         * their message had been delivered to the running task when nothing had been written. A message
+         * that is shown but never persisted is the exact failure reported as "it just disappears": the
+         * next projection refresh removed the row, and the only thing left was a success message about a
+         * send that never happened. Remove it here and return null so the caller can put the text back.
+         */
+        setState((prev) => {
+          if (!prev) return prev;
+          const seenIds = { ...prev.seenIds };
+          delete seenIds[id];
+          return {
+            ...prev,
+            items: prev.items.filter((item) => item.id !== id),
+            seenIds,
+            version: prev.version + 1,
+          };
+        });
         setError(err?.message || 'Could not save your message to the log');
+        return null;
       }
 
       return id;
@@ -379,7 +408,8 @@ export function useHarnessSession(impersonateId?: string | null): UseHarnessSess
     try {
       const body = await jsonFetch(withImp(`/api/agent/v2/sessions/${sessionId}`));
       const next = body.state as HarnessState;
-      setState(next);
+      // A refresh must not delete a message the owner just sent: see keepUncommittedUserItems.
+      setState((prev) => keepUncommittedUserItems(prev, next));
       const events: HarnessEvent[] = Array.isArray(body.events) ? body.events : [];
       lastSeqRef.current = events.reduce((max, e) => Math.max(max, e.seq || 0), 0);
       return next;

@@ -1236,10 +1236,26 @@ export default function AgentChat({ impersonateId, impersonatedName }: AgentChat
        */
       const liveSession = logSessionIdRef.current;
       if (harness.runInProgress && liveSession) {
-        void harness.appendUserMessage(fullPrompt, undefined, liveSession);
+        /**
+         * AWAIT IT, AND DO NOT CLAIM DELIVERY UNTIL IT LANDED.
+         *
+         * This was `void harness.appendUserMessage(...)` followed immediately by a success toast, so the
+         * owner was told "delivered to the running task" whether or not the write succeeded — and when it
+         * failed, the optimistic bubble was removed by the next projection refresh and the message seemed
+         * to evaporate. The text goes back into the composer on failure, with an error that says it was
+         * not sent, because losing what someone typed is worse than a visible failure.
+         */
+        void (async () => {
+          const appended = await harness.appendUserMessage(fullPrompt, undefined, liveSession);
+          if (!appended) {
+            setInput((current) => (current ? current : fullPrompt));
+            toast.error('That message did not reach the running task — it is back in the box. Send it again.');
+            return;
+          }
+          toast.success('Delivered to the running task — it will see this before its next step.');
+        })();
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
-        toast.success('Delivered to the running task — it will see this before its next step.');
         return;
       }
       queueRef.current.push(fullPrompt);

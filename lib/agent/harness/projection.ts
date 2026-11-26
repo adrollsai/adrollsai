@@ -258,6 +258,41 @@ export function project(sessionId: string, events: HarnessEvent[]): HarnessState
   return state;
 }
 
+/**
+ * Keep a user message that the newest server projection has not seen yet.
+ *
+ * WHY
+ * A projection refresh REPLACES the client's state with `body.state`, which is folded from the event
+ * log at read time. The client appends its own message optimistically — that is what makes the bubble
+ * appear the instant Enter is pressed — and the running turn writes events every step, so a refresh is
+ * scheduled roughly every 250ms. If one lands while the append's POST is still in flight, the snapshot
+ * cannot contain the new message, and replacing state wholesale deletes the bubble the owner is
+ * watching. That is the observed symptom: a steering message flashes into the transcript and then
+ * vanishes, with nothing to say it was ever there.
+ *
+ * The log remains authoritative: a message that really committed is present in the next snapshot by
+ * its own id, so it is not duplicated here. Only ids the snapshot does not have are carried over, and
+ * only for `user` items — an assistant block is rebuilt from the projection on purpose.
+ */
+export function keepUncommittedUserItems(
+  prev: HarnessState | null,
+  next: HarnessState | null
+): HarnessState | null {
+  if (!next) return next;
+  if (!prev || prev.sessionId !== next.sessionId) return next;
+  const known = new Set(next.items.map((item) => item.id));
+  const pending = prev.items.filter((item) => item.kind === 'user' && !known.has(item.id));
+  if (!pending.length) return next;
+  const seenIds = { ...next.seenIds };
+  for (const item of pending) seenIds[item.id] = true;
+  return {
+    ...next,
+    items: [...next.items, ...pending],
+    seenIds,
+    version: next.version + 1,
+  };
+}
+
 /** Derived: the plain-text transcript, useful for export, copy and re-prompting. */
 export function toTranscript(state: HarnessState): string {
   return state.items
