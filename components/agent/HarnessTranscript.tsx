@@ -299,6 +299,36 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
     return -1;
   })();
 
+  /**
+   * BRING A NEW APPROVAL CARD INTO VIEW.
+   *
+   * The card was pinned with `sticky bottom-0`, which only helps while its own position is still in the scrollport —
+   * an owner watching the agent work stays at the bottom, the card is staged further up the transcript, and it is
+   * never seen. The owner waited for the agent to do something, found nothing, scrolled up, and discovered the
+   * approval had been sitting there. A card that needs a tap must announce itself.
+   *
+   * So: when a DIFFERENT approval becomes the pinned one, scroll it to the middle of the viewport once. It is keyed on
+   * the approval id, so it never fights the user's own scrolling afterwards.
+   */
+  const pinnedRef = React.useRef<HTMLDivElement | null>(null)
+  const lastPinnedApprovalId = React.useRef<string | null>(null)
+  const pinnedItem: any = pinnedIndex >= 0 ? deduped[pinnedIndex] : null
+  const pinnedApprovalId: string | null = pinnedItem?.id ?? null
+  React.useEffect(() => {
+    if (!pinnedApprovalId) return
+    if (pinnedApprovalId === lastPinnedApprovalId.current) return
+    lastPinnedApprovalId.current = pinnedApprovalId
+    // Deferred a frame so the card is laid out before we measure where it is.
+    const raf = requestAnimationFrame(() => {
+      try {
+        pinnedRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } catch {
+        /* an old browser without smooth scrolling still gets the card, just without the animation */
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [pinnedApprovalId])
+
   return (
     <>
       {deduped.map((item, idx) => {
@@ -327,6 +357,7 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
             return (
               <div
                 key={item.id}
+                ref={pinnedRef}
                 data-pinned-approval="true"
                 className="sticky bottom-0 z-20 pt-3 pb-1"
                 style={{
