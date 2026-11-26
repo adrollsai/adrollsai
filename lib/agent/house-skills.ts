@@ -18,6 +18,8 @@
 import { renderPipelineKnowledge } from './creative/video-pipelines';
 import { renderVideoGateGuidance } from './video-plan';
 
+import { PRODUCT_GUIDES } from './house-skills/product-guide';
+
 export interface HouseSkill {
   /** Stable name. The agent calls get_skill with this exact string. */
   name: string;
@@ -27,7 +29,7 @@ export interface HouseSkill {
   content: string;
 }
 
-export const HOUSE_SKILLS: readonly HouseSkill[] = [
+const HOUSE_SKILLS_BASE: readonly HouseSkill[] = [
   {
     name: 'nobogent-video-gates',
     description:
@@ -410,6 +412,24 @@ will read the text in it.
 ];
 
 /** House skills by name, for `get_skill`. */
+/**
+ * PRODUCT GUIDES, GENERATED FROM THE LIVE UI.
+ *
+ * The agent had no documentation of this product at all, so "how do I launch a WhatsApp broadcast" was answered by
+ * improvising button names. These entries are written by `npm run ui:guide`, which walks the real interface and records
+ * the routes, section headings and exact labels it finds. They load on demand like every other house skill.
+ */
+export const HOUSE_SKILLS: readonly HouseSkill[] = [
+  ...HOUSE_SKILLS_BASE,
+  ...PRODUCT_GUIDES.map((doc) => ({
+    name: doc.name,
+    description:
+      `How to use the product: ${doc.title}. Load this before answering any "how do I…" or "where is…" question about ` +
+      'it, and use its exact button labels and route.',
+    content: doc.body,
+  })),
+];
+
 export function houseSkill(name: string): HouseSkill | null {
   const wanted = String(name ?? '').trim().toLowerCase();
   return HOUSE_SKILLS.find((skill) => skill.name.toLowerCase() === wanted) ?? null;
