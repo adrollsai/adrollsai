@@ -3,6 +3,7 @@ import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask, createGrokVideoTask, createGeminiTTS, queryKieTask, callDeepSeekWithUsage } from '@/utils/external-apis';
 import { checkLimitAndIncrement, refundLimit } from '@/utils/subscription-server';
+import { brandKitFor } from '@/lib/agent/media/brand-kit';
 import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import crypto from 'crypto';
@@ -933,7 +934,27 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
             prompts = await Promise.all(promptPromises);
         }
 
-        // Return early if preview mode is requested
+        /**
+         * THE CREATION TAB IS WHERE MOST CREATIVES ARE MADE, AND IT HAD NO BRAND KIT EITHER.
+         *
+         * Customer, looking at a Black Friday poster made here: "Still not taking the brand guidelines ... This was done
+         * in the creation section only." The brand kit was wired into the agent's image tools, so agent-made images
+         * followed it while the Creation tab — the path most owners actually use — kept generating from its own
+         * industry-vocabulary prompt with a palette the model chose.
+         *
+         * So the kit is appended to every prompt this route produces, image or video, before anything is launched.
+         */
+        if (prompts.length) {
+            const brandKit = await brandKitFor(supabaseAdmin as any, targetUserId);
+            if (brandKit.rules) {
+                prompts = prompts.map((p) =>
+                    `${p}\n\nBRAND LOCK — this business's own design system, which outranks generic styling:\n${brandKit.rules}`
+                );
+                console.log(`[Video Generate] Brand lock applied to ${prompts.length} prompt(s): ${brandKit.sources.join(', ')}`);
+            } else {
+                console.log('[Video Generate] No brand kit on file for this account (no colour, no rules) — prompts unchanged.');
+            }
+        }
         if (body.preview === true) {
             console.log(`[Video Generate] Preview mode. Returning synthesized prompts without starting tasks.`);
             return NextResponse.json({
