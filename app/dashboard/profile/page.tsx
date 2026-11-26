@@ -45,6 +45,7 @@ import {
   Coins,
   Folder,
   Clock,
+  Palette,
   Bell,
   Workflow,
   Check,
@@ -3942,6 +3943,28 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <ChevronRight size={20} className="text-slate-400 group-hover:text-violet-600 transition-colors" />
+                </button>
+
+                <button 
+                  onClick={() => router.push(`/dashboard/profile/brand${impersonateId ? `?impersonate=${impersonateId}` : ''}`)} 
+                  className="w-full p-4 sm:p-5 flex items-center justify-between hover:bg-indigo-50/40 transition-all border-b border-slate-100 group cursor-pointer"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="bg-gradient-to-br from-indigo-500/10 to-violet-500/10 text-indigo-600 p-3 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
+                      <Palette size={20} />
+                    </div>
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900 group-hover:text-indigo-600 transition-colors">
+                          Brand Kit
+                        </span>
+                      </div>
+                      <span className="text-xs text-slate-500 font-medium">
+                        Your brand colour, the artwork the AI copies, and the rules it must follow
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronRight size={20} className="text-slate-400 group-hover:text-indigo-600 transition-colors" />
                 </button>
 
                 <button 
