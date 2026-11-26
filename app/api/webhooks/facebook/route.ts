@@ -15,6 +15,7 @@ import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
 import { buildWhatsAppMenu, whatsAppMenuPayload } from '@/lib/automation/whatsapp-button-menu'
+import { appointmentSubtitleFor, catalogueCtaCopy, offeringKindFor } from '@/lib/automation/catalogue-cta'
 import { defaultProductButtonLabel } from '@/lib/automation/ceo'
 import { decideReopenOwner } from '@/lib/crm/reopen-owner'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
@@ -2514,11 +2515,31 @@ export async function POST(request: Request) {
                                         ownerUserId === 'c7bede84-d7ea-4b02-bbbb-017d24a37914' ||
                                         (ownerBusinessName || '').toLowerCase().includes('pipixel');
 
-                                    // Check if this business actually sells properties (has entries in properties table)
+                                    // What is this account actually selling? Read from the INDUSTRY and the row TYPES,
+                                    // not from the fact that the catalogue table has rows.
+                                    //
+                                    // Measured in production: `hasProperties` counted rows, and Procolor Film Academy's
+                                    // four rows are COURSES ("Diploma in Cinematography", "Master Video Editing", …) all
+                                    // saved as `property_type: 'Generic'`. So a film academy passed the "sells properties"
+                                    // test and the bot offered its leads "🏢 Available Properties — Explore our latest
+                                    // premium properties catalog with pricing, layouts, and amenities". The owner's
+                                    // instruction, twice: nothing property-specific for businesses that do not sell property.
                                     const { count: propertiesCount } = await supabaseAdmin
                                         .from('properties')
                                         .select('id', { count: 'exact', head: true })
                                         .eq('user_id', ownerUserId);
+                                    const { data: catalogueRows } = await supabaseAdmin
+                                        .from('properties')
+                                        .select('property_type')
+                                        .eq('user_id', ownerUserId)
+                                        .limit(50);
+                                    const offeringKind = !isNobogentAccount && !isPipixelAccount
+                                        ? offeringKindFor({
+                                              industry: ownerIndustry,
+                                              rowTypes: (catalogueRows || []).map((row: any) => row?.property_type),
+                                          })
+                                        : 'offerings';
+                                    // Still used for the "does this lead get a catalogue at all" decisions below.
                                     const hasProperties = !isNobogentAccount && !isPipixelAccount && ((propertiesCount || 0) > 0);
 
                                     // Helper: Send 3-Button Standard Action Menu (dynamic based on business type / industry)
@@ -3451,19 +3472,24 @@ RULES:
                                                 catalogueLink
                                             );
                                         } else if (hasProperties) {
-                                            await sendCtaUrlMessage(
-                                                "🏢 Available Properties",
-                                                "Explore our latest premium properties catalog with pricing, layouts, and amenities:",
-                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "View Properties 🏢",
-                                                catalogueLink
-                                            );
+                                            /**
+                                             * The copy comes from what this account sells, never from a property template.
+                                             * A film academy whose courses happen to live in the catalogue table used to be
+                                             * offered "Available Properties … pricing, layouts, and amenities".
+                                             */
+                                            const cta = catalogueCtaCopy({
+                                                kind: offeringKind,
+                                                catalogueLabel: catalogueBtnText,
+                                                businessName: ownerBusinessName,
+                                            });
+                                            await sendCtaUrlMessage(cta.title, cta.body, cta.buttonText, catalogueLink);
                                         } else {
-                                            await sendCtaUrlMessage(
-                                                `✨ ${ownerBusinessName || 'Our Offerings'}`,
-                                                "Explore our latest products, services, and solutions:",
-                                                catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText : "Explore More ✨",
-                                                catalogueLink
-                                            );
+                                            const cta = catalogueCtaCopy({
+                                                kind: offeringKind,
+                                                catalogueLabel: catalogueBtnText,
+                                                businessName: ownerBusinessName,
+                                            });
+                                            await sendCtaUrlMessage(cta.title, cta.body, cta.buttonText, catalogueLink);
                                         }
 
                                         // If qualification is not yet completed, gently follow up with the pending qualification question (NON-instant form leads only)
@@ -3553,12 +3579,10 @@ RULES:
 
                                         const appointmentTitle = isPipixelAccount ? "📅 Schedule Strategy Call" : isNobogentAccount ? "📅 Book Strategy Call" : "📅 Schedule Appointment";
                                         const appointmentSubtitle = isPipixelAccount
-                                            ? "Select a convenient slot for a 1-on-1 digital growth consultation with our marketing team:"
+                                            ? appointmentSubtitleFor('agency')
                                             : isNobogentAccount
-                                            ? "Select a convenient slot for a 1-on-1 walkthrough of the Nobogent AI sales platform:"
-                                            : hasProperties
-                                            ? "Select a convenient consultation or site visit slot directly from our calendar:"
-                                            : "Select a convenient consultation slot directly from our calendar:";
+                                            ? appointmentSubtitleFor('platform')
+                                            : appointmentSubtitleFor(offeringKind);
                                         const appointmentBtnText = isPipixelAccount ? "Schedule Call 📅" : isNobogentAccount ? "Book Strategy Call 📅" : hasProperties ? "Book Appointment 📅" : "Schedule Call 📅";
 
                                         await sendCtaUrlMessage(

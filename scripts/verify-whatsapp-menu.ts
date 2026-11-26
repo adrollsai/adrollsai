@@ -31,6 +31,12 @@ import {
   clampButtonTitle,
   whatsAppMenuPayload,
 } from '../lib/automation/whatsapp-button-menu';
+import {
+  appointmentSubtitleFor,
+  catalogueCtaCopy,
+  containsPropertyVocabulary,
+  offeringKindFor,
+} from '../lib/automation/catalogue-cta';
 
 let pass = 0;
 let fail = 0;
@@ -163,10 +169,74 @@ head('5. The webhook builds the menu here, not from the tenant row');
   );
 }
 
+// ── 6. no property vocabulary for a business that does not sell property ────
+head('6. A film academy is never offered "premium properties"');
+
+{
+  // Procolor's real rows, verbatim: courses, all stored with the generic catalogue type.
+  const procolorRows = ['Generic', 'Generic', 'Generic', 'Generic'];
+  const kind = offeringKindFor({ industry: 'education', rowTypes: procolorRows });
+  check("an academy's generic catalogue rows are courses, not properties", kind === 'courses', kind);
+
+  const cta = catalogueCtaCopy({
+    kind,
+    catalogueLabel: 'View Courses',
+    businessName: 'Procolor Film Academy',
+  });
+  const allowed = containsPropertyVocabulary(`${cta.title} ${cta.body} ${cta.buttonText}`);
+  check('its CTA copy contains zero property vocabulary', allowed.length === 0, allowed.join(', ') || 'clean');
+  check('the button keeps the tenant\'s words', cta.buttonText === 'View Courses', cta.buttonText);
+  check('and the copy is about courses', /course/i.test(`${cta.title} ${cta.body}`), `${cta.title} | ${cta.body}`);
+
+  const subtitle = appointmentSubtitleFor(kind);
+  check('no "site visit" in a non-property appointment CTA', containsPropertyVocabulary(subtitle).length === 0, containsPropertyVocabulary(subtitle).join(', ') || 'clean');
+
+  // A real brokerage keeps its own words — the point is not to erase property language, it is to stop leaking it.
+  const brokerage = offeringKindFor({ industry: 'Real Estate', rowTypes: ['Residential', 'Plot'] });
+  check('a real estate account still reads as properties', brokerage === 'properties', brokerage);
+  const brokerageCta = catalogueCtaCopy({ kind: brokerage, catalogueLabel: 'View Properties', businessName: 'Blue Square' });
+  check('and keeps its property wording', /propert/i.test(brokerageCta.title), brokerageCta.title);
+  check('with "site visit" reserved for it', /site visit/i.test(appointmentSubtitleFor('properties')));
+
+  // The row type is the second signal, so a brokerage that has not set an industry still reads correctly.
+  check(
+    'a specific property row type alone is enough',
+    offeringKindFor({ industry: null, rowTypes: ['Generic', 'Villa'] }) === 'properties',
+  );
+  for (const industry of ['education', 'healthcare', 'immigration', 'digital agency', '']) {
+    const copy = catalogueCtaCopy({ kind: offeringKindFor({ industry, rowTypes: ['Generic'] }), businessName: 'X' });
+    check(
+      `${industry || '(no industry)'} gets no property words`,
+      containsPropertyVocabulary(`${copy.title} ${copy.body} ${copy.buttonText}`).length === 0,
+    );
+  }
+}
+
+// ── 7. the hardcoded property copy is gone from the webhook ─────────────────
+head('7. The webhook no longer carries property copy for everyone');
+
+{
+  const route = readFileSync('app/api/webhooks/facebook/route.ts', 'utf8');
+  // Assert on the CALL, not on prose: the file legitimately quotes the old wording in a comment explaining it.
+  check(
+    'the hardcoded property CTA call is gone',
+    !/sendCtaUrlMessage\(\s*"🏢 Available Properties"/.test(route) &&
+      !/"Explore our latest premium properties catalog with pricing, layouts, and amenities:"/.test(route),
+  );
+  check('the CTA copy comes from the helper', /catalogueCtaCopy\(\{/.test(route));
+  check('the appointment subtitle does too', /appointmentSubtitleFor\(offeringKind\)/.test(route));
+  check('and the kind is derived from industry + row types', /offeringKindFor\(\{/.test(route));
+  check(
+    'the "sells properties" test is no longer just a row count',
+    !/const hasProperties = !isNobogentAccount && !isPipixelAccount && \(\(propertiesCount \|\| 0\) > 0\);/.test(route) ||
+      /offeringKindFor\(\{/.test(route),
+  );
+}
+
 console.log(`\n${'─'.repeat(62)}`);
 console.log(`${pass} passed, ${fail} failed`);
 if (fail > 0) {
-  console.error('\nA lead must always be offered the website, an expert and an appointment.');
+  console.error('\nA lead must always be offered the website, an expert and an appointment — in their own business\'s words.');
   process.exit(1);
 }
-console.log('Three buttons, always — the tenant row can change the words, not the actions.');
+console.log('Three buttons, always — and no property words for a business that sells courses.');
