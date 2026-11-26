@@ -345,8 +345,8 @@ export default function AccountHistoryPage() {
       default:
         return {
           icon: <Clock className="w-4 h-4 text-slate-400" />,
-          bg: 'bg-slate-900 border-slate-800',
-          badgeBg: 'bg-slate-800 text-slate-300 border-slate-700'
+          bg: 'bg-white border-slate-200',
+          badgeBg: 'bg-slate-100 text-slate-600 border-slate-200'
         }
     }
   }
@@ -373,15 +373,15 @@ export default function AccountHistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07090E] text-slate-100 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-[#07090E] text-slate-900 p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-6">
 
         {/* TOP BAR / NAVIGATION */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
           <div className="flex items-center gap-3">
             <button
               onClick={() => router.push(`/dashboard/profile${impersonateId ? `?impersonate=${impersonateId}` : ''}`)}
-              className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 hover:border-slate-700 transition-all flex items-center justify-center shadow-sm"
+              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-white hover:bg-slate-100 hover:border-slate-200 transition-all flex items-center justify-center shadow-sm"
               title="Back to Profile"
             >
               <ArrowLeft size={18} />
@@ -404,7 +404,7 @@ export default function AccountHistoryPage() {
 
           <div className="flex items-center gap-2.5">
             {data?.targetUser && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-slate-300">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/80 border border-slate-200 text-xs text-slate-600">
                 <User size={13} className="text-slate-400" />
                 <span className="font-medium text-white">{data.targetUser.name}</span>
                 <span className="text-slate-500 text-[11px]">({data.targetUser.email})</span>
@@ -413,7 +413,7 @@ export default function AccountHistoryPage() {
             <button
               onClick={() => fetchActivities(true)}
               disabled={refreshing}
-              className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800 transition-all flex items-center gap-2 text-xs font-semibold shadow-sm"
+              className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-white hover:bg-slate-100 transition-all flex items-center gap-2 text-xs font-semibold shadow-sm"
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin text-blue-400' : ''} />
               <span>Refresh</span>
@@ -430,7 +430,7 @@ export default function AccountHistoryPage() {
 
         {/* SUMMARY STAT CARDS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div className="bg-white/60 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
             <div className="flex items-center justify-between text-slate-400">
               <span className="text-xs font-medium uppercase tracking-wider">Total Actions</span>
               <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -443,7 +443,7 @@ export default function AccountHistoryPage() {
             </div>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div className="bg-white/60 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
             <div className="flex items-center justify-between text-slate-400">
               <span className="text-xs font-medium uppercase tracking-wider">Lead Transfers</span>
               <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
@@ -456,7 +456,7 @@ export default function AccountHistoryPage() {
             </div>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div className="bg-white/60 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
             <div className="flex items-center justify-between text-slate-400">
               <span className="text-xs font-medium uppercase tracking-wider">Creations & AI</span>
               <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -469,7 +469,7 @@ export default function AccountHistoryPage() {
             </div>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
+          <div className="bg-white/60 border border-slate-200/80 rounded-2xl p-4 flex flex-col justify-between backdrop-blur">
             <div className="flex items-center justify-between text-slate-400">
               <span className="text-xs font-medium uppercase tracking-wider">Credit Activity</span>
               <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -484,7 +484,7 @@ export default function AccountHistoryPage() {
         </div>
 
         {/* CONTROLS & FILTER BAR */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-4 space-y-4">
+        <div className="bg-white/50 border border-slate-200 rounded-2xl p-4 space-y-4">
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
             
             {/* Search Input */}
@@ -495,7 +495,7 @@ export default function AccountHistoryPage() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Search actions, transfers, lead names, phone, descriptions..."
-                className="w-full pl-10 pr-9 py-2 bg-slate-950/80 border border-slate-800 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all"
+                className="w-full pl-10 pr-9 py-2 bg-slate-50/80 border border-slate-200 rounded-xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/60 focus:ring-1 focus:ring-blue-500/30 transition-all"
               />
               {searchQuery && (
                 <button
@@ -516,7 +516,7 @@ export default function AccountHistoryPage() {
                   setDateRange(e.target.value)
                   setPage(1)
                 }}
-                className="bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-300 focus:outline-none focus:border-blue-500/60"
+                className="bg-slate-50/80 border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-600 focus:outline-none focus:border-blue-500/60"
               >
                 <option value="all">All Time</option>
                 <option value="today">Today</option>
@@ -551,7 +551,7 @@ export default function AccountHistoryPage() {
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all whitespace-nowrap font-medium ${
                     active
                       ? 'bg-blue-600 text-white border-blue-500 shadow-sm shadow-blue-500/20'
-                      : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                      : 'bg-slate-50/60 text-slate-400 border-slate-200 hover:border-slate-200 hover:text-slate-800'
                   }`}
                 >
                   {IconComp && <IconComp size={12} />}
@@ -559,7 +559,7 @@ export default function AccountHistoryPage() {
                   {typeof cat.count === 'number' && (
                     <span
                       className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                        active ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
+                        active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'
                       }`}
                     >
                       {cat.count}
@@ -573,13 +573,13 @@ export default function AccountHistoryPage() {
 
         {/* TIMELINE FEED */}
         {loading ? (
-          <div className="p-16 flex flex-col items-center justify-center space-y-3 bg-slate-900/30 border border-slate-800/60 rounded-2xl">
+          <div className="p-16 flex flex-col items-center justify-center space-y-3 bg-white/30 border border-slate-200/60 rounded-2xl">
             <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
             <p className="text-sm text-slate-400 font-medium">Aggregating account audit timeline...</p>
           </div>
         ) : groupedActivities.length === 0 ? (
-          <div className="p-16 text-center bg-slate-900/30 border border-slate-800/60 rounded-2xl space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700 mx-auto flex items-center justify-center text-slate-400">
+          <div className="p-16 text-center bg-white/30 border border-slate-200/60 rounded-2xl space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100/80 border border-slate-200 mx-auto flex items-center justify-center text-slate-400">
               <Search size={22} />
             </div>
             <h3 className="text-base font-semibold text-white">No activity records found</h3>
@@ -608,7 +608,7 @@ export default function AccountHistoryPage() {
               <div key={group.date} className="space-y-3">
                 {/* Date Header Pill */}
                 <div className="sticky top-2 z-10 flex items-center gap-2 py-1">
-                  <div className="px-3 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-semibold text-slate-300 backdrop-blur shadow-sm flex items-center gap-2">
+                  <div className="px-3 py-1 rounded-lg bg-white/90 border border-slate-200 text-xs font-semibold text-slate-600 backdrop-blur shadow-sm flex items-center gap-2">
                     <Calendar size={13} className="text-blue-400" />
                     <span>{group.date}</span>
                     <span className="text-[10px] text-slate-500">({group.items.length})</span>
@@ -617,7 +617,7 @@ export default function AccountHistoryPage() {
                 </div>
 
                 {/* Items List */}
-                <div className="space-y-2.5 relative pl-4 sm:pl-6 border-l border-slate-800/80 ml-3">
+                <div className="space-y-2.5 relative pl-4 sm:pl-6 border-l border-slate-200/80 ml-3">
                   {group.items.map(item => {
                     const isVideo = item.metadata?.type === 'video' || item.action.toLowerCase().includes('video')
                     const theme = getCategoryTheme(item.category, item.action, isVideo)
@@ -625,11 +625,11 @@ export default function AccountHistoryPage() {
                     return (
                       <div
                         key={item.id}
-                        className="relative group bg-slate-900/40 hover:bg-slate-900/80 border border-slate-800/80 hover:border-slate-700/80 rounded-2xl p-4 transition-all shadow-sm"
+                        className="relative group bg-white/40 hover:bg-white/80 border border-slate-200/80 hover:border-slate-200/80 rounded-2xl p-4 transition-all shadow-sm"
                       >
                         {/* Timeline Node Icon */}
                         <div
-                          className={`absolute -left-[27px] sm:-left-[35px] top-4 p-1.5 rounded-full border bg-slate-950 ${theme.bg}`}
+                          className={`absolute -left-[27px] sm:-left-[35px] top-4 p-1.5 rounded-full border bg-slate-50 ${theme.bg}`}
                         >
                           {theme.icon}
                         </div>
@@ -645,7 +645,7 @@ export default function AccountHistoryPage() {
                               </span>
 
                               {item.statusBadge && (
-                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-slate-300">
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-600">
                                   {item.statusBadge.text}
                                 </span>
                               )}
@@ -671,7 +671,7 @@ export default function AccountHistoryPage() {
                             {/* Media thumbnail if video asset */}
                             {item.metadata?.thumbnailUrl && (
                               <div className="pt-2 flex items-center gap-3">
-                                <div className="relative w-20 h-12 rounded-lg overflow-hidden border border-slate-700 bg-slate-950">
+                                <div className="relative w-20 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-50">
                                   <img
                                     src={item.metadata.thumbnailUrl}
                                     alt="Creative Thumbnail"
@@ -682,7 +682,7 @@ export default function AccountHistoryPage() {
                                   </div>
                                 </div>
                                 <div className="text-[11px] text-slate-400">
-                                  {item.metadata.videoModel && <span className="block font-medium text-slate-300">Model: {item.metadata.videoModel.toUpperCase()}</span>}
+                                  {item.metadata.videoModel && <span className="block font-medium text-slate-600">Model: {item.metadata.videoModel.toUpperCase()}</span>}
                                   {item.metadata.duration && <span>Duration: {Math.round(item.metadata.duration)}s</span>}
                                 </div>
                               </div>
@@ -692,13 +692,13 @@ export default function AccountHistoryPage() {
                             {item.metadata && (item.metadata.source || item.metadata.phone || item.metadata.lead_id) && (
                               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                 {item.metadata.source && (
-                                  <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-400">
-                                    Source: <strong className="text-slate-300">{item.metadata.source}</strong>
+                                  <span className="text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-400">
+                                    Source: <strong className="text-slate-600">{item.metadata.source}</strong>
                                   </span>
                                 )}
                                 {item.metadata.phone && (
-                                  <span className="text-[10px] bg-slate-950 px-2 py-0.5 rounded border border-slate-800 text-slate-400">
-                                    Phone: <strong className="text-slate-300">{item.metadata.phone}</strong>
+                                  <span className="text-[10px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200 text-slate-400">
+                                    Phone: <strong className="text-slate-600">{item.metadata.phone}</strong>
                                   </span>
                                 )}
                               </div>
@@ -714,7 +714,7 @@ export default function AccountHistoryPage() {
                                     ? `${item.link}${item.link.includes('?') ? '&' : '?'}impersonate=${impersonateId}`
                                     : item.link
                                 }
-                                className="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-blue-600 hover:text-white border border-slate-700 text-slate-300 text-xs font-medium transition-all flex items-center gap-1.5 group-hover:border-blue-500/50"
+                                className="px-3 py-1.5 rounded-lg bg-slate-100/80 hover:bg-blue-600 hover:text-white border border-slate-200 text-slate-600 text-xs font-medium transition-all flex items-center gap-1.5 group-hover:border-blue-500/50"
                               >
                                 <span>Inspect</span>
                                 <ExternalLink size={12} />
@@ -731,7 +731,7 @@ export default function AccountHistoryPage() {
 
             {/* PAGINATION CONTROLS */}
             {data && data.totalPages > 1 && (
-              <div className="pt-4 flex items-center justify-between border-t border-slate-800 text-xs text-slate-400">
+              <div className="pt-4 flex items-center justify-between border-t border-slate-200 text-xs text-slate-400">
                 <div>
                   Showing page <strong className="text-white">{data.page}</strong> of <strong className="text-white">{data.totalPages}</strong> ({data.total} total events)
                 </div>
@@ -739,17 +739,17 @@ export default function AccountHistoryPage() {
                   <button
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={data.page <= 1}
-                    className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
                     <ChevronLeft size={16} />
                   </button>
-                  <span className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-white font-medium">
+                  <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-white font-medium">
                     {data.page}
                   </span>
                   <button
                     onClick={() => setPage(p => Math.min(data.totalPages, p + 1))}
                     disabled={data.page >= data.totalPages}
-                    className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    className="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
                     <ChevronRight size={16} />
                   </button>
