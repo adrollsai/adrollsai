@@ -915,7 +915,19 @@ Do not use markdown formatting, ticks, backticks, or any conversational text. Re
                     transcriptText.includes('luxury villa')
                 );
 
-                if (ENABLE_POST_CALL_WHATSAPP_AUTOMATION && isBrochureRequested && isFarmhouseTopic && lead?.phone) {
+                /**
+                 * THIS BROCHURE AND THIS COPY BELONG TO ONE CUSTOMER.
+                 *
+                 * The block below sends a specific PDF (hosted under one tenant's storage folder) and Hinglish copy
+                 * about "30-Acre Approved Bio-Climatic Township … ₹12.5 Crore". The topic test above is loose enough
+                 * that any real estate account whose lead says "luxury villa" or "1 acre" would have been sent
+                 * ANOTHER company's brochure and pricing. So the send is now restricted to the account that owns
+                 * that material until the copy is generated from each tenant's own project data.
+                 */
+                const FARMHOUSE_TENANT_ID = 'd838c956-1761-4bce-9d91-32f3abecc222';
+                const isFarmhouseTenant = String(lead?.user_id || '') === FARMHOUSE_TENANT_ID;
+
+                if (ENABLE_POST_CALL_WHATSAPP_AUTOMATION && isBrochureRequested && isFarmhouseTopic && lead?.phone && isFarmhouseTenant) {
                     console.log(`[TWILIO STATUS CALLBACK] Lead ${leadId} requested brochure for Farmhouse Campaign. Dispatching native PDF document card...`);
                     try {
                         const { data: ownerProf } = await supabaseAdmin

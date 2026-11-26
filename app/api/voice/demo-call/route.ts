@@ -34,13 +34,20 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json()
+        /**
+         * NEUTRAL DEFAULTS.
+         *
+         * These defaulted to one customer's product — "Amritha Vana Luxury Farm Retreats", attributed to Bioque
+         * Estates — so a demo started without naming a template advertised somebody else's launch offer. The demo
+         * now defaults to a neutral script, and a named template is only used when it is explicitly asked for.
+         */
         const {
             prospectPhone,
             prospectName = 'Prospect',
             voiceName = 'Nova',
-            templateId = 'amritha_vana',
-            templateTitle = 'Amritha Vana Luxury Farm Retreats',
-            businessName = 'Bioque Estates International',
+            templateId = 'generic',
+            templateTitle = 'Nobogent AI Demo',
+            businessName = 'Nobogent',
             customPrompt
         } = body
 
