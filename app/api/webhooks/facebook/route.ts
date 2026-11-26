@@ -14,6 +14,8 @@ import { updateLeadScoreInDB, parseCustomFields } from '@/utils/lead-scoring'
 import { matchesCampaignRule } from '@/utils/campaign-matcher'
 import { isIndianPhoneNumber } from '@/utils/phone-validation'
 import { defaultQualifyingQuestions } from '@/lib/automation/qualifying-questions'
+import { buildWhatsAppMenu, whatsAppMenuPayload } from '@/lib/automation/whatsapp-button-menu'
+import { defaultProductButtonLabel } from '@/lib/automation/ceo'
 import { decideReopenOwner } from '@/lib/crm/reopen-owner'
 import { executeFlowRunner } from '@/utils/whatsapp/flow-runner'
 import { processOwnerMessage, transcribeVoiceNote } from '@/lib/agent/owner-orchestrator'
@@ -2525,50 +2527,38 @@ export async function POST(request: Request) {
                                             const metaUrl = `https://graph.facebook.com/v20.0/${ownerWaPhoneId}/messages`;
                                             let threeButtonsList: any[] = [];
 
-                                            if (Array.isArray(ownerButtons) && ownerButtons.length > 0) {
-                                                threeButtonsList = ownerButtons.slice(0, 3).map((b: any, idx: number) => ({
-                                                    type: 'reply',
-                                                    reply: { id: b.id || `btn_custom_${idx}`, title: String(b.title || b.text || 'Select').slice(0, 20) }
-                                                }));
-                                            } else if (isNobogentAccount) {
-                                                threeButtonsList = [
-                                                    { type: 'reply', reply: { id: 'view_properties', title: 'Explore Nobogent' } },
-                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
-                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Book Strategy Call' } }
-                                                ];
-                                            } else if (isPipixelAccount) {
-                                                threeButtonsList = [
-                                                    { type: 'reply', reply: { id: 'claim_trial', title: 'Claim Free Trial' } },
-                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Specialist' } },
-                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
-                                                ];
-                                            } else if (hasProperties) {
-                                                threeButtonsList = [
-                                                    { type: 'reply', reply: { id: 'view_properties', title: catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText.slice(0, 20) : 'View Properties' } },
-                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to an expert' } },
-                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Book an appointment' } }
-                                                ];
-                                            } else {
-                                                threeButtonsList = [
-                                                    { type: 'reply', reply: { id: 'view_properties', title: catalogueBtnText && catalogueBtnText !== 'View Products' ? catalogueBtnText.slice(0, 20) : 'Explore Services' } },
-                                                    { type: 'reply', reply: { id: 'talk_expert', title: 'Talk to Expert' } },
-                                                    { type: 'reply', reply: { id: 'book_appointment', title: 'Schedule a Call' } }
-                                                ];
+                                            /**
+                                             * THREE BUTTONS, ALWAYS. A tenant's `whatsapp_buttons` row is a LABEL
+                                             * for the first button, never a replacement for the menu.
+                                             *
+                                             * Measured on production: Procolor Film Academy had one entry,
+                                             * `[{ "url": "", "text": "View Courses" }]`, and this branch used it as the
+                                             * whole menu — so leads lost "Connect with Expert" (admin notification) and
+                                             * "Book Appointment" (booking page), and the one button that remained carried a
+                                             * synthetic id, matched no handler, and fell through to the free-form AI answer
+                                             * instead of opening the website. See `lib/automation/whatsapp-button-menu.ts`.
+                                             */
+                                            const menu = buildWhatsAppMenu({
+                                                ownerButtons,
+                                                catalogueLabel: catalogueBtnText,
+                                                industryLabel: defaultProductButtonLabel(ownerIndustry),
+                                            });
+                                            if (menu.ignored.length) {
+                                                console.log(
+                                                    `[WhatsApp Bot] Menu always carries the three contract actions; ` +
+                                                        `unused configured button(s) for this menu: ${menu.ignored.join(', ')}`
+                                                );
                                             }
+                                            threeButtonsList = menu.buttons.map((button) => ({
+                                                type: 'reply',
+                                                reply: { id: button.id, title: button.title },
+                                            }));
+                                            console.log(
+                                                `[WhatsApp Bot] Sending menu (${menu.firstLabel.source}): ` +
+                                                    menu.buttons.map((b) => `${b.id}="${b.title}"`).join(', ')
+                                            );
 
-                                            const payload = {
-                                                messaging_product: 'whatsapp',
-                                                recipient_type: 'individual',
-                                                to: cleanFrom,
-                                                type: 'interactive',
-                                                interactive: {
-                                                    type: 'button',
-                                                    body: { text: promptText },
-                                                    action: {
-                                                        buttons: threeButtonsList
-                                                    }
-                                                }
-                                            };
+                                            const payload = whatsAppMenuPayload(cleanFrom, promptText, menu);
                                             const res = await fetch(metaUrl, {
                                                 method: 'POST',
                                                 headers: {
