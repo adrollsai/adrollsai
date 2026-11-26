@@ -7,8 +7,12 @@
  * rows, 79 `queued`, 1 `failed`, zero `completed` — while every harness run behind them had
  * finished, 42 `completed` and 35 `dead` with `Platform AI provider out of credit (not the
  * customer's balance): Insufficient Balance`. The creative had been made or had failed; the record
- * claimed the day was still waiting. `ceo_daily_rollups.payload.routineRuns` read 0 for every
- * account every day as a direct result.
+ * claimed the day was still waiting.
+ *
+ * (An earlier version of this comment said the stale status made the nightly rollup read 0. That was
+ * wrong — the rollup counts rows regardless of status — and it is corrected here: what the stale
+ * status broke was the ledger's meaning, so "not recorded yet" was indistinguishable from "did not
+ * run". `verify:digest-honesty` owns the second half of that repair.)
  *
  * This gate pins the mapping and the safety rules, without a database and without a model:
  *   1. a completed run settles its row `completed`;

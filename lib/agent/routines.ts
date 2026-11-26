@@ -494,8 +494,18 @@ export function defaultRoutineIntent(businessName: string, industry: string | nu
  * rows, 79 `queued`, 1 `failed`, ZERO `completed` — while the 77 harness runs behind them had all
  * ended, 42 `completed` and 35 `dead` with `Platform AI provider out of credit (not the
  * customer's balance): Insufficient Balance`. The work had happened; the record said "still
- * waiting". `ceo_daily_rollups.payload.routineRuns` therefore read 0 for every account every day,
- * because a broken loop looks exactly like a quiet one.
+ * waiting". A broken loop is indistinguishable from a quiet one, which is why the row is settled
+ * rather than left to look pending.
+ *
+ * CORRECTION, measured after this section first shipped. The claim that this made the nightly rollup
+ * read 0 is WRONG, and it is corrected here rather than left standing: `app/api/cron/ceo-rollups`
+ * counts `routine_runs` rows regardless of status, so a stuck `queued` row still counted as 1. The
+ * zeros measured on 2026-11-21..24 were real but had a different cause — no routine row existed on
+ * those days at all (the table held 1 row from 2026-11-25 and 79 from 2026-11-26). What the stale
+ * status actually destroyed was the ledger's MEANING: the failed-run count on the CEO tab, the
+ * "what went out" line in the digest, and every reader that asks "did the day finish?" — none of them
+ * could tell "not recorded yet" from "did not run". That is the defect fixed here, and
+ * `lib/agent/digest-ledger.ts` is what stops an unsettled day being reported as a stopped job.
  *
  * Two rules keep this honest:
  *   - a row only moves while it says `queued`, so a second pass is a no-op (idempotent);

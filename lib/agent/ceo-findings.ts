@@ -33,6 +33,8 @@
  * line is a compliment gets skimmed.
  */
 
+import { routineLedgerVerdict, type RoutineLedgerDay } from './digest-ledger';
+
 export interface DayMetrics {
   /** Yesterday, or the window being reported. */
   window: { from: string; to: string };
@@ -124,15 +126,46 @@ export function costPerLeadPaise(metrics: DayMetrics): number | null {
   return Math.round(metrics.campaigns.spendPaise / metrics.campaigns.leads);
 }
 
+export interface AnalyseOptions {
+  /** Suppresses the "nothing happened" notes: a daily digest wants them, a chat reply does not. */
+  quiet?: boolean;
+  /**
+   * What the routine ledger can support about the day being reported.
+   *
+   * Optional, and absent means "assume the ledger is settled" — which is what every existing caller
+   * does and is true of a day that is already over. The digest passes it because it mails the owner
+   * about a day that may still be unreadable, and there the difference between "nothing was queued",
+   * "it ran" and "nothing has settled my record yet" is the whole question. See
+   * `lib/agent/digest-ledger.ts` for why an unsettled ledger must never be reported as a stopped job.
+   */
+  routineLedger?: {
+    ledger: RoutineLedgerDay;
+    rollupRoutineRuns?: number | null;
+    dayLabel?: string;
+  };
+}
+
 /**
  * Turn one day of numbers into ranked findings.
  *
  * Pure. `options.quiet` suppresses the "nothing happened" notes, which a daily digest wants
  * but a chat reply to "how did today go?" does not.
  */
-export function analyseDay(metrics: DayMetrics, options: { quiet?: boolean } = {}): Finding[] {
+export function analyseDay(metrics: DayMetrics, options: AnalyseOptions = {}): Finding[] {
   const findings: Finding[] = [];
   const { leads, calls, whatsapp, campaigns, content, credits, routines } = metrics;
+
+  /**
+   * The ledger verdict, resolved once and used twice: it decides whether "did not run" may be said
+   * at all, and what is said instead when it may not.
+   */
+  const ledgerDecision = options.routineLedger
+    ? routineLedgerVerdict({
+        ledger: options.routineLedger.ledger,
+        rollupRoutineRuns: options.routineLedger.rollupRoutineRuns ?? null,
+        dayLabel: options.routineLedger.dayLabel,
+      })
+    : null;
 
   // ── money going out with nothing coming back
   const cpl = costPerLeadPaise(metrics);
@@ -291,7 +324,16 @@ export function analyseDay(metrics: DayMetrics, options: { quiet?: boolean } = {
   // nothing needed your attention", because every metric it measures is zero and zero reads as
   // calm. The owner reads reassurance while nothing is running and nothing is being produced, which
   // is the most expensive kind of quiet. Zero output is not a quiet day; it is a stopped job.
-  if (routines.ran === 0) {
+  //
+  // BUT ONLY WHEN ZERO MEANS ZERO. `routines.ran` is a count of rows, and a row that still says
+  // `queued` is not evidence of anything: on 2026-11-26, 79 of 80 rows on production were `queued`
+  // while every run behind them had already ended, and this finding told the owner their daily
+  // marketing "did not run" when the truth was that nothing had written the outcome back. So when
+  // the caller supplies a ledger verdict that says the day cannot be read, that verdict speaks
+  // instead of the inference — a report may be empty, but it may not be wrong.
+  const ledgerSaysUnreadable = Boolean(ledgerDecision && !ledgerDecision.canClaimNothingRan);
+
+  if (routines.ran === 0 && !ledgerSaysUnreadable) {
     findings.push({
       id: 'engine-not-run',
       severity: 'risk',
@@ -303,6 +345,28 @@ export function analyseDay(metrics: DayMetrics, options: { quiet?: boolean } = {
       recommendation:
         'Switch it on in this tab with "Start it". From the next morning it plans the day, asks you once ' +
         'before spending anything, and reports back.',
+      needsReview: false,
+    });
+  } else if (ledgerDecision && ledgerDecision.verdict !== 'nothing-queued' && ledgerDecision.verdict !== 'settled') {
+    /**
+     * The honest version of the finding above: the day's own record is not readable yet, or the
+     * stored summary of it disagrees with the ledger. Both are reported as what they are, in plain
+     * words, and neither is blamed on the owner's settings.
+     */
+    findings.push({
+      id: ledgerDecision.verdict === 'unreconciled' ? 'engine-ledger-unsettled' : 'engine-rollup-stale',
+      severity: ledgerDecision.verdict === 'unreconciled' ? 'risk' : 'note',
+      title:
+        ledgerDecision.verdict === 'unreconciled'
+          ? 'My record of this day has not been settled yet'
+          : 'The stored summary of this day disagrees with the job ledger',
+      evidence: ledgerDecision.sentence,
+      recommendation:
+        ledgerDecision.verdict === 'unreconciled'
+          ? 'Nothing for you to do: I settle these myself, and the report follows once the day can be read. ' +
+            'I am not calling it a day that did not run, because I cannot see that yet.'
+          : 'Nothing for you to do. I have recorded the disagreement and will write it again from the ledger ' +
+            'when the day is summarised.',
       needsReview: false,
     });
   }

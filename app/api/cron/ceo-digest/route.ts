@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { buildDigest, type DigestItem } from '@/lib/agent/digest';
 import { sendGenericEmail } from '@/utils/email-helper';
-import { periodKey, periodLabel } from '@/lib/agent/routines';
+import { periodKey, periodLabel, reconcileRoutineRuns } from '@/lib/agent/routines';
 import { gatherDayMetrics, supabaseMetricsReader, windowFor } from '@/lib/agent/ceo-metrics';
 import { analyseDay } from '@/lib/agent/ceo-findings';
 import { chargeEmailSends } from '@/lib/automation/email-billing';
 import { planDigestSends, type DigestSlot } from '@/lib/agent/digest-batch';
+import { digestReportedDay, routineLedgerVerdict, type RoutineLedgerDay } from '@/lib/agent/digest-ledger';
+import { rollupDay } from '@/lib/automation/ceo-rollup';
 
 export const maxDuration = 300;
 
@@ -39,6 +41,22 @@ export async function GET(req: NextRequest) {
     { auth: { persistSession: false } }
   );
 
+  /**
+   * SETTLE FIRST, THEN DESCRIBE.
+   *
+   * This email is a report about a day, so it must not be written from rows nothing has settled.
+   * Until 2026-11-26 `routine_runs` rows stayed `queued` for ever — 79 of 80 over seven days on
+   * production — while the harness runs behind them had all ended, and this cron described those
+   * days anyway: the "What went out" list showed the raw word "queued", and the findings engine
+   * read a zero as "your daily marketing did not run". One cheap sweep makes the day readable
+   * before anything is said about it. Best-effort: a failed sweep must not cost the morning plan,
+   * and the ledger verdict below still refuses to describe a day it cannot read.
+   */
+  const reconciled = await reconcileRoutineRuns(supabase).catch((e: any) => {
+    console.error('[ceo-digest] routine reconcile failed:', e?.message || e);
+    return null;
+  });
+
   const { data: routines, error } = await supabase
     .from('business_routines')
     .select('id, user_id, name, timezone, cadence, daily_credit_cap')
@@ -65,7 +83,9 @@ export async function GET(req: NextRequest) {
    */
   const userIds = (routines || []).map((routine) => routine.user_id);
   const since = new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString();
-  const [{ data: profileRows }, { data: runRows }] = await Promise.all([
+  // Two days back, so the morning email can be checked against the day it actually reports on.
+  const rollupSince = new Date(now.getTime() - 3 * 86_400_000).toISOString().slice(0, 10);
+  const [{ data: profileRows }, { data: runRows }, { data: rollupRows }] = await Promise.all([
     userIds.length
       ? supabase
           .from('profiles')
@@ -75,9 +95,25 @@ export async function GET(req: NextRequest) {
     userIds.length
       ? supabase
           .from('routine_runs')
-          .select('id, user_id, period_key, status, digest, credits_spent, session_id')
+          // `error` is carried so a failed day can name the provider's own words instead of "failed".
+          .select('id, user_id, period_key, status, digest, credits_spent, session_id, error')
           .in('user_id', userIds)
           .gte('created_at', since)
+      : Promise.resolve({ data: [] as any[] }),
+    /**
+     * The stored daily summary, so this email can be checked against it.
+     *
+     * `ceo_daily_rollups.payload.routineRuns` feeds the CEO tab's history, and on 2026-11-26 it read
+     * 0 for every account on days whose routine rows existed in the ledger. A report that quotes a
+     * stale summary is wrong in the one way an owner cannot check, so the disagreement is detected
+     * and named rather than repeated.
+     */
+    userIds.length
+      ? supabase
+          .from('ceo_daily_rollups')
+          .select('user_id, day, payload')
+          .in('user_id', userIds)
+          .gte('day', rollupSince)
       : Promise.resolve({ data: [] as any[] }),
   ]);
 
@@ -85,10 +121,27 @@ export async function GET(req: NextRequest) {
   const runByPeriod = new Map<string, any>(
     (runRows || []).map((row: any) => [`${row.user_id}|${row.period_key}`, row])
   );
+  const rollupByUserDay = new Map<string, any>(
+    (rollupRows || []).map((row: any) => [`${row.user_id}|${row.day}`, row.payload?.routineRuns ?? null])
+  );
   const runFor = (routine: any) =>
     runByPeriod.get(
       `${routine.user_id}|${periodKey(now, routine.timezone || 'Asia/Kolkata', routine.cadence || 'daily')}`
     );
+
+  /**
+   * What the ledger holds for one business on one `period_key`, counted from the bulk read above.
+   *
+   * Counted rather than assumed: a business can have several routines, and the rows for a day are
+   * whatever they are. `queued` is the status that means "nobody has settled this yet".
+   */
+  const ledgerFor = (userId: string, periodKeyValue: string): RoutineLedgerDay => {
+    const rows = (runRows || []).filter(
+      (row: any) => row.user_id === userId && row.period_key === periodKeyValue
+    );
+    const queued = rows.filter((row: any) => String(row.status || '') === 'queued').length;
+    return { rows: rows.length, queued, settled: rows.length - queued };
+  };
 
   const plan = planDigestSends(routines || [], {
     now,
@@ -115,6 +168,61 @@ export async function GET(req: NextRequest) {
     const run = runFor(routine) || null;
     if (!run?.id) {
       skipped.push(`${routine.id}: no run for ${period} yet`);
+      continue;
+    }
+
+    /**
+     * WHAT DAY IS THIS EMAIL ABOUT, AND CAN THAT DAY BE READ AT ALL?
+     *
+     * The morning plan is about today but its numbers are yesterday's; the evening wrap describes the
+     * day that is ending. Each is resolved on the business's own calendar, because the ledger is keyed
+     * by `period_key`, which is a day in the business's timezone and not a UTC slice.
+     *
+     * The verdict is a fact about the ledger, not a guess: `lib/agent/digest-ledger.ts` explains why an
+     * unsettled row must never be reported as a stopped job. It is computed once here and used twice —
+     * to decide whether this email may be sent, and to stop the findings engine asserting a day it
+     * cannot see.
+     */
+    const routineTz = (routine as any).timezone || 'Asia/Kolkata';
+    const routineCadence = ((routine as any).cadence || 'daily') as 'daily' | 'weekly' | 'monthly';
+    const reportedAt = digestReportedDay(slot, now);
+    const reportedKey = periodKey(reportedAt, routineTz, routineCadence);
+    const reportedLabel = periodLabel(reportedAt, routineTz);
+    const ledgerInput = {
+      ledger: ledgerFor(routine.user_id, reportedKey),
+      rollupRoutineRuns: rollupByUserDay.get(`${routine.user_id}|${reportedKey}`) ?? null,
+      dayLabel: reportedLabel,
+    };
+    const ledgerDecision = routineLedgerVerdict(ledgerInput);
+
+    /**
+     * AN EMAIL THAT DESCRIBES A DAY IT CANNOT READ IS NOT SENT.
+     *
+     * The owner's rule, in their words: it should only make sense to send the email once the CEO has
+     * actually run and analysed. A wrap whose day still has rows nobody has settled describes a day it
+     * has not read, and the previous version filled that gap with the word "queued" under the heading
+     * "What went out". It waits instead.
+     *
+     * Nothing is stamped `eod_sent_at`, so the next invocation — fifteen minutes later, after the sweep
+     * in `reconcileRoutineRuns` has settled the rows — sends the wrap truthfully. The wait is written
+     * onto the run's digest record so it is visible rather than silent, and the reason is returned in
+     * this response so the cron log carries it too.
+     */
+    if (slot === 'eod' && ledgerDecision.holdEod) {
+      const reason = ledgerDecision.holdReason || 'the day has not been settled yet';
+      skipped.push(`${routine.id}: held — ${reason}`);
+      await supabase
+        .from('routine_runs')
+        .update({
+          digest: {
+            ...((run.digest as any) || {}),
+            eod_hold: { reason, day: reportedKey, at: now.toISOString() },
+          },
+        })
+        .eq('id', run.id)
+        .then(({ error: holdErr }: any) => {
+          if (holdErr) console.warn(`[ceo-digest] could not record the hold for ${routine.id}: ${holdErr.message}`);
+        });
       continue;
     }
 
@@ -156,10 +264,29 @@ export async function GET(req: NextRequest) {
     if (Array.isArray(digestData.done)) {
       for (const d of digestData.done) done.push({ label: String(d.label || d), detail: d.detail, url: d.url });
     } else if (run) {
-      done.push({
-        label: `${routine.name} — ${run.status}`,
-        detail: slot === 'morning' ? 'queued for today' : undefined,
-      });
+      /**
+       * "What went out" must describe output, not print a database status.
+       *
+       * This used to write `${routine.name} — queued` under a heading that says what went out, which
+       * is how the owner was handed the word "queued" in place of a day's work. Each state now reads
+       * as a sentence, and a failed day carries the run's own error so the owner is not left with the
+       * bare word "failed".
+       */
+      const runStatus = String((run as any).status || 'queued');
+      const runError = typeof (run as any).error === 'string' ? String((run as any).error).trim() : '';
+      if (runStatus === 'completed') {
+        done.push({ label: `${routine.name} finished`, detail: 'the day planned, made and reported' });
+      } else if (runStatus === 'failed') {
+        done.push({
+          label: `${routine.name} failed`,
+          detail: runError ? runError.slice(0, 240) : 'the run ended without recording a reason',
+        });
+      } else {
+        done.push({
+          label: `${routine.name} is still ${runStatus === 'queued' ? 'waiting to start' : runStatus}`,
+          detail: slot === 'morning' ? 'queued for today' : undefined,
+        });
+      }
     }
 
     // The analysis half of the report: where the business is losing money and what we would do
@@ -177,7 +304,12 @@ export async function GET(req: NextRequest) {
         windowFor(yesterday, tz)
       );
       dayMetrics = metrics;
-      bottlenecks = analyseDay(metrics)
+      /**
+       * The ledger verdict rides along, so the engine cannot claim "your daily marketing did not run"
+       * from a zero it cannot explain. `analyseDay` keeps its plain behaviour when the option is absent,
+       * which is why the CEO tab and the chat tool are unaffected.
+       */
+      bottlenecks = analyseDay(metrics, { routineLedger: ledgerInput })
         .filter((f) => f.severity === 'blocked' || f.severity === 'risk')
         .slice(0, 4)
         .map((f) => ({ label: f.title, detail: f.recommendation }));
@@ -256,7 +388,22 @@ export async function GET(req: NextRequest) {
         await supabase
           .from('routine_runs')
           .update({
-            digest: { ...digestData, [`${slot}_sent_at`]: now.toISOString() },
+            digest: {
+              ...digestData,
+              [`${slot}_sent_at`]: now.toISOString(),
+              /**
+               * What the email was allowed to say, and about which day. Recorded because "the report
+               * went out and was honest" is a claim that should be checkable from the database rather
+               * than from the log of a run that has already gone.
+               */
+              ledger_check: {
+                verdict: ledgerDecision.verdict,
+                day: reportedKey,
+                rows: ledgerInput.ledger.rows,
+                queued: ledgerInput.ledger.queued,
+                rollupRoutineRuns: ledgerInput.rollupRoutineRuns,
+              },
+            },
           })
           .eq('id', run.id);
       }
@@ -267,7 +414,8 @@ export async function GET(req: NextRequest) {
 
   console.log(
     `[ceo-digest] sent ${sent.length}, skipped ${skipped.length}, outside window ${plan.outsideWindow}, ` +
-      `already sent ${plan.alreadySent}, deferred ${plan.deferred}`
+      `already sent ${plan.alreadySent}, deferred ${plan.deferred}, ` +
+      `settled ${reconciled ? `${reconciled.completed} completed / ${reconciled.failed} failed of ${reconciled.examined}` : 'n/a'}`
   );
   return NextResponse.json({
     ok: true,
@@ -278,5 +426,7 @@ export async function GET(req: NextRequest) {
     alreadySent: plan.alreadySent,
     // Non-zero means the next invocation has work left — the platform is being swept in slices.
     deferred: plan.deferred,
+    // The sweep this invocation ran first, so a caller can see whether the day it mailed was settled.
+    reconciled,
   });
 }
