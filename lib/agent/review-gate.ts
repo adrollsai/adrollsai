@@ -486,6 +486,51 @@ export function supabaseApprovalStore(supabase: any, userId: string, sessionId?:
 
     async recordPending({ actionType, tool, toolInput, title, why }) {
       try {
+        /**
+         * ONE CARD PER STEP, NOT ONE PER ATTEMPT.
+         *
+         * Measured on production for one account: two `generate_ai_image` cards were staged TWO SECONDS APART with
+         * near-identical prompts (one said "a photography diploma", the other "a hands-on photography diploma"), so the
+         * owner saw the same approval twice and read it as an endless loop — their words: "Viscous loop".
+         *
+         * The fingerprint the transcript dedupes on is `actionType|payload`, and a re-worded prompt is a different
+         * payload, so nothing collapsed them. Here, an existing PENDING card for the same tool whose first 120
+         * characters of text match is reused instead of staging a duplicate: approving either one authorises the call,
+         * and the owner sees a single control. Genuinely different work (a different subject, format or offer) still
+         * gets its own card, which is why the comparison is on the text and not merely on the tool name.
+         */
+        const textOf = (value: any) =>
+          String(value?.prompt ?? value?.brief ?? value?.text ?? '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 120)
+            .toLowerCase();
+        const wanted = textOf(toolInput);
+        if (wanted.length > 24) {
+          try {
+            const since = new Date(Date.now() - 30 * 60_000).toISOString();
+            const { data: open } = await supabase
+              .from('agent_events')
+              .select('payload')
+              .eq('user_id', userId)
+              .eq('event_type', 'PENDING_ACTION_APPROVAL')
+              .eq('status', 'pending')
+              .eq('payload->>targetTool', tool)
+              .gte('created_at', since)
+              .order('created_at', { ascending: false })
+              .limit(10);
+            for (const row of open || []) {
+              const payload: any = (row as any)?.payload || {};
+              if (textOf(payload.actionPayload) === wanted && typeof payload.actionId === 'string') {
+                console.log(`[Review gate] reusing the open ${tool} approval ${payload.actionId} instead of staging a duplicate.`);
+                return { actionId: payload.actionId };
+              }
+            }
+          } catch {
+            /* a failed lookup must never block staging the card */
+          }
+        }
+
         const actionId = 'act_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-6);
         const { error } = await supabase.from('agent_events').insert({
           user_id: userId,
