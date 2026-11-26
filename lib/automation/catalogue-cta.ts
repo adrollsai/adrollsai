@@ -135,3 +135,77 @@ export function containsPropertyVocabulary(text: string): string[] {
   const haystack = String(text || '').toLowerCase();
   return PROPERTY_VOCABULARY.filter((word) => haystack.includes(word));
 }
+
+export interface CatalogueSharing {
+  kind: OfferingKind;
+  /** Page/OG/Twitter title tail: "Courses", "Properties", … */
+  titleNoun: string;
+  /** First words of the meta description. */
+  descriptionLead: string;
+  /** schema.org type for the business. */
+  schemaType: string;
+  /** schema.org type for one catalogue entry. */
+  itemType: string;
+  /** "Courses by X" in the ItemList. */
+  listNoun: string;
+  /** The crawlable h1 tail. */
+  heading: string;
+}
+
+/**
+ * The words for a tenant's PUBLIC catalogue page: title, description, structured data, heading.
+ *
+ * These were all hardcoded to real estate — the page for a film academy served the title
+ * "… - Premium Real Estate Listings", described "exclusive real estate listings" to Google, and declared
+ * itself a `RealEstateAgent` with `RealEstateListing` items. Wrong words, and wrong structured data, for
+ * every tenant that is not a brokerage. The kind decides all of it.
+ */
+export function catalogueSharingFor(input: {
+  industry?: string | null;
+  businessName?: string | null;
+  rowTypes?: Array<string | null | undefined>;
+}): CatalogueSharing {
+  const kind = offeringKindFor({ industry: input.industry, rowTypes: input.rowTypes });
+  switch (kind) {
+    case 'properties':
+      return {
+        kind,
+        titleNoun: 'Premium Real Estate',
+        descriptionLead: 'Explore premium properties, market updates, and exclusive real estate listings',
+        schemaType: 'RealEstateAgent',
+        itemType: 'RealEstateListing',
+        listNoun: 'Properties by',
+        heading: 'Premium Real Estate Listings',
+      };
+    case 'courses':
+      return {
+        kind,
+        titleNoun: 'Courses & Programmes',
+        descriptionLead: 'Explore our courses, programmes and admission details',
+        schemaType: 'EducationalOrganization',
+        itemType: 'Course',
+        listNoun: 'Courses by',
+        heading: 'Courses & Programmes',
+      };
+    case 'services':
+      return {
+        kind,
+        titleNoun: 'Services',
+        descriptionLead: 'Explore the services we offer and how they work',
+        schemaType: 'LocalBusiness',
+        itemType: 'Service',
+        listNoun: 'Services by',
+        heading: 'Our Services',
+      };
+    default:
+      return {
+        kind,
+        titleNoun: 'Our Offerings',
+        descriptionLead: 'Explore our latest products, services and solutions',
+        schemaType: 'LocalBusiness',
+        itemType: 'Product',
+        listNoun: 'Offerings by',
+        heading: 'Our Offerings',
+      };
+  }
+}

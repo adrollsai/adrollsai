@@ -35,6 +35,7 @@ import {
   appointmentSubtitleFor,
   catalogueCtaCopy,
   containsPropertyVocabulary,
+  catalogueSharingFor,
   offeringKindFor,
 } from '../lib/automation/catalogue-cta';
 
@@ -231,6 +232,54 @@ head('7. The webhook no longer carries property copy for everyone');
     !/const hasProperties = !isNobogentAccount && !isPipixelAccount && \(\(propertiesCount \|\| 0\) > 0\);/.test(route) ||
       /offeringKindFor\(\{/.test(route),
   );
+}
+
+// ── 8. the public catalogue page is not a real estate page ──────────────────
+head('8. A film academy\'s public page does not call itself "Premium Real Estate"');
+
+{
+  const sharing = catalogueSharingFor({ industry: 'education', rowTypes: ['Generic', 'Generic'] });
+  check('an academy\'s public page reads as courses', sharing.kind === 'courses', sharing.kind);
+  check('its title noun is neutral', !/propert|real estate/i.test(sharing.titleNoun), sharing.titleNoun);
+  check('its description carries no property words', containsPropertyVocabulary(sharing.descriptionLead).length === 0, sharing.descriptionLead);
+  check('its structured data is not a RealEstateAgent', sharing.schemaType === 'EducationalOrganization', sharing.schemaType);
+  check('and its items are not RealEstateListings', sharing.itemType === 'Course', sharing.itemType);
+
+  const brokerageSharing = catalogueSharingFor({ industry: 'Real Estate', rowTypes: ['Residential'] });
+  check('a brokerage keeps the real estate page it should have', brokerageSharing.schemaType === 'RealEstateAgent', brokerageSharing.schemaType);
+
+  const layout = readFileSync('app/shared/[user_id]/layout.tsx', 'utf8');
+  check('the hardcoded "Premium Real Estate" title is gone', !/business_name\} \| Premium Real Estate/.test(layout));
+  check(
+    'the hardcoded real-estate description is gone',
+    // The literal, not the phrase: the file quotes the old wording in a comment explaining the fix.
+    !/Explore premium properties, market updates, and exclusive real estate listings from/.test(layout),
+  );
+  check('the hardcoded RealEstateAgent schema is gone', !/'@type': 'RealEstateAgent',/.test(layout));
+  check('the hardcoded RealEstateListing item type is gone', !/'@type': 'RealEstateListing',/.test(layout));
+  check('the crawlable h1 comes from the sharing words', /sharing\.heading/.test(layout));
+  check('and the profile read includes the industry it needs', /select\('id, business_name, industry/.test(layout));
+}
+
+// ── 9. the booking link is a real path, not a query ● ──────────────────────
+head('9. The appointment button points at the account\'s own booking page');
+
+{
+  const route = readFileSync('app/api/webhooks/facebook/route.ts', 'utf8');
+  check('the booking base is the account\'s own shared page', /const baseBookingUrl = `\$\{appUrl\}\/shared\/\$\{ownerUserId\}`/.test(route));
+  check(
+    'a lead with a record gets /booking/<leadId>',
+    /`\$\{baseBookingUrl\}\/booking\/\$\{latestLead\.id\}`/.test(route),
+  );
+  check('a lead without one still gets the account\'s own /booking', /`\$\{baseBookingUrl\}\/booking`/.test(route));
+  /**
+   * The owner opened an appointment link that read `/booking?/7fclb9b-…` — a lead id after a `?` with a
+   * slash in it. That is not a path this code builds, and a URL shaped like it does not route to the
+   * booking page at all (verified in a browser: it rendered the catalogue). Whatever produced it, no
+   * builder here may ever emit `…/booking?/<id>`, so the shape is asserted rather than assumed.
+   */
+  check('no builder emits a query-shaped booking link', !/booking\?\//.test(route));
+  check('and the CTA sender passes the url through untouched', /display_text:[^}]*url: url/.test(route.replace(/\s+/g, ' ')));
 }
 
 console.log(`\n${'─'.repeat(62)}`);
