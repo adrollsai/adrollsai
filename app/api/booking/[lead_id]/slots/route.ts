@@ -99,13 +99,17 @@ export async function GET(
       // 2. Fetch Host Settings
       const { data: prof, error: profileError } = await supabaseAdmin
         .from('profiles')
-        .select('id, google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, google_calendar_id')
+        .select('id, google_refresh_token, google_booking_enabled, google_booking_duration, google_booking_hours, google_calendar_id, is_disabled')
         .eq('id', lead.user_id)
         .maybeSingle()
 
       if (profileError) throw profileError
       if (!prof) {
         return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      }
+      // A disabled business does not take bookings. Same rule as its bot and its caller.
+      if ((prof as any)?.is_disabled) {
+        return NextResponse.json({ error: 'This business is not accepting appointments' }, { status: 404 })
       }
       profile = prof
       profileId = prof.id

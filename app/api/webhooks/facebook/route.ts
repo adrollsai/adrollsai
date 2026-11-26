@@ -544,6 +544,26 @@ export async function POST(request: Request) {
                         const masterPhoneId = process.env.DEV_WHATSAPP_PHONE_ID || process.env.WHATSAPP_PHONE_NUMBER_ID || '1185499271314063';
                         const isMessageToOfficialBot = !wabaPhoneId || wabaPhoneId === '1185499271314063' || (masterPhoneId && wabaPhoneId === masterPhoneId);
 
+                        /**
+                         * A DISABLED ACCOUNT IS SILENT.
+                         *
+                         * `profiles.is_disabled` used to mean only "cannot sign in": the WhatsApp bot, the AI caller and
+                         * the booking page all kept serving a disabled business, so its leads kept getting answered and
+                         * its routines kept spending. An account switched off should behave switched off, so inbound
+                         * traffic for it is acknowledged to Meta and dropped here, before any flow or model call.
+                         */
+                        if (!isMessageToOfficialBot && wabaPhoneId) {
+                            const { data: tenantStatus } = await supabaseAdmin
+                                .from('profiles')
+                                .select('is_disabled')
+                                .eq('whatsapp_phone_number_id', wabaPhoneId)
+                                .maybeSingle();
+                            if ((tenantStatus as any)?.is_disabled) {
+                                console.log(`[WhatsApp Bot] business for phone id ${wabaPhoneId} is DISABLED — not replying.`);
+                                continue;
+                            }
+                        }
+
                         // =========================================================================
                         // AGENT APPROVAL REPLIES (the CEO's approve / skip / change gate)
                         // Runs before every legacy flow: if this sender is a business owner

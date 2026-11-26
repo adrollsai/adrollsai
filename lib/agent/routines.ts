@@ -248,6 +248,34 @@ export async function materialiseDueRoutines(
   }
   if (!routines?.length) return result;
 
+  /**
+   * A DISABLED ACCOUNT DOES NOT RUN.
+   *
+   * `is_disabled` used to stop only the sign-in, so a disabled business kept getting its daily brief queued (and, once
+   * approved, kept spending). The owners are read once for the whole batch and any disabled one is skipped by name.
+   */
+  const routineUserIds = Array.from(new Set((routines as BusinessRoutine[]).map((r) => r.user_id)));
+  const disabledUsers = new Set<string>();
+  if (routineUserIds.length) {
+    const { data: disabledProfiles } = await supabase
+      .from('profiles')
+      .select('id')
+      .in('id', routineUserIds)
+      .eq('is_disabled', true);
+    for (const row of disabledProfiles || []) disabledUsers.add(String((row as any).id));
+  }
+  if (disabledUsers.size) {
+    const kept = (routines as BusinessRoutine[]).filter((r) => {
+      if (disabledUsers.has(r.user_id)) {
+        result.skipped.push({ routineId: r.id, reason: 'account disabled' });
+        return false;
+      }
+      return true;
+    });
+    if (!kept.length) return result;
+    routines.splice(0, routines.length, ...kept);
+  }
+
   const due = pickRoutinesToMaterialise(routines as BusinessRoutine[]);
   const extra = (routines as BusinessRoutine[]).length - due.length;
   if (extra > 0) {
