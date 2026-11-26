@@ -64,6 +64,8 @@ export interface ReviewPolicy {
 export const REVIEW_POLICY: Record<string, ReviewPolicy> = {
   // ── money in a vendor's hands
   generate_ai_image: { actionType: 'create_asset', why: 'each image costs credits' },
+  // The Creation-tab pipeline: script → render. Gated exactly like the primitives it replaces, because it bills.
+  create_ad_video: { actionType: 'create_asset', why: 'rendering an ad video costs credits' },
   generate_grok_video: { actionType: 'create_asset', why: 'video generation costs credits' },
   generate_voiceover: { actionType: 'create_asset', why: 'voice generation costs credits' },
   composeVideo: { actionType: 'create_asset', why: 'rendering a film costs credits and sandbox time' },
