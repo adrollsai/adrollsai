@@ -437,16 +437,17 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
           /**
            * BRAND LOCK, APPLIED TO EVERY GENERATED IMAGE.
            *
-           * This tool never read the account's brand at all — no `creative_directives`, no brand colour, no reference to
-           * artwork they had already uploaded — so a plain "make an image" produced whatever the model felt like. A
-           * customer's report: "It isn't following the brand guidelines. I see random colours and fonts and design system
-           * so far." The kit below supplies their colour, logo rules, standing directives and their own catalogue images
-           * as image-to-image references, which is what actually pins a palette down.
+           * This tool never read the account's brand at all — no `creative_directives`, no brand colour — so a plain
+           * "make an image" produced whatever the model felt like. A customer's report: "It isn't following the brand
+           * guidelines. I see random colours and fonts and design system so far." The kit below supplies their colour,
+           * logo rules and the standing rules they wrote in Profile → Brand Kit.
+           *
+           * Catalogue images are NOT injected here: they belong to a listing, and the caller passes them as
+           * `referenceImageUrls` when the creative is about that item.
            */
           const brandKit = await brandKitFor(supabase, userId);
           const brandedText = withBrandRules(text, brandKit);
-          const supplied = cleanUrls(referenceImageUrls);
-          const referenceUrls = supplied.length ? supplied : brandKit.referenceUrls;
+          const referenceUrls = cleanUrls(referenceImageUrls);
           const taskId = await createKieImageTask(
             brandedText,
             imageModelFor(referenceUrls),

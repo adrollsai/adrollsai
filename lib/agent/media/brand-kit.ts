@@ -11,20 +11,18 @@ import { mergeDirectives } from '@/lib/automation/creative-directives';
  * (`ad_creative`). `generate_ai_image`, the tool that actually stages most images, never read it, and that account's
  * `creative_directives` was `{}` anyway. So the model was asked for a picture with no brand constraints whatsoever.
  *
- * What the account DOES already have, and what this module uses instead of asking anyone to fill in a form:
- *   - `profiles.brand_color` and `profiles.logo_url`
- *   - the images they uploaded to their own catalogue (`properties.images` / `properties.image_url`)
- *   - any standing `creative_directives` or `positioning` on the active playbook
+ * WHAT IS IN THE KIT, AND WHAT IS NOT
+ * The kit is the brand: colour, logo rules, and the standing directives the owner writes in Profile → Brand Kit.
  *
- * The catalogue images are the useful part: they are real examples of the house style, so they ride along as
- * IMAGE-TO-IMAGE references — which constrains palette and lighting far more reliably than adjectives in a prompt.
+ * Catalogue images are deliberately NOT part of it. They belong to a listing (a course, a property, a product) — they are
+ * content, and the agent passes them as references when it is making a creative ABOUT that item. Using them silently as
+ * the brand's look happened to look right for one academy whose listing photos matched their branding, and would quietly
+ * mis-brand anyone whose catalogue photos are ordinary product shots.
  */
 
 export interface BrandKit {
   /** Sentences appended to the model prompt. Empty when the account has nothing on file. */
   rules: string;
-  /** Catalogue images to use as image-to-image references when the caller supplied none. */
-  referenceUrls: string[];
   brandColor: string | null;
   logoUrl: string | null;
   /** Which parts of the kit were found, so a thin result is explainable rather than mysterious. */
@@ -37,7 +35,7 @@ const cleanUrl = (value: unknown): string | null => {
 };
 
 export async function brandKitFor(supabase: SupabaseClient, userId: string): Promise<BrandKit> {
-  const kit: BrandKit = { rules: '', referenceUrls: [], brandColor: null, logoUrl: null, sources: [] };
+  const kit: BrandKit = { rules: '', brandColor: null, logoUrl: null, sources: [] };
   if (!userId) return kit;
 
   try {
@@ -61,53 +59,24 @@ export async function brandKitFor(supabase: SupabaseClient, userId: string): Pro
     const directives = mergeDirectives((playbook as any)?.creative_directives ?? null, {});
     const renderedDirectives = (directives.instructions || []).join('\n');
 
-    // Their own catalogue plates: the strongest available evidence of the house style.
-    const { data: items } = await supabase
-      .from('properties')
-      .select('title, image_url, images')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(6);
-
-    for (const item of (items || []) as any[]) {
-      const list: string[] = [];
-      if (Array.isArray(item?.images)) {
-        for (const img of item.images) {
-          const url = cleanUrl(typeof img === 'string' ? img : img?.url);
-          if (url) list.push(url);
-        }
-      }
-      const primary = cleanUrl(item?.image_url);
-      if (primary) list.unshift(primary);
-      for (const url of list) {
-        if (kit.referenceUrls.length < 3 && !kit.referenceUrls.includes(url)) kit.referenceUrls.push(url);
-      }
-      if (kit.referenceUrls.length >= 3) break;
-    }
-    if (kit.referenceUrls.length) kit.sources.push(`${kit.referenceUrls.length} catalogue image(s)`);
-
     const lines: string[] = [];
     if (kit.brandColor) {
       kit.sources.push('brand colour');
       lines.push(`Brand colour ${kit.brandColor} must drive the palette — accents, overlays and type highlights, not a random hue.`);
     }
     if (directives && (directives.instructions?.length || directives.bans?.length)) {
-      kit.sources.push('standing directives');
-      lines.push(renderedDirectives || String((playbook as any)?.positioning || '').trim());
+      kit.sources.push('standing rules');
+      if (renderedDirectives) lines.push(`Standing brand rules, which outrank any other styling:\n${renderedDirectives}`);
     } else if (String((playbook as any)?.positioning || '').trim()) {
       kit.sources.push('positioning');
       lines.push(`Positioning: ${String((playbook as any).positioning).trim()}`);
     }
-    if (kit.referenceUrls.length) {
-      lines.push(
-        'The attached reference images are THIS BRAND\'S OWN catalogue artwork. Match their palette, typography weight, ' +
-          'logo treatment, texture and lighting exactly; do not introduce a new art direction, and do not copy their ' +
-          'layout verbatim.'
-      );
-    }
     if (kit.logoUrl) {
       kit.sources.push('logo');
       lines.push('Leave clean, uncluttered space where the brand logo belongs; never invent or redraw the logo.');
+    }
+    if (kit.sources.length) {
+      lines.push('Keep the type treatment consistent with previous material for this business: one weight family, no novelty fonts.');
     }
 
     kit.rules = lines.filter(Boolean).join('\n');

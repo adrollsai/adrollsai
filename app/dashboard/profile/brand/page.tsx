@@ -2,16 +2,18 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Check, Loader2, Palette, Image as ImageIcon, Save, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, Palette, Save, Sparkles } from 'lucide-react';
 
 /**
  * BRAND KIT — the page the owner went looking for and could not find.
  *
- * It shows the three things the image pipeline actually obeys, and lets them be edited:
+ * It shows the two things the image pipeline actually obeys, and lets them be edited:
  *   1. brand colour (profiles.brand_color) — drives the palette
- *   2. reference artwork (their own catalogue images) — copied as image-to-image references
- *   3. standing rules, one per line — stored as `creative_directives` on the active playbook, which
+ *   2. standing rules, one per line — stored as `creative_directives` on the active playbook, which
  *      lib/automation/creative-directives enforces and generate_ai_image now reads
+ *
+ * Catalogue images are deliberately absent: they belong to a listing (a course, a product), not to the brand. The agent
+ * passes them as references when it makes a creative ABOUT that item, which is a different job.
  *
  * Kept as its own light-theme page so it cannot destabilise the very large profile page.
  */
@@ -20,7 +22,6 @@ interface BrandKit {
   logoUrl: string;
   businessName: string;
   rulesText: string;
-  references: Array<{ id: string; title: string; url: string }>;
   activeSources: string[];
 }
 
@@ -124,41 +125,7 @@ export default function BrandKitPage() {
               </div>
             </section>
 
-            {/* 2. Reference artwork */}
-            <section className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
-              <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <ImageIcon size={15} className="text-indigo-600" /> Reference artwork
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                These are your own catalogue images. The AI uses them as references, so its palette, texture and
-                type weight match yours instead of being invented.
-              </p>
-              {kit?.references?.length ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {kit.references.map((ref) => (
-                    <figure key={ref.id} className="space-y-1">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={ref.url}
-                        alt={ref.title}
-                        className="w-full h-24 object-cover rounded-xl border border-slate-200 bg-slate-100"
-                      />
-                      <figcaption className="text-[11px] font-semibold text-slate-500 truncate">{ref.title}</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  No images on your catalogue items yet. Upload one image per item — that is what makes the AI match your
-                  look, and it does more than any wording.
-                </p>
-              )}
-              <Link href="/dashboard/assets" className="inline-block text-xs font-bold text-indigo-600 hover:underline">
-                Manage catalogue images →
-              </Link>
-            </section>
-
-            {/* 3. Rules */}
+            {/* 2. Rules */}
             <section className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3">
               <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <Sparkles size={15} className="text-indigo-600" /> Brand rules

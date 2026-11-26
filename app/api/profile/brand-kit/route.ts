@@ -36,30 +36,12 @@ export async function GET() {
       ? directives.map((d: any) => String(d?.instruction || '').trim()).filter(Boolean).join('\n')
       : '';
 
-    // Their own catalogue artwork: what the model will copy, so the owner can see it and fix it.
-    const { data: items } = await supabase
-      .from('properties')
-      .select('id, title, image_url, images')
-      .eq('user_id', user.id)
-      .limit(24);
-
-    const references = ((items || []) as any[])
-      .map((item) => {
-        const imgs = Array.isArray(item.images)
-          ? item.images.map((i: any) => (typeof i === 'string' ? i : i?.url)).filter(Boolean)
-          : [];
-        const url = item.image_url || imgs[0] || null;
-        return url ? { id: item.id, title: item.title || 'Catalogue item', url } : null;
-      })
-      .filter(Boolean)
-      .slice(0, 8);
 
     return NextResponse.json({
       brandColor: (profile as any)?.brand_color || '',
       logoUrl: (profile as any)?.logo_url || '',
       businessName: (profile as any)?.business_name || '',
       rulesText,
-      references,
       activeSources: kit.sources,
     });
   } catch (err: any) {
