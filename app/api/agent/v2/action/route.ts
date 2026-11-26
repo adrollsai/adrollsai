@@ -103,13 +103,39 @@ export async function POST(req: Request) {
     }
 
     if (decision === 'rejected') {
-      await supabase
+      /**
+       * CANCEL MUST ACTUALLY LAND.
+       *
+       * This update ignored its own error, so an RLS refusal or a transient failure returned `success: true` while the
+       * row stayed `pending` — the card said cancelled and the gate still held the step. The row's new state is now read
+       * back and reported, and only a row that is genuinely decided counts as success.
+       */
+      const { error: rejectError } = await supabase
         .from('agent_events')
         .update({
           status: 'rejected',
           updated_at: new Date().toISOString(),
         })
-        .eq('id', event.id);
+        .eq('id', event.id)
+        .eq('status', 'pending');
+
+      const { data: afterReject } = await supabase
+        .from('agent_events')
+        .select('status')
+        .eq('id', event.id)
+        .maybeSingle();
+
+      const settledAs = String((afterReject as any)?.status || '').toLowerCase();
+      if (rejectError || settledAs !== 'rejected') {
+        return NextResponse.json(
+          {
+            error:
+              rejectError?.message ||
+              `The step is still '${settledAs || 'unknown'}' — it was not cancelled. Refresh the chat.`,
+          },
+          { status: 500 }
+        );
+      }
 
       const outcome = rejectionOutcome();
       return NextResponse.json({ success: true, status: outcome.status, message: outcome.message });

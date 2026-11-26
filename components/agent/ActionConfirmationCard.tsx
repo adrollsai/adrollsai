@@ -118,6 +118,17 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume,
 
   const handleDecision = async (decision: 'approved' | 'rejected') => {
     setLoading(true);
+    /**
+     * A DECISION BUTTON MUST NEVER STICK.
+     *
+     * Customer report: "Cancel button not accepting the command, stuck here". This handler awaited a bare fetch with no
+     * timeout and no network-failure path: if the request stalled or the route threw, `loading` stayed true, both
+     * buttons stayed disabled, and the card sat there ignoring every tap. A card asking for a decision is the one control
+     * that must always resolve, so the request is bounded, a stall is reported instead of swallowed, and "already
+     * processed" is treated as a completed decision rather than an error — because the row is decided either way.
+     */
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
       const res = await fetch('/api/agent/v2/action', {
         method: 'POST',
@@ -126,10 +137,24 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume,
           actionId: artifact.actionId,
           decision,
         }),
+        signal: controller.signal,
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to submit decision');
+      const data = await res.json().catch(() => ({} as any));
+
+      // Already decided (by this card earlier, another tab, or WhatsApp): settle it locally instead of failing.
+      if (res.status === 404) {
+        setStatus(decision);
+        if (onDecision) onDecision(artifact.actionId, decision);
+        toast.info(
+          decision === 'rejected'
+            ? 'This step was already cancelled.'
+            : 'This step was already decided.'
+        );
+        return;
+      }
+
+      if (!res.ok) throw new Error(data?.error || `Could not submit the decision (${res.status})`);
 
       setStatus(decision);
       if (decision === 'approved') {
@@ -159,8 +184,14 @@ export default function ActionConfirmationCard({ artifact, onDecision, onResume,
         onDecision(artifact.actionId, decision);
       }
     } catch (err: any) {
-      toast.error(err.message || 'Error processing action');
+      const timedOut = err?.name === 'AbortError';
+      toast.error(
+        timedOut
+          ? 'That took too long and was cancelled on your side — nothing was approved. Try again.'
+          : err?.message || 'Error processing action'
+      );
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   };
