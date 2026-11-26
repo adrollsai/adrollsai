@@ -13,6 +13,7 @@ import {
   QUOTE_APPROVAL_THRESHOLD,
 } from '@/lib/automation/billing';
 import { videoCredits, imageCredits, vendorVideoSeconds } from '@/lib/automation/onboarding-plan';
+import { brandKitFor } from '../media/brand-kit';
 import { outboundRecipient, testBanner } from '@/lib/automation/test-mode';
 import { deliverVideoToAdmin } from '@/lib/automation/video-delivery';
 import { createKieImageTask, createKieTask } from '@/utils/external-apis';
@@ -202,6 +203,16 @@ export function createCompositionTools(supabase: SupabaseClient, userId: string)
               )}`
             : 'Use the supplied photo(s) as the actual subject. Never replace them with a different location, building or person.';
 
+          /**
+           * THE BRAND KIT, APPLIED HERE TOO.
+           *
+           * This tool had NO brand awareness at all — no brand colour, no standing rules, no logo discipline — so a
+           * composed poster came out in whatever palette the model chose. That is the tool that produced the customer's
+           * Black Friday poster after the brand kit shipped, which is why they said "still not taking the brand
+           * guidelines": the kit was wired into generate_ai_image and never into this one.
+           */
+          const brandKit = await brandKitFor(supabase, userId);
+
           const prompt = [
             `Create one ${vocab.productNoun} advertisement image for ${vocab.key === 'generic' ? 'this business' : `a ${vocab.productNounPlural} business`}.`,
             '',
@@ -212,6 +223,9 @@ export function createCompositionTools(supabase: SupabaseClient, userId: string)
             '',
             recipeLines(recipes.creative, 'CREATIVE RECIPE (first-draft guidance):'),
             '',
+            brandKit.rules
+              ? `BRAND LOCK — this business's own design system, which outranks the recipe and any generic styling:\n${brandKit.rules}`
+              : '',
             'Rules: photorealistic, one clear focal point, generous margins, text legible at thumbnail size.',
             'Never bake a phone number or a price into the image.',
           ]
