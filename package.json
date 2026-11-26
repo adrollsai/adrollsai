@@ -108,6 +108,7 @@
     "verify:routine-reconcile": "esbuild scripts/verify-routine-reconcile.ts --bundle --platform=node --format=esm --outfile=.tmp-rourec.mjs --log-level=warning --packages=external && node .tmp-rourec.mjs",
     "verify:digest-honesty": "esbuild scripts/verify-digest-honesty.ts --bundle --platform=node --format=esm --outfile=.tmp-dighon.mjs --log-level=warning --packages=external && node .tmp-dighon.mjs",
     "verify:chat-steering": "esbuild scripts/verify-chat-steering.ts --bundle --platform=node --format=esm --outfile=.tmp-chatsteer.mjs --log-level=warning --packages=external && node .tmp-chatsteer.mjs",
+    "verify:avatar-video": "esbuild scripts/verify-avatar-video.ts --bundle --platform=node --format=esm --outfile=.tmp-avatarvid.mjs --log-level=warning --packages=external && node .tmp-avatarvid.mjs",
     "verify:launch-course": "esbuild scripts/verify-launch-course.ts --bundle --platform=node --format=esm --outfile=.tmp-launch.mjs --log-level=warning --alias:@/lib/automation/industry=./lib/automation/industry && node .tmp-launch.mjs",
     "verify:vendor-skills": "esbuild scripts/verify-vendor-skills.ts --bundle --platform=node --format=esm --outfile=.tmp-vendor.mjs --log-level=warning && node .tmp-vendor.mjs",
     "verify:creative-specs": "esbuild scripts/verify-creative-specs.ts --bundle --platform=node --format=esm --outfile=.tmp-creative-specs.mjs --log-level=warning && node .tmp-creative-specs.mjs",

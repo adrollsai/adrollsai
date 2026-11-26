@@ -7,6 +7,7 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google';
 import crypto from 'crypto';
 import { workerSecretHeaders } from '@/lib/worker-auth';
+import { allocateSceneBriefs } from '@/lib/agent/video-scene-briefs';
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { exec } from 'child_process';
@@ -670,10 +671,31 @@ export async function POST(request: Request) {
             prompts = body.prompts;
         } else if (videoModel === 'grok') {
             console.log(`[Grok Pipeline] Synthesizing prompts for ${requiredClips} scene(s) in parallel (isAvatar: ${isAvatarPresenter})...`);
+            /**
+             * ONE SHOT PER LINE.
+             *
+             * This used to be `scenes[i % scenes.length]`, so a script with no `scenes` array gave every clip the
+             * same dialogue and the same visual direction, and a two-scene script repeated itself across four
+             * clips. The owner's report is what that looks like: the words talk about Meta ads and video
+             * generation, the picture stays on the same generic shot, and nothing ties a scene to the sentence
+             * it is speaking. `allocateSceneBriefs` makes the binding explicit and testable.
+             */
+            const sceneBriefs = allocateSceneBriefs({
+                scenes,
+                dialogue: script.dialogue,
+                visuals: script.visuals || script.concept?.visualConcept || '',
+                clips: requiredClips,
+            });
+            console.log(
+                `[Grok Pipeline] Scene briefs: ${sceneBriefs
+                    .map((b) => `${b.index}(${b.source}) "${b.dialogue.slice(0, 40)}"`)
+                    .join(' | ')}`
+            );
+
             const promptPromises = Array.from({ length: requiredClips }, async (_, i) => {
-                const currentSceneObj = scenes[i % scenes.length];
-                const sceneDialogue = currentSceneObj?.dialogue || script.dialogue || '';
-                const sceneVisuals = currentSceneObj?.visuals || script.visuals || script.concept?.visualConcept || '';
+                const brief = sceneBriefs[Math.min(i, sceneBriefs.length - 1)];
+                const sceneDialogue = brief?.dialogue || script.dialogue || '';
+                const sceneVisuals = brief?.visuals || script.visuals || script.concept?.visualConcept || '';
                 const productTitle = script.title || property?.title || 'Featured Product/Business';
                 const productContext = property?.description || script.finalCaption || '';
 
@@ -684,9 +706,34 @@ export async function POST(request: Request) {
 
                     const isIndianAccent = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
 
+                    /**
+                     * IDENTITY LOCK — THE SAME CHARACTER IN EVERY SHOT.
+                     *
+                     * The owner's report: a robotic mascot was uploaded, and in the end scene the video fitted a
+                     * HUMAN face inside the Nobogent helmet. Every shot is generated independently from the same
+                     * reference photo, so "look like Image 1" was the only thing holding the identity together —
+                     * a soft hint, restated per shot, with nothing naming the character's actual features. When a
+                     * shot moved to a new angle or a new room, the model had licence to reinterpret the subject,
+                     * and it did.
+                     *
+                     * The avatar's own vision description (written when it was uploaded: `avatar_description`) is
+                     * the strongest identity anchor available without a verification pass, so it is quoted into
+                     * EVERY shot's brief, with the drift explicitly forbidden. This is a prompt-level guarantee:
+                     * see `verify:avatar-video` for what is asserted, and the report for the composite
+                     * verification this does NOT yet perform.
+                     */
+                    const identityAnchor = String((profile as any)?.avatar_description || (script as any)?.avatar_description || '').trim();
+                    const identityLock = `IDENTITY LOCK — ONE CHARACTER, IN EVERY SHOT OF THIS VIDEO (ABSOLUTE):
+- This video has exactly ONE presenter, and Image 1 is that presenter. This is Scene ${i + 1} of ${requiredClips}; the SAME character must appear here as in every other scene.
+- The subject is NOT necessarily human. If Image 1 shows a mascot, a robot, a cartoon character, a statue or an animal, it stays exactly that — a non-human character. Never replace it with a human being, and never push a human face into a helmet, mask, or costume that the character is wearing.${identityAnchor ? `\n- Immutable appearance, reproduced exactly: ${identityAnchor}` : ''}
+- Immutable across every shot: the same face or head shape, the same materials and colours, the same eyes, the same outfit, the same proportions. Change only the camera angle, the framing, the action and the light.
+- A shot that shows a different character is a failed shot, however beautiful.`;
+
                     const avatarScenePromptGen = `You are a premier cinematic commercial film director specializing in ultra-high-end 35mm live-action commercial cinematography.
 Write a cinematic, photorealistic 9:16 portrait video prompt for Scene ${i + 1} of ${requiredClips} for Grok Imagine 1.5.
 ${customInstructionsBlock}
+${identityLock}
+
 CINEMATIC OPENING (SECOND 0.0 — ZERO FREEZE DIRECTIVE):
 - Fluid, Natural Delivery: The scene opens with smooth, natural motion starting at second 0.0. The presenter is in natural motion, speaking with calm, understated poise, authentic facial micro-expressions, fluid lip-sync, and subtle, natural presence.
 - Image 1 Disambiguation: Image 1 is strictly a character identity, facial likeness, hairstyle, skin tone, and wardrobe reference — NOT a static starting photo to freeze on. Absolutely DO NOT hold or freeze on the reference photo at the beginning.
@@ -984,10 +1031,50 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
 
             let grokAudioUrl: string | null = audioUrl || null;
 
-            // Generate asynchronous Gemini TTS voiceover across the dialogue script for BOTH Avatar and Non-Avatar videos.
-            // This guarantees studio-grade human speech (no robotic artifacts) and ensures the voiceover
-            // CONTINUES seamlessly while B-rolls are playing, eliminating dead air or silent scenes!
-            if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
+            /**
+             * AN AVATAR SPEAKS ITS OWN LINES. TTS IS FOR EVERYTHING ELSE.
+             *
+             * The owner's report: "when an avatar is selected then the tts should not be run, then the avatar
+             * is supposed to speak the dialogues from the prompt not tts, the tts works only when the avatar is
+             * not selected". Both tracks used to run: this block synthesised a full Gemini voiceover for
+             * BOTH modes ("...for BOTH Avatar and Non-Avatar videos" said the comment), and the callback then
+             * muxed that voiceover over shots in which the avatar was already speaking — two voices, one of
+             * them a narrator reading the avatar's own dialogue.
+             *
+             * What makes the avatar speak is the prompt, not a voice track: the per-shot brief carries the
+             * line and instructs the model to say it with synced lips (see `avatarScenePromptGen`, "flawless
+             * lip synchronization saying: ..."). So in avatar mode no voiceover is requested at all, and
+             * `audioUrl: 'none'` is written so `resolveVoiceoverAudio` returns null and nothing is muxed —
+             * including its on-the-fly fallback synthesis, which would otherwise quietly put a narrator back
+             * on top. Non-avatar mode is untouched: it keeps the studio voiceover this pipeline was built on.
+             */
+            const metadataMerge = async (patch: Record<string, unknown>) => {
+                // Merge, never replace: the previous write here dropped `videoModel` and `presenterType` from
+                // the asset's metadata every time a voiceover was attached, and the callback then had to cope
+                // with an asset that no longer knew which pipeline produced it.
+                const { data: current } = await supabaseAdmin
+                    .from('assets')
+                    .select('metadata')
+                    .eq('id', newAsset.id)
+                    .maybeSingle();
+                const existing =
+                    typeof (current as any)?.metadata === 'string'
+                        ? JSON.parse((current as any).metadata)
+                        : ((current as any)?.metadata || {});
+                await supabaseAdmin
+                    .from('assets')
+                    .update({ metadata: { ...existing, ...patch } })
+                    .eq('id', newAsset.id);
+            };
+
+            if (isAvatarPresenter) {
+                grokAudioUrl = null;
+                await metadataMerge({ audioUrl: 'none', isAvatar: true, audioMode: 'avatar_speaks' });
+                console.log(
+                    '[Video Generate] Avatar presenter: NO TTS requested. The avatar speaks the dialogue written ' +
+                        'into its shot prompts; the asset is marked audioUrl=none so no separate audio track is muxed.'
+                );
+            } else if (!grokAudioUrl && script.dialogue && script.dialogue.trim().length > 10) {
                 try {
                     const isIndianVoice = body.accent === 'indian' || body.voiceAccent === 'indian' || body.language === 'english_in' || (!body.accent && (body.language === 'hinglish' || body.language === 'hindi' || body.language === 'punjabi' || body.language === 'tamil' || body.language === 'telugu' || body.language === 'kannada' || body.language === 'marathi' || body.language === 'bengali' || body.language === 'gujarati'));
                     const speakerName = body.grokVoice || 'Aoede';
@@ -998,7 +1085,7 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                         ? "High converting luxury marketing video commercial with natural Indian English delivery"
                         : "High converting commercial marketing video";
 
-                    console.log(`[Video Generate] Launching asynchronous Gemini TTS task for Grok ${isAvatarPresenter ? 'Avatar' : 'Voiceover'} video (Speaker: ${speakerName}, Accent: ${isIndianVoice ? 'Indian' : 'American'})...`);
+                    console.log(`[Video Generate] Launching asynchronous Gemini TTS voiceover for the NO-AVATAR video (Speaker: ${speakerName}, Accent: ${isIndianVoice ? 'Indian' : 'American'})...`);
                     const { taskId: ttsTaskId } = await createGeminiTTS({
                         dialogueText: script.dialogue.trim(),
                         speakerName,
@@ -1009,13 +1096,13 @@ Output ONLY the raw final prompt text. Do NOT wrap it in markdown code blocks or
                     if (ttsTaskId) {
                         console.log(`[Video Generate] Gemini TTS task launched: ${ttsTaskId}`);
                         grokAudioUrl = `tts:${ttsTaskId}`;
-                        await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl, isAvatar: isAvatarPresenter } }).eq('id', newAsset.id);
+                        await metadataMerge({ audioUrl: grokAudioUrl, isAvatar: false, audioMode: 'voiceover' });
                     }
                 } catch (ttsErr: any) {
                     console.warn('[Video Generate] Asynchronous TTS voiceover launch warning:', ttsErr.message);
                 }
             } else if (grokAudioUrl) {
-                await supabaseAdmin.from('assets').update({ metadata: { audioUrl: grokAudioUrl, isAvatar: isAvatarPresenter } }).eq('id', newAsset.id);
+                await metadataMerge({ audioUrl: grokAudioUrl, isAvatar: isAvatarPresenter });
             }
 
             console.log(`[Grok Pipeline] Launching ${prompts.length} Grok scene clips with ${convertedRefImages.length} input image(s)...`);
