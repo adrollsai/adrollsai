@@ -59,6 +59,14 @@ async function handle(request: Request) {
 
   try {
     const cutoff = new Date(Date.now() - STALE_MINUTES * 60_000).toISOString()
+    /**
+     * ALSO SWEEP RECENT FAILURES. A task the ops watchdog failed at 45 minutes used to be final —
+     * nothing ever looked at it again, even though on 2026-11-26 fourteen of sixteen such tasks had
+     * actually SUCCEEDED at the provider and were merely missing their callback. `Failed` tasks from
+     * the last two days that still name a provider job are offered to the same sync, which asks the
+     * provider and finalises only what is genuinely finished.
+     */
+    const failedSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
 
     const { data: stale, error } = await supabaseAdmin
       .from('video_tasks')
@@ -69,7 +77,17 @@ async function handle(request: Request) {
 
     if (error) throw error
 
-    const tenants = Array.from(new Set((stale || []).map((t: any) => t.user_id))).filter(Boolean) as string[]
+    const { data: recentlyFailed } = await supabaseAdmin
+      .from('video_tasks')
+      .select('user_id, updated_at')
+      .eq('status', 'Failed')
+      .not('last_task_id', 'is', null)
+      .gte('created_at', failedSince)
+      .limit(200)
+
+    const tenants = Array.from(
+      new Set([...(stale || []), ...(recentlyFailed || [])].map((t: any) => t.user_id))
+    ).filter(Boolean) as string[]
 
     const batch = tenants.slice(0, MAX_TENANTS)
 
@@ -96,6 +114,7 @@ async function handle(request: Request) {
     return NextResponse.json({
       success: true,
       staleTasks: stale?.length ?? 0,
+      recentlyFailed: recentlyFailed?.length ?? 0,
       tenants: tenants.length,
       synced: syncedCount,
       failed: failures.length,

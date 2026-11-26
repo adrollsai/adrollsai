@@ -173,30 +173,112 @@ const nudgeStarvedQueue: Repair = {
 };
 
 /**
- * Stop a video task lying about being in progress.
+ * Stop a video task lying about being in progress — but ASK THE PROVIDER FIRST.
  *
- * At 45 minutes the provider callback is not late, it is not coming, and the 20-minute
- * watchdog has already had two sweeps. Leaving `Processing` means the tenant stares at a
- * spinner forever and support has no error to read. Failing it with the reason is the honest
- * state, and the tenant can simply generate again.
+ * At 45 minutes the callback is not late, it is not coming, and the 20-minute watchdog has already
+ * had two sweeps. Leaving `Processing` means the tenant stares at a spinner forever and support has
+ * no error to read.
+ *
+ * WHAT THIS REPAIR GOT WRONG, measured on production 2026-11-26. It declared the render "abandoned"
+ * without asking the provider anything. Fourteen of sixteen tasks were failed this way — and a direct
+ * `recordInfo` query returned `state: success` with a result URL for every one of them. The renders
+ * existed; only our callback had been lost. Because the failure was final, the sync sweep (which only
+ * looked at `Processing`) could never see them again, `retry_count` stayed 0, and eight tenants got no
+ * daily creative at all while a finished video sat at Kie.ai. The owner's reading — "you never sent it"
+ * — was correct.
+ *
+ * So the provider is asked before the task is failed. If it has the render, the task goes back to
+ * `Processing` carrying the note, which is exactly the state the 20-minute watchdog sweeps and
+ * finalises (persist to R2, stitch, deliver to the owner with Approve/Edit). Only a provider that
+ * reports `fail`, or one that cannot be asked at all, produces a `Failed` row.
  */
 const failAbandonedVideoTask: Repair = {
   class: 'video-task-stuck-processing',
   blastRadius: 'safe',
-  describe: 'Mark the abandoned render task failed with the reason, so the tenant is told instead of waiting.',
+  describe: 'Ask the provider whether it has the render; re-queue it if it does, else fail it with the reason.',
   table: 'video_tasks',
   columns: ['status', 'last_error', 'updated_at'],
   async apply(incident: Incident, ctx: DetectorContext): Promise<RepairOutcome> {
     if (!incident.subject_id) return { ok: false, detail: 'Incident has no task id.' };
 
     const nowIso = ctx.now.toISOString();
+
+    // ── 1. What does the provider actually say? ──────────────────────────────
+    let providerState: string | null = null;
+    let providerError: string | null = null;
+    let providerHasRender = false;
+    try {
+      const { data: taskRow } = await ctx.supabase
+        .from('video_tasks')
+        .select('id, last_task_id, status, retry_count')
+        .eq('id', incident.subject_id)
+        .maybeSingle();
+
+      const providerTaskId = (taskRow as any)?.last_task_id;
+      // Already settled by someone else: nothing to decide.
+      if ((taskRow as any)?.status !== 'Processing') {
+        return { ok: true, detail: 'Nothing to do: the task is no longer Processing.', touched: [] };
+      }
+
+      if (providerTaskId) {
+        const { queryKieTask } = await import('@/utils/external-apis');
+        const answer = await queryKieTask(String(providerTaskId));
+        providerState = String(answer?.state || 'unknown');
+        providerError = answer?.error ? String(answer.error) : null;
+        providerHasRender = providerState === 'success' && Boolean(answer?.resultUrl);
+
+        if (providerHasRender) {
+          /**
+           * The render exists. Put the task back in the state the sync sweep watches, so the ordinary
+           * finalisation path (R2 persist → stitch → WhatsApp with Approve/Edit) does the rest. This
+           * repair stays fast on purpose: the ops watchdog has a duration budget, and a 40 MB download
+           * plus an FFmpeg stitch does not belong in it.
+           */
+          const { data: requeued, error } = await ctx.supabase
+            .from('video_tasks')
+            .update({
+              status: 'Processing',
+              retry_count: 0,
+              last_error:
+                `ops-watchdog: our callback was lost but the provider finished the render ` +
+                `(state=${providerState}). Re-queued for finalisation and delivery instead of failing it.`,
+              updated_at: nowIso,
+            })
+            .eq('id', incident.subject_id)
+            .eq('status', 'Processing')
+            .select('id');
+
+          if (error) return { ok: false, detail: `Could not re-queue task: ${String(error.message || error)}` };
+          const affected = Array.isArray(requeued) ? requeued.length : 0;
+          if (affected === 0) return { ok: true, detail: 'Nothing to do: the task finished on its own.', touched: [] };
+          return {
+            ok: true,
+            detail:
+              `Provider had the render (state=${providerState}); task ${incident.subject_id} re-queued for ` +
+              'finalisation and owner delivery rather than failed.',
+            touched: this.columns,
+          };
+        }
+      }
+    } catch (probeErr: any) {
+      // A provider we cannot reach is not proof of abandonment, but it is also not proof of a render.
+      // Fall through to failing the task, and say which happened.
+      providerError = providerError || probeErr?.message || String(probeErr);
+    }
+
+    // ── 2. The provider genuinely has nothing: say so, with its own words ────
+    const reasonBits = [
+      'ops-watchdog: the render could not be confirmed.',
+      providerState ? `Provider state=${providerState}.` : '',
+      providerError ? `Provider said: ${providerError}.` : '',
+      'Marked failed so it is not left waiting. Please generate again.',
+    ].filter(Boolean);
+
     const { data, error } = await ctx.supabase
       .from('video_tasks')
       .update({
         status: 'Failed',
-        last_error:
-          'ops-watchdog: the video provider never called back and the render was abandoned. ' +
-          'Marked failed so it is not left waiting. Please generate again.',
+        last_error: reasonBits.join(' '),
         updated_at: nowIso,
       })
       .eq('id', incident.subject_id)

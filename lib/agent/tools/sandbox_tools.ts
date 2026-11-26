@@ -90,6 +90,7 @@ export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
 
           // Check if any video or image was extracted and generate artifact
           let artifact: any = undefined;
+          let surfacedFile: { path: string; url: string; kind: 'video' | 'image' } | null = null;
           if (res.uploadedFiles) {
             for (const [filePath, url] of Object.entries(res.uploadedFiles)) {
               if (filePath.endsWith('.mp4')) {
@@ -99,6 +100,7 @@ export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
                   videoUrl: url,
                   duration: '15s',
                 };
+                surfacedFile = { path: filePath, url: String(url), kind: 'video' };
                 break;
               } else if (filePath.match(/\.(png|jpg|jpeg|webp)$/i)) {
                 artifact = {
@@ -106,8 +108,59 @@ export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
                   title: filePath,
                   imageUrl: url,
                 };
+                surfacedFile = { path: filePath, url: String(url), kind: 'image' };
                 break;
               }
+            }
+          }
+
+          /**
+           * A FILE THE OWNER CAN SEE IN CHAT MUST ALSO EXIST IN THEIR ASSETS.
+           *
+           * The owner's report: "it edited the video, i can see the edited video only in the chat, nor in
+           * the files and folders section neither in the assets tab". Measured on production for the run
+           * that produced `nobogent_edit_v3.mp4` (49s, 1080x1920): the owner had exactly ONE asset that
+           * day — the SOURCE video created at 06:15 — and the finished edit, uploaded to
+           * `agent_sandbox/…`, had no `assets` row at all. The file existed; the library could not list it,
+           * and every downstream reader (the routine's "what did we make today", the CEO rollup's
+           * artefact count, the assets tab, files and folders) therefore saw nothing.
+           *
+           * So a surfaced media file is recorded as a real asset, deduped by URL so a re-upload does not
+           * multiply rows. Best-effort by design: an accounting write must never fail the render the
+           * owner just paid for.
+           */
+          let assetId: string | null = null;
+          if (supabase && userId && surfacedFile) {
+            try {
+              const { data: existing } = await supabase
+                .from('assets')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('url', surfacedFile.url)
+                .maybeSingle();
+              if (existing?.id) {
+                assetId = existing.id;
+              } else {
+                const { data: inserted } = await supabase
+                  .from('assets')
+                  .insert({
+                    user_id: userId,
+                    type: surfacedFile.kind,
+                    status: 'Ready',
+                    url: surfacedFile.url,
+                    caption: `Edited file from the agent — ${surfacedFile.path.split('/').pop()}`,
+                    metadata: {
+                      source: 'agent_sandbox',
+                      sandbox_path: surfacedFile.path,
+                    },
+                    created_at: new Date().toISOString(),
+                  })
+                  .select('id')
+                  .single();
+                assetId = inserted?.id ?? null;
+              }
+            } catch (assetErr: any) {
+              console.warn('[Sandbox] could not record the produced file as an asset:', assetErr?.message);
             }
           }
 
@@ -118,6 +171,7 @@ export function createSandboxTools(supabase?: SupabaseClient, userId?: string) {
             stderr: res.stderr?.slice(-2000) || '',
             uploadedFiles: res.uploadedFiles,
             artifact,
+            assetId,
             error: res.error,
           };
         } catch (err: any) {

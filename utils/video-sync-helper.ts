@@ -116,11 +116,29 @@ export async function syncVideoTasksForUser(
 
     console.log(`[Video Sync Helper] Starting task sync for users: ${userIds.join(', ')}`);
 
+    /**
+     * ALSO RE-CHECK RECENT FAILURES. This is the fix for the whole class of "no creative today".
+     *
+     * Measured on production 2026-11-26: 14 of 16 video tasks were marked `Failed` at 45 minutes with
+     * "the video provider never called back and the render was abandoned" — and when those same task
+     * ids were asked directly, Kie.ai answered `state: success` with a result URL for EVERY ONE of
+     * them. The renders existed; only the callback had been lost. Because this query filtered on
+     * `status = 'Processing'`, a watchdog-abandoned task could never be picked up again, nothing
+     * retried (`retry_count` stayed 0), and eight tenants waited for a creative that was already
+     * sitting at the provider. The owner saw nothing on WhatsApp because nothing was ever finalised.
+     *
+     * So a `Failed` task that still names a provider job is re-checked, bounded to the last 48 hours so
+     * an ancient failure is not re-queried on every sweep. If the provider really did fail, the next
+     * status read reports `fail` and nothing is fabricated.
+     */
+    const recheckSince = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+
     const { data: activeTasks, error: fetchError } = await supabaseAdmin
         .from('video_tasks')
         .select('*')
         .in('user_id', userIds)
-        .eq('status', 'Processing');
+        .in('status', ['Processing', 'Failed'])
+        .gte('created_at', recheckSince);
 
     if (fetchError) {
         console.error("[Video Sync Helper] Error fetching video tasks:", fetchError);
