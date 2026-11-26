@@ -11,6 +11,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { buildDayRollup, rollupDay } from '@/lib/automation/ceo-rollup';
+import { reconcileRoutineRuns } from '@/lib/agent/routines';
 
 export const maxDuration = 300;
 
@@ -33,6 +34,20 @@ export async function GET(request: Request) {
   // The period that just ended, in the tenant's own timezone. One day back so the rollup summarises a
   // complete day rather than the one still in progress.
   const day = rollupDay(new Date(now.getTime() - 86_400_000));
+
+  /**
+   * Settle stuck routine rows BEFORE counting them.
+   *
+   * `payload.routineRuns` counts `routine_runs` rows, and those rows used to stay `queued` for ever
+   * because nothing wrote the harness run's outcome back (measured 2026-11-26: 79 of 80 rows over
+   * seven days, which is why this figure read 0 for every account). Counting first would bake the
+   * stale status into the nightly number. Best-effort: a failed sweep must not cost the night's
+   * rollup, so the counts are still written from whatever the table says.
+   */
+  const reconciled = await reconcileRoutineRuns(supabaseAdmin).catch((e: any) => {
+    console.error('[ceo-rollups] routine reconcile failed:', e?.message || e);
+    return null;
+  });
 
   try {
     const { data: profiles, error } = await supabaseAdmin
@@ -105,7 +120,7 @@ export async function GET(request: Request) {
       written++;
     }
 
-    return NextResponse.json({ success: true, day, written, skipped });
+    return NextResponse.json({ success: true, day, written, skipped, reconciled });
   } catch (error: any) {
     console.error('[ceo-rollups] failed:', error?.message || error);
     return NextResponse.json({ error: error?.message || 'rollup failed' }, { status: 500 });

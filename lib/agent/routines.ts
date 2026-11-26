@@ -481,3 +481,235 @@ export function defaultRoutineIntent(businessName: string, industry: string | nu
     'effort somewhere else instead of producing it again.',
   ].join(' ');
 }
+
+// ---------------------------------------------------------------- reconciliation
+
+/**
+ * Write the harness run's outcome back onto the routine row.
+ *
+ * WHY THIS SECTION EXISTS
+ * `materialiseDueRoutines` writes `routine_runs.status = 'queued'` and then nothing ever wrote
+ * the outcome: the harness run finished (or died) in another process and the routine row stayed
+ * `queued` forever. Measured on production on 2026-11-26 over the previous seven days: 80 routine
+ * rows, 79 `queued`, 1 `failed`, ZERO `completed` — while the 77 harness runs behind them had all
+ * ended, 42 `completed` and 35 `dead` with `Platform AI provider out of credit (not the
+ * customer's balance): Insufficient Balance`. The work had happened; the record said "still
+ * waiting". `ceo_daily_rollups.payload.routineRuns` therefore read 0 for every account every day,
+ * because a broken loop looks exactly like a quiet one.
+ *
+ * Two rules keep this honest:
+ *   - a row only moves while it says `queued`, so a second pass is a no-op (idempotent);
+ *   - a run that is still queued or running is left alone — a sweep must never fail live work.
+ */
+
+/** Where `routine_runs.status` should go for a finished harness run; null means "not finished". */
+export function routineStatusFromRun(
+  run: { status?: string | null } | null | undefined
+): 'completed' | 'failed' | null {
+  const status = String(run?.status || '').toLowerCase();
+  if (status === 'completed') return 'completed';
+  // `cancelled` counts as failed on purpose: the owner stopped it, so it will never produce the
+  // day's creative, and a row that can never progress must not keep looking like pending work.
+  if (status === 'dead' || status === 'failed' || status === 'cancelled') return 'failed';
+  return null;
+}
+
+/** A run row this young may still be being attached; the worker writes `run_id` after enqueueing. */
+export const ROUTINE_RUN_STALE_MS = 2 * 60_000;
+
+/** A queued row with no `run_id` at all can never progress, but give the dispatcher this long first. */
+export const ROUTINE_RUN_NO_RUNID_MS = 30 * 60_000;
+
+/** Long enough for a provider error to be recognisable in the UI, short enough for a column. */
+const MAX_ROUTINE_ERROR_CHARS = 400;
+
+export interface RoutineRunRowForReconcile {
+  id: string;
+  run_id?: string | null;
+  status?: string | null;
+  created_at: string;
+}
+
+export interface HarnessRunOutcome {
+  id: string;
+  status?: string | null;
+  attempts?: number | null;
+  error?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RoutineReconcileDecision {
+  id: string;
+  status: 'completed' | 'failed';
+  error: string | null;
+  /** Short human reason, for logs and for this gate's output. */
+  why: string;
+}
+
+export interface ReconcileRoutineRunsResult {
+  examined: number;
+  completed: number;
+  failed: number;
+  unchanged: number;
+  updates: Array<{ id: string; status: 'completed' | 'failed'; why: string }>;
+  /** Set when the sweep could not run at all (fresh install, unreadable table). */
+  skipped?: string;
+}
+
+function routineErrorText(text: string | null | undefined, fallback: string): string {
+  const clean = String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (clean || fallback).slice(0, MAX_ROUTINE_ERROR_CHARS);
+}
+
+/**
+ * Decide what one `routine_runs` row should say, given its harness run.
+ *
+ * Pure and exported so `scripts/verify-routine-reconcile.ts` proves the mapping itself rather than
+ * a copy of it. Returns null for "leave this row exactly as it is", which is the answer for
+ * settled rows, young rows and live runs alike.
+ */
+export function classifyRoutineRow(
+  row: RoutineRunRowForReconcile,
+  run: HarnessRunOutcome | null | undefined,
+  now: Date = new Date(),
+  opts: { staleMs?: number; noRunMs?: number } = {}
+): RoutineReconcileDecision | null {
+  const staleMs = opts.staleMs ?? ROUTINE_RUN_STALE_MS;
+  const noRunMs = opts.noRunMs ?? ROUTINE_RUN_NO_RUNID_MS;
+
+  // Settled is settled. This single line is what makes the sweep idempotent.
+  if (String(row.status || '') !== 'queued') return null;
+
+  const ageMs = now.getTime() - new Date(row.created_at).getTime();
+  if (!Number.isFinite(ageMs)) return null;
+
+  if (!row.run_id) {
+    if (ageMs < noRunMs) return null;
+    const minutes = Math.round(ageMs / 60_000);
+    return {
+      id: row.id,
+      status: 'failed',
+      error: routineErrorText(
+        null,
+        `queued for ${minutes} minutes with no run id — nothing can pick this row up`
+      ),
+      why: 'no run id',
+    };
+  }
+
+  if (ageMs < staleMs) return null;
+
+  // A run row we could not read is NOT a failure: a transient read error must never fail live work.
+  const mapped = run ? routineStatusFromRun(run) : null;
+  if (!mapped) return null;
+
+  const runStatus = String(run?.status || 'unknown');
+  if (mapped === 'completed') {
+    return { id: row.id, status: 'completed', error: null, why: `run completed` };
+  }
+  return {
+    id: row.id,
+    status: 'failed',
+    error: routineErrorText(
+      run?.error,
+      `harness run ${row.run_id} ended as ${runStatus} and recorded no error`
+    ),
+    why: `run ${runStatus}`,
+  };
+}
+
+/**
+ * Sweep `routine_runs` and make every stuck row say what actually happened to its run.
+ *
+ * Cheap and safe to run on every cron tick: it reads only queued rows, reads their harness runs by
+ * primary key, and updates a row only while it is still `queued` (so two workers cannot both settle
+ * it and a settled row is never touched again).
+ */
+export async function reconcileRoutineRuns(
+  supabase: SupabaseClient,
+  opts: { now?: Date; staleMs?: number; noRunMs?: number; limit?: number } = {}
+): Promise<ReconcileRoutineRunsResult> {
+  const now = opts.now ?? new Date();
+  const staleMs = opts.staleMs ?? ROUTINE_RUN_STALE_MS;
+  const noRunMs = opts.noRunMs ?? ROUTINE_RUN_NO_RUNID_MS;
+  const limit = opts.limit ?? 500;
+  const result: ReconcileRoutineRunsResult = {
+    examined: 0,
+    completed: 0,
+    failed: 0,
+    unchanged: 0,
+    updates: [],
+  };
+
+  const cutoff = new Date(now.getTime() - Math.min(staleMs, noRunMs)).toISOString();
+  const { data: rows, error } = await supabase
+    .from('routine_runs')
+    .select('id, run_id, status, created_at')
+    .eq('status', 'queued')
+    .lt('created_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    // A missing table on a fresh install is not something to shout about on every cron tick.
+    if (/does not exist|schema cache/i.test(error.message)) {
+      result.skipped = 'routine_runs table not present';
+      return result;
+    }
+    throw new Error(error.message);
+  }
+  if (!rows?.length) return result;
+
+  const runIds = Array.from(
+    new Set((rows as RoutineRunRowForReconcile[]).map((r) => r.run_id).filter((id): id is string => Boolean(id)))
+  );
+  const runById = new Map<string, HarnessRunOutcome>();
+  for (let i = 0; i < runIds.length; i += 200) {
+    const { data: runs, error: runErr } = await supabase
+      .from('harness_runs')
+      .select('id, status, attempts, error, updated_at')
+      .in('id', runIds.slice(i, i + 200));
+    if (runErr) {
+      if (/does not exist|schema cache/i.test(runErr.message)) {
+        result.skipped = 'harness_runs table not present';
+        return result;
+      }
+      throw new Error(runErr.message);
+    }
+    for (const run of (runs || []) as HarnessRunOutcome[]) runById.set(run.id, run);
+  }
+
+  const nowIso = now.toISOString();
+  for (const row of rows as RoutineRunRowForReconcile[]) {
+    result.examined++;
+    const decision = classifyRoutineRow(row, row.run_id ? runById.get(row.run_id) : null, now, {
+      staleMs,
+      noRunMs,
+    });
+    if (!decision) {
+      result.unchanged++;
+      continue;
+    }
+
+    // The `.eq('status', 'queued')` is the concurrency guard, not decoration: another worker may
+    // have settled this row between the read and this write, and its answer is as good as ours.
+    const { error: updErr } = await supabase
+      .from('routine_runs')
+      .update({ status: decision.status, error: decision.error, updated_at: nowIso })
+      .eq('id', decision.id)
+      .eq('status', 'queued');
+
+    if (updErr) {
+      console.warn(`[routines] could not settle run row ${decision.id}: ${updErr.message}`);
+      result.unchanged++;
+      continue;
+    }
+    if (decision.status === 'completed') result.completed++;
+    else result.failed++;
+    result.updates.push({ id: decision.id, status: decision.status, why: decision.why });
+  }
+
+  return result;
+}
