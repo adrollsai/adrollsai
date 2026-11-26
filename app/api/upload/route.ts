@@ -37,7 +37,21 @@ export async function POST(req: Request) {
         }
 
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(6)}.${ext}`;
-        const r2Key = `${folder}/${fileName}`;
+
+        /**
+         * FILES GO UNDER THE ACCOUNT THAT UPLOADED THEM.
+         *
+         * This wrote `${folder}/${fileName}` — no user id — so every account's uploads landed in one shared prefix
+         * (`agent_uploads/…`). The agent tab's files/folders view reads that prefix, which is why a super admin saw
+         * "all the assets of the entire app": they were literally in the same folder. The other upload routes
+         * (`/api/upload/sign`, `/api/upload/video`) already namespace by user; this one now does too, so a file is
+         * only ever visible to the account that put it there.
+         */
+        const { data: { user } } = await (await import('@/utils/supabase/server')).createClient().then(async (c: any) => c.auth.getUser());
+        if (!user?.id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const r2Key = `${folder}/${user.id}/${fileName}`;
 
         await r2.send(new PutObjectCommand({
             Bucket: R2_BUCKET,
