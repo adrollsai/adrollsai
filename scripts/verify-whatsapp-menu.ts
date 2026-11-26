@@ -8,17 +8,17 @@
  *
  * Measured in production for Procolor Film Academy: `profiles.whatsapp_buttons` held ONE entry,
  * `[{ "url": "", "text": "View Courses" }]`, and the reply builder used that array AS the menu
- * (`ownerButtons.length > 0` → map it), so the lead was offered exactly one button. "Connect with Expert"
+ * (`ownerButtons.length > 0` â†’ map it), so the lead was offered exactly one button. "Connect with Expert"
  * and "Book Appointment" were dropped from the message entirely. The one button that remained was emitted
- * with a synthetic id and an empty URL, matched no handler, and fell through to the free-form AI answer —
+ * with a synthetic id and an empty URL, matched no handler, and fell through to the free-form AI answer â€”
  * which is why tapping "View Courses" produced course text instead of opening the academy's website.
  *
  * The rules pinned here:
  *   1. the menu is ALWAYS the same three actions, in the same order, with the ids the inbound webhook
- *      matches on — a per-tenant row may change words, never which actions exist;
+ *      matches on â€” a per-tenant row may change words, never which actions exist;
  *   2. the first button's LABEL comes from the tenant (their "View Courses") but its ID stays
  *      `view_properties`, which is the id that sends the website/catalogue link;
- *   3. junk config cannot shrink the menu — null, empty objects, blank text, a 40-character label;
+ *   3. junk config cannot shrink the menu â€” null, empty objects, blank text, a 40-character label;
  *   4. configured buttons beyond the first are reported back, not silently dropped;
  *   5. the webhook uses this builder rather than branching on the config itself.
  *
@@ -36,6 +36,7 @@ import {
   catalogueCtaCopy,
   containsPropertyVocabulary,
   catalogueSharingFor,
+  voiceNotifyCopyFor,
   offeringKindFor,
 } from '../lib/automation/catalogue-cta';
 
@@ -44,15 +45,15 @@ let fail = 0;
 function check(name: string, ok: boolean, detail: string | number | null = '') {
   if (ok) {
     pass++;
-    console.log(`PASS  ${name}${detail !== '' && detail !== null ? `  — ${detail}` : ''}`);
+    console.log(`PASS  ${name}${detail !== '' && detail !== null ? `  â€” ${detail}` : ''}`);
   } else {
     fail++;
-    console.log(`FAIL  ${name}${detail !== '' && detail !== null ? `  — ${detail}` : ''}`);
+    console.log(`FAIL  ${name}${detail !== '' && detail !== null ? `  â€” ${detail}` : ''}`);
   }
 }
-const head = (title: string) => console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 58 - title.length))}`);
+const head = (title: string) => console.log(`\nâ”€â”€ ${title} ${'â”€'.repeat(Math.max(0, 58 - title.length))}`);
 
-// ── 1. the production case, exactly as it was stored ────────────────────────
+// â”€â”€ 1. the production case, exactly as it was stored â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('1. Procolor\'s one-entry config still yields the three actions');
 
 {
@@ -79,7 +80,7 @@ head('1. Procolor\'s one-entry config still yields the three actions');
   check('no synthetic btn_custom ids anywhere', !menu.buttons.some((b) => b.id.startsWith('btn_custom')));
 }
 
-// ── 2. no config at all still means three actions ───────────────────────────
+// â”€â”€ 2. no config at all still means three actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('2. With nothing configured the menu is still complete');
 
 {
@@ -97,7 +98,7 @@ head('2. With nothing configured the menu is still complete');
   check('with a readable first label', nothing.buttons[0].title.length > 0, nothing.buttons[0].title);
 }
 
-// ── 3. junk cannot shrink it ────────────────────────────────────────────────
+// â”€â”€ 3. junk cannot shrink it â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('3. Junk configuration cannot remove an action');
 
 {
@@ -126,7 +127,7 @@ head('3. Junk configuration cannot remove an action');
   check('and the buttons that could not fit are reported, not hidden', extra.ignored.length === 2, extra.ignored.join(', '));
 }
 
-// ── 4. the payload WhatsApp actually receives ───────────────────────────────
+// â”€â”€ 4. the payload WhatsApp actually receives â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('4. The outbound payload is a three-button interactive message');
 
 {
@@ -146,7 +147,7 @@ head('4. The outbound payload is a three-button interactive message');
   );
 }
 
-// ── 5. the webhook actually uses it ─────────────────────────────────────────
+// â”€â”€ 5. the webhook actually uses it â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('5. The webhook builds the menu here, not from the tenant row');
 
 {
@@ -170,7 +171,7 @@ head('5. The webhook builds the menu here, not from the tenant row');
   );
 }
 
-// ── 6. no property vocabulary for a business that does not sell property ────
+// â”€â”€ 6. no property vocabulary for a business that does not sell property â”€â”€â”€â”€
 head('6. A film academy is never offered "premium properties"');
 
 {
@@ -192,7 +193,7 @@ head('6. A film academy is never offered "premium properties"');
   const subtitle = appointmentSubtitleFor(kind);
   check('no "site visit" in a non-property appointment CTA', containsPropertyVocabulary(subtitle).length === 0, containsPropertyVocabulary(subtitle).join(', ') || 'clean');
 
-  // A real brokerage keeps its own words — the point is not to erase property language, it is to stop leaking it.
+  // A real brokerage keeps its own words â€” the point is not to erase property language, it is to stop leaking it.
   const brokerage = offeringKindFor({ industry: 'Real Estate', rowTypes: ['Residential', 'Plot'] });
   check('a real estate account still reads as properties', brokerage === 'properties', brokerage);
   const brokerageCta = catalogueCtaCopy({ kind: brokerage, catalogueLabel: 'View Properties', businessName: 'Blue Square' });
@@ -213,7 +214,7 @@ head('6. A film academy is never offered "premium properties"');
   }
 }
 
-// ── 7. the hardcoded property copy is gone from the webhook ─────────────────
+// â”€â”€ 7. the hardcoded property copy is gone from the webhook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('7. The webhook no longer carries property copy for everyone');
 
 {
@@ -221,7 +222,7 @@ head('7. The webhook no longer carries property copy for everyone');
   // Assert on the CALL, not on prose: the file legitimately quotes the old wording in a comment explaining it.
   check(
     'the hardcoded property CTA call is gone',
-    !/sendCtaUrlMessage\(\s*"🏢 Available Properties"/.test(route) &&
+    !/sendCtaUrlMessage\(\s*"ðŸ¢ Available Properties"/.test(route) &&
       !/"Explore our latest premium properties catalog with pricing, layouts, and amenities:"/.test(route),
   );
   check('the CTA copy comes from the helper', /catalogueCtaCopy\(\{/.test(route));
@@ -234,7 +235,7 @@ head('7. The webhook no longer carries property copy for everyone');
   );
 }
 
-// ── 8. the public catalogue page is not a real estate page ──────────────────
+// â”€â”€ 8. the public catalogue page is not a real estate page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('8. A film academy\'s public page does not call itself "Premium Real Estate"');
 
 {
@@ -261,7 +262,7 @@ head('8. A film academy\'s public page does not call itself "Premium Real Estate
   check('and the profile read includes the industry it needs', /select\('id, business_name, industry/.test(layout));
 }
 
-// ── 9. the booking link is a real path, not a query ● ──────────────────────
+// â”€â”€ 9. the booking link is a real path, not a query â— â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 head('9. The appointment button points at the account\'s own booking page');
 
 {
@@ -273,19 +274,43 @@ head('9. The appointment button points at the account\'s own booking page');
   );
   check('a lead without one still gets the account\'s own /booking', /`\$\{baseBookingUrl\}\/booking`/.test(route));
   /**
-   * The owner opened an appointment link that read `/booking?/7fclb9b-…` — a lead id after a `?` with a
+   * The owner opened an appointment link that read `/booking?/7fclb9b-â€¦` â€” a lead id after a `?` with a
    * slash in it. That is not a path this code builds, and a URL shaped like it does not route to the
    * booking page at all (verified in a browser: it rendered the catalogue). Whatever produced it, no
-   * builder here may ever emit `…/booking?/<id>`, so the shape is asserted rather than assumed.
+   * builder here may ever emit `â€¦/booking?/<id>`, so the shape is asserted rather than assumed.
    */
   check('no builder emits a query-shaped booking link', !/booking\?\//.test(route));
   check('and the CTA sender passes the url through untouched', /display_text:[^}]*url: url/.test(route.replace(/\s+/g, ' ')));
 }
 
-console.log(`\n${'─'.repeat(62)}`);
+// â”€â”€ 10. the admin notifications a finished call sends â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+head('10. A film academy is not told a "site visit" was scheduled');
+
+{
+  const courses = voiceNotifyCopyFor('courses');
+  check('an academy\'s booking notification is not a site visit', !/site visit/i.test(courses.appointmentTitle), courses.appointmentTitle);
+  check('and its enquiry fallback names courses', /course/i.test(courses.enquiryFallback), courses.enquiryFallback);
+  const props = voiceNotifyCopyFor('properties');
+  check('a brokerage keeps "site visit"', /site visit/i.test(props.appointmentTitle), props.appointmentTitle);
+  for (const kind of ['courses', 'services', 'offerings'] as const) {
+    const copy = voiceNotifyCopyFor(kind);
+    check(
+      `${kind} notification copy carries no property words`,
+      containsPropertyVocabulary(`${copy.appointmentTitle} ${copy.enquiryFallback} ${copy.subjectLabel}`).length === 0,
+      containsPropertyVocabulary(`${copy.appointmentTitle} ${copy.enquiryFallback} ${copy.subjectLabel}`).join(', '),
+    );
+  }
+
+  const notifier = readFileSync('app/api/voice/post-call-notify/route.ts', 'utf8');
+  check('the hardcoded site-visit title is gone from the notifier', !/title: `ðŸŽ™ï¸ Site Visit \/ Appointment Booked/.test(notifier));
+  check('the "Real Estate Inquiry" fallback is gone', !/'Real Estate Inquiry'/.test(notifier));
+  check('the notifier derives its copy from the account kind', /voiceNotifyCopyFor\(offeringKindFor\(/.test(notifier));
+}
+
+console.log(`\n${'â”€'.repeat(62)}`);
 console.log(`${pass} passed, ${fail} failed`);
 if (fail > 0) {
-  console.error('\nA lead must always be offered the website, an expert and an appointment — in their own business\'s words.');
+  console.error('\nA lead must always be offered the website, an expert and an appointment â€” in their own business\'s words.');
   process.exit(1);
 }
-console.log('Three buttons, always — and no property words for a business that sells courses.');
+console.log('Three buttons, always â€” and no property words for a business that sells courses.');

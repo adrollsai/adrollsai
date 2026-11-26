@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendAdminMultiChannelNotification, deliverVoiceCallReceipt } from '@/utils/notification-helper'
+import { offeringKindFor, voiceNotifyCopyFor } from '@/lib/automation/catalogue-cta'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -99,9 +100,16 @@ export async function POST(req: Request) {
       } catch (e) {}
     }
 
-    // Resolve property and source/campaign context
+    // What the call was about, in this account's own words.
+    //
+    // These labels used to be real estate for everybody: the fallback was literally "Real Estate Inquiry", the
+    // booking notification was titled "Site Visit / Appointment Booked", and the body carried a property label —
+    // so a film academy's staff were told a site visit had been scheduled for a project they do not have. The
+    // kind comes from the account's industry; property wording stays with the accounts that sell property.
+    const notifyCopy = voiceNotifyCopyFor(offeringKindFor({ industry: (ownerProfile as any)?.industry }));
     const projectName = cf.interested_property || cf.property_type || cf.project_name || voiceCampaignName || ''
-    const propertyLabel = projectName || (ownerProfile?.business_name ? `${ownerProfile.business_name} Property` : 'Real Estate Inquiry')
+    const propertyLabel =
+      projectName || (ownerProfile?.business_name ? `${ownerProfile.business_name} enquiry` : 'your enquiry')
     const leadSource = lead.source || cf.source || 'Meta Ads'
     const campaignName = cf.meta_ad_origin?.campaign_name || cf.campaign_name || voiceCampaignName || lead.ad_name || 'Campaign'
 
@@ -145,14 +153,14 @@ export async function POST(req: Request) {
       // Send Multi-channel notification to Admin (WhatsApp + Email)
       await sendAdminMultiChannelNotification({
         ownerUserId,
-        title: `🎙️ Site Visit / Appointment Booked: ${leadName}`,
-        body: `AI Voice Agent successfully scheduled an on-site visit/appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+        title: `${notifyCopy.appointmentTitle}: ${leadName}`,
+        body: `AI Voice Agent successfully scheduled an appointment with ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏷️ ${notifyCopy.subjectLabel.replace(/^\S+\s*/, '')}: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}\n${formattedAnswersStr ? `\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'meeting_booked',
         leadPhone,
         leadName,
         leadId,
-        emailSubject: `🎙️ Site Visit / Appointment Booked: ${leadName} (${propertyLabel})`
+        emailSubject: `${notifyCopy.appointmentTitle}: ${leadName} (${propertyLabel})`
       })
 
       // Also notify assigned agent if lead is assigned to someone other than owner
@@ -160,14 +168,14 @@ export async function POST(req: Request) {
         try {
           await sendAdminMultiChannelNotification({
             ownerUserId: lead.assigned_to,
-            title: `🎙️ Site Visit / Appointment Booked: ${leadName}`,
-            body: `AI Voice Agent successfully scheduled an on-site visit/appointment for your assigned lead ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
+            title: `${notifyCopy.appointmentTitle}: ${leadName}`,
+            body: `AI Voice Agent successfully scheduled an appointment for your assigned lead ${leadName}!\n\n📅 Date & Time: ${formattedSlotDate} (IST)\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏷️ ${notifyCopy.subjectLabel.replace(/^\S+\s*/, '')}: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}\n` : ''}\n📝 Call Summary: ${summary}`,
             url: `/dashboard/crm/${leadId}`,
             type: 'meeting_booked',
             leadPhone,
             leadName,
             leadId,
-            emailSubject: `🎙️ Site Visit / Appointment Booked for Assigned Lead: ${leadName} (${propertyLabel})`
+            emailSubject: `${notifyCopy.appointmentTitle} for Assigned Lead: ${leadName} (${propertyLabel})`
           })
           console.log(`[POST-CALL NOTIFY] Sent Appointment Booked alert to assigned agent ${lead.assigned_to}`)
         } catch (agentErr: any) {
@@ -204,7 +212,7 @@ export async function POST(req: Request) {
       await sendAdminMultiChannelNotification({
         ownerUserId,
         title: `🔥 High Interest Lead: ${leadName}`,
-        body: `Prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
+        body: `Prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏷️ ${notifyCopy.subjectLabel.replace(/^\S+\s*/, '')}: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
         url: `/dashboard/crm/${leadId}`,
         type: 'expert_escalation',
         leadPhone,
@@ -218,7 +226,7 @@ export async function POST(req: Request) {
           await sendAdminMultiChannelNotification({
             ownerUserId: lead.assigned_to,
             title: `🔥 High Interest Lead: ${leadName}`,
-            body: `Assigned prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏢 Project / Property: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
+            body: `Assigned prospect ${leadName} confirmed interest during AI call for ${propertyLabel}!\n\n👤 Lead: ${leadName}\n📞 Phone: ${leadPhone}\n🏷️ ${notifyCopy.subjectLabel.replace(/^\S+\s*/, '')}: ${propertyLabel}\n📢 Source: ${leadSource} (${campaignName})\n💰 Budget: ${budgetVal}${formattedAnswersStr ? `\n\n📋 Answers:\n${formattedAnswersStr}` : ''}\n\n📝 Call Summary: ${summary}`,
             url: `/dashboard/crm/${leadId}`,
             type: 'expert_escalation',
             leadPhone,

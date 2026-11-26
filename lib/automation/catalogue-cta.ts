@@ -136,6 +136,45 @@ export function containsPropertyVocabulary(text: string): string[] {
   return PROPERTY_VOCABULARY.filter((word) => haystack.includes(word));
 }
 
+export interface VoiceNotifyCopy {
+  /** Title for "the lead booked something" — property accounts keep "site visit". */
+  appointmentTitle: string;
+  /** What the call was about, when the lead's own answers name nothing. */
+  enquiryFallback: string;
+  /** "Project / Property" label used inside notification bodies. */
+  subjectLabel: string;
+}
+
+/**
+ * The words in the admin notifications a finished call sends.
+ *
+ * These said "Site Visit / Appointment Booked" and "🏢 Project / Property" to EVERY account, and fell back to
+ * "Real Estate Inquiry" when nothing named the enquiry — so a film academy's staff were emailed about a property
+ * project that does not exist. Same rule as everywhere else in this file: the account's own kind decides, and a
+ * business that does not sell property is never told about one.
+ */
+export function voiceNotifyCopyFor(kind: OfferingKind): VoiceNotifyCopy {
+  if (kind === 'properties') {
+    return {
+      appointmentTitle: '🎙️ Site Visit / Appointment Booked',
+      enquiryFallback: 'a property enquiry you had made',
+      subjectLabel: '🏢 Project / Property',
+    };
+  }
+  if (kind === 'courses') {
+    return {
+      appointmentTitle: '🎙️ Appointment Booked',
+      enquiryFallback: 'a course enquiry you had made',
+      subjectLabel: '🎓 Course / Programme',
+    };
+  }
+  return {
+    appointmentTitle: '🎙️ Appointment Booked',
+    enquiryFallback: 'an enquiry you had made',
+    subjectLabel: '🏷️ Product / Service',
+  };
+}
+
 export interface CatalogueSharing {
   kind: OfferingKind;
   /** Page/OG/Twitter title tail: "Courses", "Properties", … */
