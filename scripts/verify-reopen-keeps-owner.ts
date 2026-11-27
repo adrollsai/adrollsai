@@ -52,7 +52,7 @@ check('case and punctuation do not make it different', !isDifferentProject('VINT
 check('a different project IS different', isDifferentProject('The Medallion Aurum', 'Vintage Greens'));
 check('an unknown previous source is treated as the same project', !isDifferentProject(null, 'Vintage Greens'));
 
-console.log('\n▸ the reported case: a different project moves the lead, and closes the old book');
+console.log('\n▸ the reported case: a different project KEEPS the owner (rule changed on the owner\'s instruction)');
 {
   const decision = decideReopenOwner({
     previousOwner: GUNHEER,
@@ -60,9 +60,14 @@ console.log('\n▸ the reported case: a different project moves the lead, and cl
     previousSource: 'The Medallion Aurum',
     nextSource: 'Vintage Greens',
   });
-  check('it goes to the new agent', decision.owner === SHUBHA, decision);
-  check('it is recorded as a reassignment', decision.reassigned === true);
-  check('the previous history is hidden from the new agent', decision.hidePreviousHistory === true);
+  /**
+   * A live account showed the cost of the old rule: a lead that was Shubha's returned under a different project, moved to
+   * Bhavdeep, and carried a follow-up in his name he never wrote. A reopen is the same person enquiring again, so it keeps
+   * its owner whatever the source says.
+   */
+  check('it stays with the previous agent', decision.owner === GUNHEER, decision);
+  check('it is NOT recorded as a reassignment', decision.reassigned === false);
+  check('so no previous history is hidden', decision.hidePreviousHistory === false);
 }
 
 console.log('\n▸ the same project keeps its owner, and keeps its history');

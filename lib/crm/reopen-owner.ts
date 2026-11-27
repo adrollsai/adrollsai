@@ -92,26 +92,24 @@ export function decideReopenOwner(input: ReopenDecisionInput): ReopenDecision {
     };
   }
 
-  // Same project (or one we cannot read): the current owner keeps it.
-  if (!isDifferentProject(input.previousSource, input.nextSource)) {
-    return {
-      owner: previousOwner,
-      reassigned: false,
-      hidePreviousHistory: false,
-      why: 'same project, so the lead kept its owner',
-    };
-  }
-
-  // A different project: this is new work. Hand it to whoever can take it, and close the old book.
-  const nextOwner = candidate || previousOwner;
+  /**
+   * SAME OWNER, ALWAYS — the owner's rule, after watching it go wrong in a live account.
+   *
+   * A lead that was Shubha's came back through Magicbricks under a new project, was reassigned to Bhavdeep, and the
+   * timeline recorded "Reassigned from the previous owner: a different project" plus a follow-up remark in Bhavdeep's
+   * name that he never wrote. Reopening is the same person enquiring again: whoever knows that person keeps them,
+   * whatever project the new enquiry mentions. Losing the owner on reopen loses the relationship the CRM exists to
+   * protect, and hands one agent's history to another.
+   *
+   * So a lead that already has an owner keeps them, and `candidate` is only used when there was no owner at all.
+   */
   return {
-    owner: nextOwner,
-    reassigned: Boolean(candidate) && nextOwner !== previousOwner,
-    hidePreviousHistory: nextOwner !== previousOwner,
-    why:
-      nextOwner !== previousOwner
-        ? 'a different project, so the lead moved to the new owner and the previous history is hidden from them'
-        : 'a different project, but no other owner was available, so it stayed put',
+    owner: previousOwner,
+    reassigned: false,
+    hidePreviousHistory: false,
+    why: isDifferentProject(input.previousSource, input.nextSource)
+      ? 'a reopen keeps its previous owner even for a different project'
+      : 'same project, so the lead kept its owner',
   };
 }
 
