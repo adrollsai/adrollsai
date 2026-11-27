@@ -334,19 +334,35 @@ const WorkingGroup = React.memo(function WorkingGroup({
 
   return (
     <div className="my-1.5">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={expanded}
-        title={expanded ? 'Hide the working' : 'Show the working behind this reply'}
-        className="dsh-interactive dsh-label-caption dsh-t-xs flex items-center gap-1.5 py-1"
-      >
-        <ChevronRight
-          size={12}
-          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}
-        />
-        <span>{expanded ? 'Hide working' : describeWorking(items)}</span>
-      </button>
+      {forceOpen ? (
+        // A group held open because it contains an approval waiting for a tap. It must not offer to
+        // collapse: "Hide working" that does nothing when clicked is the kind of small lie that makes an
+        // app feel broken.
+        <div className="dsh-label-caption dsh-t-xs flex items-center gap-1.5 py-1">
+          <ChevronRight size={12} style={{ transform: 'rotate(90deg)' }} />
+          <span>
+            {describeWorking(items)}
+            <span className="dsh-strong" style={{ color: 'var(--dsw-alias-state-business-primary)' }}>
+              {' '}
+              · needs your approval
+            </span>
+          </span>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={expanded}
+          title={expanded ? 'Hide the working' : 'Show the working behind this reply'}
+          className="dsh-interactive dsh-label-caption dsh-t-xs flex items-center gap-1.5 py-1"
+        >
+          <ChevronRight
+            size={12}
+            style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}
+          />
+          <span>{expanded ? 'Hide working' : describeWorking(items)}</span>
+        </button>
+      )}
 
       {expanded && (
         <div className="mt-1">

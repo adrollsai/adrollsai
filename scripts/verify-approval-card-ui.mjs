@@ -356,8 +356,13 @@ async function main() {
     const clicked = await evaluate(`
       (() => {
         const wanted = ${JSON.stringify(seeded.title)};
+        // The sidebar truncates long titles ("Approval ca…"), so an exact match silently misses and the
+        // gate ends up asserting against the welcome screen. Match on a distinctive prefix instead.
+        const stem = wanted.slice(0, 12);
         const nodes = Array.from(document.querySelectorAll('button, div, span, a'));
-        const hit = nodes.find((n) => (n.innerText || '').trim() === wanted);
+        const hit =
+          nodes.find((n) => (n.innerText || '').trim() === wanted) ||
+          nodes.find((n) => (n.innerText || '').trim().startsWith(stem));
         if (!hit) return 'not-found';
         const clickable = hit.closest('button') || hit;
         clickable.click();
@@ -365,7 +370,21 @@ async function main() {
       })()
     `);
     console.log(`   sidebar: ${clicked}`);
-    await sleep(3500);
+
+    // The transcript is what is being asserted on, so wait for IT rather than for a fixed sleep: the
+    // projection fetch is a separate request and a 3.5s guess is what made this gate flaky.
+    const transcriptDeadline = Date.now() + 30_000;
+    let sawTranscript = false;
+    while (Date.now() < transcriptDeadline) {
+      const body = await evaluate('document.body.innerText || ""').catch(() => '');
+      if (/whatsapp my test number|Approve: nobogent_whatsapp_send_template/i.test(body)) {
+        sawTranscript = true;
+        break;
+      }
+      await sleep(500);
+    }
+    if (!sawTranscript) console.log('   transcript: not visible after 30s — screenshot will show what is on screen');
+    await sleep(1200);
 
     const snap = JSON.parse(await evaluate(SNAPSHOT_JS));
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
