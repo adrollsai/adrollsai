@@ -20,13 +20,14 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
   return {
     list_reference_creatives: tool({
       description:
-        'List the app\'s built-in reference creatives: 35 finished luxury real-estate ad designs. ' +
-        'Treat them as a DESIGN reference, not content — keep the layout, typography, framing and surface ' +
+        'List reference creatives for this business. ' +
+        'FIRST it returns the account\'s OWN uploaded references (the ones in their reference library — their real brand ' +
+        'style). Only if they have none, or if they explicitly ask to see built-in examples, does it fall back to the ' +
+        'app\'s 35 built-in luxury real-estate designs. ' +
+        'Treat any reference as a DESIGN reference, not content — keep the layout, typography, framing and surface ' +
         'treatment, and replace the place, the brand marks and any claims with the client\'s own. ' +
-        'Each has a name, category, badge, description and a public image URL. Use this when the user wants a ' +
-        'creative "like this one", "in that style", or asks what templates exist. Pick a template whose category ' +
-        'matches the brief, then pass its url to generate_ai_image as referenceImageUrls. ' +
-        'These are style references, not the property: never present a reference image as if it were the client\'s actual property.',
+        'Never present a reference image as if it were the client\'s actual property, and never describe a built-in ' +
+        'example as this client\'s brand.',
       inputSchema: z.object({
         category: z
           .string()
@@ -37,9 +38,72 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
           .default('all')
           .describe('high_converting = urgency and offer-led; premium = editorial and luxury'),
         limit: z.number().int().min(1).max(35).default(12).describe('How many to return'),
+        includeExamples: z
+          .boolean()
+          .default(false)
+          .describe(
+            'Only set this when the owner explicitly asks to see built-in example designs. The built-ins are ' +
+              'real-estate creative and are NOT this client\'s brand.'
+          ),
       }),
-      execute: async ({ category, library, limit }) => {
+      execute: async ({ category, library, limit, includeExamples }) => {
         const cat = (category || '').toLowerCase();
+
+        /**
+         * THE TENANT'S OWN REFERENCES COME FIRST, AND THE BUILT-INS ARE OPT-IN.
+         *
+         * Measured for one account: 35 built-in references beside its own 19 uploads, and this tool only ever read the
+         * built-ins — so a film academy asking for "a creative like this one" was shown estate-agent designs while its
+         * own, on-brand uploads were invisible. The built-in catalogue is a demo shelf, not anybody's brand, so it is
+         * reachable only when the caller asks for examples.
+         */
+        try {
+          const { data: own } = await supabase
+            .from('reference_creatives')
+            .select('id, name, category, url, description')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(60);
+
+          const ownMatches = ((own || []) as any[]).filter(
+            (row) =>
+              !cat ||
+              String(row.category || '').toLowerCase().includes(cat) ||
+              String(row.name || '').toLowerCase().includes(cat)
+          );
+
+          if (ownMatches.length) {
+            return {
+              success: true,
+              source: 'account',
+              count: Math.min(ownMatches.length, limit),
+              message:
+                `${ownMatches.length} reference creative(s) from THIS account's own reference library. These are the ` +
+                'client\'s real brand style — imitate them.',
+              creatives: ownMatches.slice(0, limit).map((row) => ({
+                id: row.id,
+                name: row.name,
+                category: row.category || 'own',
+                url: row.url,
+                isOwn: true,
+              })),
+            };
+          }
+          if (!includeExamples) {
+            return {
+              success: true,
+              source: 'none',
+              count: 0,
+              message:
+                'This account has no reference creatives of its own yet. Do not substitute built-in examples — build ' +
+                'from the brand kit and the brief, and tell the owner they can add references in the Reference Library. ' +
+                'If they explicitly ask to see example designs, call this again with includeExamples: true.',
+            };
+          }
+        } catch {
+          /* a failed lookup falls through to the built-in shelf below, which is what the caller asked for anyway */
+        }
+
         const matches = ALL_REFERENCE_TEMPLATES.filter(
           (t) =>
             (library === 'all' || t.libraryCategory === library) &&
