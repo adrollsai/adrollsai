@@ -3,7 +3,7 @@ import { enqueueRun } from './harness/runs';
 import { ensurePeriodSession, periodLabel } from './routines';
 
 /**
- * Approve / skip / change â€” from WhatsApp.
+ * Approve / skip / change — from WhatsApp.
  *
  * The approval card already works in the app. This gives the owner the same three
  * verbs on their phone, because that is where they actually are when the CEO asks.
@@ -33,7 +33,7 @@ async function push(userId: string, title: string, body: string) {
   }
 }
 
-const APPROVE = /^(approve|approved|yes|ok|okay|haan|ha|theek hai|thik hai|done|go ahead|approved âœ…)$/i;
+const APPROVE = /^(approve|approved|yes|ok|okay|haan|ha|theek hai|thik hai|done|go ahead|approved ✅)$/i;
 const SKIP = /^(skip|no|cancel|not now|nahi|nah|reject|band karo|stop)$/i;
 
 export type ApprovalReplyKind = 'approved' | 'skipped' | 'edit' | 'none';
@@ -121,7 +121,7 @@ export async function resolveApprovalReply(
   const title = payload.title || 'your approval';
   const resumePrompt =
     payload.resumePrompt ||
-    `Approved â€” continue with the staged plan: ${payload.description || title}`;
+    `Approved — continue with the staged plan: ${payload.description || title}`;
 
   // A bare thumbs-up or a word, not a sentence: unambiguous.
   const isApprove = APPROVE.test(clean);
@@ -145,12 +145,12 @@ export async function resolveApprovalReply(
       priority: 8,
     });
 
-    void reply(phone, `âœ… Approved â€” "${title}". Working on it now.`);
+    void reply(phone, `✅ Approved — "${title}". Working on it now.`);
     void push(userId, 'Approved from WhatsApp', title);
     return {
       kind: 'approved',
       approvalTitle: title,
-      message: `Approved â€” ${run ? 'run queued' : 'no run could be queued'}`,
+      message: `Approved — ${run ? 'run queued' : 'no run could be queued'}`,
     };
   }
 
@@ -159,7 +159,7 @@ export async function resolveApprovalReply(
       .from('agent_events')
       .update({ status: 'rejected', updated_at: new Date().toISOString() })
       .eq('id', event.id);
-    void reply(phone, `â­ï¸ Skipped â€” "${title}". Nothing was generated.`);
+    void reply(phone, `⏭️ Skipped — "${title}". Nothing was generated.`);
     return { kind: 'skipped', approvalTitle: title };
   }
 
@@ -183,7 +183,7 @@ export async function resolveApprovalReply(
       'Do not start from scratch and do not generate anything expensive before the approval.',
     priority: 8,
   });
-  void reply(phone, `âœï¸ Got it â€” revising "${title}" with your change.`);
+  void reply(phone, `✏️ Got it — revising "${title}" with your change.`);
   return { kind: 'edit', approvalTitle: title, instruction: clean };
 }
 

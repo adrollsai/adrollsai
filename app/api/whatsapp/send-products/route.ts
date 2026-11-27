@@ -211,7 +211,7 @@ export async function POST(req: Request) {
                 errorCount = 0
             }
         } else {
-            // No image or image is a placeholder â€” send as text
+            // No image or image is a placeholder — send as text
             const textPayload = {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',

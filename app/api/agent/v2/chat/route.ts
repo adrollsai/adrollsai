@@ -109,10 +109,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
     }
 
-    // â”€â”€ durable session log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── durable session log ──────────────────────────────────────────────
     // When the client supplies a sessionId, this turn is written to the event
     // log so the conversation survives a refresh, a deploy, or another device.
-    // Without one the route still works (log disabled) â€” that keeps the
+    // Without one the route still works (log disabled) — that keeps the
     // harness usable before the migration is applied.
     const wantsLog = typeof body.sessionId === 'string' && body.sessionId.length > 0;
     const logReady = wantsLog ? await isAvailable(hdb) : false;
@@ -239,7 +239,7 @@ export async function POST(req: Request) {
       return true;
     });
 
-    // â”€â”€ attach images to the model input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── attach images to the model input ─────────────────────────────────
     // Attachments arrive as URLs inside the message text. Without this step the
     // model never receives the pixels, so image turns were answered blind.
     const imageAttachments = extractImageAttachments(lastUserText);

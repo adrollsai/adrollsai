@@ -8,14 +8,18 @@
  *
  *   npm run verify:crm-lead-loading
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   BACKGROUND_BATCH_SIZE,
   EAGER_PAGE_COUNT,
+  LEAD_ORDER_COLUMNS,
   LEAD_PAGE_SIZE,
   batchesOf,
   eagerPageIndexes,
   loadMoreLabel,
   mergePages,
+  orderLeadsDesc,
   pageRange,
   remainingPageIndexes,
   sortByActivity,
@@ -98,6 +102,55 @@ head('5. The owner is told what is loaded');
   check('a big gap is described with real numbers', loadMoreLabel(3000, BIG)?.includes('13,415') === true, String(loadMoreLabel(3000, BIG)));
   check('and names the total', loadMoreLabel(3000, BIG)?.includes('16,415') === true, String(loadMoreLabel(3000, BIG)));
   check('a small tail still offers the rest', loadMoreLabel(1500, 1584)?.includes('84') === true, String(loadMoreLabel(1500, 1584)));
+}
+
+head('6. Pages are disjoint, because the order is total');
+
+{
+  /**
+   * One bulk import stamps 1,350 of Bioque's 1,717 leads with the SAME `last_activity_at`, and ProEstate
+   * has 1,546 sharing one. Ordering on that column alone leaves ties for Postgres to break however it
+   * likes per request, so page 1 and page 2 overlap (a duplicate card) while other tied leads fall
+   * between them and never appear. `id` as the second column makes the order total.
+   */
+  check('the tiebreaker is a unique column', LEAD_ORDER_COLUMNS.length === 2 && LEAD_ORDER_COLUMNS[1] === 'id', LEAD_ORDER_COLUMNS.join(' then '));
+  check('activity still leads, so a reopened cold lead stays on top', LEAD_ORDER_COLUMNS[0] === 'last_activity_at');
+
+  const recorded: Array<{ column: string; ascending?: boolean }> = [];
+  const fakeQuery = {
+    order(column: string, options?: { ascending?: boolean }) {
+      recorded.push({ column, ascending: options?.ascending });
+      return fakeQuery;
+    },
+    range(from: number, to: number) {
+      recorded.push({ column: `range:${from}-${to}` });
+      return fakeQuery;
+    },
+  };
+  const returned = orderLeadsDesc(fakeQuery);
+  check('the helper applies both columns, newest first', JSON.stringify(recorded) === '[{"column":"last_activity_at","ascending":false},{"column":"id","ascending":false}]', JSON.stringify(recorded));
+  check('and hands the builder back so .range() still chains', returned === fakeQuery);
+
+  // The guarantee itself: a row returned by two pages is shown once.
+  const overlapping = new Map<number, any[]>([
+    [0, [{ id: 'lead-1' }, { id: 'lead-2' }]],
+    [1, [{ id: 'lead-2' }, { id: 'lead-3' }]],
+  ]);
+  const deduped = mergePages(overlapping);
+  check('a lead returned by two pages is rendered once', deduped.map((row) => row.id).join(',') === 'lead-1,lead-2,lead-3', deduped.map((row) => row.id).join(','));
+  check('de-duplication keeps the first (newest) position', deduped[1]?.id === 'lead-2');
+  check('rows without an id are never dropped', mergePages(new Map<number, any[]>([[0, [{ name: 'no-id' }]]])).length === 1);
+}
+
+head('7. The page actually uses the tiebreaker');
+
+{
+  // A gate on the module proves nothing if the screen passes its own `.order()` instead.
+  const source = fs.readFileSync(path.join(process.cwd(), 'app/dashboard/crm/page.tsx'), 'utf8');
+  const helperCalls = source.match(/orderLeadsDesc\(/g)?.length ?? 0;
+  check('all three lead queries go through orderLeadsDesc()', helperCalls === 3, `${helperCalls} call sites`);
+  check('no lead query orders on last_activity_at by hand', !/\.order\('last_activity_at'/.test(source));
+  check('the helper is imported', /orderLeadsDesc,/.test(source));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

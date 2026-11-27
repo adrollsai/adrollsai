@@ -63,17 +63,58 @@ export function pageRange(pageIndex: number, pageSize = LEAD_PAGE_SIZE): { from:
 }
 
 /**
+ * The columns every lead page query must order by, in order: NEWEST ACTIVITY FIRST, THEN ID.
+ *
+ * `last_activity_at` alone is not a total order, and PostgREST pages are separate HTTP requests, so
+ * ties are not broken the same way twice. Measured on the live books: one bulk import stamps 1,350 of
+ * Bioque's 1,717 leads with the IDENTICAL `last_activity_at`, and ProEstate has 1,546 leads sharing
+ * one. With 1,000-row pages, a tie group that straddles a page boundary makes page 1 and page 2
+ * overlap — the same lead rendered twice — while other tied leads are returned by neither request and
+ * never appear at all. That is the "duplicate cards" and the list that disagrees with its own count.
+ *
+ * `id` is unique, so appending it makes every page boundary deterministic and the pages disjoint.
+ */
+export const LEAD_ORDER_COLUMNS = ['last_activity_at', 'id'] as const;
+
+/**
+ * Apply the lead ordering to a PostgREST query.
+ *
+ * Kept as a passthrough so callers keep the full builder type (`.range()`, `.select()` chains) without
+ * this module importing the client. `any` on the two `.order` calls is deliberate: postgrest-js types
+ * those column names against the table schema, which this pure module does not know.
+ */
+export function orderLeadsDesc<Q>(query: Q): Q {
+  return (query as any)
+    .order(LEAD_ORDER_COLUMNS[0], { ascending: false })
+    .order(LEAD_ORDER_COLUMNS[1], { ascending: false });
+}
+
+/**
  * Merge pages that arrived in any order into one correctly ordered list.
  *
- * The server orders by `last_activity_at` descending, so page 0 holds the newest rows and page 15 the
- * oldest. Concatenating in page order therefore reproduces the server's ordering exactly — no client
- * sort, and no 16 sorts of a growing 16,000-row array. `sortByActivity` exists only as a final safety
- * net for a page that arrives twice or with a different shape.
+ * The server orders by `last_activity_at` then `id` descending, so page 0 holds the newest rows and
+ * page 15 the oldest. Concatenating in page order therefore reproduces the server's ordering exactly —
+ * no client sort, and no 16 sorts of a growing 16,000-row array.
+ *
+ * Rows are keyed by `id` as they are merged. A stable order should already make pages disjoint; this
+ * is the guarantee that a lead cannot be shown twice even if a page is fetched twice (a retry), or a
+ * row is touched between two requests and shifts across the boundary. `sortByActivity` remains the
+ * final safety net for a page that arrives with a different shape.
  */
-export function mergePages<T>(pages: Map<number, T[]>): T[] {
+export function mergePages<T extends { id?: string | null }>(pages: Map<number, T[]>): T[] {
   const ordered = [...pages.entries()].sort((a, b) => a[0] - b[0]);
   const merged: T[] = [];
-  for (const [, rows] of ordered) merged.push(...rows);
+  const seen = new Set<string>();
+  for (const [, rows] of ordered) {
+    for (const row of rows) {
+      const id = row && row.id ? String(row.id) : null;
+      if (id) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+      }
+      merged.push(row);
+    }
+  }
   return merged;
 }
 

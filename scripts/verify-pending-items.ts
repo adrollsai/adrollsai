@@ -88,10 +88,22 @@ check('an empty pool returns null rather than an empty string', pickRotatedDid([
 check('a pool of blanks returns null', pickRotatedDid(['', '  '], 'seed') === null);
 const vobiz = codeOf(read('utils/vobiz-helper.ts'));
 check('rotation happens before any per-tenant number', /pickRotatedDid\(sharedPool/.test(vobiz));
+/**
+ * The pool is the numbers the Vobiz account OWNS, not the catalogue of numbers you can buy.
+ *
+ * This check used to require `VOBIZ_NUMBER_CATALOG.map` here, which was the behaviour at the time and
+ * the reason every dial failed with "not owned by this account": rotation picked a purchasable number
+ * nobody held. The pool now comes from the live inventory (`getOwnedVobizDids`), so the check asserts
+ * that — and asserts that the buy-catalogue is NOT the pool.
+ */
 check(
-  'the shared pool is built from the catalog',
-  /VOBIZ_NUMBER_CATALOG\.map/.test(vobiz),
-  'no DID belongs to one tenant',
+  'the shared pool is the account\u2019s own inventory, not the buy-catalogue',
+  /const sharedPool = ownedDids/.test(vobiz) && /getOwnedVobizDids\(/.test(vobiz),
+  'rotating onto an unowned DID is what broke dialling',
+);
+check(
+  'the buy-catalogue is never used as a dialling pool',
+  !/const sharedPool = VOBIZ_NUMBER_CATALOG/.test(vobiz) && !/pickRotatedDid\(VOBIZ_NUMBER_CATALOG/.test(vobiz),
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

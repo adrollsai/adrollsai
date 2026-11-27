@@ -13,7 +13,7 @@ export const maxDuration = 60;
  * The clock.
  *
  * Every minute this looks for steps that are due and runs them through the five gates in
- * scheduling.ts â€” kill switch, opt-out, quiet hours, cross-flow freshness, idempotency. A step that
+ * scheduling.ts — kill switch, opt-out, quiet hours, cross-flow freshness, idempotency. A step that
  * passes is handed to the delivery queue rather than blasted out inline, so a human still sees it
  * before a customer does.
  *

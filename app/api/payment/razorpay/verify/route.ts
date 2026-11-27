@@ -23,7 +23,7 @@ const supabaseAdmin = createAdminClient(
  * Two things this route got wrong and must not regress:
  *
  * 1. IT WAS NOT IDEMPOTENT. Every call with a valid signature added the credits
- *    again. A native app on a flaky network retries Ã¢â‚¬â€ that is normal behaviour,
+ *    again. A native app on a flaky network retries â€” that is normal behaviour,
  *    and it was free money. The webhook deduped via `processed_webhook_messages`;
  *    this route had nothing. Now the ledger's unique index on `ref` decides the
  *    single winner and every other caller is answered "already applied" without
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
 
             const durationMonths = planConfig?.durationMonths || (orderNotes.durationMonths ? Number(orderNotes.durationMonths) : 1);
             // Every credit figure comes from RAZORPAY_PLANS. The last-resort fallback used to be
-            // `isTrial ? 2500 : 10000` Ã¢â‚¬â€ a third hardcoded table no pricing page had ever shown, so an
+            // `isTrial ? 2500 : 10000` â€” a third hardcoded table no pricing page had ever shown, so an
             // unrecognised plan silently granted 10,000 credits. A trial falls back to the trial
             // config, and anything unrecognised grants ZERO and says so, because granting a number
             // nobody priced is worse than granting none.
@@ -173,7 +173,7 @@ export async function POST(req: Request) {
             }
 
             // Claim the payment and move the credits in one atomic step. Losing
-            // this race means someone already applied it Ã¢â‚¬â€ say so, charge nothing.
+            // this race means someone already applied it â€” say so, charge nothing.
             //
             // A TRIAL is split across both wallets (600 AI + 400 calling) rather than credited entirely
             // to the AI pot: a trialist who cannot place a single call has not seen the product, and
@@ -269,7 +269,7 @@ export async function POST(req: Request) {
             const packageName = packageConfig?.name || `Credits Top-Up (${creditsToAdd} Credits)`;
 
             // A CALLING pack tops up the locked calling pot; everything else tops up AI credits. Paid
-            // money must land in the wallet the customer bought Ã¢â‚¬â€ crediting a calling purchase to the
+            // money must land in the wallet the customer bought â€” crediting a calling purchase to the
             // AI pot would silently convert restricted credits into general ones.
             const grant = isCallingCreditPackage(effectivePackageId)
                 ? await grantCallingCreditsOnce(supabaseAdmin, {

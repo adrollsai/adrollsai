@@ -7,7 +7,7 @@
  *
  * WHY VENDOR RATHER THAN FETCH AT RUNTIME
  * A production agent must not depend on GitHub being up, must not pay a network round trip
- * to read instructions, and must be reproducible â€” the same deploy must answer the same way
+ * to read instructions, and must be reproducible — the same deploy must answer the same way
  * next month. Vendoring gives all three, at the cost of a manual refresh, which is a
  * deliberate price: the content changes only when we choose.
  *
@@ -254,5 +254,5 @@ export function skillContentFor(skill: VendoredSkill): string {
 /** Where a vendored skill came from, as one line for the log or an admin view. */
 export function attributionLine(skill: VendoredSkill): string {
   const { repo, licence, commit } = skill.attribution;
-  return `${skill.name} â€” ${repo} (${licence}, ${commit.slice(0, 8)})`;
+  return `${skill.name} — ${repo} (${licence}, ${commit.slice(0, 8)})`;
 }

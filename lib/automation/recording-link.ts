@@ -4,7 +4,7 @@
  * WHERE RECORDINGS LIVE NOW
  * New recordings go to Cloudflare R2 (see lib/automation/recording-store.ts). Older
  * ones live in the private Supabase bucket `lead-voice-recordings`, and several of them
- * were stored as a `â€¦/object/public/â€¦` URL before that bucket was made private. Both
+ * were stored as a `…/object/public/…` URL before that bucket was made private. Both
  * must keep playing, so this module is the one place that knows the difference, and it
  * stays free of storage SDK imports on purpose: it is pure value parsing, which lets the
  * offline gates bundle it without dragging the AWS SDK in.
@@ -23,7 +23,7 @@
  *   ---------------------------------------------------------------------------
  *   "recordings/<lead>/vobiz_..._1.mp3"    -> presigned R2 GET (TTL)   [current]
  *   "<lead>/vobiz_..._123.mp3"             -> signed Supabase URL (TTL) [legacy]
- *   ".../object/public/lead-voice-â€¦"       -> signed Supabase URL (TTL), path extracted
+ *   ".../object/public/lead-voice-…"       -> signed Supabase URL (TTL), path extracted
  *   "https://media.vobiz.ai/..."           -> null here; the stream route proxies it
  *
  * WHY THE `recordings/` PREFIX MATTERS
@@ -51,7 +51,7 @@ export const RECORDING_LINK_TTL_SECONDS = 60 * 60;
  * The R2 object key for a stored value, when that value is an R2 recording.
  *
  * Accepts the bare key this codebase writes, and also a full URL (public or already
- * presigned) whose path carries the key â€” presigned links are what the CRM renders, and
+ * presigned) whose path carries the key — presigned links are what the CRM renders, and
  * one of those can be written back onto a lead by a careless round trip.
  */
 export function r2RecordingKey(stored?: string | null): string | null {
@@ -85,7 +85,7 @@ export function isR2Recording(stored?: string | null): boolean {
 /**
  * The object path inside the LEGACY Supabase bucket, from any of the shapes that have
  * been stored there: a bare path, a `/object/public/<bucket>/<path>` URL, or a signed
- * `/object/sign/<bucket>/<path>?token=â€¦` URL.
+ * `/object/sign/<bucket>/<path>?token=…` URL.
  *
  * Returns null for an R2 key: that object is not in this bucket, and signing it here
  * would only produce a 404.
@@ -122,7 +122,7 @@ export function recordingStoragePath(stored?: string | null): string | null {
 /**
  * Is this stored value a recording we host ourselves (R2 today, Supabase before)?
  *
- * Callers use this to decide "never hand this string to a human or to Meta â€” it is not
+ * Callers use this to decide "never hand this string to a human or to Meta — it is not
  * directly fetchable, route it through the signed stream route instead".
  */
 export function isOurRecording(stored?: string | null): boolean {

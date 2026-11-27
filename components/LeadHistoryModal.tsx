@@ -19,6 +19,19 @@ interface LeadHistoryModalProps {
 const globalProfilesCache = new Map<string, string>()
 const leadHistoryCache = new Map<string, { items: any[]; timestamp: number }>()
 
+/**
+ * The JSON body after an embedded token, whatever emoji precedes it.
+ *
+ * These descriptions are written by several producers and read back as plain text: "🎙️ CALL_JSON:{…}",
+ * "💬 WA_JSON:{…}", "💬 WA_TEMPLATE:{…}". Matching the whole prefix made the rich card depend on the
+ * exact leading emoji — including its variation selector — so a row written without one fell through
+ * to a raw-JSON dump. The token identifies the row; the emoji is decoration.
+ */
+const jsonBodyAfter = (text: string, token: string): string | null => {
+  const at = text.toUpperCase().indexOf(token)
+  return at === -1 ? null : text.slice(at + token.length)
+}
+
 export const isAiOrAutomatedItem = (item: any): boolean => {
   if (!item) return false
   const desc = (item.description || '').toLowerCase()
@@ -27,7 +40,7 @@ export const isAiOrAutomatedItem = (item: any): boolean => {
 
   // 1. AI Voice calls & summaries & transcripts
   if (rawType === 'AI_VOICE_CALL') return true
-  if (desc.startsWith('ðŸŽ™ï¸ call_json:') || desc.includes('call_json:') || desc.includes('ai voice call') || desc.includes('nobogent ai')) return true
+  if (desc.startsWith('🎙️ call_json:') || desc.includes('call_json:') || desc.includes('ai voice call') || desc.includes('nobogent ai')) return true
   if (desc.includes('ai caller') || actor.includes('ai voice') || actor.includes('nobogent ai')) return true
 
   // 2. Automated outbound retries
@@ -35,7 +48,7 @@ export const isAiOrAutomatedItem = (item: any): boolean => {
   if (desc.includes('outbound call was unanswered') || desc.includes('outbound call was busy')) return true
 
   // 3. Automated WhatsApp templates, chatbots & broadcasts
-  if (desc.startsWith('ðŸ’¬ wa_json:') || desc.startsWith('ðŸ’¬ wa_template:')) return true
+  if (desc.includes('wa_json:') || desc.includes('wa_template:')) return true
   if (desc.includes('whatsapp welcome') || desc.includes('video welcome') || desc.includes('instant whatsapp')) return true
   if (actor.includes('automated system')) return true
 
@@ -52,11 +65,11 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
    * CALL RECORDINGS ARE NOT PUBLIC URLS.
    *
    * The storage bucket `lead-voice-recordings` is PRIVATE, and the value stored on a lead is a
-   * `â€¦/object/public/lead-voice-recordings/â€¦` URL written back when that bucket was public. Handing that value to an
-   * `<audio>` tag returns HTTP 400 "Bucket not found" â€” which is exactly "they're not able to play call recordings".
+   * `…/object/public/lead-voice-recordings/…` URL written back when that bucket was public. Handing that value to an
+   * `<audio>` tag returns HTTP 400 "Bucket not found" — which is exactly "they're not able to play call recordings".
    *
    * `lib/automation/recording-link.ts` already knows how to turn every era of stored value into something playable
-   * (R2 key â†’ presigned, legacy Supabase URL â†’ signed, carrier URL â†’ proxied), and
+   * (R2 key → presigned, legacy Supabase URL → signed, carrier URL → proxied), and
    * `app/api/voice/recording/stream` exposes it behind a sign-in check. So playback always goes through that route by
    * LEAD, never through the stored value directly.
    */
@@ -168,8 +181,21 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
 
       // 1. Ingest all followups & remarks recorded in lead.notes (for imported/historical leads)
       if (lead.notes && typeof lead.notes === 'string') {
-        // Split by delimiter headers ([ðŸ“...], [âš ï¸...], [ðŸ”„...], [Last Remarks], [Opening Remarks], etc.) or horizontal divider lines
-        const rawEntries = lead.notes.trim().split(/(?:---+|\n+(?=\[(?:ðŸ“|âš ï¸|ðŸ”„|Last Remarks|Opening Remarks|Followups Taken|Merged|Call|Visit|Transfer|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})))/)
+        /**
+         * A REOPEN MERGES THE OLD NOTES INTO `leads.notes` behind a "Previous Notes" divider (see
+         * `app/api/webhooks/magicbricks` and `.../housing`). That blob is not a new follow-up: it is
+         * the previous conversation, and every line of it already exists as its own `lead_history`
+         * row. Ingesting it produced one giant card typed FOLLOWUP, attributed to whoever owns the
+         * lead now — a follow-up remark in an agent's name that they never wrote, next to the
+         * REOPENED event that says where the enquiry really came from.
+         *
+         * So the timeline ingests only the part before that divider. The old notes stay on the lead
+         * and stay visible in the CRM; they just stop masquerading as today's follow-up.
+         */
+        const previousNotesDivider = lead.notes.search(/\n\s*-{3,}\s*Previous Notes\s*-{3,}\s*\n/i)
+        const freshNotes = previousNotesDivider === -1 ? lead.notes : lead.notes.slice(0, previousNotesDivider)
+        // Split by delimiter headers ([📝...], [⚠️...], [🔄...], [Last Remarks], [Opening Remarks], etc.) or horizontal divider lines
+        const rawEntries = freshNotes.trim().split(/(?:---+|\n+(?=\[(?:📝|⚠️|🔄|Last Remarks|Opening Remarks|Followups Taken|Merged|Call|Visit|Transfer|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})))/)
         for (let i = 0; i < rawEntries.length; i++) {
           const entry = rawEntries[i].trim()
           if (!entry || entry.length < 5) continue
@@ -269,7 +295,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
       const cutoffTime = cutoff ? new Date(cutoff).getTime() : null
 
       // 1.5. Guarantee AI Voice Call Summary is represented in history if present on lead
-      const hasCallJson = items.some(item => item.description && item.description.startsWith('ðŸŽ™ï¸ CALL_JSON:'))
+      const hasCallJson = items.some(item => item.description && jsonBodyAfter(String(item.description), 'CALL_JSON:') !== null)
       if (!hasCallJson && (lead.voice_call_summary || lead.summary)) {
         const sumText = lead.voice_call_summary || lead.summary
         items.push({
@@ -277,7 +303,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
           lead_id: lead.id,
           action_type: 'AI_VOICE_CALL',
           actor_name: 'Nobogent AI Voice',
-          description: `ðŸŽ™ï¸ CALL_JSON:${JSON.stringify({
+          description: `🎙️ CALL_JSON:${JSON.stringify({
             summary: sumText,
             recording_url: lead.voice_recording_url || null,
             transcript: lead.voice_call_transcript || []
@@ -329,7 +355,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
           id: 'prior_crm_followups_summary',
           lead_id: lead.id,
           action_type: 'PRIOR_FOLLOWUPS_SUMMARY',
-          description: `ðŸ“¦ ${missingPriorCount} earlier followup${missingPriorCount === 1 ? '' : 's'} were completed in the previous CRM prior to migration.\n\nTotal Followups: ${totalRecordedFollowups}. The previous CRM export retained the aggregate followup count (${totalRecordedFollowups}) along with the opening and latest discussion remarks shown in this timeline.`,
+          description: `📦 ${missingPriorCount} earlier followup${missingPriorCount === 1 ? '' : 's'} were completed in the previous CRM prior to migration.\n\nTotal Followups: ${totalRecordedFollowups}. The previous CRM export retained the aggregate followup count (${totalRecordedFollowups}) along with the opening and latest discussion remarks shown in this timeline.`,
           details: null,
           actor_name: 'Previous CRM Import',
           user_id: lead.assigned_to || lead.user_id,
@@ -392,7 +418,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
         creationDesc += `Stage : ${(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'New Lead')}`
         
         if (cf?.opening_comments) {
-          creationDesc += `\n\nðŸ“‹ Opening Remarks / Ad Answers :\n${cf.opening_comments}`
+          creationDesc += `\n\n📋 Opening Remarks / Ad Answers :\n${cf.opening_comments}`
         }
 
         items.push({
@@ -473,7 +499,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                 <span>Timeline History for {lead.name || 'Lead'}</span>
                 <LeadScoreBadge lead={lead} size="sm" showDetails />
                 <span className="px-2 py-0.5 text-[11px] font-black rounded-md bg-blue-100 text-blue-800 border border-blue-200 shrink-0 inline-flex items-center gap-1 shadow-xs">
-                  ðŸ’¬ {totalRecordedFollowups} Followup{totalRecordedFollowups === 1 ? '' : 's'}
+                  💬 {totalRecordedFollowups} Followup{totalRecordedFollowups === 1 ? '' : 's'}
                 </span>
                 {(() => {
                   let cf = lead.custom_fields
@@ -493,14 +519,14 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
               </h3>
               <p className="text-slate-500 text-xs mt-0.5 flex items-center gap-1.5 flex-wrap">
                 <span>{lead.phone || 'No Phone'}</span>
-                <span>â€¢</span>
+                <span>•</span>
                 <span>Stage: <strong className="font-semibold text-blue-600">{(lead.pipeline_stage && lead.pipeline_stage !== 'Ongoing') ? lead.pipeline_stage : (lead.status && lead.status !== 'Ongoing' ? lead.status : 'Requirement Taken')}</strong></span>
                 {(() => {
                   const rep = (lead.assigned_to && profilesMap.get(lead.assigned_to)) || (lead.user_id && profilesMap.get(lead.user_id)) || lead.user_name
                   if (rep && rep !== 'Agent') {
                     return (
                       <>
-                        <span>â€¢</span>
+                        <span>•</span>
                         <span>Rep: <strong className="text-slate-700 font-semibold">{rep}</strong></span>
                       </>
                     )
@@ -594,10 +620,10 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
 
           <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
             {activeTab === 'manual'
-              ? 'ðŸ‘¤ Sales rep calls, DNPs & manual remarks'
+              ? '👤 Sales rep calls, DNPs & manual remarks'
               : activeTab === 'automated'
-              ? 'ðŸ¤– AI voice calls, retries & auto WhatsApp'
-              : 'ðŸ“œ Full chronological history'}
+              ? '🤖 AI voice calls, retries & auto WhatsApp'
+              : '📜 Full chronological history'}
           </span>
         </div>
 
@@ -654,7 +680,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                     if (cf?.opening_comments) {
                       return (
                         <div className="mt-2 pt-2 border-t border-slate-200">
-                          <strong className="text-slate-900 block mb-0.5">ðŸ“‹ Ad Requirements / Answers :</strong>
+                          <strong className="text-slate-900 block mb-0.5">📋 Ad Requirements / Answers :</strong>
                           <p className="whitespace-pre-wrap font-semibold text-slate-800 bg-white p-2 rounded-xl border border-slate-200/60">{cf.opening_comments}</p>
                         </div>
                       )
@@ -722,13 +748,13 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (raw === 'DNP' || raw === 'CALL_NOT_PICKED') return 'CALL NOT PICKED (DNP)'
                   if (raw === 'TRANSFER') return 'LEAD TRANSFERRED'
                   if (raw === 'CALL' || raw === 'CALL_FEEDBACK') return 'CALL LOG'
-                  if (raw === 'AI_VOICE_CALL' || it.description?.startsWith('ðŸŽ™ï¸ CALL_JSON:')) return 'AI VOICE CALL'
+                  if (raw === 'AI_VOICE_CALL' || jsonBodyAfter(String(it.description || ''), 'CALL_JSON:') !== null) return 'AI VOICE CALL'
                   if (raw === 'LEAD_CREATED') return 'LEAD CREATED'
                   if (raw === 'SITE_VISIT') return 'SITE VISIT'
                   if (raw === 'MEETING') return 'MEETING'
                   if (raw === 'FOLLOWUP') return 'FOLLOWUP'
                   if (raw === 'PRIOR_FOLLOWUPS_SUMMARY') return 'PREVIOUS CRM FOLLOWUPS'
-                  if (raw === 'REOPENED') return 'ðŸ”„ LEAD REOPENED'
+                  if (raw === 'REOPENED') return '🔄 LEAD REOPENED'
                   return raw || 'Followup Event'
                 }
 
@@ -737,7 +763,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                   if (it.performed_by && it.performed_by !== 'Agent') return it.performed_by
 
                   const desc = it.description || ''
-                  if (desc.startsWith('ðŸŽ™ï¸ CALL_JSON:')) {
+                  if (jsonBodyAfter(String(desc), 'CALL_JSON:') !== null) {
                     return 'Nobogent AI Voice'
                   }
                   if (it.action_type === 'REOPENED' || desc.includes('Facebook Ad Submission') || desc.toLowerCase().includes('lead created from')) {
@@ -811,7 +837,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                       <div className="bg-indigo-50/70 border border-indigo-200/80 p-4 rounded-2xl space-y-2 text-xs text-slate-700 font-medium leading-relaxed">
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <p className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
-                            <span>ðŸ“¦ Previous CRM Followups Summary</span>
+                            <span>📦 Previous CRM Followups Summary</span>
                           </p>
                           <span className="px-2.5 py-0.5 text-[11px] font-black rounded-lg bg-indigo-600 text-white shadow-xs">
                             {item.prior_count || 1} Earlier Followup{(item.prior_count || 1) === 1 ? '' : 's'}
@@ -844,7 +870,7 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                       <div className={`w-7 h-7 rounded-full font-bold text-xs flex items-center justify-center border ${
                         isReopenedItem ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-amber-100 text-amber-700 border-amber-300'
                       }`}>
-                        {isReopenedItem ? 'ðŸ”„' : getInitial(actorName)}
+                        {isReopenedItem ? '🔄' : getInitial(actorName)}
                       </div>
                       <span className="font-bold text-xs text-slate-800">{actorName}</span>
                       <span className="text-xs text-slate-400">{formatDateTime(item.created_at)}</span>
@@ -863,13 +889,13 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                       </p>
 
                       {cleanedDescription && (() => {
-                        if (cleanedDescription.startsWith('ðŸ’¬ WA_JSON:')) {
+                        if (jsonBodyAfter(cleanedDescription, 'WA_JSON:') !== null) {
                           try {
-                            const parsed = JSON.parse(cleanedDescription.replace('ðŸ’¬ WA_JSON:', ''))
+                            const parsed = JSON.parse(jsonBodyAfter(cleanedDescription, 'WA_JSON:') as string)
                             return (
                               <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-2">
                                 <span className="block text-[11px] font-extrabold uppercase text-emerald-600 tracking-wider">
-                                  ðŸ’¬ WhatsApp Chat:
+                                  💬 WhatsApp Chat:
                                 </span>
                                 <div className="space-y-2 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200/60">
                                   {parsed.user_msg && (
@@ -892,13 +918,13 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                           } catch (e) {}
                         }
 
-                        if (cleanedDescription.startsWith('ðŸ’¬ WA_TEMPLATE:')) {
+                        if (jsonBodyAfter(cleanedDescription, 'WA_TEMPLATE:') !== null) {
                           try {
-                            const parsed = JSON.parse(cleanedDescription.replace('ðŸ’¬ WA_TEMPLATE:', ''))
+                            const parsed = JSON.parse(jsonBodyAfter(cleanedDescription, 'WA_TEMPLATE:') as string)
                             return (
                               <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-1.5">
                                 <span className="block text-[11px] font-extrabold uppercase text-emerald-600 tracking-wider">
-                                  ðŸ’¬ WhatsApp Template ({parsed.template_name}):
+                                  💬 WhatsApp Template ({parsed.template_name}):
                                 </span>
                                 <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-200/60 text-xs text-slate-800 whitespace-pre-wrap font-medium">
                                   {parsed.body_text}
@@ -908,13 +934,13 @@ export default function LeadHistoryModal({ isOpen, onClose, lead, viewerRole, te
                           } catch (e) {}
                         }
 
-                        if (cleanedDescription.startsWith('ðŸŽ™ï¸ CALL_JSON:')) {
+                        if (jsonBodyAfter(cleanedDescription, 'CALL_JSON:') !== null) {
                           try {
-                            const parsed = JSON.parse(cleanedDescription.replace('ðŸŽ™ï¸ CALL_JSON:', ''))
+                            const parsed = JSON.parse(jsonBodyAfter(cleanedDescription, 'CALL_JSON:') as string)
                             return (
                               <div className="mt-2 pt-2 border-t border-slate-200/80 space-y-2">
                                 <span className="block text-[11px] font-black uppercase text-indigo-700 tracking-wider flex items-center gap-1.5">
-                                  <span>ðŸŽ™ï¸</span> AI Voice Call Summary:
+                                  <span>🎙️</span> AI Voice Call Summary:
                                 </span>
                                 <div className="text-slate-800 text-xs font-semibold bg-indigo-50/70 p-3 rounded-xl border border-indigo-200/70 shadow-2xs leading-relaxed whitespace-pre-wrap">
                                   {parsed.summary}

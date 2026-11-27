@@ -10,20 +10,16 @@
  * it to whoever is next in the queue is right. What was wrong is that nothing said so, and the new
  * agent inherited the previous agent's entire working history on that person.
  *
- * So the rule has two halves, and they are not the same decision:
+ * THE RULE TODAY (the owner's call, after the version above went wrong in a live account)
  *
- *   SAME PROJECT     keep the owner. Whoever already knows this requirement keeps it; the
- *                    distribution engine exists to place NEW leads, not to re-deal closed work.
+ *   A lead that already has an owner KEEPS them, whatever project the new enquiry mentions. The
+ *   distribution candidate is used only when the lead had no owner at all. Reopening is the same
+ *   person enquiring again, and whoever knows that person keeps them; the reassignment was what
+ *   handed one agent's history to another and stamped a follow-up in a name that never wrote one.
  *
- *   DIFFERENT PROJECT reassign, and hide what came before. The new owner gets the lead's SOURCE
- *                    (what it is, where it came from — already always visible) plus the reopen
- *                    itself. Not the other agent's call notes, stages and remarks: those belong to
- *                    the conversation that is over, and handing them over invites the new agent to
- *                    judge a lead on a colleague's stale read of a different requirement.
- *
- * The hidden-history mechanism is the existing one from a transfer: `custom_fields.history_visible_from`
- * is stamped, `utils/lead-visibility.ts` filters anything older for non-admin viewers, and REOPENED /
- * source entries stay visible to everyone. Nothing is deleted.
+ *   So nothing is reassigned and nothing is hidden: `reassigned` and `hidePreviousHistory` are always
+ *   false on the owner-preserving path. `reopenCustomFields` still records that the lead reopened and
+ *   where from, which is what the timeline and the reopen count read.
  */
 
 /** Where the lead came from last time, as far as any handler can tell. */

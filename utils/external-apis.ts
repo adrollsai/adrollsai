@@ -471,7 +471,7 @@ export async function postToFacebook(accessToken: string, mediaUrl: string, capt
 /**
  * 3. Instagram Posting (Upgraded with REELS support, Inline Polling & Rate Limit Resilience)
  * NOTE: All polling is done inline (awaited). Fire-and-forget background loops do NOT work
- * on serverless platforms like Vercel ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the function context is killed when the response returns.
+ * on serverless platforms like Vercel Ã¢â‚¬â€ the function context is killed when the response returns.
  */
 export async function postToInstagram(accessToken: string, pageId: string, mediaUrl: string, caption: string, type: string = 'image'): Promise<any> {
     // 1. Get IG Account ID
@@ -520,7 +520,7 @@ export async function postToInstagram(accessToken: string, pageId: string, media
     }
     const creationId = containerData.id;
 
-    // 4. POLL STATUS INLINE ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â must be awaited, NOT fire-and-forget
+    // 4. POLL STATUS INLINE Ã¢â‚¬â€ must be awaited, NOT fire-and-forget
     // Videos (Reels) typically take 30-90s to process on Meta's servers.
     // Images are usually instant but we poll a few times to be safe.
     const maxAttempts = isVideo ? 60 : 10;

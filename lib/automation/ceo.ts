@@ -9,7 +9,7 @@
  * send/call reads it, so behaviour is explainable and editable rather than
  * re-improvised per message.
  *
- * THE BUTTONS â€” IMPORTANT
+ * THE BUTTONS — IMPORTANT
  * The three reply buttons already work and must keep working. Their IDs are the
  * contract consumed by the inbound webhook handlers, so IDs never change:
  *   view_properties | talk_expert | book_appointment
@@ -45,7 +45,7 @@ export interface Playbook {
 
 /**
  * Default label for the catalogue button, derived from the tenant's industry.
- * This is the ONLY industry-sensitive piece left, and it is a label â€” not
+ * This is the ONLY industry-sensitive piece left, and it is a label — not
  * behaviour. The CEO playbook overrides it when it has authored one.
  */
 export function defaultProductButtonLabel(industry?: string | null): string {

@@ -153,7 +153,7 @@ export function renderDailyRoutine(dailyRoutine?: Record<string, unknown> | null
         .filter(Boolean);
       if (items.length) {
         lines.push(`- ${label}:`);
-        for (const item of items) lines.push(`  Â· ${item}`);
+        for (const item of items) lines.push(`  · ${item}`);
       }
       continue;
     }
@@ -162,7 +162,7 @@ export function renderDailyRoutine(dailyRoutine?: Record<string, unknown> | null
       lines.push(`- ${label}:`);
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
         if (v === null || v === undefined || v === '') continue;
-        lines.push(`  Â· ${k.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`);
+        lines.push(`  · ${k.replace(/_/g, ' ')}: ${Array.isArray(v) ? v.join(', ') : String(v)}`);
       }
       continue;
     }

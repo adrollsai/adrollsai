@@ -98,9 +98,33 @@ async function main() {
     return;
   }
 
-  const { data: profile } = await sb.from('profiles').select('id, business_name').limit(1).maybeSingle();
+  /**
+   * WHICH ACCOUNT THE LIVE CHECKS USE.
+   *
+   * This used to be `profiles ... limit(1)` — whichever row happened to come back first. That stopped
+   * being workable once the book contained (a) sub-accounts with no auth user, `harness_sessions.user_id`
+   * being a foreign key to auth.users, and (b) businesses that ALREADY hold a routine which ran today.
+   * The claim on a run is unique per `(user_id, period_key)`, so a fixture routine inserted on such an
+   * account is refused with "period already ran" — correct product behaviour, but it makes the test
+   * prove nothing.
+   *
+   * So: an enabled account that owns no routine row at all. It cannot have claimed today's period, and
+   * it is exactly the state a new tenant is in.
+   */
+  const { data: candidates } = await sb
+    .from('profiles')
+    .select('id, business_name, is_disabled')
+    .eq('is_disabled', false)
+    .limit(200);
+  const { data: routineOwners } = await sb.from('business_routines').select('user_id').limit(2000);
+  const owners = new Set((routineOwners || []).map((row: any) => String(row.user_id)));
+  const profile = (candidates || []).find((row: any) => row?.id && !owners.has(String(row.id))) as
+    | { id: string; business_name: string | null }
+    | undefined;
+  check('an account with no routine yet exists for the live checks', Boolean(profile?.id), profile?.business_name || '');
   if (!profile?.id) {
-    console.log('no profile — live checks skipped');
+    console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} checks passed`);
+    if (fail) process.exit(1);
     return;
   }
 
@@ -113,7 +137,7 @@ async function main() {
   };
 
   try {
-    const { data: r1 } = await sb
+    const { data: r1, error: r1Error } = await sb
       .from('business_routines')
       .insert({
         user_id: profile.id,
@@ -125,7 +149,12 @@ async function main() {
       })
       .select('id')
       .single();
-    created.push(r1!.id);
+    check('the fixture routine row was created', Boolean(r1?.id), r1Error?.message || '');
+    if (!r1?.id) {
+      console.log(`\n${fail === 0 ? 'PASS' : 'FAIL'} — ${pass}/${pass + fail} checks passed`);
+      process.exit(1);
+    }
+    created.push(r1.id);
 
     const first = await materialiseDueRoutines(sb, new Date());
     const mine = first.queued.filter((q) => q.routineId === r1!.id);
@@ -156,9 +185,9 @@ async function main() {
       })
       .select('id')
       .single();
-    created.push(r2!.id);
+    if (r2?.id) created.push(r2.id);
     const fourth = await materialiseDueRoutines(sb, new Date());
-    check('a disabled routine never runs', fourth.queued.filter((q) => q.routineId === r2!.id).length === 0);
+    check('a disabled routine never runs', !r2?.id || fourth.queued.every((q) => q.routineId !== r2?.id));
 
     // Not-yet-due routines must be left alone.
     const { data: r3 } = await sb
@@ -172,9 +201,9 @@ async function main() {
       })
       .select('id')
       .single();
-    created.push(r3!.id);
+    if (r3?.id) created.push(r3.id);
     const fifth = await materialiseDueRoutines(sb, new Date());
-    check('a routine due later is not run early', fifth.queued.filter((q) => q.routineId === r3!.id).length === 0);
+    check('a routine due later is not run early', !r3?.id || fifth.queued.every((q) => q.routineId !== r3?.id));
   } finally {
     await cleanup();
   }

@@ -3,14 +3,14 @@
  *
  * THE GAP THIS CLOSES
  * `tools/automation.ts` gave the agent `list_automation_flows` and
- * `check_flow_conflicts` Ã¢â‚¬â€ it could SEE flows and never make one. So "create a
+ * `check_flow_conflicts` â€” it could SEE flows and never make one. So "create a
  * WhatsApp flow: when a lead comes in, send the brochure, then call them" resolved to
  * a truthful "I cannot do that", which is a worse product than one that can.
  *
  * WHAT A FLOW IS (read out of the 15 real rows in `automations`)
  *   title        `Flow: <name>`
  *   description  a JSON STRING: { name, isActive, trigger, nodes[] }
- *   nodes        { id, type, position:{x,y}, data:{Ã¢â‚¬Â¦} }
+ *   nodes        { id, type, position:{x,y}, data:{â€¦} }
  * and `utils/whatsapp/flow-runner.ts` is the only thing that executes them, so this
  * file's vocabulary is copied FROM that runner rather than invented:
  *
@@ -486,7 +486,7 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
           }
 
           // Two flows firing on the same trigger is worse than no flow: every matching person gets
-          // both messages. The verdict comes from the trigger's IDENTITY Ã¢â‚¬â€ exact, repeatable Ã¢â‚¬â€ not
+          // both messages. The verdict comes from the trigger's IDENTITY â€” exact, repeatable â€” not
           // from matching the trigger's name inside description prose, which both missed real
           // duplicates and flagged unrelated flows.
           try {
@@ -577,7 +577,7 @@ export function createFlowAuthoringTools(supabase: SupabaseClient, userId: strin
               `Created "${built.title}" with ${built.nodeCount} node(s)` +
               (built.isActive
                 ? ', active now.'
-                : ', currently PAUSED Ã¢â‚¬â€ the owner turns it on in dashboard/flows when they are ready.'),
+                : ', currently PAUSED â€” the owner turns it on in dashboard/flows when they are ready.'),
           };
         } catch (error: any) {
           if (error instanceof FlowError) {

@@ -33,6 +33,7 @@ import {
   eagerPageIndexes,
   loadMoreLabel,
   mergePages,
+  orderLeadsDesc,
   pageRange,
   remainingPageIndexes,
 } from '@/lib/crm/lead-pagination'
@@ -1328,13 +1329,16 @@ const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, 
       leadFilterRef.current = filterFn
 
       // Step 1: Get total count + first 1000 leads in parallel
-      const firstPageQ = filterFn(supabase.from('leads').select(leadFields))
-        // Order by ACTIVITY, not arrival: a lead that goes cold and is reopened
-        // months later is new work today, but created_at would pin it to the bottom
-        // for ever. last_activity_at is bumped by a DB trigger on every insert and
-        // update, so reopened and recently-touched leads surface at the top.
-        .order('last_activity_at', { ascending: false })
-        .range(0, 999)
+      // Order by ACTIVITY, not arrival: a lead that goes cold and is reopened
+      // months later is new work today, but created_at would pin it to the bottom
+      // for ever. last_activity_at is bumped by a DB trigger on every insert and
+      // update, so reopened and recently-touched leads surface at the top.
+      //
+      // `id` is the tiebreaker, and it is not decoration — see LEAD_ORDER_COLUMNS.
+      // Bulk imports stamp thousands of leads with the same last_activity_at, and
+      // without a unique second column two page requests can return the same row
+      // (a duplicate card) and skip another one entirely.
+      const firstPageQ = orderLeadsDesc(filterFn(supabase.from('leads').select(leadFields))).range(0, 999)
       const countQ = filterFn(supabase.from('leads').select('*', { count: 'exact', head: true }))
 
       const [firstPageRes, countRes] = await Promise.all([firstPageQ, countQ])
@@ -1375,8 +1379,7 @@ const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, 
         await Promise.all(
           batch.map((pageIdx) => {
             const { from, to } = pageRange(pageIdx)
-            return filterFn(supabase.from('leads').select(leadFields))
-              .order('last_activity_at', { ascending: false })
+            return orderLeadsDesc(filterFn(supabase.from('leads').select(leadFields)))
               .range(from, to)
               .then((r: any) => {
                 if (r.data && r.data.length > 0) loadedPages.set(pageIdx, parseLeads(r.data))
@@ -1498,8 +1501,7 @@ const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, 
         await Promise.all(
           batch.map((pageIdx) => {
             const { from, to } = pageRange(pageIdx)
-            return filterFn(supabase.from('leads').select(leadFields))
-              .order('last_activity_at', { ascending: false })
+            return orderLeadsDesc(filterFn(supabase.from('leads').select(leadFields)))
               .range(from, to)
               .then((r: any) => {
                 if (r.data && r.data.length > 0) leadPagesRef.current.set(pageIdx, parseLeadRows(r.data))

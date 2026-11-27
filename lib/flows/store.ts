@@ -7,7 +7,7 @@ import type { BranchGate } from './branching';
  *
  * Everything here is deliberately small and boring. The interesting logic lives in scheduling.ts,
  * which is pure and proven by a gate; this file only reads and writes rows. It also degrades
- * quietly if the migration has not been applied yet â€” an empty ledger beats a broken dashboard.
+ * quietly if the migration has not been applied yet — an empty ledger beats a broken dashboard.
  */
 
 export const SCHEDULES = 'flow_schedules';
@@ -169,7 +169,7 @@ export function scheduledStore(supabase: SupabaseClient, userId: string): FlowSt
   };
 }
 
-/** Read the owner's quiet hours, defaulting to 21:00â€“09:00. */
+/** Read the owner's quiet hours, defaulting to 21:00–09:00. */
 export async function quietHoursFor(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase
     .from(SETTINGS)
@@ -185,7 +185,7 @@ export type EnqueueKind = 'message' | 'call' | 'email' | 'dm_reply' | 'handoff';
 
 /**
  * Write the waits down. Called when a flow fires, instead of holding the request open.
- * Returns how many rows were newly queued â€” a repeat call adds nothing, by design.
+ * Returns how many rows were newly queued — a repeat call adds nothing, by design.
  */
 export async function enqueueFlowRun(
   supabase: SupabaseClient,

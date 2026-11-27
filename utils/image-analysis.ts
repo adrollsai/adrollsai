@@ -280,7 +280,7 @@ export async function resolveImageDescriptions(
             }
         }
     } else {
-        console.log(`[Image Analysis] All ${cleanUrls.length} image descriptions loaded from cache! âš¡`);
+        console.log(`[Image Analysis] All ${cleanUrls.length} image descriptions loaded from cache! ⚡`);
     }
 
     // Return descriptions strictly ordered matching the input imageUrls array

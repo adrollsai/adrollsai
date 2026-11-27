@@ -28,7 +28,7 @@ import { brandKitFor, withBrandRules } from '../media/brand-kit';
 
 /** Gemini TTS voices, with the character each one reads in. */
 const GEMINI_TTS_VOICES = [
-  'Aoede (breezy, warm â€” best all-round commercial read)',
+  'Aoede (breezy, warm — best all-round commercial read)',
   'Kore (firm, confident)',
   'Puck (upbeat, energetic)',
   'Charon (informative, deep)',
@@ -76,7 +76,7 @@ const LANGUAGE_PROFILES: Record<string, { scene: string; context: string }> = {
   },
   hinglish: {
     scene:
-      'A confident, polished Indian voiceover artist speaking natural Hinglish â€” fluent Indian English mixed with conversational Hindi â€” in a professional recording studio. Warm, enthusiastic, high-converting commercial delivery.',
+      'A confident, polished Indian voiceover artist speaking natural Hinglish — fluent Indian English mixed with conversational Hindi — in a professional recording studio. Warm, enthusiastic, high-converting commercial delivery.',
     context: 'Indian social media ad read in Hinglish, natural urban code-switching',
   },
   hindi: {
@@ -140,7 +140,7 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
   }) => {
     try {
       // The live `assets` table has no `title` column (the repo migration is
-      // stale) and its status vocabulary is capitalised â€” 'Ready' / 'Draft' /
+      // stale) and its status vocabulary is capitalised — 'Ready' / 'Draft' /
       // 'Failed'. Writing 'title' fails the whole insert with PGRST204, and a
       // lowercase status makes the asset invisible to the library filters.
       const { data, error } = await supabase
@@ -175,7 +175,7 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
         script: z
           .string()
           .describe(
-            'The exact words to speak. Write it as natural spoken copy â€” no speaker labels, stage directions, asterisks or brackets, and no emoji. Numbers and prices should be written the way they should be read out.'
+            'The exact words to speak. Write it as natural spoken copy — no speaker labels, stage directions, asterisks or brackets, and no emoji. Numbers and prices should be written the way they should be read out.'
           ),
         voiceName: z
           .string()
@@ -525,7 +525,7 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
             return { success: false, state: 'failed', taskId, error: status.error || 'Generation failed' };
           }
           if (status.state !== 'success' || !status.resultUrl) {
-            return { success: true, state: 'processing', taskId, message: 'Still generating â€” check again shortly.' };
+            return { success: true, state: 'processing', taskId, message: 'Still generating — check again shortly.' };
           }
 
           const rawUrl = status.resultUrl;
