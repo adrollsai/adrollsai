@@ -9,6 +9,7 @@ import sharp from 'sharp';
 import { getReferenceTemplate } from '@/utils/reference-templates-data';
 import { chooseReferenceCreative, describeReferenceChoice } from '@/lib/automation/reference-selection';
 import { brandKitFor } from '@/lib/agent/media/brand-kit';
+import { enforceFrame } from '@/lib/media/frame';
 import { dispatchCreativeToAdmin } from '@/utils/creative-dispatch-helper';
 import { MEDIA_MODELS, imageModelFor } from '@/lib/agent/media-models';
 
@@ -367,12 +368,21 @@ Write a cohesive, single-paragraph image prompt (between 80 to 120 words) that d
         let contentType = 'image/jpeg';
 
         try {
-          console.log("[Auto-Generate Worker] Compressing image with sharp...");
-          compressedBuffer = await sharp(rawBuffer)
-            .resize({ width: 1200, withoutEnlargement: true })
-            .jpeg({ quality: 80, progressive: true })
-            .toBuffer();
-          console.log("[Auto-Generate Worker] Image compressed successfully.");
+          /**
+           * COMPRESS **AND** FRAME.
+           *
+           * The daily creative asks for 4:5 and the provider is told `auto` with the frame in words (see
+           * lib/agent/media-ratios), so the model could — and did — return landscape. This step already had
+           * the bytes in hand, so it now cropped to the frame it asked for instead of only shrinking it.
+           */
+          console.log("[Auto-Generate Worker] Framing + compressing image with sharp...");
+          const framed = await enforceFrame(rawBuffer, targetCanvas);
+          compressedBuffer = framed.buffer;
+          if (!framed.unchanged) {
+            console.log(
+              `[Auto-Generate Worker] Framed ${framed.original.width}x${framed.original.height} (${framed.original.ratio}) -> ${framed.width}x${framed.height}`
+            );
+          }
         } catch (sharpErr) {
           console.error("[Auto-Generate Worker] sharp compression failed, using original png:", sharpErr);
           finalFileName = `generated/${prop.user_id}/${Date.now()}.png`;

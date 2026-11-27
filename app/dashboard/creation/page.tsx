@@ -1608,7 +1608,9 @@ export default function CreationPage() {
             const checkResponse = await fetch('/api/check-status', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ taskId })
+                // `ratio` is what makes the delivered image match the picker: the provider is asked for
+                // `auto` (it has no 4:5), so the frame is applied to the finished image server-side.
+                body: JSON.stringify({ taskId, ratio: selectedRatio })
              })
 
             const checkData = await checkResponse.json()
