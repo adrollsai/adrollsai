@@ -13,9 +13,8 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
-import { ALL_REFERENCE_TEMPLATES, getReferenceTemplate } from '@/utils/reference-templates-data'
-import { estimateGrokVideoCredits } from '@/lib/agent/pricing'
 import { MEDIA_MODELS } from '@/lib/agent/media-models'
+import { estimateGrokVideoCredits } from '@/lib/agent/pricing'
 
 // --- TYPES ---
 type Message = {
@@ -64,7 +63,10 @@ type Profile = {
 }
 
 
-// --- TEMPLATES LIBRARY (Reverse-engineered from Luxury Dubai References) ---
+// --- DESIGN REFERENCES ---
+// There is deliberately NO built-in template catalogue here. It listed the super admin's 35 luxury
+// real-estate designs, and the operator's rule is that no other account may be built from them: the
+// Creation tab offers this account's own uploads, and its brand kit when there are none.
 export interface DesignTemplate {
   id: string
   name: string
@@ -73,15 +75,6 @@ export interface DesignTemplate {
   badge: string
   url: string
 }
-
-const TEMPLATES: DesignTemplate[] = ALL_REFERENCE_TEMPLATES.map(t => ({
-  id: t.id,
-  name: t.name,
-  category: t.category,
-  description: t.description,
-  badge: t.badge,
-  url: t.url
-}));
 
 const ASPECT_RATIOS = [
   { label: '1:1', value: '1:1', icon: Square },
@@ -325,11 +318,10 @@ export default function CreationPage() {
     setIsTemplateChooserOpen(false);
     if (templateId === null) {
       toast.success("Applied Auto AI Layout 🪄");
-    } else if (templateId === 'rotate') {
-      toast.success("Applied Rotating Luxury Styles 🔄");
     } else {
-      const tmpl = TEMPLATES.find(t => t.id === templateId);
-      toast.success(`Selected template: ${tmpl?.name || templateId} 💎`);
+      // Every reference this page can select now comes from the account's OWN library, so there is no
+      // built-in template to look up — and the id is only used for the confirmation toast.
+      toast.success("Selected your own reference 💎");
     }
   };
   // The image model for every request this page makes comes from the registry —
@@ -2020,16 +2012,16 @@ export default function CreationPage() {
                             </button>
                         )}
 
-                        {/* Main Button to open Templates Modal */}
+                        {/* Opens the picker of THIS ACCOUNT'S OWN references */}
                         <button
                             type="button"
                             onClick={() => setIsTemplateChooserOpen(true)}
                             className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 flex items-center gap-2 cursor-pointer"
                         >
                             <Layout size={14} />
-                            <span>Templates Library</span>
+                            <span>Your References</span>
                             <span className="bg-white/25 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none">
-                                {TEMPLATES.length}
+                                {userReferences.length}
                             </span>
                         </button>
                     </div>
@@ -3477,13 +3469,13 @@ export default function CreationPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <Sparkles className="text-blue-600 animate-pulse" size={20} />
-                    <h3 className="text-base sm:text-lg font-black text-slate-900">Templates & Styles Library</h3>
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">Your Reference Library</h3>
                     <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2 py-0.5 rounded-full">
-                      {TEMPLATES.length} Styles
+                      {userReferences.length} uploaded
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-medium mt-1">
-                    Select a luxury design layout for your creatives, enable dynamic rotation, or let AI choose automatically.
+                    Pick one of the designs you uploaded, or let the AI compose the layout from your brand kit.
                   </p>
                 </div>
                 <button
