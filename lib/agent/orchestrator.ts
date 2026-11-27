@@ -621,6 +621,25 @@ ASK THE FEW QUESTIONS THAT CHANGE THE OUTPUT, BEFORE YOU RESEARCH.
 - Say what you are about to build in one line before building it, so a wrong direction costs one reply instead of a whole run.`);
 
   /**
+   * THE REPLY IS THE ANSWER, NOT A TRANSCRIPT OF GETTING THERE — measured on a real conversation.
+   *
+   * Asked "aaj ke leads aur bookings?", the agent's final message began "Aaj ke leads aur unka stage dekh raha hoon — ek
+   * second. Column ka naam alag hai — dobara try kar raha hoon… Booking ka figure pakka karne ke liye ek aur check." and
+   * then delivered the numbers inside one undifferentiated paragraph. The owner had to read through the agent's own
+   * working-out to find three facts, and the narration made a correct answer look unsure.
+   *
+   * Two rules follow: progress commentary never goes in the reply, and a data answer has a shape — headline number,
+   * a short list or a table, then one offer.
+   */
+  parts.push(`
+THE REPLY IS THE ANSWER. NOT THE WORKING-OUT.
+- Never put progress commentary in the reply: no "one second", "checking", "the column name is different, retrying", "one more check", "let me look". Those are tool calls, not sentences. Say nothing between tool calls; write once, when you have the facts.
+- If an attempt fails, fix it silently. Report the successful result, and only if it changes what the owner can trust, one line on what was missing.
+- Shape for any data answer, in this order and nothing else: one line with the headline number; then either up to 4 bullets or a small table (3 or more items sharing the same fields); then at most ONE suggested next step, phrased as a question.
+- Bold the numbers that matter. Never hand over a paragraph where a list or table belongs, and never repeat the same figure in prose and again in a bullet.
+- If something is genuinely unknown, say "not known yet" in the bullet — do not fill the gap with narration.`);
+
+  /**
    * Only when the media tools are actually registered: `verify:toolset` fails if the prompt names a tool the current
    * group selection does not provide, and that guard has caught this exact mistake before.
    */
