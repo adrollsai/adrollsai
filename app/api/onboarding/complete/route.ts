@@ -245,15 +245,14 @@ export async function POST(request: Request) {
         const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
 
         /**
-         * NO BORROWED DESIGN WHEN THE OWNER TICKED NONE.
+         * NO BUILT-IN DESIGN, NOT EVEN A TICKED ONE.
          *
-         * The default list was `pinterest_pin_0…4` — the first five built-in Dubai property ads — so a new
-         * account that had selected no reference was onboarded with luxury-villa styling, badge included.
-         * An empty list means "style this from the business's own brief and brand".
+         * The operator's rule: "never use the super admin designs for real estate for any account". This
+         * defaulted to the first five catalogue entries (`pinterest_pin_0…4` — Dubai property ads) and
+         * otherwise resolved whatever ids the onboarding screen sent. It now resolves none: a new account's
+         * first creatives are styled from its own brief and brand.
          */
-        const activeTemplates: string[] = (Array.isArray(selectedTemplates) && selectedTemplates.length > 0)
-            ? selectedTemplates
-            : [];
+        const activeTemplates: string[] = [];
 
         // 4a. Persist the catalogue FIRST. Intake is free and must not be behind a
         //     paywall: the property rows are what the agent will work on once the

@@ -48,16 +48,14 @@ export async function POST(request: Request) {
         }
 
         /**
-         * NO BORROWED DESIGN WHEN THE OWNER TICKED NONE.
+         * NO BUILT-IN DESIGN, NOT EVEN A TICKED ONE.
          *
-         * This defaulted to the first five built-in catalogue entries — `pinterest_pin_0…4`, which are
-         * Dubai property ads — so an account that had selected no reference had its delivered creatives
-         * styled after a luxury villa, badge and all. With an empty list the creative is styled from the
-         * business's own brief and brand instead (lib/automation/reference-selection).
+         * The operator's rule: "never use the super admin designs for real estate for any account". So this
+         * path resolves no template at all — not the default five (`pinterest_pin_0…4`, the first Dubai
+         * property ads) and not the ids stored on the profile. Delivery creatives are styled from the
+         * business's own brief and brand (see lib/automation/reference-selection).
          */
-        const activeTemplates: string[] = (Array.isArray(selectedTemplates) && selectedTemplates.length > 0)
-            ? selectedTemplates
-            : (Array.isArray(profile?.selected_templates) ? profile.selected_templates : []);
+        const activeTemplates: string[] = [];
 
         const MAX_GLOBAL_VIDEO_SECONDS = 300;
         let cumulativeVideoSeconds = 0;

@@ -17,7 +17,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { chooseReferenceCreative, describeReferenceChoice } from '../lib/automation/reference-selection';
+import { chooseReferenceCreative, describeReferenceChoice, isOwnReferenceCreative, isSuperAdminReference } from '../lib/automation/reference-selection';
 
 let pass = 0;
 let fail = 0;
@@ -68,11 +68,8 @@ async function main() {
       { id: 'r1', url: 'https://cdn.example.com/procolor/poster-a.jpg', category: 'premium', created_at: '2026-11-20' },
       { id: 'r2', url: 'https://cdn.example.com/procolor/poster-b.jpg', category: 'high_converting', created_at: '2026-11-21' },
     ];
-    const choice = await chooseReferenceCreative(stubSupabase(own), 'user-1', {
-      selectedTemplateUrl: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_17.jpg',
-      selectedTemplateLabel: 'Golden Hour Oasis Villa',
-    });
-    check('the account\u2019s own upload wins over any built-in', (choice.url || '').includes('/procolor/poster-'), choice.url || '');
+    const choice = await chooseReferenceCreative(stubSupabase(own), 'user-1', {});
+    check('the account\u2019s own upload is used', (choice.url || '').includes('/procolor/poster-'), choice.url || '');
     check('and is reported as the account\u2019s own', choice.source === 'own', choice.source);
     check('the built-in\u2019s badge cannot leak in', !JSON.stringify(choice).includes('Oasis'));
   }
@@ -81,14 +78,39 @@ async function main() {
 
   {
     const bare = await chooseReferenceCreative(stubSupabase([]), 'user-2', {});
-    check('no own references, nothing selected: no reference at all', bare.url === null, String(bare.url));
+    check('no own references: no reference at all', bare.url === null, String(bare.url));
     check('and it says so rather than pretending', bare.source === 'none' && /no borrowed design/.test(describeReferenceChoice(bare)), describeReferenceChoice(bare));
+  }
 
-    const optIn = await chooseReferenceCreative(stubSupabase([]), 'user-3', {
-      selectedTemplateUrl: 'https://cdn.example.com/builtin/villa.jpg',
-      selectedTemplateLabel: 'Marbella Contemporary Villa',
-    });
-    check('a built-in the owner explicitly ticked IS allowed', optIn.source === 'selected' && optIn.url === 'https://cdn.example.com/builtin/villa.jpg', optIn.source);
+  head('3. The super admin real-estate designs are banned for every account');
+
+  {
+    // The operator's rule: "never use the super admin designs for real estate for any account".
+    const builtIns = [
+      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_17.jpg',
+      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_0.jpg',
+      'pinterest_pin_17',
+      'pinterest_damac_island',
+      'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/anything.jpg',
+    ];
+    for (const url of builtIns) {
+      check(`refused: ${url.slice(-42)}`, isSuperAdminReference(url) === true);
+    }
+    check('an own upload is not mistaken for a built-in', isSuperAdminReference('https://cdn.example.com/procolor/poster-a.jpg') === false);
+
+    // Even stored as if it belonged to the account, a built-in is not a reference.
+    const sneaky = await chooseReferenceCreative(
+      stubSupabase([{ id: 'x', url: 'https://pub-c9b2fd77f9484acab7c67cf5c62e7d37.r2.dev/reference-creatives/dubai/pinterest_pin_1793111079523_17.jpg', category: '' }]),
+      'user-3',
+      {},
+    );
+    check('a built-in row is skipped even if it carries the account\u2019s user_id', sneaky.url === null, String(sneaky.url));
+
+    // And the door for a URL that arrives from a client.
+    const ownOnly = await isOwnReferenceCreative(stubSupabase([]), 'user-3', builtIns[0]);
+    check('a client-supplied built-in is not an own reference', ownOnly === false);
+    const ownUrl = await isOwnReferenceCreative(stubSupabase([{ id: 'r1', url: 'https://cdn.example.com/procolor/poster-a.jpg' }]), 'user-3', 'https://cdn.example.com/procolor/poster-a.jpg');
+    check('a client-supplied own upload is accepted', ownUrl === true);
   }
 
   head('3. Junk is not a reference');
@@ -117,22 +139,37 @@ async function main() {
     check('and still spreads across the account\u2019s references', spread.size >= 4, `${spread.size} of 12 used over 40 creatives`);
   }
 
-  head('5. The image paths use this rule, not a random built-in');
+  head('5. The image paths use this rule, and no built-in survives anywhere');
 
   {
     const chat = codeOnly(read('app/api/chat/route.ts'));
-    check('the image route no longer picks a random built-in', !/getRandomReferenceTemplate\s*\(/.test(chat));
+    check('the image route never picks a built-in', !/getRandomReferenceTemplate\s*\(/.test(chat));
+    check('and cannot resolve a built-in from a stored template id', !/getReferenceTemplate\s*\(/.test(chat));
+    check('a supplied reference is checked against the account\u2019s own uploads', /isOwnReferenceCreative\(/.test(chat));
+    check(
+      'a supplied built-in is refused before it can become the reference',
+      /if \(effectiveTemplateUrl && isSuperAdminReference\(effectiveTemplateUrl\)\)[\s\S]{0,200}?effectiveTemplateUrl = null;/.test(chat),
+    );
     check('it asks the shared rule instead', /chooseReferenceCreative\(/.test(chat));
     check('and logs where the design came from', /describeReferenceChoice\(/.test(chat));
 
-    const creation = read('app/dashboard/creation/page.tsx');
+    const creation = codeOnly(read('app/dashboard/creation/page.tsx'));
     check('the Creation tab cannot fall back to a random built-in url', !/randomFallback/.test(creation));
-    check('its template resolution allows "no reference"', /templateObj && effTemplate !== 'rotate'|effTemplate && effTemplate !== 'rotate'/.test(creation));
-    check('every random built-in pick is gated on the owner ticking one', (creation.match(/userSelected \? getRandomReferenceTemplate\(userSelected\) : null/g) || []).length === 2);
+    check('it never resolves a built-in template into a reference', !/templateObj\?\.url|selectedTemplateObj\?\.url/.test(creation));
+    check('it no longer imports the built-in random picker', !/getRandomReferenceTemplate/.test(creation));
+    check('the Dubai template picker is gone from the creation flow', !/Curated Dubai Templates|Rotate Diverse Luxury Styles/.test(creation));
 
     const worker = read('app/api/cron/auto-generate/worker/route.ts');
     check('the daily-creative worker uses the shared rule too', /chooseReferenceCreative\(/.test(worker));
+    check('and never picks a built-in', !/getRandomReferenceTemplate\s*\(/.test(codeOnly(worker)));
     check('and the daily creative survives having no blueprint', /chosenTemplate \? / .test(worker));
+
+    // The delivery + onboarding paths defaulted to five Dubai designs by id.
+    for (const file of ['app/api/onboarding/complete/route.ts', 'app/api/projects/allocate-delivery/route.ts']) {
+      const source = codeOnly(read(file));
+      check(`${file}: no default list of built-in designs`, !/pinterest_pin_\d/.test(source));
+      check(`${file}: a missing template degrades to neutral styling`, /Modern Minimalist Editorial/.test(source));
+    }
   }
 
   head('6. Every image path carries the account\u2019s brand');

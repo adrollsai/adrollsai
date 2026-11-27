@@ -13,7 +13,7 @@ import ImagePreviewModal from '@/components/ImagePreviewModal'
 import { motion, AnimatePresence } from 'framer-motion'
 import { getPropertyDisplayLabel } from '@/utils/property-helper'
 import ProductSearchableSelect from '@/components/ProductSearchableSelect'
-import { ALL_REFERENCE_TEMPLATES, getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data'
+import { ALL_REFERENCE_TEMPLATES, getReferenceTemplate } from '@/utils/reference-templates-data'
 import { estimateGrokVideoCredits } from '@/lib/agent/pricing'
 import { MEDIA_MODELS } from '@/lib/agent/media-models'
 
@@ -791,27 +791,17 @@ export default function CreationPage() {
             // Check if logo is excluded
             const isLogoExcluded = profile?.logo_url ? creativeFlow.batchExcludedImages.includes(profile.logo_url) : false;
 
-            // Template assignment: choose selected template or randomly pick across user's selected reference templates
+            /**
+             * THE BATCH PATH ALSO USES ONLY THIS ACCOUNT'S OWN DESIGNS.
+             *
+             * A chosen template used to be resolved here, and the fallback was a random pick from the 35
+             * built-in Dubai property designs. The operator's rule is that those belong to no other
+             * account, so neither branch may reach them: the server picks from this account's own uploads.
+             */
             let assignedTemplateUrl: string | null = null;
             let assignedStyleName = angle.title ? `${angle.title} - ${angle.visual_concept}` : undefined;
-            if (creativeFlow.selectedTemplate && creativeFlow.selectedTemplate !== 'rotate') {
-                const matched = getReferenceTemplate(creativeFlow.selectedTemplate);
-                if (matched) {
-                    assignedTemplateUrl = matched.url;
-                    assignedStyleName = `${matched.name} | ${assignedStyleName || ''}`;
-                }
-            } else {
-                // Batch mode: only a reference the OWNER explicitly ticked is allowed here. When they
-                // ticked none, no built-in is borrowed — the server rotates the account's own
-                // references (lib/automation/reference-selection) or composes from the brand kit.
-                const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
-                    ? profile.selected_templates
-                    : undefined;
-                const randomTmpl = userSelected ? getRandomReferenceTemplate(userSelected) : null;
-                if (randomTmpl) {
-                    assignedTemplateUrl = randomTmpl.url;
-                    assignedStyleName = `${randomTmpl.name} | ${assignedStyleName || ''}`;
-                }
+            if (!creativeFlow.selectedTemplate || creativeFlow.selectedTemplate === 'rotate') {
+                assignedTemplateUrl = null;
             }
             angleIdx++;
 
@@ -1443,25 +1433,17 @@ export default function CreationPage() {
       !selectedUserRefUrl
     ) {
       /**
-       * NO RANDOM BUILT-IN DESIGN.
+       * NO BUILT-IN DESIGN, EVER.
        *
-       * This drew a random design from the 35 built-in Dubai property references and announced
-       * "Using reference style: <name>" — so a generation with nothing selected silently borrowed a
-       * luxury-villa ad. A live film academy's poster came out carrying that design's badge,
-       * "PRIVATE POOL OASIS". A reference the owner explicitly ticked is still honoured; when there is
-       * none, the server rotates the account's OWN references (lib/automation/reference-selection) and
-       * says so, instead of borrowing somebody else's industry.
+       * This drew a design from the 35 built-in Dubai property references and announced "Using reference
+       * style: <name>" — so a generation with nothing selected silently borrowed a luxury-villa ad. A live
+       * film academy's poster came out carrying that design's badge, "PRIVATE POOL OASIS".
+       *
+       * The operator's rule is that the super admin's real-estate designs are for no other account, so
+       * there is nothing to pick here: the server uses this account's own uploads
+       * (lib/automation/reference-selection) or composes from the brand kit and the account's data.
        */
-      const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
-        ? profile.selected_templates
-        : undefined;
-      const randomTmpl = userSelected ? getRandomReferenceTemplate(userSelected) : null;
-      if (randomTmpl) {
-        effForcedTemplateId = randomTmpl.id;
-        toast.info(`Using reference style: ${randomTmpl.name}`);
-      } else {
-        toast.info('Using your own uploaded references, or the brand kit if you have none.');
-      }
+      toast.info('Using your own uploaded references — or your brand kit if you have none.');
     }
 
     setIsChatWorkspaceOpen(true)
@@ -1551,15 +1533,17 @@ export default function CreationPage() {
 
   const effTemplate = effForcedTemplateId || forcedTemplateId || selectedTemplate
   /**
-   * WHICH REFERENCE THIS GENERATION USES.
+   * WHICH REFERENCE THIS GENERATION USES — the account's own, or none.
    *
-   * In order: the image the person just uploaded for this generation, then their own library pick, then
-   * a built-in design they explicitly chose. `rotate` means "let the account's own references rotate",
-   * which the server does now — it does NOT mean "borrow a random built-in". That fallback is what put a
-   * Dubai villa's "PRIVATE POOL OASIS" badge on a film academy's cinematography poster.
+   * In order: the image the person just uploaded for this generation, then their own library pick. The
+   * built-in catalogue is not an option at any step: the operator's rule is "never use the super admin
+   * designs for real estate for any account". With nothing of the account's own, `activeReferenceUrl` is
+   * null and the server composes the creative from the brief, the account's data and its brand kit.
+   *
+   * `templateObj` is deliberately gone: it resolved any built-in id into a Dubai property design, which is
+   * what put "PRIVATE POOL OASIS" on a film academy's cinematography poster.
    */
-  const templateObj = effTemplate && effTemplate !== 'rotate' ? getReferenceTemplate(effTemplate) : null
-  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || templateObj?.url || null
+  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
   const startResponse = await authFetch(`/api/chat${window.location.search}`, {
     method: 'POST',
@@ -1682,8 +1666,14 @@ export default function CreationPage() {
     }
   }
 
-  const templateObj = TEMPLATES.find(t => t.id === selectedTemplate)
-  const activeReferenceUrl = uploadedRefUrl || templateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
+  /**
+   * The reference is one of THIS account's own uploads or nothing — never a built-in.
+   *
+   * `templateObj?.url` used to sit in this chain, which is how a picked Dubai template became the design
+   * reference for a business in a different industry. The operator's rule: super admin designs are for no
+   * other account.
+   */
+  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null
 
   return (
     <div className="flex flex-col h-[calc(100dvh-70px)] sm:h-screen bg-[#F8FAFC] relative">
@@ -1973,33 +1963,17 @@ export default function CreationPage() {
         ) : (
             <div className="px-4 py-1 animate-in fade-in duration-300">
                 <div className="bg-white px-4 py-2.5 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
-                    {/* Active Selected Style / Status */}
-                    <div 
-                        onClick={() => setIsTemplateChooserOpen(true)}
-                        className="flex items-center gap-3 min-w-0 cursor-pointer group flex-1"
-                        title="Click to browse & choose template in modal"
-                    >
+                    {/* WHICH REFERENCE THIS CREATIVE WILL USE — the account's own, or its brand kit.
+                        This used to advertise the chosen built-in template ("Golden Hour Oasis Villa"),
+                        which was exactly the design no other account may be built from. */}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                         {/* Thumbnail or Icon */}
-                        {templateObj && selectedTemplate && selectedTemplate !== 'rotate' ? (
-                            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-blue-200 bg-slate-100 group-hover:border-blue-400 transition-colors flex-shrink-0 shadow-xs">
-                                <img src={templateObj.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt={templateObj.name} />
-                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <Eye size={12} className="text-white" />
-                                </div>
-                            </div>
-                        ) : activeReferenceUrl && !selectedTemplate ? (
-                            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-purple-200 bg-slate-100 group-hover:border-purple-400 transition-colors flex-shrink-0 shadow-xs">
-                                <img src={activeReferenceUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="Reference" />
-                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                    <Eye size={12} className="text-white" />
-                                </div>
-                            </div>
-                        ) : selectedTemplate === 'rotate' ? (
-                            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                                <Sparkles size={20} className="animate-pulse" />
+                        {activeReferenceUrl ? (
+                            <div className="relative w-11 h-11 rounded-xl overflow-hidden border border-indigo-200 bg-slate-100 flex-shrink-0 shadow-xs">
+                                <img src={activeReferenceUrl} className="w-full h-full object-cover" alt="Your reference" />
                             </div>
                         ) : (
-                            <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-600 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-100 transition-colors">
+                            <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-600 flex items-center justify-center flex-shrink-0">
                                 <Layout size={20} />
                             </div>
                         )}
@@ -2008,26 +1982,16 @@ export default function CreationPage() {
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
                                 <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full ${
-                                    selectedTemplate === 'rotate' 
-                                        ? 'bg-purple-100 text-purple-700' 
-                                        : (selectedTemplate && templateObj)
-                                        ? 'bg-blue-100 text-blue-700' 
-                                        : activeReferenceUrl 
-                                        ? 'bg-indigo-100 text-indigo-700' 
-                                        : 'bg-slate-100 text-slate-600'
+                                    activeReferenceUrl ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
                                 }`}>
-                                    {selectedTemplate === 'rotate' ? 'Dynamic' : (selectedTemplate && templateObj) ? templateObj.badge : activeReferenceUrl ? 'Custom Ref' : 'Auto AI'}
+                                    {activeReferenceUrl ? 'Your Reference' : 'Brand Kit'}
                                 </span>
-                                <span className="text-[10px] font-bold text-slate-400">Design Template</span>
+                                <span className="text-[10px] font-bold text-slate-400">Design Source</span>
                             </div>
-                            <h4 className="text-xs font-black text-slate-800 truncate mt-0.5 group-hover:text-blue-600 transition-colors">
-                                {selectedTemplate === 'rotate' 
-                                    ? 'Rotating Luxury Styles (Non-Repetitive)' 
-                                    : (selectedTemplate && templateObj) 
-                                    ? templateObj.name 
-                                    : activeReferenceUrl 
-                                    ? (selectedUserRefId ? 'Saved Library Reference' : 'Uploaded Custom Style')
-                                    : 'Auto AI Layout (Balanced Aesthetic)'}
+                            <h4 className="text-xs font-black text-slate-800 truncate mt-0.5">
+                                {activeReferenceUrl
+                                    ? (selectedUserRefId ? 'Saved from your Reference Library' : 'Your uploaded reference')
+                                    : 'Composed by AI from your brand kit and product data'}
                             </h4>
                         </div>
                     </div>
@@ -2677,8 +2641,8 @@ export default function CreationPage() {
             }
           }
 
-          const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
-          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
+          // Only the account's own reference may become an input image; a built-in template never does.
+          const currentActiveReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
           const currentAccountLogo = profile?.logo_url || "";
 
           const potentialInputImages = [
@@ -2843,8 +2807,8 @@ export default function CreationPage() {
             }
           }
 
-          const selectedTemplateObj = TEMPLATES.find(t => t.id === selectedTemplate);
-          const currentActiveReferenceUrl = uploadedRefUrl || selectedTemplateObj?.url || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
+          // Only the account's own reference may become an input image; a built-in template never does.
+          const currentActiveReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || null;
           const currentAccountLogo = profile?.logo_url || "";
 
           const potentialInputImages = [
@@ -3531,7 +3495,7 @@ export default function CreationPage() {
                 </button>
               </div>
 
-              {/* Search & Category Filter Bar */}
+              {/* Search bar — over the account's OWN references */}
               <div className="px-5 sm:px-6 py-3 bg-slate-50/80 border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 flex-shrink-0">
                 {/* Search Input */}
                 <div className="relative flex-1">
@@ -3540,7 +3504,7 @@ export default function CreationPage() {
                     type="text"
                     value={templateSearchQuery}
                     onChange={(e) => setTemplateSearchQuery(e.target.value)}
-                    placeholder="Search templates (e.g. Waterfront, Penthouse, Editorial, Villa...)"
+                    placeholder="Search your references…"
                     className="w-full pl-8 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:text-slate-400 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all"
                   />
                   {templateSearchQuery && (
@@ -3552,35 +3516,6 @@ export default function CreationPage() {
                       <X size={12} />
                     </button>
                   )}
-                </div>
-
-                {/* Category Pills */}
-                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
-                  {[
-                    { id: 'all', label: `All (${TEMPLATES.length})` },
-                    { id: 'high_converting', label: 'High ROI' },
-                    { id: 'premium', label: 'Editorial' },
-                    { id: 'Waterfront', label: 'Waterfront' },
-                    { id: 'Skyline Living', label: 'Skyline' },
-                    { id: 'Minimalist', label: 'Minimalist' },
-                    { id: 'Direct Response', label: 'Direct Offer' }
-                  ].map(cat => {
-                    const isActive = templateCategoryFilter === cat.id;
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setTemplateCategoryFilter(cat.id)}
-                        className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                          isActive 
-                            ? 'bg-blue-600 text-white shadow-xs' 
-                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                      >
-                        {cat.label}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
 
@@ -3621,61 +3556,45 @@ export default function CreationPage() {
                       </div>
                     </div>
 
-                    {/* Rotate Dynamic Option */}
-                    <div
-                      onClick={() => handleSelectTemplateOnly('rotate')}
-                      className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center gap-3.5 group relative ${
-                        selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl
-                          ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-100 shadow-sm'
-                          : 'border-slate-200 hover:border-indigo-400 bg-white'
-                      }`}
-                    >
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform shadow-xs">
-                        <Sparkles size={22} className="animate-pulse" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          <span className="text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-600 text-white">
-                            Recommended
-                          </span>
-                          {selectedTemplate === 'rotate' && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl && (
-                            <span className="text-[10px] font-black text-indigo-600 flex items-center gap-1">
-                              <CheckCircle2 size={13} /> Active
-                            </span>
-                          )}
-                        </div>
-                        <h4 className="text-xs font-black text-slate-900 group-hover:text-indigo-700 transition-colors">
-                          Rotate Diverse Luxury Styles
-                        </h4>
-                        <p className="text-[10.5px] text-slate-500 font-medium leading-snug mt-0.5">
-                          AI cycles through all Dubai luxury systems so variations never look repetitive.
-                        </p>
-                      </div>
-                    </div>
+                    {/*
+                      "Rotate Diverse Luxury Styles" used to sit here, and what it rotated through was the
+                      built-in Dubai catalogue. The super admin's real-estate designs are for no other
+                      account, so there is nothing to rotate through: with no reference of your own, the
+                      creative is composed from the brand kit and this account's own data.
+                    */}
                   </div>
                 )}
 
-                {/* 2. Grid of Templates */}
+                {/* 2. Grid of the account's OWN references */}
                 {(() => {
-                  const filteredTemplates = TEMPLATES.filter(tmpl => {
-                    if (templateCategoryFilter !== 'all') {
-                      if (templateCategoryFilter === 'high_converting' || templateCategoryFilter === 'premium') {
-                        if (tmpl.category?.toLowerCase() !== templateCategoryFilter && tmpl.badge?.toLowerCase() !== templateCategoryFilter) {
-                          // check libraryCategory
-                          const raw = ALL_REFERENCE_TEMPLATES.find(r => r.id === tmpl.id);
-                          if (raw?.libraryCategory !== templateCategoryFilter) return false;
-                        }
-                      } else {
-                        if (tmpl.category !== templateCategoryFilter) return false;
-                      }
-                    }
+                  /**
+                   * THE CHOOSER LISTS THIS ACCOUNT'S OWN UPLOADS, NOT THE BUILT-IN SHELF.
+                   *
+                   * It used to list the 35 built-in Dubai property designs (name, badge, description and a
+                   * thumbnail of each), and picking one made it the reference for the next creative — which is
+                   * how "PRIVATE POOL OASIS" ended up printed on a film academy's poster. The operator's rule
+                   * is that the super admin's real-estate designs are for no other account, so the shelf is
+                   * gone from this list entirely: what you see is what this account uploaded itself.
+                   */
+                  const ownReferences = userReferences
+                    .filter((ref: any) => ref?.url)
+                    .map((ref: any, index: number) => ({
+                      id: String(ref.id ?? `own-${index}`),
+                      name: ref.name || ref.title || `Your reference ${index + 1}`,
+                      badge: String(ref.category || 'YOUR REFERENCE').toUpperCase(),
+                      description: 'Uploaded by you',
+                      category: String(ref.category || ''),
+                      url: String(ref.url),
+                    }));
+
+                  const filteredTemplates = ownReferences.filter(tmpl => {
                     if (templateSearchQuery.trim()) {
                       const q = templateSearchQuery.toLowerCase();
-                      const matchName = tmpl.name.toLowerCase().includes(q);
-                      const matchCat = tmpl.category.toLowerCase().includes(q);
-                      const matchBadge = tmpl.badge.toLowerCase().includes(q);
-                      const matchDesc = tmpl.description.toLowerCase().includes(q);
-                      if (!matchName && !matchCat && !matchBadge && !matchDesc) return false;
+                      const hit =
+                        tmpl.name.toLowerCase().includes(q) ||
+                        tmpl.category.toLowerCase().includes(q) ||
+                        tmpl.badge.toLowerCase().includes(q);
+                      if (!hit) return false;
                     }
                     return true;
                   });
@@ -3684,14 +3603,17 @@ export default function CreationPage() {
                     return (
                       <div className="py-16 text-center text-slate-400">
                         <Layout className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                        <p className="text-sm font-bold text-slate-700">No matching templates found</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Try searching for a different keyword or clear your filter.</p>
+                        <p className="text-sm font-bold text-slate-700">No references of your own yet</p>
+                        <p className="text-xs text-slate-400 mt-0.5 max-w-sm mx-auto">
+                          Creatives are built from the references you upload, your brand kit and your own product
+                          data. Upload a design you like and it will be used.
+                        </p>
                         <button
                           type="button"
-                          onClick={() => { setTemplateSearchQuery(''); setTemplateCategoryFilter('all'); }}
+                          onClick={() => { setTemplateSearchQuery(''); refFileInputRef.current?.click(); }}
                           className="mt-3 px-4 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl text-xs font-bold transition-all"
                         >
-                          Show All Templates
+                          Upload a reference
                         </button>
                       </div>
                     );
@@ -3700,11 +3622,11 @@ export default function CreationPage() {
                   return (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                       {filteredTemplates.map((tmpl) => {
-                        const isSelected = selectedTemplate === tmpl.id && !uploadedRefUrl && !selectedUserRefId && !selectedUserRefUrl;
+                        const isSelected = selectedUserRefId === tmpl.id;
                         return (
                           <div
                             key={tmpl.id}
-                            onClick={() => handleSelectTemplateOnly(tmpl.id)}
+                            onClick={() => { setSelectedUserRefId(tmpl.id); setSelectedUserRefUrl(tmpl.url); }}
                             className={`rounded-2xl border-2 transition-all cursor-pointer bg-white flex flex-col overflow-hidden group relative hover:shadow-md ${
                               isSelected
                                 ? 'border-blue-600 ring-4 ring-blue-500/20 shadow-md'
@@ -4084,76 +4006,25 @@ function CreativeFlowModal({
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-2xl border border-blue-100/80">
                   <div className="flex items-center gap-2 mb-1">
                     <Sparkles className="text-blue-600" size={16} />
-                    <h3 className="text-sm font-bold text-slate-900">Choose Design Template Style</h3>
+                    <h3 className="text-sm font-bold text-slate-900">Design references come from your own library</h3>
                   </div>
+                  {/*
+                    The picker that used to live here offered "6 Curated Dubai Templates" plus "Rotate Diverse
+                    Luxury Styles" — the super admin's real-estate demo set. The operator's rule is that those
+                    designs are for no other account, so the picker is gone rather than relabelled: a business
+                    is built from what IT uploaded, its brand kit, and its own product data.
+                  */}
                   <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                    Select a reverse-engineered Dubai luxury aesthetic blueprint, or choose Dynamic Rotation to give each creative a distinct visual style, lighting, and composition.
+                    Creatives are built from the references <strong>you</strong> uploaded, from your brand kit, and
+                    from the product data in your account. Nothing is borrowed from another business. Add or manage
+                    your references in the Reference Library.
                   </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                  {/* Dynamic Rotating Card */}
-                  <div
-                    onClick={() => setCreativeFlow((prev: any) => ({ ...prev, selectedTemplate: 'rotate' }))}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group flex gap-3 relative ${
-                      creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate
-                        ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-100 shadow-sm'
-                        : 'border-slate-200 hover:border-slate-300 bg-white'
-                    }`}
+                  <a
+                    href="/dashboard/reference-library"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-50"
                   >
-                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <Sparkles size={24} className="animate-pulse" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1 mb-1">
-                        <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Recommended</span>
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                          creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate
-                            ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
-                        }`}>
-                          {(creativeFlow.selectedTemplate === 'rotate' || !creativeFlow.selectedTemplate) && <Check size={10} strokeWidth={3} />}
-                        </div>
-                      </div>
-                      <h4 className="text-xs font-bold text-slate-900 leading-tight">Rotate Diverse Luxury Styles</h4>
-                      <p className="text-[10px] text-slate-500 font-medium mt-1 leading-snug line-clamp-2">
-                        AI automatically rotates distinct styles across variations so each creative looks uniquely stunning.
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* 6 Curated Dubai Templates */}
-                  {TEMPLATES.map((tmpl) => {
-                    const isSelected = creativeFlow.selectedTemplate === tmpl.id;
-                    return (
-                      <div
-                        key={tmpl.id}
-                        onClick={() => setCreativeFlow((prev: any) => ({ ...prev, selectedTemplate: tmpl.id }))}
-                        className={`p-4 rounded-2xl border-2 transition-all cursor-pointer group flex gap-3 relative overflow-hidden ${
-                          isSelected
-                            ? 'border-blue-600 bg-blue-50/40 ring-2 ring-blue-100 shadow-sm'
-                            : 'border-slate-200 hover:border-slate-300 bg-white'
-                        }`}
-                      >
-                        <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 border border-slate-200/60">
-                          <img src={tmpl.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt={tmpl.name} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 truncate max-w-[100px]">{tmpl.badge}</span>
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                              isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'
-                            }`}>
-                              {isSelected && <Check size={10} strokeWidth={3} />}
-                            </div>
-                          </div>
-                          <h4 className="text-xs font-bold text-slate-900 leading-tight truncate">{tmpl.name}</h4>
-                          <p className="text-[10px] text-slate-500 font-medium mt-1 leading-snug line-clamp-2">
-                            {tmpl.description}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                    Open Reference Library
+                  </a>
                 </div>
               </div>
             )}

@@ -118,23 +118,14 @@ export async function POST(request: Request) {
       const effectiveAspectRatio = 'auto';
 
     /**
-     * WHICH DESIGN THE DAILY CREATIVE IS BUILT FROM.
+     * WHICH DESIGN THE DAILY CREATIVE IS BUILT FROM — the account's own, or none.
      *
-     * The account's own references first, then a built-in the owner explicitly ticked, then none. This
-     * called getRandomReferenceTemplate() over the whole built-in catalogue when nothing was ticked, so
+     * The operator's rule: "never use the super admin designs for real estate for any account". This used
+     * to call getRandomReferenceTemplate() over the whole built-in catalogue when nothing was ticked, so
      * every morning a business with no reference could receive a design borrowed from the 35 built-in
-     * Dubai property ads — including, measured on a real account, one whose badge reads
-     * "PRIVATE POOL OASIS".
+     * Dubai property ads — measured on a real account, one whose badge reads "PRIVATE POOL OASIS".
      */
-    const userSelectedTemplates = Array.isArray(profile.selected_templates) && profile.selected_templates.length > 0
-      ? profile.selected_templates
-      : undefined;
-    const ownerSelected = userSelectedTemplates
-      ? getReferenceTemplate(userSelectedTemplates[Math.floor(Math.random() * userSelectedTemplates.length)])
-      : null;
     const referenceChoice = await chooseReferenceCreative(supabaseAdmin, prop.user_id, {
-      selectedTemplateUrl: ownerSelected?.url || null,
-      selectedTemplateLabel: ownerSelected?.name || null,
       seed: prop.id || prop.user_id,
     });
     const chosenTemplate = referenceChoice.url ? getReferenceTemplate(referenceChoice.url) : null;

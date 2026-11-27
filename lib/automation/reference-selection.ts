@@ -9,27 +9,33 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * (Procolor Film Academy, industry `education`): `profiles.selected_templates` was `[]`, it had NINETEEN
  * rows of its own in `reference_creatives`, and `app/api/chat` used none of them — it called
  * `getRandomReferenceTemplate()` and sent a random pin from the 35 built-in Dubai property designs to the
- * image model as IMAGE 1. The model faithfully reproduced that design's badge. Built-ins are a
- * real-estate shelf (`WATERFRONT LUXURY`, `PRIVATE POOL OASIS`, `RERA Certified`); substituting one for a
- * business that never chose it is how a film academy ends up advertising a swimming pool.
+ * image model as IMAGE 1. The model faithfully reproduced that design's badge.
  *
- * THE ORDER, AND WHY
- *   1. a reference a PERSON picked for this generation  — handled by the caller, it is explicit intent;
- *   2. the account's OWN uploads (`reference_creatives`) — these are its brand, by definition;
- *   3. a built-in the owner explicitly ticked (`profiles.selected_templates`) — opt-in, so allowed;
- *   4. nothing — compose from the brief and the brand kit alone.
+ * THE RULE, IN THE OPERATOR'S WORDS
+ * "never use the super admin designs for real estate for any account, use the users' own ref if uploaded,
+ *  it's own brand kit if provided otherwise the ai can create a prompt on it's own based on the data it
+ *  has access to"
  *
- * Step 4 is a real answer, not a failure. A wrong reference is worse than no reference: with none, the
- * brief and the brand rules decide the look; with a borrowed one, the creative advertises somebody else's
- * industry.
+ * So, in order:
+ *   1. the account's OWN uploads (`reference_creatives` where user_id is the account) — its brand, by
+ *      definition. Nothing competes with them;
+ *   2. nothing. Not a built-in. EVER — not randomly, and not because somebody ticked one. The built-in
+ *      shelf is the super admin's real-estate demo set (`reference_creatives` rows with `user_id IS NULL`,
+ *      plus the 35 templates in `utils/reference-templates-data`), and no other business may be dressed
+ *      in it;
+ *   3. with no reference, the caller composes from what it knows: the brief, the account's own data and
+ *      the brand kit. That is a complete answer, not a degraded one.
+ *
+ * `isSuperAdminReference` is exported so every entry point can refuse a built-in that arrives by any other
+ * door — a client sending `templateUrl`, a stored `selected_templates` value, a stale cached page.
  */
 
 export interface ReferenceChoice {
   /** The image to send as the design reference, or null when the account has none. */
   url: string | null;
   /** Where it came from, so a thin creative is explainable rather than mysterious. */
-  source: 'own' | 'selected' | 'none';
-  /** Human label for the log: the account's category, or the built-in's name. */
+  source: 'own' | 'none';
+  /** Human label for the log: the account's category, or that there is nothing on file. */
   label: string;
 }
 
@@ -44,15 +50,26 @@ const usableUrl = (value: unknown): string | null => {
   return url;
 };
 
+/**
+ * Is this one of the super admin's built-in designs?
+ *
+ * Matched by URL shape rather than by importing the catalogue, so a server bundle never carries 35 Dubai
+ * pins around — and so an old cached template id (`pinterest_pin_17`, `pinterest_damac_island`) is caught
+ * too. Every built-in lives under the `reference-creatives/dubai/pinterest_pin_1793111079523_<n>.jpg`
+ * prefix in the R2 bucket the demo shelf is served from.
+ */
+export function isSuperAdminReference(value: unknown): boolean {
+  const text = String(value ?? '').trim();
+  if (!text) return false;
+  if (/pinterest_pin_\d+/i.test(text)) return true;
+  if (/pinterest_(damac|emirates|marbella|property_showcase|investment_flyer|luxury_architectural)/i.test(text)) return true;
+  if (/reference-creatives\/dubai\//i.test(text)) return true;
+  return false;
+}
+
 export interface ChooseReferenceInput {
   /** Category hint from the request: 'premium' | 'edm' | 'high_converting' | null. */
   preferCategory?: string | null;
-  /**
-   * Absolute URL of a built-in design the owner ticked in their profile. Resolved by the caller (this
-   * module does not import the template catalogue, so a server bundle never carries it by accident).
-   */
-  selectedTemplateUrl?: string | null;
-  selectedTemplateLabel?: string | null;
   /** Deterministic pick, so the same request twice returns the same reference. */
   seed?: string | null;
 }
@@ -83,7 +100,8 @@ export async function chooseReferenceCreative(
 
     const own = (rows || [])
       .map((row: any) => ({
-        url: usableUrl(row?.url),
+        // A built-in that somehow carries this user_id is still a built-in.
+        url: isSuperAdminReference(row?.url) ? null : usableUrl(row?.url),
         category: String(row?.category ?? '').trim().toLowerCase(),
         id: String(row?.id ?? ''),
       }))
@@ -103,15 +121,45 @@ export async function chooseReferenceCreative(
       };
     }
   } catch {
-    // A missing table or a read error must not stop a generation; fall through to the next option.
-  }
-
-  const selected = usableUrl(input.selectedTemplateUrl);
-  if (selected) {
-    return { url: selected, source: 'selected', label: input.selectedTemplateLabel || 'a reference the owner selected' };
+    // A missing table or a read error must not stop a generation; fall through to "no reference".
   }
 
   return NONE;
+}
+
+/**
+ * Is this URL one this account may use as its reference?
+ *
+ * The door for a caller that already has a URL in hand (the Creation tab, a stored selection). It must be
+ * one of the ACCOUNT'S OWN uploads — looked up in `reference_creatives` for that user — and never a
+ * built-in. `ownUrls` lets a caller that already knows the account's library answer without a query.
+ */
+export async function isOwnReferenceCreative(
+  supabase: SupabaseClient,
+  userId: string,
+  url: string | null | undefined,
+  ownUrls?: readonly string[],
+): Promise<boolean> {
+  const candidate = usableUrl(url);
+  if (!candidate || !userId) return false;
+  if (isSuperAdminReference(candidate)) return false;
+
+  if (ownUrls && ownUrls.length > 0) {
+    const bare = (value: string) => value.split('?')[0];
+    if (ownUrls.some((own) => bare(String(own)) === bare(candidate))) return true;
+  }
+
+  try {
+    const { data } = await supabase
+      .from('reference_creatives')
+      .select('id, url')
+      .eq('user_id', userId)
+      .limit(200);
+    const bare = (value: string) => String(value).split('?')[0];
+    return (data || []).some((row: any) => bare(row?.url ?? '') === bare(candidate));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -119,6 +167,5 @@ export async function chooseReferenceCreative(
  */
 export function describeReferenceChoice(choice: ReferenceChoice): string {
   if (choice.source === 'own') return `built from ${choice.label}`;
-  if (choice.source === 'selected') return `built from ${choice.label}, which the owner selected`;
-  return 'built from the brief, the brand kit and no borrowed design';
+  return 'built from the brief, the brand kit and the account\u2019s own data — no borrowed design';
 }

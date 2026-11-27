@@ -6,11 +6,10 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
-import { getReferenceTemplate } from '@/utils/reference-templates-data';
 import { MEDIA_MODELS, imageModelFor, modelAlias } from '@/lib/agent/media-models';
 import { DEFAULT_IMAGE_RATIO, providerImageRequest } from '@/lib/agent/media-ratios';
 import { brandKitFor } from '@/lib/agent/media/brand-kit';
-import { chooseReferenceCreative, describeReferenceChoice } from '@/lib/automation/reference-selection';
+import { chooseReferenceCreative, describeReferenceChoice, isOwnReferenceCreative, isSuperAdminReference } from '@/lib/automation/reference-selection';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -296,70 +295,60 @@ export async function POST(request: Request) {
     }
     const validLogo = logoUrl && !excludedImages.includes(logoUrl) ? filterImages([logoUrl]).map(sanitizeImageUrl) : [];
 
-    let templateMeta = null;
     let effectiveTemplateUrl = templateUrl;
-    if (effectiveTemplateUrl) {
-      templateMeta = getReferenceTemplate(effectiveTemplateUrl);
-      if (templateMeta && templateMeta.url) {
-        effectiveTemplateUrl = templateMeta.url;
+
+    /**
+     * THE DESIGN COMES FROM THIS ACCOUNT OR FROM NOWHERE.
+     *
+     * The operator's rule: "never use the super admin designs for real estate for any account, use the
+     * users' own ref if uploaded, it's own brand kit if provided otherwise the ai can create a prompt on
+     * it's own based on the data it has access to."
+     *
+     * So a `templateUrl` is honoured ONLY when it is one of the account's own uploads. A built-in used to
+     * be honoured here because the caller passed one — and the caller (the Creation tab) was itself
+     * choosing at random from the 35 built-in Dubai property designs, which is how a film academy's poster
+     * came out carrying "PRIVATE POOL OASIS". Refusing it at this door means an old cached tab, a stale
+     * `selected_templates` value, or a future caller cannot re-introduce it either.
+     */
+    let suppliedReferenceRejected: string | null = null;
+    if (effectiveTemplateUrl && isSuperAdminReference(effectiveTemplateUrl)) {
+      suppliedReferenceRejected = 'it is one of the built-in (super admin) real-estate designs';
+      effectiveTemplateUrl = null;
+    } else if (effectiveTemplateUrl) {
+      const own = await isOwnReferenceCreative(supabaseAdmin, targetUserId, effectiveTemplateUrl);
+      if (!own) {
+        suppliedReferenceRejected = 'it is not one of this account\u2019s own uploads';
+        effectiveTemplateUrl = null;
       }
-    } else if (!isEdit) {
-      /**
-       * WHERE THE DESIGN COMES FROM WHEN NOBODY PICKED ONE.
-       *
-       * Own references, then a built-in the owner explicitly ticked, then NOTHING. Never a random
-       * built-in: this used to call getRandomReferenceTemplate(), which draws from the 35 built-in Dubai
-       * property designs. On a live film-academy account (industry `education`, selected_templates `[]`)
-       * that meant a random luxury-villa pin went to the image model as IMAGE 1 while its own NINETEEN
-       * uploaded references sat unused, and the badge from that pin — "PRIVATE POOL OASIS" — was
-       * composited onto a cinematography poster.
-       *
-       * The rule lives in lib/automation/reference-selection so every generation path shares it.
-       */
+    }
+
+    if (!effectiveTemplateUrl && !isEdit) {
       const selectionSeed =
         (typeof propertyTitle === 'string' && propertyTitle.trim() ? propertyTitle.trim() : '') ||
         (typeof userInstructions === 'string' ? userInstructions.slice(0, 80) : '') ||
         targetUserId;
 
-      const ownerSelectedTemplates = Array.isArray(currentProfile?.selected_templates) && currentProfile.selected_templates.length > 0
-        ? currentProfile.selected_templates
-        : undefined;
-      let ownerSelected: { url: string | null; label: string | null } = { url: null, label: null };
-      if (!ownerSelectedTemplates) {
-        ownerSelected = { url: null, label: null };
-      } else {
-        const builtIn = getReferenceTemplate(
-          ownerSelectedTemplates[Math.floor(Math.random() * ownerSelectedTemplates.length)]
-        );
-        ownerSelected = { url: builtIn?.url || null, label: builtIn?.name || null };
-      }
-
       const choice = await chooseReferenceCreative(supabaseAdmin, targetUserId, {
         preferCategory: normalizedCategory,
-        selectedTemplateUrl: ownerSelected.url,
-        selectedTemplateLabel: ownerSelected.label,
         seed: selectionSeed,
       });
       if (choice.url) {
         effectiveTemplateUrl = choice.url;
-        /**
-         * ONLY A BUILT-IN HAS TEMPLATE METADATA.
-         *
-         * `getReferenceTemplate` falls back to the catalogue's first entry for any URL it does not know, so
-         * asking it about the account's own upload would have handed this prompt the DAMAC villa's name and
-         * its "WATERFRONT LUXURY" badge — the very leak this whole change removes. An own reference gets no
-         * badge from anybody; the creative is built from the image itself plus the brand lock.
-         */
-        templateMeta = choice.source === 'selected' ? getReferenceTemplate(choice.url) : null;
         logToFile(`[CHAT ROUTE] Reference: ${describeReferenceChoice(choice)} (${choice.url})`);
       } else {
         effectiveTemplateUrl = null;
         logToFile(
           '[CHAT ROUTE] Reference: ' +
             describeReferenceChoice(choice) +
-            '. No built-in design is substituted — a borrowed reference is how another industry\'s vocabulary ends up on this creative.'
+            (suppliedReferenceRejected
+              ? ` (a supplied reference was refused: ${suppliedReferenceRejected}).`
+              : '.') +
+            ' The creative is composed from the brief, this account\u2019s own data and its brand kit.'
         );
       }
+    }
+    if (!effectiveTemplateUrl && isEdit && suppliedReferenceRejected) {
+      logToFile(`[CHAT ROUTE] Edit ignored a supplied reference: ${suppliedReferenceRejected}.`);
     }
 
     const validTemplate = (effectiveTemplateUrl && !excludedImages.includes(effectiveTemplateUrl) && typeof effectiveTemplateUrl === 'string' && effectiveTemplateUrl.startsWith('http')) 
@@ -614,9 +603,12 @@ Make the edits clean, professional, and blend seamlessly with the original conte
     } else if (hasReference) {
       // A reference with no template metadata is the account's OWN upload: no borrowed name, no borrowed
       // badge, and no real-estate vocabulary ("Ultra Luxury", "Waterfront") in the prompt.
-      const tmplName = templateMeta?.name || "the account's own reference creative";
-      const tmplCat = templateMeta?.category || 'this business\u2019s own branding';
-      const tmplBadge = templateMeta?.badge || `${industry ? industry.toUpperCase() : 'PREMIUM'} OFFER`;
+      // Every reference that reaches this point is the account's OWN upload, which carries no template
+      // metadata — so there is no borrowed name, category or badge to inherit. These three lines are the
+      // neutral fallbacks, and they name this business's own industry rather than a villa development's.
+      const tmplName = "the account's own reference creative";
+      const tmplCat = 'this business\u2019s own branding';
+      const tmplBadge = `${industry ? industry.toUpperCase() : 'PREMIUM'} OFFER`;
       const effectiveAspect = aspectRatio || DEFAULT_IMAGE_RATIO;
 
       if (validPropImages.length > 0) {
