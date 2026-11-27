@@ -32,6 +32,7 @@ import {
   batchesOf,
   eagerPageIndexes,
   loadMoreLabel,
+  loadProgressLabel,
   mergePages,
   orderLeadsDesc,
   pageRange,
@@ -1362,19 +1363,21 @@ const leadFields = 'id, created_at, user_id, name, email, phone, notes, status, 
       }
 
       /**
-       * THE REST, IN A BOUNDED WINDOW.
+       * THE REST OF THE BOOK, STREAMED IN WITHOUT A BUTTON.
        *
-       * This used to pull every remaining page at once and re-sort the whole accumulated list each
-       * time a page landed. Measured on the 16,415-lead workspace: 17 requests, ~32 MB, and 16 sorts
-       * of arrays growing to 16,415 — which is the freeze. Two columns (custom_fields, notes) are 73%
-       * of that payload.
+       * The first page (1,000 rows) is already on screen above. Everything after it is fetched here, in
+       * batches of four pages, and merged by page index — the server already ordered the rows, so there is
+       * no client sort and no re-render storm. The table stays interactive the whole time and fills in.
        *
-       * Now: the newest three pages load without being asked (~3,000 leads, ~5 MB), merged by page
-       * index so no client sort is needed — the server already ordered them. Everything older is one
-       * tap away through loadRemainingLeads(), in batches of four pages.
+       * This is what the owner asked for: "earlier it was good, it loaded 1000 leads first then loaded the
+       * rest, i mean do whatever is the industry standard". The bounded window with a "load the other
+       * 13,415 leads" button that replaced it made the counts and the filters describe only what had been
+       * tapped into view, which read as the CRM losing leads.
+       *
+       * One request shape stays: 1,000 rows per page. A 16,415-lead book is ~32 MB and 17 requests, which
+       * is why it is batched rather than fired at once.
        */
-      const eagerPages = eagerPageIndexes(totalCount)
-      const backgroundPages = eagerPages.slice(1)
+      const backgroundPages = remainingPageIndexes(totalCount, 1)
       for (const batch of batchesOf(backgroundPages)) {
         await Promise.all(
           batch.map((pageIdx) => {
@@ -4144,28 +4147,26 @@ END:VCARD\n`
             {renderPagination('top')}
 
             {/*
-              The bounded window, said out loud.
+              Progress, not a chore.
 
-              A 16,415-lead book is ~32 MB and 17 requests. Loading it all before the owner can read
-              anything is what made this page crawl; the newest three pages arrive on their own and the
-              rest is one deliberate tap with visible progress.
+              This was an amber panel with a "Load the other 13,415 of 16,415 leads" button — the owner
+              had to press it to see the rest of his own book. The remaining pages now load on their own
+              (batches of four, merged by page index), so this line simply says how far it has got and
+              disappears when it is done. No tap, no "filters only see what is here".
             */}
-            {loadMoreLabel(loadedLeadCount, totalLeadsCount) && (
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200/70 bg-amber-50/70 px-4 py-2.5">
-                <p className="text-[11px] font-bold text-amber-900">
-                  Showing the {loadedLeadCount.toLocaleString('en-IN')} most recently active of{' '}
-                  {totalLeadsCount.toLocaleString('en-IN')} leads. Older leads are not loaded yet — filters and
-                  search only see what is here.
+            {loadProgressLabel(loadedLeadCount, totalLeadsCount) && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/70 bg-white px-4 py-2">
+                <p className="text-[11px] font-bold text-slate-600">
+                  {loadProgressLabel(loadedLeadCount, totalLeadsCount)}
                 </p>
-                <button
-                  onClick={() => { void loadRemainingLeads() }}
-                  disabled={loadingRemaining}
-                  className="rounded-xl border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-bold text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-60"
-                >
-                  {loadingRemaining
-                    ? `Loading… ${loadedLeadCount.toLocaleString('en-IN')} / ${totalLeadsCount.toLocaleString('en-IN')}`
-                    : loadMoreLabel(loadedLeadCount, totalLeadsCount)}
-                </button>
+                <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-slate-900 transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((loadedLeadCount / Math.max(1, totalLeadsCount)) * 100))}%`,
+                    }}
+                  />
+                </div>
               </div>
             )}
 

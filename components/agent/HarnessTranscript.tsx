@@ -9,7 +9,7 @@
  * both paths share `FeedRows` so they cannot drift apart visually.
  */
 import * as React from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, ChevronRight, Copy } from 'lucide-react';
 import AgentMarkdown from './AgentMarkdown';
 import { NoboOrb } from './NoboMascot';
 import { ThinkFeedRow, ToolFeedRow } from './FeedRows';
@@ -199,8 +199,100 @@ function approvalActionId(output: unknown): string | null {
   return typeof artifact.actionId === 'string' && artifact.actionId ? artifact.actionId : null;
 }
 
-export interface HarnessTranscriptProps {
-  items: HarnessItem[];
+/**
+ * One card per distinct staged action, not one per retry.
+ *
+ * The gate refuses a gated tool by writing a NEW approval row and returns a new actionId each time, so an
+ * agent that retries piles up identical pending cards in the transcript. They are indistinguishable to the
+ * owner and only one of them needs a tap, so keep the LAST of a run of identical ones. Actions with a
+ * different payload are untouched — those really are different work.
+ *
+ * Pure and module-scope so the component stays a component: it was inline below an early return, which is
+ * how the hook-order crash got in.
+ */
+function collapseRepeatedApprovals(items: HarnessItem[]): HarnessItem[] {
+  return items.filter((item, i) => {
+    if (item.kind !== 'tool') return true;
+    const own = approvalFingerprint((item as any).output);
+    if (!own) return true;
+    for (let j = i + 1; j < items.length; j++) {
+      const next = items[j];
+      if (next.kind !== 'tool') continue;
+      if (approvalFingerprint((next as any).output) === own) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * The item to keep on screen, or -1.
+ *
+ * The LAST undecided approval, not the first: if the agent staged three things, the one it is actually
+ * blocked on is the newest. Computed after dedupe so a run of retries pins the card that survived them. An
+ * actionId missing from `approvalState` counts as pending, deliberately — the card must be pinned the
+ * instant it is staged, not one round trip later.
+ */
+function lastPendingApprovalIndex(
+  items: HarnessItem[],
+  approvalState: Record<string, 'pending' | 'approved' | 'rejected'>
+): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item.kind !== 'tool') continue;
+    const actionId = approvalActionId((item as any).output);
+    if (!actionId) continue;
+    const state = approvalState[actionId];
+    if (state && state !== 'pending') continue;
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * The transcript as it should READ: conversation, and the working behind it.
+ *
+ * WHY THIS EXISTS
+ * Every reasoning block and every tool row used to render as its own top-level row, so a session with
+ * thirty tool calls and thirty thinking blocks was a wall of interleaved grey lines with the answer
+ * buried somewhere in it. The owner's report: "all the thinking steps still pile into the final chat, no
+ * proper formatting at all."
+ *
+ * So consecutive non-conversation items (reasoning + tool traffic) become ONE `work` block, which renders
+ * as a single collapsed line — "N steps of working · show" — exactly the shape the live view already uses
+ * (`AgentChat` has had that toggle all along; the replay view never did, which is why reopening a session
+ * looked so different from watching it). The answer and the owner's own messages stay visible.
+ */
+type TranscriptBlock =
+  | { kind: 'chat'; item: HarnessItem }
+  | { kind: 'work'; items: HarnessItem[] };
+
+export function groupIntoBlocks(items: HarnessItem[]): TranscriptBlock[] {
+  const blocks: TranscriptBlock[] = [];
+  for (const item of items) {
+    const isWork = item.kind === 'reasoning' || item.kind === 'tool';
+    if (!isWork) {
+      blocks.push({ kind: 'chat', item });
+      continue;
+    }
+    const last = blocks[blocks.length - 1];
+    if (last && last.kind === 'work') last.items.push(item);
+    else blocks.push({ kind: 'work', items: [item] });
+  }
+  return blocks;
+}
+
+/** What one work block says when collapsed: how much happened, and what kind. */
+export function describeWorking(items: HarnessItem[]): string {
+  const thoughts = items.filter((item) => item.kind === 'reasoning').length;
+  const tools = items.length - thoughts;
+  const parts: string[] = [];
+  if (tools) parts.push(`${tools} tool call${tools === 1 ? '' : 's'}`);
+  if (thoughts) parts.push(`${thoughts} thought${thoughts === 1 ? '' : 's'}`);
+  const detail = parts.join(' · ');
+  return `${items.length} step${items.length === 1 ? '' : 's'} of working${detail ? ` (${detail})` : ''}`;
+}
+
+export interface HarnessTranscriptProps {  items: HarnessItem[];
   onOptionSelect?: (text: string) => void;
   /**
    * Sends the staged instruction back into the conversation when the owner approves.
@@ -213,6 +305,84 @@ export interface HarnessTranscriptProps {
    */
   onResume?: (prompt: string) => void;
 }
+
+/**
+ * One collapsed group of reasoning + tool rows.
+ *
+ * Open when the owner asks for it, or when it contains an approval card waiting for a tap — a card that
+ * needs a decision must never be hidden behind a collapsed disclosure.
+ */
+const WorkingGroup = React.memo(function WorkingGroup({
+  items,
+  forceOpen,
+  pinnedApprovalId,
+  pinnedRef,
+  onOptionSelect,
+  onResume,
+  onApprovalStatus,
+}: {
+  items: HarnessItem[];
+  forceOpen: boolean;
+  pinnedApprovalId: string | null;
+  pinnedRef: React.RefObject<HTMLDivElement | null>;
+  onOptionSelect?: (text: string) => void;
+  onResume?: (prompt: string) => void;
+  onApprovalStatus?: (actionId: string, status: 'pending' | 'approved' | 'rejected') => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const expanded = open || forceOpen;
+
+  return (
+    <div className="my-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={expanded}
+        title={expanded ? 'Hide the working' : 'Show the working behind this reply'}
+        className="dsh-interactive dsh-label-caption dsh-t-xs flex items-center gap-1.5 py-1"
+      >
+        <ChevronRight
+          size={12}
+          style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' }}
+        />
+        <span>{expanded ? 'Hide working' : describeWorking(items)}</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-1">
+          {items.map((item) => {
+            if (item.kind === 'reasoning') return <ThinkFeedRow key={item.id} text={item.text} />;
+            if (item.kind !== 'tool') return null;
+            const row = (
+              <ToolItem
+                item={item}
+                onOptionSelect={onOptionSelect}
+                onResume={onResume}
+                onApprovalStatus={onApprovalStatus}
+              />
+            );
+            // The newest card still waiting for a decision is pinned to the bottom of the viewport, so
+            // nothing the agent says afterwards can bury it.
+            if (item.id !== pinnedApprovalId) return <React.Fragment key={item.id}>{row}</React.Fragment>;
+            return (
+              <div
+                key={item.id}
+                ref={pinnedRef}
+                data-pinned-approval="true"
+                className="sticky bottom-0 z-20 pt-3 pb-1"
+                style={{
+                  background: 'linear-gradient(to top, var(--dsw-alias-bg-base) 78%, transparent)',
+                }}
+              >
+                {row}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
 
 export default function HarnessTranscript({ items, onOptionSelect, onResume }: HarnessTranscriptProps) {
   // Stable callback identity so memoised rows are not invalidated every render,
@@ -243,77 +413,30 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
     []
   );
 
-  if (!items.length) return null;
-
   /**
-   * The projection can legitimately contain the same ASSISTANT turn twice: the live stream records it,
-   * and so does the queued run created from it. Rendering both made the agent's reply appear twice in a
-   * row, which reads as a bug in the app rather than a duplicate event.
+   * EVERY HOOK LIVES ABOVE THE EMPTY RETURN, AND THAT IS THE WHOLE POINT.
    *
-   * A user message is different, and the difference is the fix for "my message disappeared": two
-   * identical user messages are two separate acts, not one row written twice. This used to collapse
-   * them, so an owner who asked "what is the update?", saw nothing, and asked again watched the second
-   * attempt vanish. `visibleTranscriptItems` owns the rule (and `verify:chat-steering` proves it)
-   * because it is a behaviour, not a detail of this component.
-   */
-  const visible = visibleTranscriptItems(items);
-
-  /**
-   * One card per distinct staged action, not one per retry.
+   * `if (!items.length) return null` used to sit ABOVE the approval-state state and the pin effect
+   * below, so the first render (an empty transcript while the session loads) ran FEWER hooks than the
+   * next one. React throws "Rendered more hooks than during the previous render" — error #300 — and the
+   * whole screen died with "Application error: a client-side exception has occurred", then "Display
+   * Interruption Prevented". The agent page crashed on the first paint of every session that took more
+   * than a frame to load, which is every one of them.
    *
-   * The gate refuses a gated tool by writing a NEW approval row and returns a new
-   * actionId each time, so an agent that retries piles up identical pending cards
-   * in the transcript. They are indistinguishable to the owner and only one of
-   * them needs a tap, so keep the LAST of a run of identical ones. Actions with a
-   * different payload are untouched — those really are different work.
-   */
-  const deduped = visible.filter((item, i) => {
-    if (item.kind !== 'tool') return true;
-    const own = approvalFingerprint((item as any).output);
-    if (!own) return true;
-    for (let j = i + 1; j < visible.length; j++) {
-      const next = visible[j];
-      if (next.kind !== 'tool') continue;
-      if (approvalFingerprint((next as any).output) === own) return false;
-    }
-    return true;
-  });
-
-  /**
-   * The item to keep on screen, or -1.
-   *
-   * The LAST undecided approval, not the first: if the agent staged three things, the one it is
-   * actually blocked on is the newest. Computed after dedupe so a run of retries pins the card
-   * that survived them.
-   */
-  const pinnedIndex = (() => {
-    for (let i = deduped.length - 1; i >= 0; i--) {
-      const item = deduped[i];
-      if (item.kind !== 'tool') continue;
-      const actionId = approvalActionId((item as any).output);
-      if (!actionId) continue;
-      const state = approvalState[actionId];
-      if (state && state !== 'pending') continue;
-      return i;
-    }
-    return -1;
-  })();
-
-  /**
-   * BRING A NEW APPROVAL CARD INTO VIEW.
-   *
-   * The card was pinned with `sticky bottom-0`, which only helps while its own position is still in the scrollport —
-   * an owner watching the agent work stays at the bottom, the card is staged further up the transcript, and it is
-   * never seen. The owner waited for the agent to do something, found nothing, scrolled up, and discovered the
-   * approval had been sitting there. A card that needs a tap must announce itself.
-   *
-   * So: when a DIFFERENT approval becomes the pinned one, scroll it to the middle of the viewport once. It is keyed on
-   * the approval id, so it never fights the user's own scrolling afterwards.
+   * Hooks are unconditional; only the RENDER is allowed to bail out early.
    */
   const pinnedRef = React.useRef<HTMLDivElement | null>(null)
   const lastPinnedApprovalId = React.useRef<string | null>(null)
-  const pinnedItem: any = pinnedIndex >= 0 ? deduped[pinnedIndex] : null
-  const pinnedApprovalId: string | null = pinnedItem?.id ?? null
+
+  const visible = React.useMemo(() => visibleTranscriptItems(items), [items]);
+  const deduped = React.useMemo(() => collapseRepeatedApprovals(visible), [visible]);
+  const pinnedIndex = React.useMemo(
+    () => lastPendingApprovalIndex(deduped, approvalState),
+    [deduped, approvalState]
+  );
+  const pinnedApprovalId: string | null =
+    pinnedIndex >= 0 ? ((deduped[pinnedIndex] as any)?.id ?? null) : null;
+
   React.useEffect(() => {
     if (!pinnedApprovalId) return
     if (pinnedApprovalId === lastPinnedApprovalId.current) return
@@ -329,9 +452,29 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
     return () => cancelAnimationFrame(raf)
   }, [pinnedApprovalId])
 
+  if (!deduped.length) return null;
+
+  const blocks = groupIntoBlocks(deduped);
+
   return (
     <>
-      {deduped.map((item, idx) => {
+      {blocks.map((block) => {
+        if (block.kind === 'work') {
+          return (
+            <WorkingGroup
+              key={`work_${block.items[0].id}`}
+              items={block.items}
+              // An approval waiting for a tap must never be hidden behind a collapsed group.
+              forceOpen={block.items.some((item) => (item as any).id === pinnedApprovalId)}
+              pinnedApprovalId={pinnedApprovalId}
+              pinnedRef={pinnedRef}
+              onOptionSelect={stableOptionSelect}
+              onResume={stableResume}
+              onApprovalStatus={stableApprovalStatus}
+            />
+          );
+        }
+        const item = block.item;
         switch (item.kind) {
           case 'user':
             return <UserItem key={item.id} item={item} />;
@@ -339,43 +482,13 @@ export default function HarnessTranscript({ items, onOptionSelect, onResume }: H
           case 'assistant':
             return <AssistantItem key={item.id} item={item} />;
 
-          case 'reasoning':
-            return <ThinkFeedRow key={item.id} text={item.text} />;
-
-          case 'tool': {
-            const row = (
-              <ToolItem
-                item={item}
-                onOptionSelect={stableOptionSelect}
-                onResume={stableResume}
-                onApprovalStatus={stableApprovalStatus}
-              />
-            );
-            // The newest card still waiting for a decision is pinned to the bottom of the
-            // viewport, so nothing the agent says afterwards can bury it.
-            if (idx !== pinnedIndex) return <React.Fragment key={item.id}>{row}</React.Fragment>;
-            return (
-              <div
-                key={item.id}
-                ref={pinnedRef}
-                data-pinned-approval="true"
-                className="sticky bottom-0 z-20 pt-3 pb-1"
-                style={{
-                  background:
-                    'linear-gradient(to top, var(--dsw-alias-bg-base) 78%, transparent)',
-                }}
-              >
-                {row}
-              </div>
-            );
-          }
-
           case 'error':
             return <ErrorItem key={item.id} item={item} />;
 
           default:
-            // An unknown future item kind must never blank the transcript.
-            return <React.Fragment key={idx} />;
+            // Reasoning and tool rows are grouped into `work` blocks above, so anything else that
+            // reaches here is an unknown future kind — it must never blank the transcript.
+            return <React.Fragment key={item.id} />;
         }
       })}
     </>

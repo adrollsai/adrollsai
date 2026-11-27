@@ -22,13 +22,19 @@
 export const LEAD_PAGE_SIZE = 1000;
 
 /**
- * How many pages to load without being asked.
+ * How many pages are painted before the owner can read the screen.
  *
- * Three pages ≈ 3,000 newest leads ≈ 5 MB. That covers the work a CRM is actually used for (today's
- * leads, this week's follow-ups) and keeps the first screen fast on a 16,000-lead book. Anything older
- * is one tap away.
+ * ONE. The first 1,000 rows arrive in a single request (~1.7-2.1 MB) and the table is usable. Everything
+ * after that is streamed in the background, batch by batch, without a button.
+ *
+ * This was three pages behind a manual "load the other 13,415 leads" tap — an explicit, deliberate
+ * bounded window. The owner's verdict on that: "we don't like the lead loading thing in crm, that press
+ * this button to load rest of the leads, earlier it was good, it loaded 1000 leads first then loaded the
+ * rest, i mean do whatever is the industry standard for this kind of functionality." Industry standard is
+ * exactly this: paint fast, then keep filling in. The bounded window was solving the freeze; the freeze
+ * is solved by the batch size and by not re-sorting after every page.
  */
-export const EAGER_PAGE_COUNT = 3;
+export const EAGER_PAGE_COUNT = 1;
 
 /** How many pages to request at a time when the owner does ask for everything. */
 export const BACKGROUND_BATCH_SIZE = 4;
@@ -127,9 +133,16 @@ export function sortByActivity<T extends { last_activity_at?: string | null; cre
   });
 }
 
-/** What the "load more" affordance should say, or null when everything is already in memory. */
-export function loadMoreLabel(loadedRows: number, totalRows: number): string | null {
+/**
+ * What the progress line says while the rest of the book streams in, or null when it is all here.
+ *
+ * This used to be a "Load the other 13,415 of 16,415 leads" BUTTON. There is no button any more: the
+ * remaining pages load on their own, and this is the honest progress read-out while they do.
+ */
+export function loadProgressLabel(loadedRows: number, totalRows: number): string | null {
   if (totalRows <= loadedRows) return null;
-  const remaining = totalRows - loadedRows;
-  return `Load the other ${remaining.toLocaleString('en-IN')} of ${totalRows.toLocaleString('en-IN')} leads`;
+  return `Loading leads — ${loadedRows.toLocaleString('en-IN')} of ${totalRows.toLocaleString('en-IN')}`;
 }
+
+/** Kept as the name the old button used, so a stale bundle cannot crash on the import. */
+export const loadMoreLabel = loadProgressLabel;

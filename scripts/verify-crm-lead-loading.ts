@@ -17,7 +17,7 @@ import {
   LEAD_PAGE_SIZE,
   batchesOf,
   eagerPageIndexes,
-  loadMoreLabel,
+  loadProgressLabel,
   mergePages,
   orderLeadsDesc,
   pageRange,
@@ -41,20 +41,20 @@ const head = (title: string) => console.log(`\n── ${title} ${'─'.repeat(Ma
 const BIG = 16_415; // Blue Square Infra, the account this was measured on
 const SMALL = 1_584; // the owner's own workspace
 
-head('1. A big book loads a bounded window, not everything');
+head('1. A big book paints one page, then streams the rest on its own');
 
 {
   const eager = eagerPageIndexes(BIG);
-  check('the eager window is exactly three pages', eager.length === EAGER_PAGE_COUNT, `${eager.length} pages`);
-  check('and they are the newest pages, in order', JSON.stringify(eager) === '[0,1,2]', JSON.stringify(eager));
-  check('3,000 leads, not 16,415', eager.length * LEAD_PAGE_SIZE === 3000, String(eager.length * LEAD_PAGE_SIZE));
+  check('the eager window is exactly one page', eager.length === EAGER_PAGE_COUNT, `${eager.length} pages`);
+  check('and it is the newest page', JSON.stringify(eager) === '[0]', JSON.stringify(eager));
+  check('1,000 rows are enough to read the screen', eager.length * LEAD_PAGE_SIZE === 1000, String(eager.length * LEAD_PAGE_SIZE));
 
   const remaining = remainingPageIndexes(BIG, eager.length);
-  check('the rest is 14 pages', remaining.length === 14, `${remaining.length} pages`);
-  check('starting where the eager window stopped', remaining[0] === 3, String(remaining[0]));
+  check('every remaining page is queued automatically', remaining.length === 16, `${remaining.length} pages`);
+  check('starting where the eager window stopped', remaining[0] === 1, String(remaining[0]));
   check('and reaching the last page', remaining[remaining.length - 1] === Math.ceil(BIG / LEAD_PAGE_SIZE) - 1, String(remaining[remaining.length - 1]));
 
-  check('a small account still loads everything at once', eagerPageIndexes(SMALL).length === 2, `${eagerPageIndexes(SMALL).length} pages`);
+  check('a small account still loads everything at once', eagerPageIndexes(SMALL).length === 1, `${eagerPageIndexes(SMALL).length} pages`);
   check('an empty account asks for one page, not zero', eagerPageIndexes(0).length === 1);
   check('and has nothing left to load', remainingPageIndexes(0, 1).length === 0);
 }
@@ -64,8 +64,8 @@ head('2. Requests go out in batches, not all at once');
 {
   const remaining = remainingPageIndexes(BIG, EAGER_PAGE_COUNT);
   const batches = batchesOf(remaining);
-  check('14 pages become 4 batches of at most 4', batches.length === 4 && batches.every((batch) => batch.length <= BACKGROUND_BATCH_SIZE), batches.map((b) => b.length).join(','));
-  check('every page appears exactly once', batches.flat().length === 14 && new Set(batches.flat()).size === 14);
+  check('16 pages become 4 batches of at most 4', batches.length === 4 && batches.every((batch) => batch.length <= BACKGROUND_BATCH_SIZE), batches.map((b) => b.length).join(','));
+  check('every page appears exactly once', batches.flat().length === 16 && new Set(batches.flat()).size === 16);
   check('batches keep their order', JSON.stringify(batches.flat()) === JSON.stringify(remaining));
 }
 
@@ -95,13 +95,19 @@ head('4. Pages that arrive out of order keep the server\u2019s order');
   check('a missing page does not break the merge', mergePages(withGap).map((row) => row.id).join(',') === 'x,z');
 }
 
-head('5. The owner is told what is loaded');
+head('5. Progress is reported while the rest streams in — with no button');
 
 {
-  check('nothing to say when everything is in memory', loadMoreLabel(3000, 3000) === null);
-  check('a big gap is described with real numbers', loadMoreLabel(3000, BIG)?.includes('13,415') === true, String(loadMoreLabel(3000, BIG)));
-  check('and names the total', loadMoreLabel(3000, BIG)?.includes('16,415') === true, String(loadMoreLabel(3000, BIG)));
-  check('a small tail still offers the rest', loadMoreLabel(1500, 1584)?.includes('84') === true, String(loadMoreLabel(1500, 1584)));
+  check('nothing to say when everything is in memory', loadProgressLabel(BIG, BIG) === null);
+  check('a partial load reports how far it has got', loadProgressLabel(4000, BIG)?.includes('4,000') === true, String(loadProgressLabel(4000, BIG)));
+  check('and names the total', loadProgressLabel(4000, BIG)?.includes('16,415') === true, String(loadProgressLabel(4000, BIG)));
+  check('a small tail still reports progress', loadProgressLabel(1500, 1584)?.includes('1,500') === true, String(loadProgressLabel(1500, 1584)));
+  // The complaint that took the button away: it must not read as an instruction to tap anything.
+  check('it never asks the owner to load anything', !/load the/i.test(String(loadProgressLabel(1000, BIG))), String(loadProgressLabel(1000, BIG)));
+
+  const page = fs.readFileSync(path.join(process.cwd(), 'app/dashboard/crm/page.tsx'), 'utf8');
+  check('the page streams the remaining pages itself', /remainingPageIndexes\(totalCount, 1\)/.test(page));
+  check('and there is no "load the rest" tap left in the UI', !/loadRemainingLeads\(\)\}/.test(page) || !/load the other/i.test(page));
 }
 
 head('6. Pages are disjoint, because the order is total');

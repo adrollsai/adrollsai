@@ -163,6 +163,7 @@
     "verify:automation-wiring": "esbuild scripts/verify-automation-wiring.ts --bundle --platform=node --format=esm --outfile=.tmp-auto-wiring.mjs --log-level=warning && node .tmp-auto-wiring.mjs",
     "verify:reference-search": "esbuild scripts/verify-reference-search.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ref-search.mjs --log-level=warning && node .tmp-ref-search.mjs",
     "verify:reference-choice": "esbuild scripts/verify-reference-choice.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ref-choice.mjs --log-level=warning && node .tmp-ref-choice.mjs",
+    "verify:agent-hooks": "node scripts/verify-agent-hooks.mjs",
     "verify:creative-doctrine": "esbuild scripts/verify-creative-doctrine.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-doctrine.mjs --log-level=warning && node .tmp-doctrine.mjs",
     "verify:video-preview": "esbuild scripts/verify-video-preview.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-video-preview.mjs --log-level=warning && node .tmp-video-preview.mjs",
     "verify:ad-default": "esbuild scripts/verify-ad-default.ts --bundle --platform=node --format=esm --packages=external --outfile=.tmp-ad-default.mjs --log-level=warning && node .tmp-ad-default.mjs",
