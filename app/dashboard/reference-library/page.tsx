@@ -122,23 +122,22 @@ export default function ReferenceLibraryPage() {
         }
 
         /**
-         * THE LIBRARY IS THE TENANT'S OWN REFERENCES, NOT A MIX.
+         * THE LIBRARY IS THE TENANT'S OWN REFERENCES — and nothing else, for anyone.
          *
-         * This used to query `user_id = <tenant> OR user_id IS NULL`, so the 35 built-in references sat in the same list
-         * as the tenant's own uploads with nothing to tell them apart — measured for one film academy: 35 global
-         * (real-estate creative) beside its own 19 uploads. Whatever the agent then imitated could be estate-agent
-         * styling for a business that sells courses. The built-ins are a demo catalogue, not anybody's brand, so they
-         * appear only when the owner explicitly asks to see examples (`?examples=1` or the toggle below).
+         * This used to query `user_id = <tenant> OR user_id IS NULL`, so the 35 built-in references sat in
+         * the same list as the tenant's own uploads with nothing to tell them apart — measured for one film
+         * academy: 35 global (real-estate creative) beside its own 19 uploads. Whatever the agent then
+         * imitated could be estate-agent styling for a business that sells courses.
+         *
+         * A later version hid them behind `?examples=1`. They are now gone entirely: the operator's rule is
+         * "never use the super admin designs for real estate for any account", and `user_id IS NULL` rows ARE
+         * that super admin shelf. A shelf nobody may use is a shelf that should not be shown.
+         *
+         * The super admin's own account still sees them, because there `user_id IS NULL` is its own library.
          */
-        const showBuiltInExamples =
-          typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('examples') === '1';
-
         if (userRole === 'super_admin' && !impersonateId) {
           query = query.is('user_id', null)
-        } else if (showBuiltInExamples) {
-          query = query.or(`user_id.eq.${tUserId},user_id.is.null`)
         } else {
-          // Own references only, by default.
           query = query.eq('user_id', tUserId)
         }
 

@@ -120,12 +120,37 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Shared with the ops watchdog's collector, so a background repair and this tool make the
 // same promise about where an artefact lives.
 import { mirrorToR2, kindFromUrl } from '@/lib/media/mirror';
+import { isSuperAdminReference } from '@/lib/automation/reference-selection';
 
+/**
+ * The reference images a generation is allowed to see.
+ *
+ * Two rules, both learned from a live complaint:
+ *
+ *   1. THE SUPER ADMIN'S REAL-ESTATE DESIGNS ARE FOR NO OTHER ACCOUNT. The agent's tool takes arbitrary
+ *      URLs, and `list_reference_creatives` used to hand it the 35 built-in Dubai property designs — one
+ *      film academy's poster came back carrying a villa advert's "PRIVATE POOL OASIS" badge because that
+ *      image was passed in as a reference. Anything from that shelf is dropped here, at the tool boundary,
+ *      so it cannot arrive by any prompt or tool chain.
+ *   2. A dropped reference is REPORTED, not silently swallowed — the caller has to know the creative is
+ *      being built without the reference it asked for.
+ */
 function cleanUrls(urls?: string[]): string[] {
   return (urls || [])
     .filter((u) => typeof u === 'string' && /^https?:\/\//i.test(u.trim()))
     .map((u) => u.trim())
     .slice(0, 7);
+}
+
+function splitRefusedReferences(urls?: string[]): { allowed: string[]; refused: string[] } {
+  const all = cleanUrls(urls);
+  const allowed: string[] = [];
+  const refused: string[] = [];
+  for (const url of all) {
+    if (isSuperAdminReference(url)) refused.push(url);
+    else allowed.push(url);
+  }
+  return { allowed, refused };
 }
 
 export function createMediaStudioTools(supabase: SupabaseClient, userId: string) {
@@ -447,7 +472,8 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
            */
           const brandKit = await brandKitFor(supabase, userId);
           const brandedText = withBrandRules(text, brandKit);
-          const referenceUrls = cleanUrls(referenceImageUrls);
+          // Built-in (super admin) designs never reach the model — see splitRefusedReferences.
+          const { allowed: referenceUrls, refused: refusedReferences } = splitRefusedReferences(referenceImageUrls);
           const taskId = await createKieImageTask(
             brandedText,
             imageModelFor(referenceUrls),
@@ -499,6 +525,17 @@ export function createMediaStudioTools(supabase: SupabaseClient, userId: string)
             imageUrl: asset?.url || imageUrl,
             prompt: text,
             taskId,
+            // Say it out loud when a reference was dropped, so the agent can tell the owner the creative is
+            // built from their own brand instead of the design they asked for.
+            ...(refusedReferences.length > 0
+              ? {
+                  notice:
+                    `${refusedReferences.length} reference image(s) were refused: they are the app's built-in ` +
+                    'real-estate designs, which no account may use. This image was made from your own brand kit ' +
+                    'and the prompt instead.',
+                  refusedReferences,
+                }
+              : {}),
             artifact: {
               type: 'image_preview',
               title: title || text.slice(0, 50),

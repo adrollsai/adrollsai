@@ -200,10 +200,36 @@ async function main() {
     check('the daily creative no longer assumes a luxury interior', !/For real estate, showcase a gorgeous modern luxury apartment interior/.test(worker));
   }
 
+  head('8. No other door: the agent tools, the library screens, the prompt');
+
+  {
+    // The agent's own image tool takes arbitrary URLs, so the ban has to hold at that boundary too.
+    const media = codeOnly(read('lib/agent/tools/media_studio.ts'));
+    check('generate_ai_image screens its references through the ban', /isSuperAdminReference\(/.test(media));
+    check('and gives the model the allowed list, not the raw one', /allowed: referenceUrls/.test(media));
+    check('a refused reference is reported, not swallowed', /refusedReferences\.length > 0/.test(media));
+
+    const listTool = codeOnly(read('lib/agent/tools/reference_creatives.ts'));
+    check('list_reference_creatives no longer reads the built-in catalogue', !/ALL_REFERENCE_TEMPLATES/.test(listTool));
+    check('and has no includeExamples escape hatch', !/includeExamples/.test(listTool));
+    check('with none of its own it says so plainly', /source: 'none'/.test(listTool));
+
+    const prompt = codeOnly(read('lib/agent/orchestrator.ts'));
+    check('the prompt no longer advertises 35 built-in designs', !/35 finished ad designs/.test(prompt));
+    check('the prompt says none are available to any account', /not available to any account/.test(prompt));
+
+    const library = codeOnly(read('app/dashboard/reference-library/page.tsx'));
+    check('the reference library no longer merges the built-ins in', !/user_id\.is\.null`?\)?[\s\S]{0,40}or\(/.test(library) && !/query\.or\(`user_id/.test(library));
+
+    const onboarding = codeOnly(read('app/dashboard/onboarding/page.tsx'));
+    check('onboarding has no catalogue import left', !/ALL_REFERENCE_TEMPLATES/.test(onboarding));
+    check('onboarding no longer preselects built-in designs', !/pinterest_pin_\d/.test(onboarding));
+    check('onboarding tells the truth about where the look comes from', /How your creatives get their look|built from your own designs/.test(onboarding));
+  }
+
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exitCode = 1;
 }
-
 main().catch((error) => {
   console.error('verify-reference-choice crashed:', error?.message || error);
   process.exitCode = 1;

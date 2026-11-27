@@ -37,7 +37,7 @@ import { uploadToR2 } from '@/utils/upload-helper';
 import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
 import { useRazorpay } from '@/utils/useRazorpay';
-import { ALL_REFERENCE_TEMPLATES, ReferenceTemplate } from '@/utils/reference-templates-data';
+
 
 type OnboardingStep = 'profile' | 'integrations' | 'templates' | 'payment';
 
@@ -128,16 +128,15 @@ export default function OnboardingPage() {
     const [whatsappNumberInput, setWhatsappNumberInput] = useState('');
     const [isSavingWhatsappNum, setIsSavingWhatsappNum] = useState(false);
 
-    // Design Template Selection (Up to 10 templates, pre-selected with top 5)
-    const [selectedTemplates, setSelectedTemplates] = useState<string[]>([
-        'pinterest_pin_0',
-        'pinterest_pin_1',
-        'pinterest_pin_2',
-        'pinterest_pin_3',
-        'pinterest_pin_4'
-    ]);
-    const [templateCategoryFilter, setTemplateCategoryFilter] = useState<'all' | 'high_converting' | 'premium' | 'waterfront' | 'direct_response' | 'dark_mode'>('all');
-    const [templateSearchQuery, setTemplateSearchQuery] = useState('');
+    /**
+     * NO BUILT-IN DESIGN SELECTION.
+     *
+     * This state used to start with the first five built-in Dubai property designs pre-selected, and the
+     * gallery let a new account pick up to ten more. The operator's rule is that those designs are for no
+     * other account, and every generation path now ignores `selected_templates` entirely — so the value is
+     * kept only because the save call still sends it, and it is always empty.
+     */
+    const [selectedTemplates] = useState<string[]>([]);
     const [isSavingTemplates, setIsSavingTemplates] = useState(false);
 
     // Audio chime helper using Web Audio API synthesis
@@ -193,9 +192,8 @@ export default function OnboardingPage() {
                     setIsWhatsAppConnected(true);
                     if (profile.whatsapp_phone_number) setWhatsappNumberInput(profile.whatsapp_phone_number);
                 }
-                if (profile.selected_templates && Array.isArray(profile.selected_templates) && profile.selected_templates.length > 0) {
-                    setSelectedTemplates(profile.selected_templates.slice(0, 10));
-                }
+                // `profile.selected_templates` is deliberately NOT loaded: it held built-in catalogue ids, and
+                // no generation path reads it any more (see lib/automation/reference-selection).
             }
         };
 
@@ -312,21 +310,6 @@ export default function OnboardingPage() {
     const handleRemoveLogo = () => {
         setLogoUrl('');
         toast.info("Logo removed");
-    };
-
-    // --- TEMPLATE TOGGLE HANDLER (UP TO 10 TEMPLATES) ---
-    const handleToggleTemplate = (templateId: string) => {
-        if (selectedTemplates.includes(templateId)) {
-            setSelectedTemplates(prev => prev.filter(id => id !== templateId));
-            playChime('beep');
-        } else {
-            if (selectedTemplates.length >= 10) {
-                toast.error("You can select up to 10 favorite design templates. Please unselect one first.");
-                return;
-            }
-            setSelectedTemplates(prev => [...prev, templateId]);
-            playChime('beep');
-        }
     };
 
     // --- META CONNECTION ---
@@ -532,24 +515,6 @@ export default function OnboardingPage() {
         setStep('payment');
     };
 
-
-    // Filter templates for the visual selection gallery
-    const filteredTemplates = ALL_REFERENCE_TEMPLATES.filter((tmpl) => {
-        const matchesCategory = 
-            templateCategoryFilter === 'all' || 
-            tmpl.libraryCategory === templateCategoryFilter ||
-            (templateCategoryFilter === 'waterfront' && tmpl.category.toLowerCase().includes('water')) ||
-            (templateCategoryFilter === 'direct_response' && tmpl.category.toLowerCase().includes('direct')) ||
-            (templateCategoryFilter === 'dark_mode' && tmpl.category.toLowerCase().includes('dark'));
-            
-        const matchesSearch = 
-            !templateSearchQuery.trim() || 
-            tmpl.name.toLowerCase().includes(templateSearchQuery.toLowerCase()) || 
-            tmpl.category.toLowerCase().includes(templateSearchQuery.toLowerCase()) || 
-            tmpl.badge.toLowerCase().includes(templateSearchQuery.toLowerCase());
-            
-        return matchesCategory && matchesSearch;
-    });
 
     // Step navigation helpers
     const currentStepNumber = {
@@ -1208,182 +1173,65 @@ export default function OnboardingPage() {
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-wider bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200">
-                                            Step 3 &bull; Aesthetics
-                                        </span>
-                                        <span className="text-xs text-slate-500 font-semibold hidden sm:inline">
-                                            &bull; Choose Up to 10 Visual Blueprints
+                                            Step 3 &bull; Your Brand
                                         </span>
                                     </div>
+                                    {/*
+                                      This step used to be a gallery of the 35 built-in Dubai property designs, pre-selected
+                                      with the first five, and the choice was saved as `selected_templates`. The operator's
+                                      rule is that those designs are for no other account, so the gallery is gone — and with
+                                      every reader removed from the generation paths, the stored preference no longer means
+                                      anything either. What is left is the truth: upload your own references, set your brand.
+                                    */}
                                     <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-                                        Pick Your Favorite Design Styles
+                                        How your creatives get their look
                                     </h1>
                                     <p className="text-sm text-slate-500 mt-1 max-w-2xl leading-relaxed">
-                                        Select up to 10 reference design layouts from our luxury bank. Your daily automated creatives in 3:4 dimension, batch generation, and new ad designs will randomly rotate across these chosen styles.
+                                        Two things decide it — the reference designs you upload, and the brand kit you set. Nothing else.
                                     </p>
                                 </div>
-
-                                {/* Counter pill */}
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <div className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 border shadow-2xs transition-all ${
-                                        selectedTemplates.length > 0 
-                                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                                            : 'bg-amber-50 text-amber-800 border-amber-200'
-                                    }`}>
-                                        <Layers size={14} className="text-blue-600" />
-                                        <span>{selectedTemplates.length} of 10 Selected</span>
-                                    </div>
-                                </div>
                             </div>
 
-                            {/* Filter Bar & Quick Select */}
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50/80 border border-slate-200/70">
-                                {/* Category tabs */}
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
-                                    {[
-                                        { key: 'all', label: 'All Designs (35)' },
-                                        { key: 'high_converting', label: '🔥 High Converting' },
-                                        { key: 'premium', label: '✨ Ultra Luxury' },
-                                        { key: 'waterfront', label: '🌊 Waterfront' },
-                                        { key: 'direct_response', label: '⚡ Direct Response' },
-                                        { key: 'dark_mode', label: '🌙 Dark Mode' }
-                                    ].map((tab) => (
-                                        <button
-                                            key={tab.key}
-                                            type="button"
-                                            onClick={() => {
-                                                setTemplateCategoryFilter(tab.key as any);
-                                                playChime('beep');
-                                            }}
-                                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                                                templateCategoryFilter === tab.key
-                                                    ? 'bg-blue-600 text-white shadow-xs'
-                                                    : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-100/60'
-                                            }`}
-                                        >
-                                            {tab.label}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* Search & Bulk Helpers */}
+                            {/* Designs come from this account, never from the built-in bank */}
+                            <div className="rounded-2xl border border-blue-200/80 bg-gradient-to-br from-blue-50 to-indigo-50 p-5 sm:p-6 space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="relative flex-1 sm:w-48">
-                                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                        <input
-                                            type="text"
-                                            value={templateSearchQuery}
-                                            onChange={(e) => setTemplateSearchQuery(e.target.value)}
-                                            placeholder="Search style..."
-                                            className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
-                                        />
-                                        {templateSearchQuery && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setTemplateSearchQuery('')}
-                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSelectedTemplates(['pinterest_pin_0', 'pinterest_pin_1', 'pinterest_pin_2', 'pinterest_pin_3', 'pinterest_pin_4']);
-                                            playChime('beep');
-                                            toast.success("Loaded top 5 high-converting blueprints!");
-                                        }}
-                                        className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-600 hover:text-blue-700 hover:border-blue-300 transition-all shrink-0 cursor-pointer"
+                                    <Layers size={16} className="text-blue-600" />
+                                    <h2 className="text-sm sm:text-base font-extrabold text-slate-900">Your creatives are built from your own designs</h2>
+                                </div>
+                                <p className="text-xs sm:text-sm text-slate-600 font-medium leading-relaxed">
+                                    There is no style bank to pick from here. Every creative is made from the reference designs
+                                    <strong> you </strong> upload, from your brand kit, and from the product data in your account.
+                                    Nothing is borrowed from another business, and nothing comes from another industry.
+                                </p>
+                                <ul className="space-y-1.5 text-xs text-slate-600 font-medium">
+                                    <li className="flex items-start gap-2">
+                                        <Check size={13} className="text-emerald-600 mt-0.5 shrink-0" />
+                                        Upload the designs you like in your Reference Library — they rotate automatically.
+                                    </li>
+                                    <li className="flex items-start gap-2">
+                                        <Check size={13} className="text-emerald-600 mt-0.5 shrink-0" />
+                                        Set your colours and standing rules in Profile &rarr; Brand Kit, and every creative follows them.
+                                    </li>
+                                    <li className="flex items-start gap-2">
+                                        <Check size={13} className="text-emerald-600 mt-0.5 shrink-0" />
+                                        With neither on file, the AI writes its own layout from your business data.
+                                    </li>
+                                </ul>
+                                <div className="flex flex-wrap items-center gap-2 pt-1">
+                                    <a
+                                        href="/dashboard/reference-library"
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-white border border-blue-200 px-3.5 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 transition-colors"
                                     >
-                                        Top 5
-                                    </button>
-
-                                    {selectedTemplates.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedTemplates([]);
-                                                playChime('beep');
-                                                toast.info("Cleared selection");
-                                            }}
-                                            className="px-2.5 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-rose-600 hover:bg-rose-50 hover:border-rose-300 transition-all shrink-0 cursor-pointer"
-                                        >
-                                            Clear
-                                        </button>
-                                    )}
+                                        Open Reference Library
+                                    </a>
+                                    <a
+                                        href="/dashboard/profile/brand"
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-white border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                                    >
+                                        Set up Brand Kit
+                                    </a>
                                 </div>
                             </div>
-
-                            {/* Template Grid (35 items) */}
-                            <div className="max-h-[520px] overflow-y-auto pr-1">
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
-                                    {filteredTemplates.map((tmpl) => {
-                                        const isSelected = selectedTemplates.includes(tmpl.id);
-                                        return (
-                                            <div
-                                                key={tmpl.id}
-                                                onClick={() => handleToggleTemplate(tmpl.id)}
-                                                className={`group relative rounded-2xl overflow-hidden bg-slate-950 border transition-all duration-200 flex flex-col justify-between cursor-pointer select-none ${
-                                                    isSelected
-                                                        ? 'border-blue-600 ring-4 ring-blue-500/20 shadow-md scale-[1.01]'
-                                                        : 'border-slate-200/90 hover:border-blue-400 hover:shadow-sm'
-                                                }`}
-                                            >
-                                                {/* 3:4 Preview Container */}
-                                                <div className="relative aspect-[3/4] w-full overflow-hidden bg-slate-950">
-                                                    <img
-                                                        src={tmpl.url}
-                                                        alt={tmpl.name}
-                                                        loading="lazy"
-                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                                    />
-
-                                                    {/* Top-left Category Badge */}
-                                                    <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-slate-950/85 backdrop-blur-xs text-[8px] font-extrabold text-amber-300 uppercase tracking-wider shadow-xs line-clamp-1 max-w-[70%]">
-                                                        {tmpl.badge}
-                                                    </span>
-
-                                                    {/* Top-right Selection Checkbox */}
-                                                    <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
-                                                        isSelected 
-                                                            ? 'bg-blue-600 text-white shadow-md ring-2 ring-white scale-110' 
-                                                            : 'bg-slate-950/60 border border-white/60 text-transparent group-hover:border-white'
-                                                    }`}>
-                                                        <Check size={12} strokeWidth={3} className={isSelected ? 'opacity-100' : 'opacity-0'} />
-                                                    </div>
-
-                                                    {/* Lightbox Zoom Overlay on hover */}
-                                                    <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setImageLightboxUrl(tmpl.url);
-                                                            }}
-                                                            className="p-2 rounded-full bg-white/95 text-slate-800 shadow-md hover:scale-110 transition-transform cursor-pointer"
-                                                            title="View high resolution preview"
-                                                        >
-                                                            <Maximize2 size={13} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Bottom Title Overlay */}
-                                                    <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent">
-                                                        <p className="text-[11px] font-bold text-white truncate leading-tight drop-shadow">
-                                                            {tmpl.name}
-                                                        </p>
-                                                        <p className="text-[9px] text-slate-300 truncate">
-                                                            {tmpl.category}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
                             {/* Footer Navigation */}
                             <div className="mt-8 pt-6 border-t border-slate-200/80 flex flex-col sm:flex-row items-center justify-between gap-4">
                                 <button

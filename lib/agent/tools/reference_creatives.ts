@@ -1,33 +1,31 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ALL_REFERENCE_TEMPLATES } from '@/utils/reference-templates-data';
 
 /**
  * The app's own creative knowledge, exposed to the agent.
  *
- * The dashboard's creative flow has two things the agent did not: a library of 35
- * reference creatives it can restyle from, and a vertical visual grammar
- * (`buildImageSystemPrompt`) that encodes what a poster should look like for a
- * real-estate, food, fashion or clinic business.
+ * The dashboard's creative flow has two things the agent did not: a library of reference creatives it can
+ * restyle from, and a vertical visual grammar (`buildImageSystemPrompt`) that encodes what a poster should
+ * look like for a real-estate, food, fashion or clinic business.
  *
- * Without them the agent could still do image-to-image — `generate_ai_image` takes
- * `referenceImageUrls` — but only from a URL the user pasted, and it wrote prompts
- * blind to the vertical rules. So the same request produced a better image through
- * the UI than through the agent. These two tools close that gap.
+ * Without them the agent could still do image-to-image — `generate_ai_image` takes `referenceImageUrls` —
+ * but only from a URL the user pasted, and it wrote prompts blind to the vertical rules. So the same request
+ * produced a better image through the UI than through the agent. These two tools close that gap.
+ *
+ * WHAT THIS TOOL NO LONGER KNOWS ABOUT: the app's 35 built-in luxury real-estate designs. They are the super
+ * admin's demo shelf, no other account may be built from them, and `list_reference_creatives` no longer
+ * returns them at all — not with a flag, not on a fallback.
  */
 export function createReferenceCreativeTools(supabase: SupabaseClient, userId: string) {
   return {
     list_reference_creatives: tool({
       description:
-        'List reference creatives for this business. ' +
-        'FIRST it returns the account\'s OWN uploaded references (the ones in their reference library — their real brand ' +
-        'style). Only if they have none, or if they explicitly ask to see built-in examples, does it fall back to the ' +
-        'app\'s 35 built-in luxury real-estate designs. ' +
-        'Treat any reference as a DESIGN reference, not content — keep the layout, typography, framing and surface ' +
-        'treatment, and replace the place, the brand marks and any claims with the client\'s own. ' +
-        'Never present a reference image as if it were the client\'s actual property, and never describe a built-in ' +
-        'example as this client\'s brand.',
+        'List the reference creatives this business uploaded itself — its real brand style. There is no built-in ' +
+        'example catalogue to fall back on: if the account has none, this says so and you build from the brand kit and ' +
+        'the brief. Treat any reference as a DESIGN reference, not content — keep the layout, typography, framing and ' +
+        'surface treatment, and replace the place, the brand marks and any claims with the client\'s own. Never present ' +
+        'a reference image as if it were the client\'s actual property.',
       inputSchema: z.object({
         category: z
           .string()
@@ -38,24 +36,17 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
           .default('all')
           .describe('high_converting = urgency and offer-led; premium = editorial and luxury'),
         limit: z.number().int().min(1).max(35).default(12).describe('How many to return'),
-        includeExamples: z
-          .boolean()
-          .default(false)
-          .describe(
-            'Only set this when the owner explicitly asks to see built-in example designs. The built-ins are ' +
-              'real-estate creative and are NOT this client\'s brand.'
-          ),
       }),
-      execute: async ({ category, library, limit, includeExamples }) => {
+      execute: async ({ category, limit }) => {
         const cat = (category || '').toLowerCase();
 
         /**
-         * THE TENANT'S OWN REFERENCES COME FIRST, AND THE BUILT-INS ARE OPT-IN.
+         * THE TENANT'S OWN REFERENCES ARE THE ONLY REFERENCES.
          *
          * Measured for one account: 35 built-in references beside its own 19 uploads, and this tool only ever read the
          * built-ins — so a film academy asking for "a creative like this one" was shown estate-agent designs while its
-         * own, on-brand uploads were invisible. The built-in catalogue is a demo shelf, not anybody's brand, so it is
-         * reachable only when the caller asks for examples.
+         * own, on-brand uploads were invisible. The catalogue is now unreachable from here entirely: own references, or
+         * an honest "none".
          */
         try {
           const { data: own } = await supabase
@@ -89,86 +80,38 @@ export function createReferenceCreativeTools(supabase: SupabaseClient, userId: s
               })),
             };
           }
-          if (!includeExamples) {
-            return {
-              success: true,
-              source: 'none',
-              count: 0,
-              message:
-                'This account has no reference creatives of its own yet. Do not substitute built-in examples — build ' +
-                'from the brand kit and the brief, and tell the owner they can add references in the Reference Library. ' +
-                'If they explicitly ask to see example designs, call this again with includeExamples: true.',
-            };
-          }
-        } catch {
-          /* a failed lookup falls through to the built-in shelf below, which is what the caller asked for anyway */
-        }
-
-        const matches = ALL_REFERENCE_TEMPLATES.filter(
-          (t) =>
-            (library === 'all' || t.libraryCategory === library) &&
-            (!cat || t.category.toLowerCase().includes(cat) || t.name.toLowerCase().includes(cat))
-        );
-
-        if (!matches.length) {
-          const cats = [...new Set(ALL_REFERENCE_TEMPLATES.map((t) => t.category))].sort();
+          /**
+           * NO BUILT-IN SHELF, FOR ANY ACCOUNT.
+           *
+           * This used to fall back to the app's 35 built-in luxury real-estate designs (and, before that, only ever
+           * read them). The operator's rule: "never use the super admin designs for real estate for any account, use
+           * the users' own ref if uploaded, it's own brand kit if provided otherwise the ai can create a prompt on
+           * it's own based on the data it has access to."
+           *
+           * So the catalogue is not reachable from here at all — not with a flag, not on a fallback. With no
+           * references of its own, the account is told to build from its brand kit and its own data, and that a
+           * person can upload references in the Reference Library.
+           */
           return {
             success: true,
+            source: 'none',
             count: 0,
-            availableCategories: cats,
-            message: `No reference creatives matched "${category}". Available categories: ${cats.join(', ')}.`,
+            message:
+              'This account has no reference creatives of its own. Do NOT substitute built-in examples or any other ' +
+              'business\u2019s designs — none are available, by rule. Build the creative from the brand kit and the brief, ' +
+              'and tell the owner they can upload references in the Reference Library.',
+          };
+        } catch {
+          // A failed read is a "no references" answer, not a crash — and still never a borrowed design.
+          return {
+            success: true,
+            source: 'none',
+            count: 0,
+            message:
+              'Could not read this account\u2019s reference library. Do not substitute built-in examples. Build the ' +
+              'creative from the brand kit and the brief.',
           };
         }
-
-        return {
-          success: true,
-          count: Math.min(matches.length, limit),
-          totalMatched: matches.length,
-          creatives: matches.slice(0, limit).map((t) => ({
-            id: t.id,
-            name: t.name,
-            category: t.category,
-            library: t.libraryCategory,
-            badge: t.badge,
-            description: t.description,
-            url: t.url,
-            fallbackUrl: t.fallbackImage,
-          })),
-          designLanguage: {
-            sum:
-              'Luxury architectural advertising: full-bleed hero architecture, a short uppercase badge, one ' +
-              'dominant sell-line, a fine tracked sub-line, and a single high-contrast CTA.',
-            recurring: [
-              'Badge lockup top or upper-left — small, wide tracking, uppercase',
-              'One dominant word or numeral carrying the whole layout',
-              'Warm cream / sand / gold type over deep architectural imagery',
-              'A price or a single number given its own heavy weight',
-              'Quiet footer: developer mark, contact, legal line',
-            ],
-          },
-          mustAdapt: {
-            why: 'These are Dubai / Emirates designs. The craft transfers; the specifics do not.',
-            replacePlaces: ['Dubai', 'Palm Jumeirah', 'Emirates', 'Creek Harbour', 'Marina', 'Downtown'],
-            stripBrands: ['DAMAC', 'Emaar', 'Atlantis', 'any developer mark that is not the client\'s'],
-            stripClaims: [
-              '0% tax',
-              'guaranteed returns',
-              'guaranteed ROI',
-              'freehold title',
-              'post-handover payment plan',
-              'highest rental yield',
-              'AED pricing',
-            ],
-            rule:
-              'Where the reference made one of these claims, replace it with a fact from the client\'s own ' +
-              'record or drop the element. Never carry a Dubai claim onto an Indian project, and never invent ' +
-              'the replacement.',
-          },
-          howToUse:
-            'Pass the chosen url as referenceImageUrls to generate_ai_image. Describe the change you want ' +
-            '(the property, the offer, the brand colours) and keep the reference\'s layout, framing and type ' +
-            'positioning. Say plainly that the reference is a style guide, not the actual property.',
-        };
       },
     }),
 
