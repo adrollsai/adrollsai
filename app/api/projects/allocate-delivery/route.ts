@@ -47,9 +47,17 @@ export async function POST(request: Request) {
             await supabaseAdmin.from('profiles').update({ selected_templates: selectedTemplates }).eq('id', user.id);
         }
 
+        /**
+         * NO BORROWED DESIGN WHEN THE OWNER TICKED NONE.
+         *
+         * This defaulted to the first five built-in catalogue entries — `pinterest_pin_0…4`, which are
+         * Dubai property ads — so an account that had selected no reference had its delivered creatives
+         * styled after a luxury villa, badge and all. With an empty list the creative is styled from the
+         * business's own brief and brand instead (lib/automation/reference-selection).
+         */
         const activeTemplates: string[] = (Array.isArray(selectedTemplates) && selectedTemplates.length > 0)
             ? selectedTemplates
-            : (profile?.selected_templates || ['pinterest_pin_0', 'pinterest_pin_1', 'pinterest_pin_2', 'pinterest_pin_3', 'pinterest_pin_4']);
+            : (Array.isArray(profile?.selected_templates) ? profile.selected_templates : []);
 
         const MAX_GLOBAL_VIDEO_SECONDS = 300;
         let cumulativeVideoSeconds = 0;
@@ -112,10 +120,14 @@ export async function POST(request: Request) {
 
             // Generate image creatives
             for (let i = 0; i < creativesToGenerate; i++) {
-                const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
-                const refTmpl = getReferenceTemplate(randomTmplId);
-                const templateStyleName = refTmpl?.name || 'Modern Luxury';
-                const templateBadge = refTmpl?.badge || 'PREMIUM EXCLUSIVE';
+                const randomTmplId = activeTemplates.length > 0
+                    ? activeTemplates[Math.floor(Math.random() * activeTemplates.length)]
+                    : null;
+                const refTmpl = randomTmplId ? getReferenceTemplate(randomTmplId) : null;
+                // Neutral words, not a villa's: a business that sells courses must not be handed
+                // "Waterfront Luxury" as its style name.
+                const templateStyleName = refTmpl?.name || 'Modern Minimalist Editorial';
+                const templateBadge = refTmpl?.badge || 'PREMIUM OFFER';
 
                 const promptSchema = z.object({
                     imagePrompt: z.string(),

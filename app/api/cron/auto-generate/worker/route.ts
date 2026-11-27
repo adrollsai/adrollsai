@@ -6,7 +6,9 @@ import { buildImageSystemPrompt, detectIndustry } from '@/utils/image-prompt-mas
 import { r2, R2_BUCKET, R2_PUBLIC_URL } from '@/utils/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
-import { getRandomReferenceTemplate } from '@/utils/reference-templates-data';
+import { getReferenceTemplate } from '@/utils/reference-templates-data';
+import { chooseReferenceCreative, describeReferenceChoice } from '@/lib/automation/reference-selection';
+import { brandKitFor } from '@/lib/agent/media/brand-kit';
 import { dispatchCreativeToAdmin } from '@/utils/creative-dispatch-helper';
 import { MEDIA_MODELS, imageModelFor } from '@/lib/agent/media-models';
 
@@ -115,21 +117,55 @@ export async function POST(request: Request) {
       const targetCanvas = '4:5';
       const effectiveAspectRatio = 'auto';
 
-    // Pick a random reference design template from user's selected templates (or all templates)
+    /**
+     * WHICH DESIGN THE DAILY CREATIVE IS BUILT FROM.
+     *
+     * The account's own references first, then a built-in the owner explicitly ticked, then none. This
+     * called getRandomReferenceTemplate() over the whole built-in catalogue when nothing was ticked, so
+     * every morning a business with no reference could receive a design borrowed from the 35 built-in
+     * Dubai property ads — including, measured on a real account, one whose badge reads
+     * "PRIVATE POOL OASIS".
+     */
     const userSelectedTemplates = Array.isArray(profile.selected_templates) && profile.selected_templates.length > 0
       ? profile.selected_templates
       : undefined;
-    const chosenTemplate = getRandomReferenceTemplate(userSelectedTemplates);
-    console.log(`[Auto-Generate Worker] Using reference template for 3:4 daily creative: ${chosenTemplate.name} (${chosenTemplate.id})`);
+    const ownerSelected = userSelectedTemplates
+      ? getReferenceTemplate(userSelectedTemplates[Math.floor(Math.random() * userSelectedTemplates.length)])
+      : null;
+    const referenceChoice = await chooseReferenceCreative(supabaseAdmin, prop.user_id, {
+      selectedTemplateUrl: ownerSelected?.url || null,
+      selectedTemplateLabel: ownerSelected?.name || null,
+      seed: prop.id || prop.user_id,
+    });
+    const chosenTemplate = referenceChoice.url ? getReferenceTemplate(referenceChoice.url) : null;
+    console.log(
+      `[Auto-Generate Worker] Reference: ${describeReferenceChoice(referenceChoice)}` +
+        (chosenTemplate ? ` — "${chosenTemplate.name}"` : '')
+    );
 
-    if (chosenTemplate.url) {
-      allInputImages.push(chosenTemplate.url);
+    if (referenceChoice.url) {
+      allInputImages.push(referenceChoice.url);
     }
 
     const productCustomPrompt = (autoGenSettings.custom_prompt || '').trim();
 
     // C. Generate custom, high-converting image prompt using Gemini
     const systemVisualRules = buildImageSystemPrompt(industry || 'general', false);
+
+    /**
+     * THE ACCOUNT'S BRAND RULES GO INTO EVERY DAILY CREATIVE.
+     *
+     * This prompt was built from the product, the industry and a borrowed blueprint — and never from what
+     * the owner had written down about their own brand. So the enforced palette in Profile → Brand Kit
+     * (for one live account: scarlet #E13C3C, charcoal #1F1F1F, wisteria #92ABE1, accents as thin stripes)
+     * was absent from the one creative they receive every morning.
+     */
+    const brand = await brandKitFor(supabaseAdmin, prop.user_id);
+    const brandLines = [
+      brand.brandColor ? `- Primary brand colour: ${brand.brandColor}. Dominant accent; neutrals for everything else.` : '',
+      brand.rules ? `- Standing brand rules (obey exactly): ${brand.rules}` : '',
+      `- This business operates in ${industry || 'its own'} — use only that industry's subjects and vocabulary. Never property, plot, listing, "site visit" or possession language unless it sells property.`,
+    ].filter(Boolean);
 
     const llmPromptForImage = `You are a world-class Ad Creative Director with 20 years of experience creating high-converting Meta ads.
 Your task is to write a highly detailed, professional visual design prompt for an image generation model to create a stunning static ad graphic for this product:
@@ -139,7 +175,7 @@ PRODUCT DESCRIPTION: "${prop.description || ''}"
 BUSINESS NAME: "${businessName || ''}"
 CONTACT DETAILS: "${contactNumber || ''}"
 INDUSTRY/VERTICAL: "${industry || 'general'}"
-REFERENCE DESIGN BLUEPRINT: "${chosenTemplate.name}" - ${chosenTemplate.description} (Category: ${chosenTemplate.category})
+REFERENCE DESIGN BLUEPRINT: ${chosenTemplate ? `"${chosenTemplate.name}" - ${chosenTemplate.description} (Category: ${chosenTemplate.category})` : 'none on file — design this from the brand and the product alone. Do NOT borrow a layout from another industry.'}
 PRODUCT SPECIFIC CREATIVE INSTRUCTIONS: "${productCustomPrompt || 'None'}"
 GLOBAL USER INSTRUCTIONS: "${profile.custom_prompt || ''}"
 OUTPUT FRAMING: a vertical ${targetCanvas} portrait frame (4 units wide by 5 units tall). Compose every element to that exact frame â€” the provider chooses pixel dimensions automatically, so the composition itself must establish the ratio.
@@ -148,9 +184,12 @@ OUTPUT FRAMING: a vertical ${targetCanvas} portrait frame (4 units wide by 5 uni
 The image prompt you generate must instruct the image model to follow these guidelines:
 ${systemVisualRules}
 
+### BRAND RULES (NON-NEGOTIABLE — these outrank every other styling instruction)
+${brandLines.join('\n')}
+
 ### ADDITIONAL SPECIFIC DIRECTIONS
-- Adopt the visual composition, typography framing, and aesthetic mood of reference blueprint "${chosenTemplate.name}".
-- The product or property itself must be the primary focus and hero of the image. For real estate, showcase a gorgeous modern luxury apartment interior, living room, or a villa.
+${chosenTemplate ? `- Adopt the visual composition, typography framing, and aesthetic mood of reference blueprint "${chosenTemplate.name}".` : '- No reference design is on file: compose the layout from this business\'s own subject matter and brand, and invent nothing from another industry.'}
+- The product or service itself must be the primary focus and hero of the image. Show what this business actually sells — a property interior only if it sells property, otherwise the course, product, treatment, service or venue it is advertising.
 - Show happy, attractive, photorealistic humans (e.g. a family, a professional, or a couple) interacting naturally with the product in the scene (e.g., enjoying the living room, standing in front of the villa, working at the desk). The people should have true-to-life skin detailing, real pores, natural expressions, and look completely authentic.
 - The ethnicity of the humans must match the business origin (e.g., South Asian/Indian ethnicity if the business context or product is based in India, Caucasian/Western otherwise).
 - Create a complete, premium ad design layout: Include a clean, professional logo/monogram watermark of the brand in one corner. Overlay the product name and a short hook/benefit headline in an elegant, minimal geometric font. Print the business name "${businessName}" and contact info "${contactNumber}" in a tiny, clean info line at the bottom margin.

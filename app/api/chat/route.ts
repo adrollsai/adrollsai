@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { createKieTask, callDeepSeekWithUsage } from '@/utils/external-apis';
@@ -6,9 +6,11 @@ import { generateText } from 'ai';
 import { google } from '@ai-sdk/google'; 
 import { checkLimitAndIncrement, refundLimit, checkStorageLimit } from '@/utils/subscription-server';
 import { buildImageSystemPrompt, buildReferenceCreativePreamble, buildImageDisambiguationPreamble, detectIndustry, getRandomVisualArchetype, getRandomHumanPersona } from '@/utils/image-prompt-master';
-import { getReferenceTemplate, getRandomReferenceTemplate } from '@/utils/reference-templates-data';
+import { getReferenceTemplate } from '@/utils/reference-templates-data';
 import { MEDIA_MODELS, imageModelFor, modelAlias } from '@/lib/agent/media-models';
 import { DEFAULT_IMAGE_RATIO, providerImageRequest } from '@/lib/agent/media-ratios';
+import { brandKitFor } from '@/lib/agent/media/brand-kit';
+import { chooseReferenceCreative, describeReferenceChoice } from '@/lib/automation/reference-selection';
 
 export const maxDuration = 120; // Allow 2 minutes for AI prompt synthesis & image task dispatch
 
@@ -225,6 +227,36 @@ export async function POST(request: Request) {
     // --- BUILD MASTER VISUAL PRODUCTION RULES ---
     const visualProductionRules = buildImageSystemPrompt(industry, isOrganicOverride);
 
+    /**
+     * THE ACCOUNT'S OWN BRAND, AT GENERATION TIME.
+     *
+     * This path never read the brand kit: not the palette the owner sets in Profile → Brand Kit, not the
+     * standing creative directives on the playbook. A live film academy whose enforced rule is "use ONLY
+     * these colours: scarlet #E13C3C, charcoal #1F1F1F, wisteria #92ABE1" received a black-and-champagne
+     * gold poster, because nothing in the prompt mentioned the brand at all.
+     *
+     * The lock is stated LAST and as non-negotiable, because every branch below builds its own styling
+     * instructions (including one that hardcoded "champagne gold and ivory"); a brand rule that can be
+     * outvoted by a template sentence is not a brand rule.
+     */
+    const brand = await brandKitFor(supabaseAdmin, targetUserId);
+    const industryLock = industry
+      ? `- Target industry: ${industry}. Use this industry's subjects, props, vocabulary and proof points. NEVER use another industry's vocabulary: no property, plot, listing, inventory, "site visit", "book a site visit", possession, RERA or EMI language unless this business actually sells property.`
+      : '';
+    const brandLockBlock = [
+      brand.brandColor
+        ? `- Primary brand colour: ${brand.brandColor}. Use it as the dominant accent, with neutrals only for everything else. Do not introduce colours from another brand.`
+        : '',
+      brand.rules ? `- Standing brand rules (obey exactly):\n${brand.rules}` : '',
+      industryLock,
+    ].filter(Boolean);
+    const brandLock = brandLockBlock.length
+      ? `\n\nBRAND & INDUSTRY LOCK (non-negotiable — overrides any style suggestion above):\n${brandLockBlock.join('\n')}`
+      : '';
+    logToFile(
+      `[CHAT ROUTE] Brand lock: ${brandLockBlock.length} rule(s) from ${brand.sources.join(', ') || 'nothing on file'}`
+    );
+
     logToFile(`STARTING GENERATION | MODEL: ${model} | Target User ID: ${targetUserId} | Business Name: ${businessName} | Industry: ${industry} | Category: ${normalizedCategory || 'None'}`);
     
     // Consolidate and filter images (Remove placeholders, SVGs and invalid URLs)
@@ -272,12 +304,62 @@ export async function POST(request: Request) {
         effectiveTemplateUrl = templateMeta.url;
       }
     } else if (!isEdit) {
-      const userSelected = Array.isArray(currentProfile?.selected_templates) && currentProfile.selected_templates.length > 0
+      /**
+       * WHERE THE DESIGN COMES FROM WHEN NOBODY PICKED ONE.
+       *
+       * Own references, then a built-in the owner explicitly ticked, then NOTHING. Never a random
+       * built-in: this used to call getRandomReferenceTemplate(), which draws from the 35 built-in Dubai
+       * property designs. On a live film-academy account (industry `education`, selected_templates `[]`)
+       * that meant a random luxury-villa pin went to the image model as IMAGE 1 while its own NINETEEN
+       * uploaded references sat unused, and the badge from that pin — "PRIVATE POOL OASIS" — was
+       * composited onto a cinematography poster.
+       *
+       * The rule lives in lib/automation/reference-selection so every generation path shares it.
+       */
+      const selectionSeed =
+        (typeof propertyTitle === 'string' && propertyTitle.trim() ? propertyTitle.trim() : '') ||
+        (typeof userInstructions === 'string' ? userInstructions.slice(0, 80) : '') ||
+        targetUserId;
+
+      const ownerSelectedTemplates = Array.isArray(currentProfile?.selected_templates) && currentProfile.selected_templates.length > 0
         ? currentProfile.selected_templates
         : undefined;
-      templateMeta = getRandomReferenceTemplate(userSelected);
-      effectiveTemplateUrl = templateMeta?.url || null;
-      logToFile(`[CHAT ROUTE] No template specified: randomly picked user reference design "${templateMeta?.name}" (${effectiveTemplateUrl})`);
+      let ownerSelected: { url: string | null; label: string | null } = { url: null, label: null };
+      if (!ownerSelectedTemplates) {
+        ownerSelected = { url: null, label: null };
+      } else {
+        const builtIn = getReferenceTemplate(
+          ownerSelectedTemplates[Math.floor(Math.random() * ownerSelectedTemplates.length)]
+        );
+        ownerSelected = { url: builtIn?.url || null, label: builtIn?.name || null };
+      }
+
+      const choice = await chooseReferenceCreative(supabaseAdmin, targetUserId, {
+        preferCategory: normalizedCategory,
+        selectedTemplateUrl: ownerSelected.url,
+        selectedTemplateLabel: ownerSelected.label,
+        seed: selectionSeed,
+      });
+      if (choice.url) {
+        effectiveTemplateUrl = choice.url;
+        /**
+         * ONLY A BUILT-IN HAS TEMPLATE METADATA.
+         *
+         * `getReferenceTemplate` falls back to the catalogue's first entry for any URL it does not know, so
+         * asking it about the account's own upload would have handed this prompt the DAMAC villa's name and
+         * its "WATERFRONT LUXURY" badge — the very leak this whole change removes. An own reference gets no
+         * badge from anybody; the creative is built from the image itself plus the brand lock.
+         */
+        templateMeta = choice.source === 'selected' ? getReferenceTemplate(choice.url) : null;
+        logToFile(`[CHAT ROUTE] Reference: ${describeReferenceChoice(choice)} (${choice.url})`);
+      } else {
+        effectiveTemplateUrl = null;
+        logToFile(
+          '[CHAT ROUTE] Reference: ' +
+            describeReferenceChoice(choice) +
+            '. No built-in design is substituted — a borrowed reference is how another industry\'s vocabulary ends up on this creative.'
+        );
+      }
     }
 
     const validTemplate = (effectiveTemplateUrl && !excludedImages.includes(effectiveTemplateUrl) && typeof effectiveTemplateUrl === 'string' && effectiveTemplateUrl.startsWith('http')) 
@@ -329,7 +411,7 @@ export async function POST(request: Request) {
           const styleAnalysisInstruction = `You are a Master Creative Director & Visual System Architect. Analyze this reference luxury advertising creative and deconstruct it into a universal "Graphic Design System Blueprint":
 1. GRAPHIC CONTAINER & SIGNATURE FRAMING GEOMETRY: Describe the exact layout structure and geometric container shape holding or framing the hero image (e.g. custom icon silhouette, floating card, geometric mask, split container, arch, or full-bleed grid). Explicitly instruct how the hero photo should be framed.
 2. COLOR PALETTE & LIGHTING MOOD: Primary background colors, accent colors, translucent pill gradients, contrast ratio, and ambient lighting mood.
-3. HAUTE-COUTURE TYPOGRAPHY SYSTEM: Font pairing styles (e.g., high-fashion serif header like Bodoni/Cormorant or sleek geometric sans-serif like Trajan/Futura), champagne gold foil or crisp ivory-white tones, wide kerning/letter-spacing, and text alignment.
+3. TYPOGRAPHY SYSTEM: Font pairing styles (e.g., high-fashion serif header like Bodoni/Cormorant or sleek geometric sans-serif like Trajan/Futura), text and accent tones, wide kerning/letter-spacing, and text alignment. Describe the SHAPE of the type system only — never a fixed colour: the colours come from this business's brand kit, which the brand lock enforces.${brand.brandColor ? ` This account's brand colour is ${brand.brandColor}.` : ''}
 4. DECORATIVE BADGES & ICON PLACEMENT: Placement zones for feature pills, logo stamps, starting price ribbons, CTA banners, and decorative badge elements.
 Output a dense single paragraph describing this exact graphic design system so an AI image model can apply this layout framework to any new product.`;
 
@@ -431,6 +513,7 @@ ${propertyLocation ? `- Location: ${propertyLocation}` : ''}
 - Target Industry: ${industry || 'N/A'}
 - Contact Number / Call to Action: ${finalContactNumber || 'N/A'}
 - Custom User Instructions: ${userInstructions || 'None'}
+${brandLock}
 
 ${styleGuidanceSection}
 
@@ -443,8 +526,8 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
    - HERO VISUAL (55-65% CANVAS): Aspirational, photorealistic hero visual featuring the product, service, or customer in an authentic real-world environment with tangible proof artifacts (passports, approval letters, certificates, product packaging, keys, or modern dashboard interfaces).
    - BENEFIT HOOK HEADLINE: Exactly ONE dominant, high-contrast outcome-driven headline (e.g., "Live & Work in Canada in 2026", "Own Luxury for 1% Monthly", "Automate 80% of Support") that instantly hooks the target customer.
    - MANDATORY PRICE BADGE: Since we sell to businesses and high-intent buyers, if price, starting price, or payment terms are provided (e.g. "Starting at ₹1.2 Cr", "From AED 1,200,000", "1% Monthly Payment Plan", "$49/mo"), you MUST prominently display a luxury, high-contrast price badge or ribbon pill (e.g. "STARTING AT AED 1.2M", "FROM ₹1.2 CR*") on the creative!
-   - TRUST PROOF BADGES / VALUE PILLS: Exactly 2 to 3 sleek, modern frosted glass or flat solid contrast chips/badges highlighting key credibility and risk-reversal points (e.g. "Licensed Consultants", "98% Success Rate", "Fast-Track Approval", "RERA Certified", "Zero Hidden Fees", "Free Consultation"). Badges must be modern, minimal, executive-grade UI elements.
-   - FOOTER CTA BAR: Crisp high-contrast bottom action bar with a clear call-to-action button ("Book Free Consultation", "Explore Inventory", "Claim Offer", "Get Free Assessment") alongside the contact details "${finalContactNumber || ''}".
+   - TRUST PROOF BADGES / VALUE PILLS: Exactly 2 to 3 sleek, modern frosted glass or flat solid contrast chips/badges highlighting key credibility and risk-reversal points. Use proof points this business can truthfully claim (e.g. "Licensed & Certified", "98% Success Rate", "Zero Hidden Fees", "Free Consultation") — the examples in this brief come from several industries, so translate them into this business's own vocabulary rather than copying property-sector ones (never "RERA", "possession", "site visit" or "explore inventory" unless the business sells property).
+   - FOOTER CTA BAR: Crisp high-contrast bottom action bar with a clear call-to-action button that fits THIS business ("Book Free Consultation", "Claim Offer", "Apply Now", "Get Free Assessment") alongside the contact details "${finalContactNumber || ''}".
 4. STRICT BAN ON AMATEUR GIMMICKS:
    - ABSOLUTELY NEVER generate floating 3D glass cubes, floating green bars, floating holographic stock charts, or neon gaming button glows. All badges and chips must be modern, minimal, flat or frosted glass executive-grade UI elements.
 5. PRISTINE ANTI-SMUDGE BRAND LOGO & TYPOGRAPHY:
@@ -529,9 +612,11 @@ ${effectiveIsBrandOnly ? `2. BRAND & CAMPAIGN VISUAL SPOTLIGHT: No specific prod
       finalImagePrompt = `Modify the input image according to these custom instructions: "${userInstructions}". 
 Make the edits clean, professional, and blend seamlessly with the original content. Do NOT add any messy or gibberish text overlays unless explicitly requested. Keep the visual theme intact while applying the edits.`;
     } else if (hasReference) {
-      const tmplName = templateMeta?.name || 'Curated Reference Luxury Design';
-      const tmplCat = templateMeta?.category || 'Ultra Luxury';
-      const tmplBadge = templateMeta?.badge || 'EXCLUSIVE OFFER';
+      // A reference with no template metadata is the account's OWN upload: no borrowed name, no borrowed
+      // badge, and no real-estate vocabulary ("Ultra Luxury", "Waterfront") in the prompt.
+      const tmplName = templateMeta?.name || "the account's own reference creative";
+      const tmplCat = templateMeta?.category || 'this business\u2019s own branding';
+      const tmplBadge = templateMeta?.badge || `${industry ? industry.toUpperCase() : 'PREMIUM'} OFFER`;
       const effectiveAspect = aspectRatio || DEFAULT_IMAGE_RATIO;
 
       if (validPropImages.length > 0) {
@@ -551,7 +636,7 @@ ${propertyDescription ? `- Details & Amenities: ${propertyDescription}` : ''}
 - Badge Tag: ${tmplBadge}
 ${finalContactNumber && !excludeBusinessInfo ? `- Contact / CTA: ${finalContactNumber}` : ''}
 ${userInstructions ? `- Additional Custom Instructions: ${userInstructions}` : ''}
-- Typography: Luxury champagne gold and ivory tones, clean Trajan/Bodoni serif headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
+- Typography: brand palette only (the brand lock at the end is binding), clean editorial headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
 
 CRITICAL BRANDING & URL RESTRICTIONS:
 ${businessName ? `- Business / Developer Name: "${businessName}". STRICTLY and ONLY display this exact company name.` : ''}
@@ -575,7 +660,7 @@ ${propertyDescription ? `- Details & Amenities: ${propertyDescription}` : ''}
 - Badge Tag: ${tmplBadge}
 ${finalContactNumber && !excludeBusinessInfo ? `- Contact / CTA: ${finalContactNumber}` : ''}
 ${userInstructions ? `- Additional Custom Instructions: ${userInstructions}` : ''}
-- Typography: Luxury champagne gold and ivory tones, clean Trajan/Bodoni serif headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
+- Typography: brand palette only (the brand lock at the end is binding), clean editorial headings, modern geometric sans-serif subtext, perfectly aligned without any messy or gibberish text.
 
 CRITICAL BRANDING & URL RESTRICTIONS:
 ${businessName ? `- Business / Developer Name: "${businessName}". STRICTLY and ONLY display this exact company name.` : ''}
@@ -609,6 +694,10 @@ ${singleLogo ? `- IMAGE 2 is the official business logo: Place it cleanly in an 
       ].filter(Boolean).join("\n");
       finalImagePrompt = designerPrompt ? `${disambiguationPreamble}${designerPrompt}` : `${disambiguationPreamble}${fallbackPrompt}`;
     }
+
+    // The brand lock is appended to every branch, not just the ones that happened to mention branding:
+    // one branch hardcoded "champagne gold and ivory" and another said nothing at all.
+    if (finalImagePrompt && brandLock) finalImagePrompt = `${finalImagePrompt}${brandLock}`;
 
     // Every model id below comes from lib/agent/media-models.ts — nothing is
     // inlined here. Two accept-only shims remain for already-cached bundles:
@@ -777,9 +866,19 @@ RULES:
                 });
                 finalCaption = text;
             } catch {
-                finalCaption = effectiveIsBrandOnly
-                    ? `Discover exceptional services with ${businessName || 'us'}! Contact ${effectiveContact} for more details.`
-                    : "Check out this premium property! DM for more details.";
+                /**
+                 * THE LAST-RESORT CAPTION SAYS NOTHING ABOUT PROPERTY.
+                 *
+                 * It used to hardcode "Check out this premium property! DM for more details." — and a
+                 * live film-academy creative carried exactly that line, because both caption models had
+                 * failed and this string went out to a business that has never sold a property. A
+                 * fallback is the copy most likely to be seen with the least thought behind it, so it
+                 * has to be true for every industry: name the business, name the offering if there is
+                 * one, give the contact.
+                 */
+                finalCaption = effectiveIsBrandOnly || !propertyTitle
+                    ? `Discover what ${businessName || 'we'} can do for you. Call ${effectiveContact} to find out more.`
+                    : `${propertyTitle} — ask ${businessName || 'us'} for the details. Call ${effectiveContact}.`;
             }
         }
     }

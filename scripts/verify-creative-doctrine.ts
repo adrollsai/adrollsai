@@ -22,8 +22,12 @@ import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { createAgentContext } from '../lib/agent/orchestrator';
 import { applyReviewGate } from '../lib/agent/review-gate';
+import { PIPELINES } from '../lib/agent/pipelines/registry';
 
 dotenv.config({ path: '.env.local', quiet: true });
+
+/** Workflow ids the prompt may legitimately name — `start_pipeline('ad_launch')` is not a tool call. */
+const PIPELINE_IDS = PIPELINES.map((pipeline) => pipeline.id);
 
 const ORG = '9c0748de-e3da-4ea1-b323-4ce736b5ca7c';
 
@@ -181,7 +185,16 @@ check(
 console.log('\n▸ 5. the new prose names no tool this turn does not have');
 const quoted = [...new Set((prompt.match(/'([a-z0-9_]{4,})'/g) || []).map((s) => s.replace(/'/g, '')))];
 const registered = Object.keys(ctx.tools as any);
-const ghosts = quoted.filter((n) => n.includes('_') && !registered.includes(n) && !n.startsWith('sandbox_publish'));
+/**
+ * PIPELINE IDS ARE VOCABULARY, NOT TOOLS.
+ *
+ * The prompt tells the model to pass `start_pipeline('ad_launch')`, and `ad_launch` is a workflow id in
+ * lib/agent/pipelines/registry — never a tool name. `scripts/verify-toolset.ts` already excludes those by
+ * name for exactly this reason; this check was flagging them as ghosts, which made a correct prompt look
+ * broken.
+ */
+const pipelineIds = new Set(PIPELINE_IDS);
+const ghosts = quoted.filter((n) => n.includes('_') && !registered.includes(n) && !pipelineIds.has(n) && !n.startsWith('sandbox_publish'));
 check('no quoted tool name is unregistered', ghosts.length === 0, ghosts.join(', ') || 'none');
 
 console.log(`\n${'='.repeat(64)}\n${pass} passed, ${fail} failed`);

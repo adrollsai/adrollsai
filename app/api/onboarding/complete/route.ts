@@ -244,9 +244,16 @@ export async function POST(request: Request) {
         const isLocal = host.includes('localhost') || host.includes('local.nobogent.com') || host.includes('127.0.0.1');
         const baseUrl = isLocal ? 'http://127.0.0.1:3000' : `https://${host}`;
 
+        /**
+         * NO BORROWED DESIGN WHEN THE OWNER TICKED NONE.
+         *
+         * The default list was `pinterest_pin_0…4` — the first five built-in Dubai property ads — so a new
+         * account that had selected no reference was onboarded with luxury-villa styling, badge included.
+         * An empty list means "style this from the business's own brief and brand".
+         */
         const activeTemplates: string[] = (Array.isArray(selectedTemplates) && selectedTemplates.length > 0)
             ? selectedTemplates
-            : ['pinterest_pin_0', 'pinterest_pin_1', 'pinterest_pin_2', 'pinterest_pin_3', 'pinterest_pin_4'];
+            : [];
 
         // 4a. Persist the catalogue FIRST. Intake is free and must not be behind a
         //     paywall: the property rows are what the agent will work on once the
@@ -352,10 +359,13 @@ export async function POST(request: Request) {
 
                     // ---------------- image ----------------
                     if (item.kind === 'image') {
-                        const randomTmplId = activeTemplates[Math.floor(Math.random() * activeTemplates.length)];
-                        const refTmpl = getReferenceTemplate(randomTmplId);
-                        const templateStyleName = refTmpl?.name || 'Modern Minimalist Luxury';
-                        const templateBadge = refTmpl?.badge || 'PREMIUM EXCLUSIVE';
+                        const randomTmplId = activeTemplates.length > 0
+                            ? activeTemplates[Math.floor(Math.random() * activeTemplates.length)]
+                            : null;
+                        const refTmpl = randomTmplId ? getReferenceTemplate(randomTmplId) : null;
+                        // Neutral words, not a villa's.
+                        const templateStyleName = refTmpl?.name || 'Modern Minimalist Editorial';
+                        const templateBadge = refTmpl?.badge || 'PREMIUM OFFER';
 
                         const promptSchema = z.object({
                             imagePrompt: z.string(),

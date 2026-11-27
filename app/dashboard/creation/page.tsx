@@ -801,11 +801,13 @@ export default function CreationPage() {
                     assignedStyleName = `${matched.name} | ${assignedStyleName || ''}`;
                 }
             } else {
-                // In batch mode: use reference designs selected by the user randomly
+                // Batch mode: only a reference the OWNER explicitly ticked is allowed here. When they
+                // ticked none, no built-in is borrowed — the server rotates the account's own
+                // references (lib/automation/reference-selection) or composes from the brand kit.
                 const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
                     ? profile.selected_templates
                     : undefined;
-                const randomTmpl = getRandomReferenceTemplate(userSelected);
+                const randomTmpl = userSelected ? getRandomReferenceTemplate(userSelected) : null;
                 if (randomTmpl) {
                     assignedTemplateUrl = randomTmpl.url;
                     assignedStyleName = `${randomTmpl.name} | ${assignedStyleName || ''}`;
@@ -1440,12 +1442,26 @@ export default function CreationPage() {
       !selectedUserRefId && 
       !selectedUserRefUrl
     ) {
+      /**
+       * NO RANDOM BUILT-IN DESIGN.
+       *
+       * This drew a random design from the 35 built-in Dubai property references and announced
+       * "Using reference style: <name>" — so a generation with nothing selected silently borrowed a
+       * luxury-villa ad. A live film academy's poster came out carrying that design's badge,
+       * "PRIVATE POOL OASIS". A reference the owner explicitly ticked is still honoured; when there is
+       * none, the server rotates the account's OWN references (lib/automation/reference-selection) and
+       * says so, instead of borrowing somebody else's industry.
+       */
       const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
         ? profile.selected_templates
         : undefined;
-      const randomTmpl = getRandomReferenceTemplate(userSelected);
-      effForcedTemplateId = randomTmpl.id;
-      toast.info(`Using reference style: ${randomTmpl.name}`);
+      const randomTmpl = userSelected ? getRandomReferenceTemplate(userSelected) : null;
+      if (randomTmpl) {
+        effForcedTemplateId = randomTmpl.id;
+        toast.info(`Using reference style: ${randomTmpl.name}`);
+      } else {
+        toast.info('Using your own uploaded references, or the brand kit if you have none.');
+      }
     }
 
     setIsChatWorkspaceOpen(true)
@@ -1534,14 +1550,16 @@ export default function CreationPage() {
   const isEditMode = chatAttachments.length > 0 || isEditingLastImage;
 
   const effTemplate = effForcedTemplateId || forcedTemplateId || selectedTemplate
-  const userSelected = profile?.selected_templates && profile.selected_templates.length > 0
-    ? profile.selected_templates
-    : undefined;
-  const randomFallback = getRandomReferenceTemplate(userSelected);
-  const templateObj = effTemplate === 'rotate'
-    ? randomFallback
-    : effTemplate ? getReferenceTemplate(effTemplate) : randomFallback;
-  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || templateObj?.url || randomFallback.url
+  /**
+   * WHICH REFERENCE THIS GENERATION USES.
+   *
+   * In order: the image the person just uploaded for this generation, then their own library pick, then
+   * a built-in design they explicitly chose. `rotate` means "let the account's own references rotate",
+   * which the server does now — it does NOT mean "borrow a random built-in". That fallback is what put a
+   * Dubai villa's "PRIVATE POOL OASIS" badge on a film academy's cinematography poster.
+   */
+  const templateObj = effTemplate && effTemplate !== 'rotate' ? getReferenceTemplate(effTemplate) : null
+  const activeReferenceUrl = uploadedRefUrl || userReferences.find(r => r.id === selectedUserRefId)?.url || selectedUserRefUrl || templateObj?.url || null
 
   const startResponse = await authFetch(`/api/chat${window.location.search}`, {
     method: 'POST',
