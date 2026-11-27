@@ -604,6 +604,23 @@ WORKING OUT LOUD â€” the person is watching this happen, not reading a repo
 
 
   /**
+   * ASK FIRST, THEN RESEARCH — measured on a real client conversation.
+   *
+   * A live session titled "Make creatives for me" ran 96 events and 31 tool calls (5 × find_tools, 20 × call_tool, a skill
+   * download and 4 sandbox commands) and never asked the owner a single question. It inferred the format, the offers and
+   * the count, built three posters, and only then explained what it had assumed. From the owner's side that is a detailed
+   * spiral with no direction: the cheapest question would have collapsed most of the work.
+   *
+   * Stated without naming any tool, because these words must not depend on which group is loaded.
+   */
+  parts.push(`
+ASK THE FEW QUESTIONS THAT CHANGE THE OUTPUT, BEFORE YOU RESEARCH.
+- Any "make me X", "create Y" or "set up Z" request: ask the 2-4 questions whose answers change what you build — the format or size, the offer or subject, the audience, how many, and the deadline. One batch, then stop and wait.
+- Do not research, browse, download skills or open a sandbox before those answers arrive. If an answer could not change anything, skip that question rather than asking for its own sake.
+- Once they answer, act: do not re-ask what you already know, and do not turn the plan into another question.
+- Say what you are about to build in one line before building it, so a wrong direction costs one reply instead of a whole run.`);
+
+  /**
    * Only when the media tools are actually registered: `verify:toolset` fails if the prompt names a tool the current
    * group selection does not provide, and that guard has caught this exact mistake before.
    */
